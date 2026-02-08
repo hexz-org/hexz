@@ -502,5 +502,5 @@ For most AI workloads, **Strata + LZ4 + 64KB blocks** is the optimal configurati
 ---
 
 **Last Updated**: 2026-02-08
-**Strata Version**: 0.1.0
+**Strata Version**: 0.0.1
 **Benchmark Suite**: `cargo bench` + `strata sys bench`

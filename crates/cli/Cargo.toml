@@ -64,6 +64,37 @@ harness = false
 path = "benches/http_throughput.rs"
 required-features = ["strata-core/async-http"]
 
+# AI/ML-focused benchmarks
+[[bench]]
+name = "ai_dataloader"
+harness = false
+path = "benches/ai/dataloader.rs"
+
+[[bench]]
+name = "ai_shuffle"
+harness = false
+path = "benches/ai/shuffle.rs"
+
+[[bench]]
+name = "ai_prefetch"
+harness = false
+path = "benches/ai/prefetch.rs"
+
+[[bench]]
+name = "ai_multiworker"
+harness = false
+path = "benches/ai/multiworker.rs"
+
+[[bench]]
+name = "ai_tensor_ops"
+harness = false
+path = "benches/ai/tensor_ops.rs"
+
+[[bench]]
+name = "ai_ml_workloads"
+harness = false
+path = "benches/ai/ml_workloads.rs"
+
 [features]
 default = ["fuse", "server", "compression-zstd", "encryption", "diagnostics", "signing"]
 
