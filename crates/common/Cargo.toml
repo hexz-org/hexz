@@ -1,0 +1,22 @@
+[package]
+name = "strata-common"
+version = "0.0.1"
+edition = "2024"
+authors = ["Will McCallion"]
+license = "Apache-2.0"
+repository = "https://github.com/willmccallion/strata"
+description = "Common utilities and configuration for Strata"
+
+[dependencies]
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+bincode.workspace = true
+rand.workspace = true
+ed25519-dalek = { version = "2.1", features = ["rand_core"], optional = true }
+sha2 = { workspace = true, optional = true }
+
+[features]
+default = []
+signing = ["dep:ed25519-dalek", "dep:sha2"]

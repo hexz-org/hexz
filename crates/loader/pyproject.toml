@@ -1,0 +1,36 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "strata"
+version = "0.2.0"
+description = "High-performance snapshot storage library with compression and encryption"
+authors = [{name = "Will"}]
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+    "Programming Language :: Python :: 3",
+]
+dependencies = []
+
+[project.optional-dependencies]
+numpy = ["numpy>=1.20"]
+torch = ["torch>=2.0"]
+test = ["pytest>=7.0", "pytest-asyncio>=0.21"]
+
+[tool.maturin]
+python-source = "python"
+module-name = "strata._strata_core"
+features = ["pyo3/extension-module"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "-v --tb=short"
+markers = [
+    "asyncio: mark a test as an asyncio test",
+]

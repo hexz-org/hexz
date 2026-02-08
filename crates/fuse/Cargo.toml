@@ -1,0 +1,18 @@
+[package]
+name = "strata-fuse"
+version = "0.0.1"
+edition = "2024"
+authors = ["Will McCallion"]
+license = "Apache-2.0"
+repository = "https://github.com/willmccallion/strata"
+description = "FUSE filesystem adapter for Strata snapshots"
+
+[dependencies]
+strata-core.workspace = true
+strata-common.workspace = true
+anyhow.workspace = true
+fuser = "0.14"
+libc = "0.2"
+tracing.workspace = true
+serde.workspace = true
+bincode.workspace = true

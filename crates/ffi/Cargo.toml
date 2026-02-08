@@ -1,0 +1,17 @@
+[package]
+name = "strata-ffi"
+version = "0.0.1"
+edition = "2024"
+authors = ["Will McCallion"]
+license = "Apache-2.0"
+repository = "https://github.com/willmccallion/strata"
+description = "C FFI bindings for Strata"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+strata-core.workspace = true
+strata-common.workspace = true
+anyhow.workspace = true
+libc = "0.2"

@@ -1,0 +1,19 @@
+[package]
+name = "strata-server"
+version = "0.0.1"
+edition = "2024"
+authors = ["Will McCallion"]
+license = "Apache-2.0"
+repository = "https://github.com/willmccallion/strata"
+description = "HTTP server for streaming Strata data blocks"
+
+[dependencies]
+strata-core.workspace = true
+strata-common.workspace = true
+axum = "0.7"
+tokio = { workspace = true, features = ["net", "io-util"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["fs", "trace"] }
+tracing.workspace = true
+anyhow.workspace = true
+bytes.workspace = true

@@ -1,0 +1,24 @@
+[package]
+name = "strata-loader"
+version = "0.0.1"
+edition = "2024"
+authors = ["Will McCallion"]
+license = "Apache-2.0"
+repository = "https://github.com/willmccallion/strata"
+description = "Python bindings for Strata - high-performance ML data loading"
+
+[lib]
+name = "_strata_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+strata-core = { workspace = true, features = ["async-http", "s3"] }
+strata-common = { workspace = true, features = ["signing"] }
+pyo3 = { version = "0.23", features = ["extension-module", "abi3-py38"] }
+pyo3-async-runtimes = { version = "0.23", features = ["tokio-runtime"] }
+tokio = { workspace = true, features = ["full"] }
+bincode.workspace = true
+sha2.workspace = true
+tempfile = "3.10"
+serde_json = "1.0"
+crc32fast = "1.3"

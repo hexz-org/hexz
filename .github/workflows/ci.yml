@@ -1,0 +1,156 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  # push:
+    # branches: [main, dev]
+  # pull_request:
+    # branches: [main, dev]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Format check ───────────────────────────────────────────────────────────
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  # ── Python Lint ─────────────────────────────────────────────────────────────
+  lint-python:
+    name: Python Lint (Ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install Ruff
+        run: pip install ruff
+      - name: Run Ruff
+        run: ruff check .
+
+  # ── Clippy ─────────────────────────────────────────────────────────────────
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libfuse-dev pkg-config
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # ── Cargo deny (licenses + advisories) ─────────────────────────────────────
+  deny:
+    name: Cargo Deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v1
+
+  # ── Rust tests ─────────────────────────────────────────────────────────────
+  test:
+    name: Test (${{ matrix.os }} / ${{ matrix.toolchain }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        toolchain: [stable, nightly]
+        include:
+          - os: macos-latest
+            toolchain: stable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfuse-dev pkg-config
+      - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install macfuse pkg-config || true
+      - run: cargo test --workspace
+
+  # ── Python tests ───────────────────────────────────────────────────────────
+  test-python:
+    name: Python Tests (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Testing minimum supported (3.10) through current
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libfuse-dev pkg-config
+      - name: Install maturin and build
+        run: |
+          pip install maturin pytest pytest-asyncio
+          cd crates/loader && maturin develop
+      - name: Run Python tests
+        run: cd crates/loader && pytest tests/ -v
+
+  # ── VM Boot Tests ──────────────────────────────────────────────────────────
+  test-vm:
+    name: VM Boot Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU and FUSE
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 libfuse-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Make script executable
+        run: chmod +x ./scripts/test_vm_boot.sh
+      - name: Run VM Boot Script
+        run: ./scripts/test_vm_boot.sh
+
+  # ── Build artifacts ────────────────────────────────────────────────────────
+  build:
+    name: Build (${{ matrix.os }})
+    # Now waits for all new tests to pass before building release artifacts
+    needs: [fmt, clippy, lint-python, test, test-python, test-vm]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfuse-dev pkg-config
+      - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install macfuse pkg-config || true
+      - run: cargo build --release --workspace
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: strata-${{ matrix.os }}
+          # Path assumes standard cargo layout; adjusted if your bin name differs
+          path: target/release/strata

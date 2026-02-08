@@ -1,0 +1,61 @@
+//! Compression Algorithm Micro-Benchmarks.
+//!
+//! This module measures the raw performance of compression and decompression
+//! operations for different codec implementations. It generates deterministic
+//! test data and measures throughput for both LZ4 and Zstd algorithms to
+//! guide codec selection based on workload characteristics.
+
+use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
+use strata_core::algo::compression::lz4::Lz4Compressor;
+use strata_core::algo::compression::Compressor;
+use strata_core::algo::compression::zstd::ZstdCompressor;
+
+/// Benchmarks compression and decompression performance for available codecs.
+///
+/// This function generates a 1MB test pattern, measures compression throughput
+/// for LZ4 and Zstd-3, and measures decompression throughput for LZ4. The results
+/// help determine which codec provides the best balance of compression ratio
+/// and decompression speed for filesystem workloads where read latency is critical.
+///
+/// # Arguments
+///
+/// * `c` - The Criterion benchmark context.
+fn bench_compression(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Compression");
+
+    let data_size = 1024 * 1024;
+    let mut data = Vec::with_capacity(data_size);
+    for i in 0..data_size {
+        data.push((i % 251) as u8);
+    }
+
+    group.throughput(Throughput::Bytes(data_size as u64));
+
+    group.bench_function("LZ4 Compress", |b| {
+        let compressor = Lz4Compressor::new();
+        b.iter(|| {
+            compressor.compress(black_box(&data)).unwrap();
+        })
+    });
+
+    group.bench_function("Zstd-3 Compress", |b| {
+        let compressor = ZstdCompressor::new(3);
+        b.iter(|| {
+            compressor.compress(black_box(&data)).unwrap();
+        })
+    });
+
+    let lz4 = Lz4Compressor::new();
+    let lz4_compressed = lz4.compress(&data).unwrap();
+
+    group.bench_function("LZ4 Decompress", |b| {
+        b.iter(|| {
+            lz4.decompress(black_box(&lz4_compressed)).unwrap();
+        })
+    });
+
+    group.finish();
+}
+
+criterion_group!(benches, bench_compression);
+criterion_main!(benches);
