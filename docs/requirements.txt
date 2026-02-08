@@ -1,0 +1,6 @@
+maturin 
+torch 
+pytest 
+pillow 
+numpy 
+tqdm

@@ -45,17 +45,29 @@ We use a Stable Main workflow.
    cd strata
    ```
 
-2. Build the Rust workspace to verify everything compiles:
-   ```bash
-   cargo build
-   cargo test --no-run
-   ```
-
-3. (Optional) Set up Python development environment for AI loader:
+2. (Reccomended) Set up Python development environment for AI loader:
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   pip install maturin torch pytest pillow numpy tqdm
+   pip install -r requirements.txt
+   ```
+
+3. Build the Rust workspace to verify everything compiles:
+   ```bash
+   rustup override set nightly
+
+   # Get Python version dynamically
+   PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+
+   # Get Python prefix (installation location)
+   PYTHON_PREFIX=$(python3 -c "import sys; print(sys.prefix)")
+
+   # Set PyO3 environment variables
+   export PYO3_PYTHON=$(which python3)
+   export RUSTFLAGS="-L ${PYTHON_PREFIX}/lib -l python${PYTHON_VERSION}"
+
+   cargo build
+   cargo test --no-run
    ```
 
 4. (Optional) Build the Python loader:
