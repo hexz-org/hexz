@@ -85,8 +85,8 @@ class MountPoint:
             if not os.path.exists(self.mount_point):
                 os.makedirs(self.mount_point)
 
-        # Start strata mount in background
-        cmd = [self.binary_path, "mount", self.snapshot_path, self.mount_point]
+        # Start strata vm mount in background (CLI uses strata vm mount)
+        cmd = [self.binary_path, "vm", "mount", self.snapshot_path, self.mount_point]
 
         self._process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE

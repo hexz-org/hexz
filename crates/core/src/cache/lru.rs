@@ -31,14 +31,16 @@ type CacheKey = (u8, u64);
 /// by caching hot blocks in memory, while sharding to minimize lock
 /// contention under concurrent access.
 ///
-/// **Constraints:** The total capacity is divided evenly across a fixed number
-/// of shards; workloads with highly skewed keys may see uneven utilization.
+/// **Constraints:** For capacity > SHARD_COUNT, total capacity is divided
+/// evenly across shards. For 0 < capacity <= SHARD_COUNT, a single shard is
+/// used so global LRU semantics and exact capacity are preserved.
 ///
 /// **Side effects:** Uses per-shard `Mutex`es, so high write or miss rates can
 /// introduce contention; memory usage grows with the number and size of cached
 /// blocks up to the configured capacity.
 pub struct BlockCache {
-    shards: Vec<Mutex<LruCache<CacheKey, Bytes>>>,
+    /// None = capacity 0 (no-op cache). Some = one or more shards.
+    shards: Option<Vec<Mutex<LruCache<CacheKey, Bytes>>>>,
 }
 
 /// Number of independent shards in the `BlockCache`.
@@ -50,6 +52,9 @@ pub struct BlockCache {
 /// **Constraints:** Must be a power-of-two-like small integer to keep shard
 /// sizing simple; changing it affects cache behavior and hit rate profiles.
 const SHARD_COUNT: usize = 16;
+
+/// Capacity below which we use a single shard for exact LRU and simpler behavior.
+const SINGLE_SHARD_CAPACITY_LIMIT: usize = 256;
 
 impl BlockCache {
     /// Constructs a new block cache with a target total capacity in entries.
@@ -64,12 +69,24 @@ impl BlockCache {
     /// **Side effects:** Allocates shard metadata and underlying LRU
     /// structures; no I/O is performed.
     pub fn with_capacity(capacity: usize) -> Self {
-        let shard_cap = NonZeroUsize::new((capacity / SHARD_COUNT).max(1)).unwrap();
-        let mut shards = Vec::with_capacity(SHARD_COUNT);
-        for _ in 0..SHARD_COUNT {
-            shards.push(Mutex::new(LruCache::new(shard_cap)));
+        if capacity == 0 {
+            return Self { shards: None };
         }
-        Self { shards }
+        let (num_shards, cap_per_shard) = if capacity <= SINGLE_SHARD_CAPACITY_LIMIT {
+            // Single shard so total capacity is exact and LRU is global
+            (1, NonZeroUsize::new(capacity).unwrap())
+        } else {
+            // Ceiling division so total capacity >= capacity
+            let cap_per = (capacity + SHARD_COUNT - 1) / SHARD_COUNT;
+            (SHARD_COUNT, NonZeroUsize::new(cap_per.max(1)).unwrap())
+        };
+        let mut shards = Vec::with_capacity(num_shards);
+        for _ in 0..num_shards {
+            shards.push(Mutex::new(LruCache::new(cap_per_shard)));
+        }
+        Self {
+            shards: Some(shards),
+        }
     }
 
     /// Selects the shard responsible for a given cache key.
@@ -80,12 +97,14 @@ impl BlockCache {
     /// **Constraints:** The hash function must remain deterministic within a
     /// process; changing it will reshuffle shard assignments and invalidate
     /// any intuitive reasoning about locality.
-    fn get_shard(&self, key: &CacheKey) -> &Mutex<LruCache<CacheKey, Bytes>> {
+    fn get_shard(&self, key: &CacheKey) -> Option<&Mutex<LruCache<CacheKey, Bytes>>> {
+        let shards = self.shards.as_ref()?;
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
         let mut hasher = DefaultHasher::new();
         key.hash(&mut hasher);
-        &self.shards[(hasher.finish() as usize) % SHARD_COUNT]
+        let idx = (hasher.finish() as usize) % shards.len();
+        Some(&shards[idx])
     }
 
     /// Looks up a decompressed block in the cache, if present.
@@ -101,7 +120,7 @@ impl BlockCache {
     /// clone the underlying `Bytes` buffer on a hit.
     pub fn get(&self, stream: SnapshotStream, block: u64) -> Option<Bytes> {
         let key = (stream as u8, block);
-        let shard = self.get_shard(&key);
+        let shard = self.get_shard(&key)?;
         shard.lock().ok()?.get(&key).cloned()
     }
 
@@ -118,9 +137,10 @@ impl BlockCache {
     /// used entry in the shard; the eviction policy is purely LRU.
     pub fn insert(&self, stream: SnapshotStream, block: u64, data: Bytes) {
         let key = (stream as u8, block);
-        let shard = self.get_shard(&key);
-        if let Ok(mut guard) = shard.lock() {
-            guard.put(key, data);
+        if let Some(shard) = self.get_shard(&key) {
+            if let Ok(mut guard) = shard.lock() {
+                guard.put(key, data);
+            }
         }
     }
 }

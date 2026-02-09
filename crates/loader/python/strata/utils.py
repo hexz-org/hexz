@@ -101,8 +101,46 @@ class Metadata:
         """Compression ratio (uncompressed / compressed)."""
         return self._data.get("ratio", 0.0)
 
+    def __getitem__(self, key: str) -> Any:
+        """Dict-like access for any metadata key (e.g. parent_path for thin snapshots)."""
+        return self._data[key]
+
     def __repr__(self) -> str:
         return f"Metadata(version={self.version}, compression={self.compression!r})"
+
+
+def merge_overlay(
+    base_path: PathLike,
+    overlay_path: PathLike,
+    output_path: PathLike,
+    *,
+    thin: bool = False,
+    block_size: int = 65536,
+    compression: str = "lz4",
+) -> None:
+    """Merge a copy-on-write overlay with a base snapshot into a new snapshot.
+
+    Args:
+        base_path: Path to the base .st snapshot
+        overlay_path: Path to the overlay data file
+        output_path: Path for the output .st snapshot
+        thin: If True, create a thin snapshot that references the base
+        block_size: Block size for the output (default 64K)
+        compression: Compression algorithm (default lz4)
+
+    Example:
+        >>> strata.merge_overlay("base.st", "overlay.bin", "merged.st")
+        >>> # Thin snapshot (references base for unmodified blocks)
+        >>> strata.merge_overlay("base.st", "overlay.bin", "thin.st", thin=True)
+    """
+    builder = _strata_core.StrataBuilder(
+        str(output_path),
+        block_size=block_size,
+        compression=compression,
+        compression_level=None,
+    )
+    builder.merge_overlay(str(base_path), str(overlay_path), thin)
+    builder.finalize()
 
 
 def inspect(path: PathLike) -> Metadata:

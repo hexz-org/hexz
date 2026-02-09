@@ -56,6 +56,7 @@ from .utils import (
     diff,
     verify,
     info,
+    merge_overlay,
     Metadata,
     AnalysisReport,
     FORMAT_VERSION,
@@ -153,6 +154,7 @@ __all__ = [
     "build",
     "PROFILES",
     "pack",
+    "merge_overlay",
     # VM
     "sign_image",
     "verify_image",

@@ -100,6 +100,7 @@ class StrataVMManager:
 
         cmd = [
             str(self.binary_path),
+            "vm",
             "install",
             "--iso",
             str(iso_path),
@@ -144,6 +145,7 @@ class StrataVMManager:
 
         cmd = [
             str(self.binary_path),
+            "vm",
             "boot",
             str(snapshot_path),
             "--ram",

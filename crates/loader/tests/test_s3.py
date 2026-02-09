@@ -2,11 +2,13 @@ import pytest
 import os
 import time
 import subprocess
-import boto3
 import socket
 import strata
 import shutil
 import sys
+
+pytest.importorskip("boto3")
+import boto3
 
 
 def get_free_port():
@@ -94,9 +96,8 @@ def test_async_s3_read(s3_server, s3_client, tmp_path):
     with open(local_data, "wb") as f:
         f.write(data)
 
-    with strata.SnapshotBuilder(local_snap) as builder:
-        builder.add_disk(local_data)
-        # Note: finalize() is called automatically by the context manager
+    with strata.open(local_snap, mode="w") as w:
+        w.add(local_data)
 
     # Read the generated snapshot bytes (the .st file) to upload to S3
     with open(local_snap, "rb") as f:
@@ -114,7 +115,7 @@ def test_async_s3_read(s3_server, s3_client, tmp_path):
 
     # 4. Verify Reads against ORIGINAL DATA
     # The reader returns logical data (uncompressed), so we compare against `data`
-    assert reader.size() == len(data)
+    assert reader.size == len(data)
 
     # Read header from logical disk
     header = reader.read_at(0, 4)

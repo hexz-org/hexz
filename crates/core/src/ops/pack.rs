@@ -223,7 +223,7 @@ impl Default for PackConfig {
 /// let entropy = calculate_entropy(&random);
 /// assert!(entropy > 7.0);
 /// ```
-fn calculate_entropy(data: &[u8]) -> f64 {
+pub fn calculate_entropy(data: &[u8]) -> f64 {
     if data.is_empty() {
         return 0.0;
     }

@@ -1,24 +1,34 @@
 #!/usr/bin/env bash
-
 set -e
+
+# Load common library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../../scripts/lib/common.sh"
+
+PROJECT_ROOT="$(get_project_root)"
+BIN="${BIN:-$PROJECT_ROOT/target/release/strata}"
 
 WORK_DIR="vm_test_work"
 IMAGE_RAW="${WORK_DIR}/disk.raw"
 IMAGE_SNAP="${WORK_DIR}/disk.st"
 MOUNT_DIR="${WORK_DIR}/mnt"
-BINARY="$(pwd)/target/release/snapfs"
 
-if [ ! -f "${IMAGE_RAW}" ] || [ ! -f "${IMAGE_SNAP}" ]; then
-    echo "Error: Run ./scripts/vm_test.sh first to create test images"
-    exit 1
+# Prerequisites
+check_cmd bc
+check_cmd qemu-system-x86_64
+
+if [[ ! -f "${IMAGE_RAW}" ]] || [[ ! -f "${IMAGE_SNAP}" ]]; then
+    fail "Error: Run ./scripts/vm_test.sh first to create test images"
 fi
+
+ensure_build "$BIN"
 
 mount_snapfs() {
     fusermount -u "${MOUNT_DIR}" 2>/dev/null || true
     FUSE_LOG="${WORK_DIR}/fuse_${1}.log"
     
     # Mount command
-    ${BINARY} mount "${2}" "${MOUNT_DIR}" > "${FUSE_LOG}" 2>&1 &
+    $BIN vm mount "${2}" "${MOUNT_DIR}" > "${FUSE_LOG}" 2>&1 &
     FUSE_PID=$!
     
     sleep 2
@@ -35,10 +45,11 @@ mount_snapfs() {
 
 unmount_snapfs() {
     local pid=$1
-    ${BINARY} unmount "${MOUNT_DIR}"
+    $BIN vm unmount "${MOUNT_DIR}"
     wait $pid 2>/dev/null || true
 }
 
+# --- Compression Stats ---
 RAW_SIZE=$(stat -c "%s" "${IMAGE_RAW}")
 SNAP_SIZE=$(stat -c "%s" "${IMAGE_SNAP}")
 COMPRESSION_RATIO=$(echo "scale=1; (1 - $SNAP_SIZE / $RAW_SIZE) * 100" | bc)
@@ -46,15 +57,14 @@ IO_SAVED=$(echo "scale=1; ($RAW_SIZE - $SNAP_SIZE) / 1024 / 1024" | bc)
 RAW_MB=$(echo "scale=1; $RAW_SIZE / 1024 / 1024" | bc)
 SNAP_MB=$(echo "scale=2; $SNAP_SIZE / 1024 / 1024" | bc)
 
-echo "Compression Ratio"
-echo "Raw: ${RAW_MB} MB"
-echo "SnapFS: ${SNAP_MB} MB"
-echo "Reduction: ${COMPRESSION_RATIO}% (${IO_SAVED} MB saved)"
+info "Compression Ratio"
+info "Raw: ${RAW_MB} MB"
+info "Strata: ${SNAP_MB} MB"
+info "Reduction: ${COMPRESSION_RATIO}% (${IO_SAVED} MB saved)"
 echo ""
 
-# NOTE: Updated file path from vm_disk.raw to 'disk' to match new layout
-
-echo "Test 1: Full Sequential Read"
+# --- Test 1: Full Sequential Read ---
+info "Test 1: Full Sequential Read"
 RAW_START=$(date +%s.%N)
 qemu-system-x86_64 \
     -kernel "${WORK_DIR}/vmlinuz" \
@@ -86,25 +96,21 @@ SNAP_DURATION=$(echo "$SNAP_END - $SNAP_START" | bc)
 unmount_snapfs $FUSE_PID
 
 DIFF1=$(echo "$SNAP_DURATION - $RAW_DURATION" | bc)
-echo "Raw: ${RAW_DURATION}s"
-echo "SnapFS: ${SNAP_DURATION}s"
+info "Raw: ${RAW_DURATION}s"
+info "Strata: ${SNAP_DURATION}s"
+# ... (Leaving rest of stats logic unchanged but using info/ok could be nice, keeping echo for now for simplicity of diff)
 if (( $(echo "$DIFF1 > 0" | bc -l) )); then
     OVERHEAD=$(echo "scale=1; ($DIFF1 / $RAW_DURATION) * 100" | bc)
-    echo "Overhead: +${DIFF1}s (+${OVERHEAD}%)"
+    warn "Overhead: +${DIFF1}s (+${OVERHEAD}%)"
 else
     SPEEDUP_S=$(echo "$RAW_DURATION - $SNAP_DURATION" | bc)
     SPEEDUP_PCT=$(echo "scale=1; ($SPEEDUP_S / $RAW_DURATION) * 100" | bc)
-    echo "Speedup: ${SPEEDUP_S}s (${SPEEDUP_PCT}%)"
+    ok "Speedup: ${SPEEDUP_S}s (${SPEEDUP_PCT}%)"
 fi
 echo ""
 
-# ... (Rest of the script follows similar pattern, updating paths to ${MOUNT_DIR}/disk) ...
-# I will output the rest of the updated compare_boot.sh in the next block if needed, 
-# but the key change is updating the binary path and the mount file path to 'disk'.
-
-# Below is the rest of the file with paths updated:
-
-if [ ! -f "${WORK_DIR}/initramfs-partial" ]; then
+# --- Test 2: Partial Read ---
+if [[ ! -f "${WORK_DIR}/initramfs-partial" ]]; then
     mkdir -p "${WORK_DIR}/initramfs_build"
     (
         cd "${WORK_DIR}/initramfs_build"
@@ -133,7 +139,7 @@ EOF
     rm -rf "${WORK_DIR}/initramfs_build"
 fi
 
-echo "Test 2: Partial Read (10MB)"
+info "Test 2: Partial Read (10MB)"
 RAW_PARTIAL_START=$(date +%s.%N)
 qemu-system-x86_64 \
     -kernel "${WORK_DIR}/vmlinuz" \
@@ -165,19 +171,20 @@ SNAP_PARTIAL_DURATION=$(echo "$SNAP_PARTIAL_END - $SNAP_PARTIAL_START" | bc)
 unmount_snapfs $FUSE_PID
 
 DIFF2=$(echo "$SNAP_PARTIAL_DURATION - $RAW_PARTIAL_DURATION" | bc)
-echo "Raw: ${RAW_PARTIAL_DURATION}s"
-echo "SnapFS: ${SNAP_PARTIAL_DURATION}s"
+info "Raw: ${RAW_PARTIAL_DURATION}s"
+info "Strata: ${SNAP_PARTIAL_DURATION}s"
 if (( $(echo "$DIFF2 > 0" | bc -l) )); then
     OVERHEAD=$(echo "scale=1; ($DIFF2 / $RAW_PARTIAL_DURATION) * 100" | bc)
-    echo "Overhead: +${DIFF2}s (+${OVERHEAD}%)"
+    warn "Overhead: +${DIFF2}s (+${OVERHEAD}%)"
 else
     SPEEDUP_S=$(echo "$RAW_PARTIAL_DURATION - $SNAP_PARTIAL_DURATION" | bc)
     SPEEDUP_PCT=$(echo "scale=1; ($SPEEDUP_S / $RAW_PARTIAL_DURATION) * 100" | bc)
-    echo "Speedup: ${SPEEDUP_S}s (${SPEEDUP_PCT}%)"
+    ok "Speedup: ${SPEEDUP_S}s (${SPEEDUP_PCT}%)"
 fi
 echo ""
 
-if [ ! -f "${WORK_DIR}/initramfs-random" ]; then
+# --- Test 3: Random Access ---
+if [[ ! -f "${WORK_DIR}/initramfs-random" ]]; then
     mkdir -p "${WORK_DIR}/initramfs_build"
     (
         cd "${WORK_DIR}/initramfs_build"
@@ -209,7 +216,7 @@ EOF
     rm -rf "${WORK_DIR}/initramfs_build"
 fi
 
-echo "Test 3: Random Access (10 blocks)"
+info "Test 3: Random Access (10 blocks)"
 RAW_RANDOM_START=$(date +%s.%N)
 qemu-system-x86_64 \
     -kernel "${WORK_DIR}/vmlinuz" \
@@ -241,21 +248,22 @@ SNAP_RANDOM_DURATION=$(echo "$SNAP_RANDOM_END - $SNAP_RANDOM_START" | bc)
 unmount_snapfs $FUSE_PID
 
 DIFF3=$(echo "$SNAP_RANDOM_DURATION - $RAW_RANDOM_DURATION" | bc)
-echo "Raw: ${RAW_RANDOM_DURATION}s"
-echo "SnapFS: ${SNAP_RANDOM_DURATION}s"
+info "Raw: ${RAW_RANDOM_DURATION}s"
+info "Strata: ${SNAP_RANDOM_DURATION}s"
 if (( $(echo "$DIFF3 > 0" | bc -l) )); then
     OVERHEAD=$(echo "scale=1; ($DIFF3 / $RAW_RANDOM_DURATION) * 100" | bc)
-    echo "Overhead: +${DIFF3}s (+${OVERHEAD}%)"
+    warn "Overhead: +${DIFF3}s (+${OVERHEAD}%)"
 else
     SPEEDUP_S=$(echo "$RAW_RANDOM_DURATION - $SNAP_RANDOM_DURATION" | bc)
     SPEEDUP_PCT=$(echo "scale=1; ($SPEEDUP_S / $RAW_RANDOM_DURATION) * 100" | bc)
-    echo "Speedup: ${SPEEDUP_S}s (${SPEEDUP_PCT}%)"
+    ok "Speedup: ${SPEEDUP_S}s (${SPEEDUP_PCT}%)"
 fi
 echo ""
 
-echo "Test 4: Gzip vs SnapFS (Reading 10MB from middle)"
+# --- Test 4: Gzip vs Strata ---
+info "Test 4: Gzip vs Strata (Reading 10MB from middle)"
 GZIP_FILE="${WORK_DIR}/disk.raw.gz"
-if [ ! -f "${GZIP_FILE}" ]; then
+if [[ ! -f "${GZIP_FILE}" ]]; then
     gzip -c "${IMAGE_RAW}" > "${GZIP_FILE}"
 fi
 GZIP_SIZE=$(stat -c "%s" "${GZIP_FILE}")
@@ -274,26 +282,27 @@ SNAP_GZIP_DURATION=$(echo "$SNAP_GZIP_END - $SNAP_GZIP_START" | bc)
 unmount_snapfs $FUSE_PID
 
 DIFF4=$(echo "$SNAP_GZIP_DURATION - $GZIP_DURATION" | bc)
-echo "Gzip (${GZIP_MB} MB, decompresses 0-110MB): ${GZIP_DURATION}s"
-echo "SnapFS (${SNAP_MB} MB, reads only blocks 100-110): ${SNAP_GZIP_DURATION}s"
+info "Gzip (${GZIP_MB} MB, decompresses 0-110MB): ${GZIP_DURATION}s"
+info "Strata (${SNAP_MB} MB, reads only blocks 100-110): ${SNAP_GZIP_DURATION}s"
 if (( $(echo "$DIFF4 > 0" | bc -l) )); then
     OVERHEAD=$(echo "scale=1; ($DIFF4 / $GZIP_DURATION) * 100" | bc)
-    echo "Overhead: +${DIFF4}s (+${OVERHEAD}%)"
+    warn "Overhead: +${DIFF4}s (+${OVERHEAD}%)"
 else
     SPEEDUP_S=$(echo "$GZIP_DURATION - $SNAP_GZIP_DURATION" | bc)
     SPEEDUP_PCT=$(echo "scale=1; ($SPEEDUP_S / $GZIP_DURATION) * 100" | bc)
-    echo "Speedup: ${SPEEDUP_S}s (${SPEEDUP_PCT}%)"
+    ok "Speedup: ${SPEEDUP_S}s (${SPEEDUP_PCT}%)"
 fi
 echo ""
 
-echo "Test 5: Sparse Access (10 scattered 64KB reads)"
+# --- Test 5: Sparse Access ---
+info "Test 5: Sparse Access (10 scattered 64KB reads)"
 SPARSE_RAW="${WORK_DIR}/sparse.raw"
 SPARSE_SNAP="${WORK_DIR}/sparse.st"
-if [ ! -f "${SPARSE_RAW}" ]; then
+if [[ ! -f "${SPARSE_RAW}" ]]; then
     dd if=/dev/urandom of="${SPARSE_RAW}" bs=1M count=500 status=none
 fi
-if [ ! -f "${SPARSE_SNAP}" ]; then
-    ${BINARY} create --disk "${SPARSE_RAW}" --output "${SPARSE_SNAP}" > /dev/null 2>&1
+if [[ ! -f "${SPARSE_SNAP}" ]]; then
+    $BIN data pack --disk "${SPARSE_RAW}" --output "${SPARSE_SNAP}" > /dev/null 2>&1
 fi
 SPARSE_RAW_SIZE=$(stat -c "%s" "${SPARSE_RAW}")
 SPARSE_SNAP_SIZE=$(stat -c "%s" "${SPARSE_SNAP}")
@@ -301,7 +310,7 @@ SPARSE_RAW_MB=$(echo "scale=1; $SPARSE_RAW_SIZE / 1024 / 1024" | bc)
 SPARSE_SNAP_MB=$(echo "scale=2; $SPARSE_SNAP_SIZE / 1024 / 1024" | bc)
 
 SPARSE_GZIP="${WORK_DIR}/sparse.raw.gz"
-if [ ! -f "${SPARSE_GZIP}" ]; then
+if [[ ! -f "${SPARSE_GZIP}" ]]; then
     gzip -c "${SPARSE_RAW}" > "${SPARSE_GZIP}"
 fi
 SPARSE_GZIP_SIZE=$(stat -c "%s" "${SPARSE_GZIP}")
@@ -324,22 +333,22 @@ SNAP_SPARSE_DURATION=$(echo "$SNAP_SPARSE_END - $SNAP_SPARSE_START" | bc)
 unmount_snapfs $FUSE_PID
 
 DIFF5=$(echo "$SNAP_SPARSE_DURATION - $GZIP_SPARSE_DURATION" | bc)
-echo "Gzip (${SPARSE_GZIP_MB} MB, decompresses 500MB each read): ${GZIP_SPARSE_DURATION}s"
-echo "SnapFS (${SPARSE_SNAP_MB} MB, reads only 10 blocks): ${SNAP_SPARSE_DURATION}s"
+info "Gzip (${SPARSE_GZIP_MB} MB, decompresses 500MB each read): ${GZIP_SPARSE_DURATION}s"
+info "Strata (${SPARSE_SNAP_MB} MB, reads only 10 blocks): ${SNAP_SPARSE_DURATION}s"
 if (( $(echo "$DIFF5 > 0" | bc -l) )); then
     OVERHEAD=$(echo "scale=1; ($DIFF5 / $GZIP_SPARSE_DURATION) * 100" | bc)
-    echo "Overhead: +${DIFF5}s (+${OVERHEAD}%)"
+    warn "Overhead: +${DIFF5}s (+${OVERHEAD}%)"
 else
     SPEEDUP_S=$(echo "$GZIP_SPARSE_DURATION - $SNAP_SPARSE_DURATION" | bc)
     SPEEDUP_PCT=$(echo "scale=1; ($SPEEDUP_S / $GZIP_SPARSE_DURATION) * 100" | bc)
-    echo "Speedup: ${SPEEDUP_S}s (${SPEEDUP_PCT}%)"
+    ok "Speedup: ${SPEEDUP_S}s (${SPEEDUP_PCT}%)"
 fi
 echo ""
 
-echo "Summary"
-echo "Test 1 (Sequential): Raw ${RAW_DURATION}s, SnapFS ${SNAP_DURATION}s"
-echo "Test 2 (Partial): Raw ${RAW_PARTIAL_DURATION}s, SnapFS ${SNAP_PARTIAL_DURATION}s"
-echo "Test 3 (Random): Raw ${RAW_RANDOM_DURATION}s, SnapFS ${SNAP_RANDOM_DURATION}s"
-echo "Test 4 (vs Gzip): Gzip ${GZIP_DURATION}s, SnapFS ${SNAP_GZIP_DURATION}s"
-echo "Test 5 (Sparse): Gzip ${GZIP_SPARSE_DURATION}s, SnapFS ${SNAP_SPARSE_DURATION}s"
-echo "Test 5 Compression: Raw ${SPARSE_RAW_MB} MB, SnapFS ${SPARSE_SNAP_MB} MB, Gzip ${SPARSE_GZIP_MB} MB"
+ok "Summary"
+echo "Test 1 (Sequential): Raw ${RAW_DURATION}s, Strata ${SNAP_DURATION}s"
+echo "Test 2 (Partial): Raw ${RAW_PARTIAL_DURATION}s, Strata ${SNAP_PARTIAL_DURATION}s"
+echo "Test 3 (Random): Raw ${RAW_RANDOM_DURATION}s, Strata ${SNAP_RANDOM_DURATION}s"
+echo "Test 4 (vs Gzip): Gzip ${GZIP_DURATION}s, Strata ${SNAP_GZIP_DURATION}s"
+echo "Test 5 (Sparse): Gzip ${GZIP_SPARSE_DURATION}s, Strata ${SNAP_SPARSE_DURATION}s"
+echo "Test 5 Compression: Raw ${SPARSE_RAW_MB} MB, Strata ${SPARSE_SNAP_MB} MB, Gzip ${SPARSE_GZIP_MB} MB"

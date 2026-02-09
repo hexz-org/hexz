@@ -116,6 +116,9 @@
 //!
 //! ## Thin Snapshots (Parent References)
 //!
+//! Thin snapshots store a path to a base snapshot in their header; opening the
+//! thin file automatically loads the parent when needed.
+//!
 //! ```no_run
 //! use strata_core::StrataFile;
 //! use strata_core::store::local::FileBackend;
@@ -123,15 +126,10 @@
 //! use std::sync::Arc;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Open base snapshot
-//! let base_backend = Arc::new(FileBackend::new("base.st".as_ref())?);
-//! let base_compressor = Box::new(Lz4Compressor::new());
-//! let base = Arc::new(StrataFile::new(base_backend, base_compressor, None)?);
-//!
-//! // Open thin snapshot that references base
+//! // Open thin snapshot (parent is loaded from header parent_path when present)
 //! let thin_backend = Arc::new(FileBackend::new("incremental.st".as_ref())?);
 //! let thin_compressor = Box::new(Lz4Compressor::new());
-//! let thin = StrataFile::new(thin_backend, thin_compressor, Some(base))?;
+//! let thin = StrataFile::new(thin_backend, thin_compressor, None)?;
 //!
 //! // Reading from thin automatically falls back to base for unchanged blocks
 //! let data = thin.read_at(strata_core::SnapshotStream::Disk, 0, 4096)?;

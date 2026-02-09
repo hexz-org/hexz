@@ -1,5 +1,5 @@
 import pytest
-from strata import open, AsyncStrataReader
+from strata import open, AsyncReader
 
 # List of URLs that must be blocked by the SSRF protection
 RESTRICTED_URLS = [
@@ -36,10 +36,11 @@ def test_ssrf_sync_blocked(url):
 @pytest.mark.parametrize("url", RESTRICTED_URLS)
 async def test_ssrf_async_blocked(url):
     """
-    Verify that the AsyncStrataReader rejects internal/private IPs.
+    Verify that the AsyncReader rejects internal/private IPs.
     """
     with pytest.raises(OSError) as excinfo:
-        await AsyncStrataReader.create(url)
+        async with AsyncReader(url) as reader:
+            await reader.read(1)
 
     error_msg = str(excinfo.value)
     assert "Access to internal/private IP denied" in error_msg

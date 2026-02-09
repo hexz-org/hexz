@@ -6,16 +6,16 @@ import pickle
 
 def test_analyze(raw_data_path):
     stats = strata.analyze(raw_data_path)
-    assert "unique_bytes" in stats
-    assert "predicted_ratio" in stats
-    # Random data -> low compressibility/high unique bytes usually, but we check keys exist
+    assert hasattr(stats, "unique_bytes")
+    assert hasattr(stats, "predicted_ratio")
+    assert getattr(stats, "unique_bytes", None) is not None
 
 
 def test_inspect(base_snap_path):
     meta = strata.inspect(base_snap_path)
-    assert meta["version"] == 1
-    assert meta["compression"] is not None
-    assert meta["disk_size"] == 1024 * 1024
+    assert meta.version == 1
+    assert meta.compression is not None
+    assert meta.disk_size == 1024 * 1024
 
 
 def test_read_random_access(base_snap_path, raw_data_path):

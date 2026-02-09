@@ -31,8 +31,8 @@ def raw_data_path(test_dir):
 def base_snap_path(test_dir, raw_data_path):
     """Create a base snapshot."""
     snap_path = os.path.join(test_dir, "test_base.st")
-    with strata.SnapshotBuilder(snap_path, compression="lz4") as builder:
-        builder.add_disk(raw_data_path)
+    with strata.open(snap_path, mode="w", compression="lz4") as w:
+        w.add(raw_data_path)
     return snap_path
 
 

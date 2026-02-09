@@ -42,28 +42,33 @@ header = reader.read(100)
 
 ### Async IO
 
-Asynchronous support for integration with `asyncio`.
+Use the async context manager for asyncio integration.
 
 ```python
 import asyncio
 import strata
 
 async def main():
-    reader = await strata.AsyncStrataReader.create("path/to/snapshot.st")
-    data = await reader.read_at(0, 1024)
+    async with strata.AsyncReader("path/to/snapshot.st") as reader:
+        data = await reader.read_at(0, 1024)
 
 asyncio.run(main())
 ```
 
 ### Creating Snapshots
 
-Create a new snapshot from a raw disk image.
+Create a new snapshot from files or in-memory data.
 
 ```python
 import strata
 
-with strata.SnapshotBuilder("output.st", compression="lz4") as builder:
-    builder.add_disk("source_disk.raw")
+# From a file
+with strata.open("output.st", mode="w", compression="lz4") as w:
+    w.add("source_disk.raw")
+
+# Or use the Writer directly with add_file / add_bytes
+with strata.Writer("output.st", compression="lz4") as w:
+    w.add("source_disk.raw")
 ```
 
 ### Mounting

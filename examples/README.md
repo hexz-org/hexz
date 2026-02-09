@@ -10,6 +10,8 @@ Demonstrates how to use `strata.Dataset` with PyTorch for high-performance train
   - `create_dataset.py`: Generates a dummy dataset (`dataset.st`) with variable-length items and an index file (`dataset.idx`).
   - `train.py`: Loads the dataset using `strata.Dataset` (with caching & prefetching) and iterates via `torch.utils.data.DataLoader`.
 
+- **Requires:** PyTorch (`pip install torch` or `pip install -e ".[torch]"` from `crates/loader`).
+
 - **Run:**
   ```bash
   cd examples/ml_training
@@ -41,4 +43,20 @@ Demonstrates `strata.build` with custom overrides for fine-tuned control.
   ```bash
   cd examples/advanced_build
   python3 build_with_profiles.py
+  ```
+
+## 4. Benchmarks (`examples/benchmarks/`)
+
+Performance testing and data generation scripts.
+
+- **Files:**
+  - `boot_performance.sh`: Measures VM boot times under various conditions.
+  - `compression_ratio.sh`: Analyzes compression efficiency.
+  - `large_scale.sh`: Runs large-scale system tests.
+  - `gen_json_logs.py` / `gen_mixed_data.py`: Utilities for generating synthetic test data.
+
+- **Run:**
+  ```bash
+  cd examples/benchmarks
+  ./boot_performance.sh
   ```

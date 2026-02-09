@@ -80,6 +80,17 @@ class Reader:
         """
         return self._reader.read_at(offset, size)
 
+    def readinto(self, buffer: bytearray) -> int:
+        """Read bytes into a writable buffer (zero-copy where possible).
+
+        Args:
+            buffer: Writable buffer (e.g. bytearray) to fill
+
+        Returns:
+            Number of bytes read
+        """
+        return self._reader.readinto(buffer)
+
     def read_range(self, start: int, end: int) -> bytes:
         """Read byte range [start, end).
 
@@ -170,12 +181,14 @@ class Reader:
         raise TypeError("indices must be slices")
 
     def __getstate__(self) -> Dict[str, Any]:
-        """Support for pickle serialization."""
-        return self._reader.__getstate__()
+        """Support for pickle serialization (path + position)."""
+        return {"path": self._path, "position": self.tell()}
 
     def __setstate__(self, state: Dict[str, Any]) -> None:
         """Support for pickle deserialization."""
-        self._reader.__setstate__(state)
+        self._path = state["path"]
+        self._reader = _strata_core.StrataReader(self._path)
+        self._reader.seek(state.get("position", 0), 0)
 
     def __repr__(self) -> str:
         return f"Reader({self._path!r})"
@@ -184,121 +197,95 @@ class Reader:
 class AsyncReader:
     """Async reader for Strata snapshots.
 
-    Provides the same interface as Reader but with async/await support.
+    Use as an async context manager; the snapshot is opened when you enter the context.
 
     Example:
         >>> async with strata.AsyncReader("dataset.st") as reader:
         ...     data = await reader.read(4096)
-        ...     async for chunk in reader:
-        ...         process(chunk)
+        ...     chunk = await reader.read_at(0, 100)
     """
 
     def __init__(
         self,
         path: PathLike,
         *,
-        cache_size: Optional[str] = None,
         s3_region: Optional[str] = None,
         endpoint_url: Optional[str] = None,
         allow_restricted: bool = False,
     ):
-        """Open a Strata snapshot for async reading.
+        """Create an async reader (opens on entering the context).
 
         Args:
             path: Path or URL to the snapshot file
-            cache_size: Cache size (e.g., "512M", "1G")
             s3_region: AWS region for S3 URLs
             endpoint_url: Custom S3 endpoint URL
             allow_restricted: Allow connections to private/internal IPs
         """
         self._path = str(path)
-        self._reader = _strata_core.AsyncStrataReader(
-            self._path,
-            s3_region=s3_region,
-            endpoint_url=endpoint_url,
-            allow_restricted=allow_restricted,
-        )
-        # TODO: Wire up cache_size to Rust config
-        self._chunk_size = 1024 * 1024  # 1MB default
+        self._s3_region = s3_region
+        self._endpoint_url = endpoint_url
+        self._allow_restricted = allow_restricted
+        self._reader: Optional[Any] = None
 
-    async def read(self, size: int = -1) -> bytes:
-        """Async read bytes from current position.
+    async def __aenter__(self) -> "AsyncReader":
+        """Open the snapshot; use as async with strata.AsyncReader(path) as reader."""
+        self._reader = await _strata_core.AsyncStrataReader.create(
+            self._path,
+            s3_region=self._s3_region,
+            endpoint_url=self._endpoint_url,
+            allow_restricted=self._allow_restricted,
+        )
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Exit the context (no-op; Rust reader has no explicit close)."""
+        pass
+
+    def _ensure_open(self) -> None:
+        if self._reader is None:
+            raise RuntimeError(
+                "AsyncReader must be used as async with strata.AsyncReader(path) as reader"
+            )
+
+    def size(self) -> int:
+        """Size of the disk stream in bytes."""
+        self._ensure_open()
+        return self._reader.size()
+
+    async def read(self, size: Optional[int] = None) -> bytes:
+        """Read bytes from current position.
 
         Args:
-            size: Number of bytes to read (-1 for all)
+            size: Number of bytes to read (None for all remaining)
 
         Returns:
             Bytes read from the snapshot
         """
+        self._ensure_open()
         return await self._reader.read(size)
 
-    async def read_at(self, offset: int, size: int) -> bytes:
-        """Async read bytes at a specific offset.
+    async def read_at(self, offset: int, length: int) -> bytes:
+        """Read bytes at a specific offset.
 
         Args:
             offset: Byte offset to read from
-            size: Number of bytes to read
+            length: Number of bytes to read
 
         Returns:
             Bytes read from the snapshot
         """
-        return await self._reader.read_at(offset, size)
+        self._ensure_open()
+        return await self._reader.read_at(offset, length)
 
-    async def iter_chunks(self, chunk_size: int = 1024 * 1024):
-        """Async iterate over the snapshot in fixed-size chunks.
+    async def seek(self, offset: int, whence: int = 0) -> int:
+        """Seek to a position. Returns new position."""
+        self._ensure_open()
+        return await self._reader.seek(offset, whence)
 
-        Args:
-            chunk_size: Size of each chunk in bytes (default 1MB)
-
-        Yields:
-            Bytes chunks from the snapshot
-        """
-        offset = 0
-        # For now, we'll need to get size from somewhere
-        # This requires AsyncStrataReader to expose a size method
-        # TODO: Add size() method to AsyncStrataReader in Rust
-        raise NotImplementedError("Async chunk iteration requires size() method")
-
-    async def close(self) -> None:
-        """Async close the snapshot and release resources."""
-        await self._reader.close()
-
-    async def __aenter__(self):
-        """Async context manager entry."""
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
-        await self.close()
-
-    def __aiter__(self):
-        """Async iteration support."""
-        return self
-
-    async def __anext__(self) -> bytes:
-        """Async iteration: yield chunks of data.
-
-        Yields:
-            Chunks of data from the snapshot
-        """
-        if not hasattr(self, "_iter_offset"):
-            self._iter_offset = 0
-
-        # Get total size (we need to cache this to avoid async issues)
-        if not hasattr(self, "_total_size"):
-            # Assume AsyncStrataReader has a size() method similar to StrataReader
-            # For now, we'll need to implement this properly
-            raise NotImplementedError(
-                "Async iteration requires size() method on AsyncStrataReader"
-            )
-
-        if self._iter_offset >= self._total_size:
-            raise StopAsyncIteration
-
-        size = min(self._chunk_size, self._total_size - self._iter_offset)
-        chunk = await self.read_at(self._iter_offset, size)
-        self._iter_offset += size
-        return chunk
+    def tell(self) -> int:
+        """Current read position."""
+        self._ensure_open()
+        return self._reader.tell()
 
     def __repr__(self) -> str:
         return f"AsyncReader({self._path!r})"

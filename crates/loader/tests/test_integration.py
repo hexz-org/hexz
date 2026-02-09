@@ -31,8 +31,8 @@ def sample_snapshot(temp_dir):
     with open(data_path, "wb") as f:
         f.write(data)
 
-    with strata.SnapshotBuilder(snap_path) as builder:
-        builder.add_disk(data_path)
+    with strata.open(snap_path, mode="w") as w:
+        w.add(data_path)
 
     return snap_path, data
 
@@ -54,8 +54,8 @@ def test_tarfile_integration(temp_dir):
 
     # 2. Wrap it in a Strata snapshot
     snap_path = os.path.join(temp_dir, "archive.st")
-    with strata.SnapshotBuilder(snap_path) as builder:
-        builder.add_disk(tar_source)
+    with strata.open(snap_path, mode="w") as w:
+        w.add(tar_source)
 
     # 3. Open snapshot via StrataReader and pass to tarfile
     reader = strata.open(snap_path)
@@ -160,7 +160,7 @@ def test_http_backend(sample_snapshot):
         # allow_restricted=True is required for localhost IPs
         reader = strata.open(url, allow_restricted=True)
 
-        assert reader.size() == len(raw_data)
+        assert reader.size == len(raw_data)
 
         # Read start (triggers Range: bytes=0-3)
         assert reader.read_at(0, 4) == raw_data[:4]
@@ -189,8 +189,7 @@ def test_overlay_commit(sample_snapshot, temp_dir):
         f.write((0).to_bytes(8, byteorder="little"))
 
     # 2. Commit the overlay
-    with strata.SnapshotBuilder(final_path) as builder:
-        builder.merge_overlay(base_path, overlay_path)
+    strata.merge_overlay(base_path, overlay_path, final_path)
 
     # 3. Verify
     reader = strata.open(final_path)
@@ -210,10 +209,8 @@ def test_thin_snapshot(sample_snapshot, temp_dir):
     open(overlay_path, "wb").close()
     open(meta_path, "wb").close()
 
-    # Create thin snapshot
-    with strata.SnapshotBuilder(thin_path) as builder:
-        # thin=True tells builder to reference base for unmodified blocks
-        builder.merge_overlay(base_path, overlay_path, thin=True)
+    # Create thin snapshot (references base for unmodified blocks)
+    strata.merge_overlay(base_path, overlay_path, thin_path, thin=True)
 
     # Verify inspection shows parent
     info = strata.inspect(thin_path)
@@ -236,7 +233,8 @@ def test_mount(sample_snapshot, temp_dir):
         pytest.skip("strata binary not found")
 
     try:
-        with strata.mount(snap_path) as mountpoint:
+        with strata.mount(snap_path) as mp:
+            mountpoint = mp.path
             assert os.path.exists(mountpoint)
             assert os.path.exists(os.path.join(mountpoint, "disk"))
 

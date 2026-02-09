@@ -42,8 +42,16 @@ MISSING=()
 command -v pkg-config &>/dev/null || MISSING+=("pkg-config")
 
 if [[ "$(uname)" == "Linux" ]]; then
-    if ! dpkg -s libfuse-dev &>/dev/null 2>&1; then
-        MISSING+=("libfuse-dev")
+    if command -v pacman &>/dev/null; then
+        if ! pacman -Q fuse3 &>/dev/null; then
+            MISSING+=("fuse3")
+        fi
+    elif command -v dpkg &>/dev/null; then
+        if ! dpkg -s libfuse-dev &>/dev/null 2>&1; then
+            MISSING+=("libfuse-dev")
+        fi
+    else
+        warn "Could not detect package manager (pacman/dpkg). Skipping detailed dependency checks."
     fi
 elif [[ "$(uname)" == "Darwin" ]]; then
     if ! brew list macfuse &>/dev/null 2>&1; then
@@ -53,7 +61,10 @@ fi
 
 if [[ ${#MISSING[@]} -gt 0 ]]; then
     warn "Missing system packages: ${MISSING[*]}"
-    if [[ "$(uname)" == "Linux" ]] && command -v apt-get &>/dev/null; then
+    if command -v pacman &>/dev/null; then
+        info "Installing via pacman…"
+        sudo pacman -S --needed --noconfirm "${MISSING[@]}"
+    elif [[ "$(uname)" == "Linux" ]] && command -v apt-get &>/dev/null; then
         info "Installing via apt-get…"
         sudo apt-get update && sudo apt-get install -y "${MISSING[@]}"
     else
@@ -71,7 +82,7 @@ fi
 source .venv/bin/activate
 
 pip install --quiet --upgrade pip
-pip install --quiet pytest pytest-asyncio numpy maturin
+pip install --quiet pytest pytest-asyncio numpy maturin torch
 
 # ── Build check ──────────────────────────────────────────────────────────────
 info "Verifying Rust workspace compiles…"

@@ -92,7 +92,7 @@ test-rust:
 
 test-python:
 	@printf "$(GREEN)Running Python tests…$(RESET)\n"
-	cd $(LOADER_CRATE) && $(MATURIN) develop && pytest tests/ -v
+	cd $(LOADER_CRATE) && $(MATURIN) develop -E test,numpy && .venv/bin/python -m pytest tests/ -v
 
 test-integration:
 	@printf "$(GREEN)Running integration tests…$(RESET)\n"
