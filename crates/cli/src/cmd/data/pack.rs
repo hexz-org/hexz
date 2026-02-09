@@ -23,6 +23,7 @@ pub fn run(
     min_chunk: u32,
     avg_chunk: u32,
     max_chunk: u32,
+    silent: bool,
 ) -> Result<()> {
     // Get password if encryption is enabled
     let password = if encrypt {
@@ -44,11 +45,16 @@ pub fn run(
     };
 
     // Create progress bar
-    let pb = create_progress_bar(total_size);
-    let pb = Arc::new(Mutex::new(pb));
+    let pb = if !silent {
+        let pb = create_progress_bar(total_size);
+        let pb = Arc::new(Mutex::new(pb));
+        Some(pb)
+    } else {
+        None
+    };
     let pb_clone = pb.clone();
 
-    if train_dict {
+    if train_dict && !silent {
         println!("Training compression dictionary...");
     }
 
@@ -72,16 +78,22 @@ pub fn run(
     pack_snapshot(
         config,
         Some(move |current, _total| {
-            if let Ok(pb) = pb_clone.lock() {
-                pb.set_position(current);
+            if let Some(ref pb) = pb_clone {
+                if let Ok(pb) = pb.lock() {
+                    pb.set_position(current);
+                }
             }
         }),
     )?;
 
-    if let Ok(pb) = pb.lock() {
-        pb.finish_with_message("Done");
+    if let Some(ref pb) = pb {
+        if let Ok(pb) = pb.lock() {
+            pb.finish_with_message("Done");
+        }
     }
 
-    println!("Archive created: {:?}", output);
+    if !silent {
+        println!("Archive created: {:?}", output);
+    }
     Ok(())
 }

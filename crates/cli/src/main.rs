@@ -21,6 +21,7 @@ fn main() -> anyhow::Result<()> {
                 min_chunk,
                 avg_chunk,
                 max_chunk,
+                silent,
             } => strata_cli::cmd::data::pack::run(
                 disk,
                 memory,
@@ -33,6 +34,7 @@ fn main() -> anyhow::Result<()> {
                 min_chunk,
                 avg_chunk,
                 max_chunk,
+                silent,
             ),
 
             DataCommands::Info { snap, json } => strata_cli::cmd::data::info::run(snap, json),

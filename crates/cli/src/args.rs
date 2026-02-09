@@ -81,6 +81,10 @@ pub enum DataCommands {
         /// Maximum chunk size for CDC
         #[arg(long, default_value_t = 131072)]
         max_chunk: u32,
+
+        /// Suppress all output and progress bars
+        #[arg(long, short)]
+        silent: bool,
     },
 
     /// Inspect archive metadata

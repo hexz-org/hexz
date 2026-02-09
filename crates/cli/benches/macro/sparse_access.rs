@@ -49,6 +49,7 @@ fn setup_benchmark(size: usize) -> (NamedTempFile, NamedTempFile) {
         16384,  // min_chunk
         65536,  // avg_chunk
         131072, // max_chunk
+        true,   // silent
     )
     .unwrap();
 

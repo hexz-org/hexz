@@ -116,6 +116,7 @@ pub fn run(
         16384,
         65536,
         131072,
+        false,
     )?;
 
     println!("Cleanup complete.");

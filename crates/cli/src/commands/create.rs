@@ -19,6 +19,7 @@ pub fn run(
     min_chunk: u32,
     avg_chunk: u32,
     max_chunk: u32,
+    silent: bool,
 ) -> Result<()> {
     // Get password if encryption is enabled
     let password = if encrypt {
@@ -40,19 +41,22 @@ pub fn run(
     };
 
     // Create progress bar
-    let pb = ProgressBar::new(total_size);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template("[{elapsed_precise}] {bar:40} {bytes}/{total_bytes} ({eta})")
-            .unwrap()
-            .progress_chars("=>-"),
-    );
+    let pb = if !silent {
+        let pb = ProgressBar::new(total_size);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("[{elapsed_precise}] {bar:40} {bytes}/{total_bytes} ({eta})")
+                .unwrap()
+                .progress_chars("=>-"),
+        );
+        Some(Arc::new(Mutex::new(pb)))
+    } else {
+        None
+    };
 
-    // Wrap progress bar in Arc<Mutex> for thread-safe access
-    let pb = Arc::new(Mutex::new(pb));
     let pb_clone = pb.clone();
 
-    if train_dict {
+    if train_dict && !silent {
         println!("Training compression dictionary...");
     }
 
@@ -76,16 +80,22 @@ pub fn run(
     pack_snapshot(
         config,
         Some(move |current, _total| {
-            if let Ok(pb) = pb_clone.lock() {
-                pb.set_position(current);
+            if let Some(ref pb) = pb_clone {
+                if let Ok(pb) = pb.lock() {
+                    pb.set_position(current);
+                }
             }
         }),
     )?;
 
-    if let Ok(pb) = pb.lock() {
-        pb.finish_with_message("Done");
+    if let Some(ref pb) = pb {
+        if let Ok(pb) = pb.lock() {
+            pb.finish_with_message("Done");
+        }
     }
 
-    println!("Snapshot created at {:?}", output);
+    if !silent {
+        println!("Snapshot created at {:?}", output);
+    }
     Ok(())
 }

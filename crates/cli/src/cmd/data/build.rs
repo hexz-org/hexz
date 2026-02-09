@@ -54,5 +54,6 @@ pub fn run(
         16384,  // min_chunk default
         65536,  // avg_chunk default
         131072, // max_chunk default
+        false,  // silent
     )
 }
