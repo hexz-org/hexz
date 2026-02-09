@@ -14,19 +14,17 @@
 //!    code is checked before assuming the buffer is valid.
 //!
 //! 2. **Buffer lifetime**: The `BufferInfo` struct owns the `Py_buffer`
-//!    and MUST be released via `release_buffer()` before the Python
-//!    object it references is dropped. Failure to release causes a
-//!    resource leak (but not UB, since CPython handles this gracefully).
+//!    and will automatically release it when dropped.
 //!
 //! 3. **Pointer validity**: The `buf` pointer in `Py_buffer` is valid
 //!    for `len` bytes as long as the buffer view is held. We never
 //!    access beyond `len` bytes.
 //!
 //! 4. **Thread safety**: Buffer operations must occur while the GIL is
-//!    held, which PyO3 guarantees for all `Python<'_>` methods. The
-//!    actual data copy in `copy_to_buffer` may occur after GIL release,
-//!    but only with data already read from the snapshot (not the buffer
-//!    pointer itself — we capture the pointer while GIL is held).
+//!    held. The actual data copy in `copy_to_buffer` may occur after
+//!    GIL release, but only with data already read from the snapshot
+//!    (not the buffer pointer itself — we capture the pointer while GIL
+//!    is held).
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -131,7 +129,7 @@ pub fn acquire_writable_buffer(obj: &Bound<'_, PyAny>) -> PyResult<BufferInfo> {
 /// # Safety
 ///
 /// The caller must ensure:
-/// - `buf` was acquired via `acquire_writable_buffer` and has not been released.
+/// - `buf` was acquired via `acquire_writable_buffer`.
 /// - `data.len() <= buf.len` (this function clamps to `buf.len` as a defensive measure).
 /// - The GIL is held (guaranteed by PyO3 when called from a `#[pymethods]` context).
 pub unsafe fn copy_to_buffer(buf: &BufferInfo, data: &[u8]) {
@@ -145,14 +143,12 @@ pub unsafe fn copy_to_buffer(buf: &BufferInfo, data: &[u8]) {
     }
 }
 
-/// Releases a previously acquired buffer view.
-///
-/// This MUST be called for every successful `acquire_writable_buffer`,
-/// even if the operation that uses the buffer fails.
-pub fn release_buffer(mut buf: BufferInfo) {
-    // SAFETY: We are releasing a buffer that was successfully acquired.
-    // PyBuffer_Release is idempotent and safe to call once per acquisition.
-    unsafe {
-        PyBuffer_Release(&mut buf.view);
+impl Drop for BufferInfo {
+    fn drop(&mut self) {
+        // SAFETY: We must hold the GIL to release the buffer view because it involves
+        // decrementing Python object reference counts.
+        Python::with_gil(|_py| unsafe {
+            PyBuffer_Release(&mut self.view);
+        });
     }
 }

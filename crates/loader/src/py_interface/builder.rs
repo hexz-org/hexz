@@ -25,17 +25,25 @@ use strata_core::store::local::FileBackend;
 pub struct StrataBuilder {
     block_size: u32,
     compression: String,
+    compression_level: Option<i32>,
     current_offset: u64,
     master: MasterIndex,
     writer: Option<File>,
     parent_path: Option<String>,
+    disk_blocks_count: u64,
+    memory_blocks_count: u64,
 }
 
 #[pymethods]
 impl StrataBuilder {
     #[new]
-    #[pyo3(signature = (output_path, block_size=65536, compression="lz4"))]
-    pub fn new(output_path: String, block_size: u32, compression: &str) -> PyResult<Self> {
+    #[pyo3(signature = (output_path, block_size=65536, compression="lz4", compression_level=None))]
+    pub fn new(
+        output_path: String,
+        block_size: u32,
+        compression: &str,
+        compression_level: Option<i32>,
+    ) -> PyResult<Self> {
         let path = PathBuf::from(output_path);
         let mut f = File::create(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
 
@@ -46,10 +54,13 @@ impl StrataBuilder {
         Ok(StrataBuilder {
             block_size,
             compression: compression.to_string(),
+            compression_level,
             current_offset: HEADER_SIZE as u64,
             master: MasterIndex::default(),
             writer: Some(f),
             parent_path: None,
+            disk_blocks_count: 0,
+            memory_blocks_count: 0,
         })
     }
 
@@ -114,8 +125,12 @@ impl StrataBuilder {
         let final_size = std::cmp::max(base_size, ov_len);
         self.master.disk_size = final_size;
 
+        let compression_level = self.compression_level;
         let write_compressor: Box<dyn Compressor> = match comp_str.as_str() {
-            "zstd" => Box::new(ZstdCompressor::new(DEFAULT_ZSTD_LEVEL, None)),
+            "zstd" => Box::new(ZstdCompressor::new(
+                compression_level.unwrap_or(DEFAULT_ZSTD_LEVEL),
+                None,
+            )),
             _ => Box::new(Lz4Compressor::new()),
         };
 
@@ -343,6 +358,7 @@ impl StrataBuilder {
     fn process_stream(&mut self, py: Python, path: String, is_disk: bool) -> PyResult<()> {
         let block_size = self.block_size as usize;
         let comp_str = self.compression.clone();
+        let compression_level = self.compression_level;
 
         let mut f_in = File::open(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
         let len = f_in
@@ -350,14 +366,22 @@ impl StrataBuilder {
             .map_err(|e| PyIOError::new_err(e.to_string()))?
             .len();
 
-        if is_disk {
-            self.master.disk_size = len;
+        let start_logical_pos = if is_disk {
+            self.master.disk_size
         } else {
-            self.master.memory_size = len;
-        }
+            self.master.memory_size
+        };
+        let start_block_idx = if is_disk {
+            self.disk_blocks_count
+        } else {
+            self.memory_blocks_count
+        };
 
         let compressor: Box<dyn Compressor> = match comp_str.as_str() {
-            "zstd" => Box::new(ZstdCompressor::new(DEFAULT_ZSTD_LEVEL, None)),
+            "zstd" => Box::new(ZstdCompressor::new(
+                compression_level.unwrap_or(DEFAULT_ZSTD_LEVEL),
+                None,
+            )),
             _ => Box::new(Lz4Compressor::new()),
         };
 
@@ -367,15 +391,17 @@ impl StrataBuilder {
             .ok_or_else(|| PyValueError::new_err("Writer closed"))?;
         let mut current_offset = self.current_offset;
 
-        let (pages, new_offset, out_file) =
-            py.allow_threads(move || -> PyResult<(Vec<PageEntry>, u64, File)> {
+        // Return: (pages, new_offset, out_file, added_blocks)
+        let (pages, new_offset, out_file, added_blocks) =
+            py.allow_threads(move || -> PyResult<(Vec<PageEntry>, u64, File, u64)> {
                 let mut buf = vec![0u8; block_size];
                 let mut pages = Vec::new();
                 let mut page = IndexPage::default();
-                let mut global_block_idx = 0;
-                let mut page_start_block = 0;
-                let mut page_start_logical = 0u64;
-                let mut current_logical_pos = 0u64;
+                let mut global_block_idx = start_block_idx;
+                let mut page_start_block = start_block_idx;
+                let mut page_start_logical = start_logical_pos;
+                let mut current_logical_pos = start_logical_pos;
+                let mut blocks_added = 0u64;
 
                 loop {
                     let n = f_in
@@ -414,6 +440,7 @@ impl StrataBuilder {
                     }
 
                     global_block_idx += 1;
+                    blocks_added += 1;
                     current_logical_pos += n as u64;
 
                     if page.blocks.len() >= ENTRIES_PER_PAGE {
@@ -448,16 +475,20 @@ impl StrataBuilder {
                     });
                 }
 
-                Ok((pages, current_offset, out))
+                Ok((pages, current_offset, out, blocks_added))
             })?;
 
         self.writer = Some(out_file);
         self.current_offset = new_offset;
 
         if is_disk {
-            self.master.disk_pages = pages;
+            self.master.disk_pages.extend(pages);
+            self.master.disk_size += len;
+            self.disk_blocks_count += added_blocks;
         } else {
-            self.master.memory_pages = pages;
+            self.master.memory_pages.extend(pages);
+            self.master.memory_size += len;
+            self.memory_blocks_count += added_blocks;
         }
 
         Ok(())

@@ -122,12 +122,12 @@ impl StrataReader {
                 unsafe {
                     tensor::numpy::copy_to_buffer(&buf_info, &data);
                 }
-                tensor::numpy::release_buffer(buf_info);
+                // buf_info dropped here automatically
                 *cursor += data.len() as u64;
                 Ok(data.len())
             }
             Err(e) => {
-                tensor::numpy::release_buffer(buf_info);
+                // buf_info dropped here automatically
                 Err(PyIOError::new_err(e.to_string()))
             }
         }
@@ -170,6 +170,23 @@ impl StrataReader {
     fn fileno(&self) -> PyResult<i32> {
         Err(PyOSError::new_err("StrataReader is a virtual file stream"))
     }
+
+    fn metadata(&self, py: Python<'_>) -> PyResult<PyObject> {
+        // Delegate to the inspect function to get metadata
+        use pyo3::types::PyDict;
+
+        // Call the inspect function from ops module
+        let meta = super::ops::inspect(py, self.path.clone())?;
+
+        // Convert HashMap to PyDict
+        let dict = PyDict::new(py);
+        for (key, value) in meta {
+            dict.set_item(key, value)?;
+        }
+
+        Ok(dict.into())
+    }
+
     fn close(&self) {}
 
     fn __enter__(slf: Py<Self>) -> Py<Self> {

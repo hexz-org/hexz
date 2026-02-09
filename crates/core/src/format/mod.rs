@@ -21,3 +21,9 @@ pub mod header;
 /// This module contains the master index and per-page entries that map
 /// logical blocks to their physical location in the file.
 pub mod index;
+
+/// Version compatibility checking.
+///
+/// Provides version range checking and graceful degradation for reading
+/// files created with different format versions.
+pub mod version;

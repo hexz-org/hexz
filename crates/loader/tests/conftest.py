@@ -8,6 +8,7 @@ import socketserver
 import strata
 import numpy as np
 
+
 @pytest.fixture(scope="session")
 def test_dir():
     """Create a temporary directory for the test session."""
@@ -15,14 +16,16 @@ def test_dir():
     yield tmp_dir
     shutil.rmtree(tmp_dir)
 
+
 @pytest.fixture(scope="session")
 def raw_data_path(test_dir):
     """Generate a raw random file."""
     path = os.path.join(test_dir, "test_source.raw")
-    size = 1024 * 1024 # 1MB
+    size = 1024 * 1024  # 1MB
     with open(path, "wb") as f:
         f.write(os.urandom(size))
     return path
+
 
 @pytest.fixture(scope="session")
 def base_snap_path(test_dir, raw_data_path):
@@ -32,10 +35,11 @@ def base_snap_path(test_dir, raw_data_path):
         builder.add_disk(raw_data_path)
     return snap_path
 
+
 @pytest.fixture(scope="session")
 def http_server(base_snap_path):
     """Start a simple HTTP server serving the snapshot."""
-    
+
     class RangeRequestHandler(http.server.BaseHTTPRequestHandler):
         def log_message(self, format, *args):
             pass
@@ -66,7 +70,7 @@ def http_server(base_snap_path):
                     end = int(end_str) if end_str else size - 1
                     end = min(end, size - 1)
                     length = end - start + 1
-                    
+
                     self.send_response(206)
                     self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
                     self.send_header("Content-Length", str(length))
@@ -79,7 +83,7 @@ def http_server(base_snap_path):
                     return
                 except Exception:
                     pass
-            
+
             self.send_response(200)
             self.send_header("Content-Length", str(size))
             self.end_headers()
@@ -93,8 +97,8 @@ def http_server(base_snap_path):
     thread = threading.Thread(target=server.serve_forever)
     thread.daemon = True
     thread.start()
-    
+
     yield f"http://localhost:{port}/{os.path.basename(base_snap_path)}"
-    
+
     server.shutdown()
     server.server_close()

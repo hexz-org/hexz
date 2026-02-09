@@ -5,7 +5,8 @@ use crate::algo::encryption::Encryptor;
 use crate::cache::lru::BlockCache;
 use crate::format::header::{CompressionType, StrataHeader};
 use crate::format::index::{BlockInfo, IndexPage, MasterIndex, PageEntry};
-use crate::format::magic::{FORMAT_VERSION, HEADER_SIZE, MAGIC_BYTES};
+use crate::format::magic::{HEADER_SIZE, MAGIC_BYTES};
+use crate::format::version::{VersionCompatibility, check_version, compatibility_message};
 use crate::store::StorageBackend;
 use crate::store::local::file::FileBackend;
 use bytes::Bytes;
@@ -246,11 +247,21 @@ impl StrataFile {
         if &header.magic != MAGIC_BYTES {
             return Err(StrataError::Format("Invalid magic bytes".into()));
         }
-        if header.version != FORMAT_VERSION {
-            return Err(StrataError::Format(format!(
-                "Unsupported version: {}. Expected: {}",
-                header.version, FORMAT_VERSION
-            )));
+
+        // Check version compatibility
+        let compatibility = check_version(header.version);
+        match compatibility {
+            VersionCompatibility::Full => {
+                // Perfect match, proceed silently
+            }
+            VersionCompatibility::Degraded => {
+                // Newer version, issue warning but allow
+                tracing::warn!("{}", compatibility_message(header.version));
+            }
+            VersionCompatibility::Incompatible => {
+                // Too old or too new, reject
+                return Err(StrataError::Format(compatibility_message(header.version)));
+            }
         }
 
         let index_bytes = backend.read_exact(

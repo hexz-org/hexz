@@ -14,8 +14,30 @@ use strata_core::algo::dedup::{cdc, dcam};
 use strata_core::format::header::StrataHeader;
 use strata_core::format::index::MasterIndex;
 use strata_core::format::magic::HEADER_SIZE;
+use strata_core::format::version::{
+    CURRENT_VERSION, MAX_SUPPORTED_VERSION, MIN_SUPPORTED_VERSION, check_version,
+    compatibility_message,
+};
 
 use super::builder::StrataBuilder;
+
+/// Get the current format version.
+#[pyfunction]
+pub fn get_format_version() -> u32 {
+    CURRENT_VERSION
+}
+
+/// Get the minimum supported format version.
+#[pyfunction]
+pub fn get_min_supported_version() -> u32 {
+    MIN_SUPPORTED_VERSION
+}
+
+/// Get the maximum supported format version.
+#[pyfunction]
+pub fn get_max_supported_version() -> u32 {
+    MAX_SUPPORTED_VERSION
+}
 
 #[pyfunction]
 pub fn inspect(py: Python<'_>, path: String) -> PyResult<HashMap<String, PyObject>> {
@@ -46,10 +68,51 @@ pub fn inspect(py: Python<'_>, path: String) -> PyResult<HashMap<String, PyObjec
         0.0
     };
 
+    // Check version compatibility
+    let compatibility = check_version(header.version);
+    let is_compatible = compatibility.is_compatible();
+    let compatibility_status = match compatibility {
+        strata_core::format::version::VersionCompatibility::Full => "full",
+        strata_core::format::version::VersionCompatibility::Degraded => "degraded",
+        strata_core::format::version::VersionCompatibility::Incompatible => "incompatible",
+    };
+
     let mut dict: HashMap<String, PyObject> = HashMap::new();
     dict.insert(
         "version".to_string(),
         header.version.into_pyobject(py)?.unbind().into(),
+    );
+    dict.insert(
+        "current_version".to_string(),
+        CURRENT_VERSION.into_pyobject(py)?.unbind().into(),
+    );
+    dict.insert(
+        "min_supported_version".to_string(),
+        MIN_SUPPORTED_VERSION.into_pyobject(py)?.unbind().into(),
+    );
+    dict.insert(
+        "max_supported_version".to_string(),
+        MAX_SUPPORTED_VERSION.into_pyobject(py)?.unbind().into(),
+    );
+    dict.insert(
+        "is_compatible".to_string(),
+        <pyo3::Bound<'_, pyo3::types::PyBool> as Clone>::clone(&pyo3::types::PyBool::new(
+            py,
+            is_compatible,
+        ))
+        .unbind()
+        .into(),
+    );
+    dict.insert(
+        "compatibility_status".to_string(),
+        compatibility_status.into_pyobject(py)?.unbind().into(),
+    );
+    dict.insert(
+        "compatibility_message".to_string(),
+        compatibility_message(header.version)
+            .into_pyobject(py)?
+            .unbind()
+            .into(),
     );
     dict.insert(
         "block_size".to_string(),
@@ -320,7 +383,7 @@ pub fn snapshot_vm(
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
 
-    let mut builder = StrataBuilder::new(output_path, 65536, "lz4")?;
+    let mut builder = StrataBuilder::new(output_path, 65536, "lz4", None)?;
     builder.merge_overlay(py, base_path, overlay_path, false)?;
     builder.add_memory_file(py, mem_path)?;
     builder.finalize()?;

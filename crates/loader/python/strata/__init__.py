@@ -15,57 +15,170 @@ Key Features:
 
 Quick Start:
     >>> import strata
-    >>> import numpy as np
     >>>
-    >>> # Open a snapshot
-    >>> reader = strata.open("dataset.st")
+    >>> # Build a snapshot with smart defaults
+    >>> meta = strata.build("data/", "dataset.st", profile="ml")
     >>>
-    >>> # Read bytes
-    >>> data = reader.read_at(offset=0, length=4096)
+    >>> # Read with modern API
+    >>> with strata.open("dataset.st") as reader:
+    ...     data = reader[0:4096]  # Slice notation!
+    ...     meta = reader.metadata  # Property access!
     >>>
-    >>> # Read NumPy array
-    >>> arr = strata.read_array(reader, offset=0, shape=(100, 784), dtype='float32')
-    >>>
-    >>> # Create a snapshot
-    >>> strata.pack(
-    ...     disk="disk.img",
-    ...     output="snapshot.st",
-    ...     compression="lz4"
-    ... )
+    >>> # ML integration
+    >>> dataset = strata.Dataset("dataset.st", item_size=1024)
+    >>> loader = torch.utils.data.DataLoader(dataset, batch_size=32)
 
 See documentation for advanced usage: https://github.com/strata-storage/strata
 """
 
+from typing import Union
+
+# Import Rust-implemented core functions
 from ._strata_core import (
-    StrataReader,
-    AsyncStrataReader,
-    StrataBuilder,
     pack,
-    inspect,
-    analyze,
-    diff,
     sign_image,
     verify_image,
     snapshot_vm,
 )
 
-from .io import open, read_array
-from .builder import SnapshotBuilder
-from .mount import Mount as mount
+# Core I/O
+from .reader import Reader, AsyncReader
+from .writer import Writer
+from .array import read_array, write_array, ArrayView
+
+# ML Integration
+from .dataset import Dataset, TFDataset
+
+# Utilities
+from .utils import (
+    inspect,
+    analyze,
+    diff,
+    verify,
+    info,
+    Metadata,
+    AnalysisReport,
+    FORMAT_VERSION,
+    MIN_SUPPORTED_VERSION,
+    MAX_SUPPORTED_VERSION,
+)
+from .mount import mount, unmount, MountPoint
+
+# Build helpers
+from .profiles import build, PROFILES
+
+# Types
+from .typing import (
+    PathLike,
+    Shape,
+    PackingMode,
+    BuildProfile,
+    DeduplicationMode,
+    CompressionAlgorithm,
+)
+
+# Exceptions
+from .exceptions import (
+    StrataError,
+    IOError,
+    NetworkError,
+    FormatError,
+    ValidationError,
+    CompressionError,
+    EncryptionError,
+    MountError,
+    CacheError,
+    VersionError,
+)
+
+
+def open(path: PathLike, *, mode: str = "r", **options) -> Union[Reader, Writer]:
+    """Open a Strata snapshot for reading or writing.
+
+    Args:
+        path: Path to .st file
+        mode: 'r' for reading, 'w' for writing
+        **options: Additional options for Reader or Writer
+
+    Returns:
+        Reader or Writer instance
+
+    Example:
+        >>> with strata.open("data.st") as reader:
+        ...     data = reader.read(4096)
+        ...
+        >>> with strata.open("out.st", mode="w", packing="tight") as writer:
+        ...     writer.add("input.img")
+    """
+    if "r" in mode:
+        return Reader(path, **options)
+    elif "w" in mode:
+        return Writer(path, **options)
+    else:
+        raise ValueError(f"Invalid mode: {mode}")
+
+
+__version__ = "0.2.0"
+
+
+def version() -> str:
+    """Return the version of the Strata library."""
+    return __version__
+
 
 __all__ = [
-    "StrataReader",
-    "AsyncStrataReader",
-    "StrataBuilder",
-    "SnapshotBuilder",
-    "pack",
+    # I/O
+    "open",
+    "version",
+    "Reader",
+    "AsyncReader",
+    "Writer",
+    # Arrays
+    "read_array",
+    "write_array",
+    "ArrayView",
+    # ML
+    "Dataset",
+    "TFDataset",
+    # Utilities
     "inspect",
     "analyze",
     "diff",
+    "verify",
+    "info",
+    "mount",
+    "unmount",
+    "MountPoint",
+    # Build
+    "build",
+    "PROFILES",
+    "pack",
+    # VM
     "sign_image",
     "verify_image",
     "snapshot_vm",
-    "open",
-    "read_array",
-    "mount",
+    # Types
+    "Metadata",
+    "AnalysisReport",
+    "PathLike",
+    "Shape",
+    "PackingMode",
+    "BuildProfile",
+    "DeduplicationMode",
+    "CompressionAlgorithm",
+    # Version constants
+    "FORMAT_VERSION",
+    "MIN_SUPPORTED_VERSION",
+    "MAX_SUPPORTED_VERSION",
+    # Exceptions
+    "StrataError",
+    "IOError",
+    "NetworkError",
+    "FormatError",
+    "ValidationError",
+    "CompressionError",
+    "EncryptionError",
+    "MountError",
+    "CacheError",
+    "VersionError",
 ]
