@@ -36,7 +36,7 @@ Strata acts as a drop-in replacement for standard PyTorch datasets.
 
 ```bash
 # Clone the repository
-git clone https://github.com/willmccallion/strata.git
+git clone https://github.com/Alethic-Systems/strata.git
 cd strata
 
 # Build the Python loader
