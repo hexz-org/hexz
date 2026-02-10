@@ -9,9 +9,9 @@ Strata is built as a modular ecosystem. The user interacts through the CLI, Pyth
 ```mermaid
 graph TD
     subgraph "User Interfaces"
-        CLI[CLI Tool\n(strata-cli)]
-        Py[Python API\n(strata-loader)]
-        Fuse[FUSE Mount\n(strata-fuse)]
+        CLI["CLI Tool\n(strata-cli)"]
+        Py["Python API\n(strata-loader)"]
+        Fuse["FUSE Mount\n(strata-fuse)"]
     end
 
     subgraph "Core Engine (strata-core)"
@@ -26,7 +26,7 @@ graph TD
         end
     end
 
-    Common[strata-common\n(Config, Errors, Crypto)]
+    Common["strata-common\n(Config, Errors, Crypto)"]
 
     CLI -->|Calls| Ops
     Py -->|Wraps| API
