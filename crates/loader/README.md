@@ -78,9 +78,9 @@ Mount a snapshot as a read-only filesystem (requires FUSE).
 ```python
 import strata
 
-with strata.mount("snapshot.st") as mount_point:
-    print(f"Mounted at {mount_point}")
-    # Access files in mount_point/disk
+with strata.mount("snapshot.st") as mp:
+    print(f"Mounted at {mp.path}")
+    # Access files in mp.path/disk
 ```
 
 ### NumPy Integration
