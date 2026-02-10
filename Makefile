@@ -28,7 +28,7 @@ endif
 .PHONY: help build rust python install clean \
         test test-rust test-python test-integration \
         lint fmt clippy deny check \
-        bench fuzz \
+        bench save-baseline fuzz \
         docker-dev docker-bench \
         docs docs-python setup ci
 
@@ -54,6 +54,7 @@ help:
 	@printf "  make check         Fast workspace-wide type check\n"
 	@printf "\n$(CYAN)Performance$(RESET)\n"
 	@printf "  make bench         Run criterion benchmarks\n"
+	@printf "  make save-baseline Save benchmark baseline (v0.1.0-alpha)\n"
 	@printf "  make fuzz          Run fuzz targets (requires cargo-fuzz)\n"
 	@printf "\n$(CYAN)Infrastructure$(RESET)\n"
 	@printf "  make docker-dev    Build the development Docker image\n"
@@ -130,6 +131,10 @@ check:
 bench:
 	@printf "$(GREEN)Running benchmarks…$(RESET)\n"
 	$(CARGO) bench --package strata
+
+save-baseline:
+	@printf "$(GREEN)Saving benchmark baseline (v0.1.0-alpha)…$(RESET)\n"
+	$(CARGO) bench -p strata -- --save-baseline v0.1.0-alpha
 
 fuzz:
 	@printf "$(GREEN)Running fuzz targets (60 s each)…$(RESET)\n"
