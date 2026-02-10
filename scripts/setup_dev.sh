@@ -84,7 +84,7 @@ source .venv/bin/activate
 
 pip install --quiet --upgrade pip
 # Python API docs (Sphinx); optional deps for examples
-pip install --quiet -r requirements.txt
+pip install --quiet -r docs/requirements.txt
 
 # ── Build check ──────────────────────────────────────────────────────────────
 info "Verifying Rust workspace compiles…"
