@@ -107,6 +107,8 @@ Deduplication works at the **block level**.
 
 ## Data Flow Diagram
 
+### Write Path
+
 ```mermaid
 flowchart TD
     subgraph Write Path
@@ -130,7 +132,12 @@ flowchart TD
         IndexEntry --> IndexPage[Add to Index Page]
         IndexEntryNew --> IndexPage
     end
+```
 
+### Read Path
+
+```mermaid
+flowchart TD
     subgraph Read Path
         Request["Read Request\n(Offset, Length)"] --> MasterIndex[Lookup Master Index]
         MasterIndex --> PageCache{Page in Cache?}
