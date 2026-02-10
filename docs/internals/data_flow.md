@@ -104,32 +104,32 @@ During the packing process, input data is streamed and broken into chunks (fixed
 ```mermaid
 flowchart TD
     subgraph "Ingestion & Chunking"
-        Input[Input File/Stream] --> Chunker
-        Chunker -->|Fixed or CDC| Block[Raw Block]
+        Input["Input File/Stream"] --> Chunker
+        Chunker -->|Fixed or CDC| Block["Raw Block"]
     end
 
     subgraph "Processing"
-        Block --> Compressor[Compressor LZ4/Zstd]
-        Compressor --> Compressed[Compressed Block]
-        Compressed --> Hasher[Hasher SHA256]
-        Hasher --> Hash[Block Hash]
+        Block --> Compressor["Compressor LZ4/Zstd"]
+        Compressor --> Compressed["Compressed Block"]
+        Compressed --> Hasher["Hasher SHA256"]
+        Hasher --> Hash["Block Hash"]
     end
 
     subgraph "Persistence"
-        Hash --> Dedup{In Dedup Map?}
+        Hash --> Dedup{"In Dedup Map?"}
         Dedup -- Yes --> IndexEntry["Create Index Entry\n(Reuse Offset)"]
-        Dedup -- No --> Write[Write to .st File]
+        Dedup -- No --> Write["Write to .st File"]
         
-        Write --> MapUpdate[Update Dedup Map]
+        Write --> MapUpdate["Update Dedup Map"]
         MapUpdate --> IndexEntryNew["Create Index Entry\n(New Offset)"]
         
-        IndexEntry --> IndexPage[Add to Index Page]
+        IndexEntry --> IndexPage["Add to Index Page"]
         IndexEntryNew --> IndexPage
     end
 
     subgraph "Finalization"
-        IndexPage --> MasterIdx[Generate Master Index]
-        MasterIdx --> Header[Write Header]
+        IndexPage --> MasterIdx["Generate Master Index"]
+        MasterIdx --> Header["Write Header"]
     end
 ```
 
@@ -139,25 +139,25 @@ When a read request is made for a specific offset and length, the engine first c
 
 ```mermaid
 flowchart TD
-    Request["Read Request\n(Offset, Length)"] --> MasterIndex[Lookup Master Index]
+    Request["Read Request\n(Offset, Length)"] --> MasterIndex["Lookup Master Index"]
     
     subgraph "Index Resolution"
-        MasterIndex --> PageCache{Page in Cache?}
-        PageCache -- No --> FetchPage[Fetch Index Page from Store]
-        FetchPage --> ParsePage[Parse Block Metadata]
+        MasterIndex --> PageCache{"Page in Cache?"}
+        PageCache -- No --> FetchPage["Fetch Index Page from Store"]
+        FetchPage --> ParsePage["Parse Block Metadata"]
         PageCache -- Yes --> ParsePage
     end
     
     subgraph "Data Retrieval"
-        ParsePage --> BlockCache{Block in Cache?}
-        BlockCache -- No --> FetchBlock[Read Compressed Block from Store]
-        FetchBlock --> Decompress[Decompress & Verify]
-        Decompress --> StoreCache[Store in Block Cache]
+        ParsePage --> BlockCache{"Block in Cache?"}
+        BlockCache -- No --> FetchBlock["Read Compressed Block from Store"]
+        FetchBlock --> Decompress["Decompress & Verify"]
+        Decompress --> StoreCache["Store in Block Cache"]
         StoreCache --> Assemble
-        BlockCache -- Yes --> Assemble[Assemble Data Slice]
+        BlockCache -- Yes --> Assemble["Assemble Data Slice"]
     end
     
-    Assemble --> Return[Return Data to API/UI]
+    Assemble --> Return["Return Data to API/UI"]
 ```
 
 ## Deduplication Logic
@@ -202,27 +202,27 @@ Strata supports both fixed-size chunking and Content-Defined Chunking (CDC). Fix
 ```mermaid
 graph TD
     subgraph "Fixed Chunking"
-        F_Data[Data Stream]
-        F_Data --> F_Split[Split at 64KB, 128KB...]
-        F_Split --> F_B1[Block 1]
-        F_Split --> F_B2[Block 2]
-        F_Split --> F_B3[Block 3]
+        F_Data["Data Stream"]
+        F_Data --> F_Split["Split at 64KB, 128KB..."]
+        F_Split --> F_B1["Block 1"]
+        F_Split --> F_B2["Block 2"]
+        F_Split --> F_B3["Block 3"]
         
-        F_Insert[Insertion at start] -.->|Shifts all boundaries| F_B1_New[New Block 1]
-        F_Insert -.-> F_B2_New[New Block 2]
-        F_Insert -.-> F_B3_New[New Block 3]
+        F_Insert["Insertion at start"] -.->|Shifts all boundaries| F_B1_New["New Block 1"]
+        F_Insert -.-> F_B2_New["New Block 2"]
+        F_Insert -.-> F_B3_New["New Block 3"]
     end
 
     subgraph "Content-Defined Chunking (CDC)"
-        C_Data[Data Stream]
-        C_Data --> C_Scan[Scan for Cut Hash]
-        C_Scan --> C_B1[Block A]
-        C_Scan --> C_B2[Block B]
-        C_Scan --> C_B3[Block C]
+        C_Data["Data Stream"]
+        C_Data --> C_Scan["Scan for Cut Hash"]
+        C_Scan --> C_B1["Block A"]
+        C_Scan --> C_B2["Block B"]
+        C_Scan --> C_B3["Block C"]
         
-        C_Insert[Insertion at start] -.->|Only first block changes| C_B1_New[New Block A']
-        C_Insert -.-> C_B2_Same[Block B (Same!)]
-        C_Insert -.-> C_B3_Same[Block C (Same!)]
+        C_Insert["Insertion at start"] -.->|Only first block changes| C_B1_New["New Block A'"]
+        C_Insert -.-> C_B2_Same["Block B (Same!)"]
+        C_Insert -.-> C_B3_Same["Block C (Same!)"]
     end
 ```
 
@@ -232,16 +232,16 @@ When a Strata archive is mounted with `--overlay`, it presents a writable filesy
 
 ```mermaid
 flowchart TD
-    Request["I/O Request\n(Offset, Length)"] --> Type{Read or Write?}
+    Request["I/O Request\n(Offset, Length)"] --> Type{"Read or Write?"}
     
-    Type -- Write --> WriteOverlay[Write to Overlay File]
-    WriteOverlay --> UpdateMeta[Update .meta Map]
+    Type -- Write --> WriteOverlay["Write to Overlay File"]
+    WriteOverlay --> UpdateMeta["Update .meta Map"]
     
-    Type -- Read --> CheckMeta{Block in Overlay?}
+    Type -- Read --> CheckMeta{"Block in Overlay?"}
     
-    CheckMeta -- Yes --> ReadOverlay[Read from Overlay File]
+    CheckMeta -- Yes --> ReadOverlay["Read from Overlay File"]
     ReadOverlay --> Return
     
-    CheckMeta -- No --> ReadBase[Read from Base .st File]
-    ReadBase --> Return[Return Data]
+    CheckMeta -- No --> ReadBase["Read from Base .st File"]
+    ReadBase --> Return["Return Data"]
 ```
