@@ -121,18 +121,18 @@ flowchart TD
         
         Hash --> Dedup{In Dedup Map?}
         
-        Dedup -- Yes --> IndexEntry[Create Index Entry\n(Offset = Existing)]
+        Dedup -- Yes --> IndexEntry["Create Index Entry\n(Offset = Existing)"]
         Dedup -- No --> Write[Write to .st File]
         
         Write --> MapUpdate[Update Dedup Map]
-        MapUpdate --> IndexEntryNew[Create Index Entry\n(Offset = New)]
+        MapUpdate --> IndexEntryNew["Create Index Entry\n(Offset = New)"]
         
         IndexEntry --> IndexPage[Add to Index Page]
         IndexEntryNew --> IndexPage
     end
 
     subgraph Read Path
-        Request[Read Request\n(Offset, Length)] --> MasterIndex[Lookup Master Index]
+        Request["Read Request\n(Offset, Length)"] --> MasterIndex[Lookup Master Index]
         MasterIndex --> PageCache{Page in Cache?}
         
         PageCache -- No --> FetchPage[Fetch Index Page]
