@@ -83,9 +83,8 @@ fi
 source .venv/bin/activate
 
 pip install --quiet --upgrade pip
-pip install --quiet pytest pytest-asyncio numpy maturin torch
 # Python API docs (Sphinx); optional deps for examples
-pip install --quiet -r docs/requirements.txt
+pip install --quiet -r requirements.txt
 
 # ── Build check ──────────────────────────────────────────────────────────────
 info "Verifying Rust workspace compiles…"
