@@ -21,6 +21,17 @@ class Metadata:
     """Structured metadata from a Strata snapshot.
 
     Provides property access to metadata fields with IDE autocomplete support.
+
+    Example:
+        >>> meta = strata.inspect("snapshot.st")
+        >>> meta.version
+        1
+        >>> meta.compression
+        'lz4'
+        >>> meta.disk_size
+        1048576
+        >>> meta.compression_ratio
+        2.5
     """
 
     def __init__(self, data: Dict[str, Any]):

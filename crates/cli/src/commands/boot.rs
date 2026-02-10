@@ -115,9 +115,8 @@ fn boot_firecracker(
     // 2. Map the FUSE mount point (or a tap device) as the root drive.
     // 3. Spawn the `firecracker` process and send the config via its API socket.
     // 4. Handle console output and cleanup.
-    unimplemented!();
-    println!("Firecracker backend is not yet fully implemented.");
-    Ok(())
+
+    anyhow::bail!("Firecracker backend is not yet fully implemented.");
 }
 
 fn boot_qemu(

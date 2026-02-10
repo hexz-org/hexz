@@ -30,7 +30,7 @@ endif
         lint fmt clippy deny check \
         bench fuzz \
         docker-dev docker-bench \
-        docs setup ci
+        docs docs-python setup ci
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Help
@@ -59,6 +59,7 @@ help:
 	@printf "  make docker-dev    Build the development Docker image\n"
 	@printf "  make docker-bench  Build the benchmark Docker image\n"
 	@printf "  make docs          Build rustdoc for the workspace\n"
+	@printf "  make docs-python   Build Sphinx Python API reference (docs/_build/html)\n"
 	@printf "  make setup         Install required tools (rustfmt, clippy, etc.)\n"
 	@printf "  make ci            Full CI pipeline (lint + test + build)\n"
 	@printf "\n$(CYAN)Housekeeping$(RESET)\n"
@@ -149,6 +150,12 @@ docker-bench:
 docs:
 	@printf "$(GREEN)Building documentation…$(RESET)\n"
 	$(CARGO) doc --workspace --no-deps --document-private-items
+
+docs-python:
+	@printf "$(GREEN)Building Python API docs (Sphinx)…$(RESET)\n"
+	@command -v sphinx-build >/dev/null 2>&1 || (echo "Install sphinx: pip install sphinx" && exit 1)
+	sphinx-build -b html docs/source docs/_build/html
+	@printf "$(GREEN)Open docs/_build/html/index.html$(RESET)\n"
 
 setup:
 	@printf "$(GREEN)Installing development tools…$(RESET)\n"

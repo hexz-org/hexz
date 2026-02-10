@@ -1,11 +1,12 @@
 """Pre-configured build profiles for common use cases.
 
 Build profiles provide optimized configurations for different scenarios:
+
 - ml: Machine learning datasets (fast writes, sequential reads)
 - eda: Exploratory data analysis (balanced)
 - embedded: Resource-constrained environments (max compression)
 - generic: General purpose default
-- archival: Long-term storage (max compression + dedup)
+- archival: Long-term storage (max compression and dedup)
 """
 
 from typing import Dict, Any, Literal, Optional

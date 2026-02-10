@@ -256,7 +256,7 @@ class Dataset(TorchDataset):
     - Variable-length item support via index file
     - DDP-compatible epoch shuffling
     - Transform composition
-    - Zero-copy option for maximum performance
+    - Low-overhead copy option for high performance
     """
 
     def __init__(
@@ -294,7 +294,9 @@ class Dataset(TorchDataset):
             cache_size_mb: LRU cache size in MB (0 to disable)
             prefetch_factor: Number of items ahead to prefetch (0 to disable)
             num_workers: Number of prefetch worker threads
-            zero_copy: Use zero-copy views (faster but read-only)
+            zero_copy: Use direct read into buffer (faster but read-only).
+                      Note: Currently involves one internal copy; full zero-copy
+                      is planned for v0.3.
             shuffle: Enable shuffling
             seed: Random seed for shuffling
             s3_region: AWS region for S3 files
@@ -554,6 +556,10 @@ class Dataset(TorchDataset):
 class TFDataset:
     """TensorFlow tf.data.Dataset wrapper for Strata.
 
+    .. warning::
+        This class is not yet implemented. Initializing it will raise
+        `NotImplementedError`.
+
     Provides integration with TensorFlow's data loading pipeline.
     """
 
@@ -563,6 +569,9 @@ class TFDataset:
         Args:
             path: Path to .st file
             **kwargs: Same as Dataset (except output_format)
+
+        Raises:
+            NotImplementedError: This class is not yet functional.
         """
         # TODO: Implement TensorFlow dataset
         # - Store path and kwargs

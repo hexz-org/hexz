@@ -1,9 +1,36 @@
-//! Strata Python bindings.
+//! Rust-to-Python bridge and high-performance data loading engine for Strata.
 //!
-//! Architecture:
-//! - `engine/` — Pure Rust logic (no PyO3 dependency)
-//! - `py_interface/` — PyO3 binding layer
-//! - `tensor/` — Zero-copy buffer operations
+//! # Overview
+//!
+//! `strata-loader` serves as the primary interface between the high-performance
+//! `strata-core` snapshot engine and external high-level languages, primarily
+//! Python. It handles the translation of complex Rust types (like `StrataFile`)
+//! into Python-friendly classes using PyO3, while maintaining the performance
+//! guarantees required for machine learning workloads.
+//!
+//! # Architecture
+//!
+//! The crate is split into three distinct layers:
+//!
+//! - **[`engine`]**: A pure Rust abstraction layer. It provides a simplified
+//!   interface for opening snapshots from various sources (Local, S3, HTTP)
+//!   without requiring PyO3 dependencies.
+//! - **[`py_interface`]**: The PyO3 binding layer. This module defines the
+//!   `#[pyclass]` and `#[pymethods]` that are exposed to Python scripts.
+//! - **[`tensor`]**: Optimized buffer management for zero-copy (or low-copy)
+//!   data transfer between Rust's memory space and Python's buffer protocol
+//!   (e.g., NumPy arrays).
+//!
+//! # Key Components
+//!
+//! - `StrataReader`: Synchronous file-like reader for snapshots.
+//! - `AsyncStrataReader`: `asyncio`-compatible reader for high-throughput I/O.
+//! - `StrataBuilder`: High-level interface for creating new snapshots.
+//!
+//! # Error Handling
+//!
+//! Errors from the core engine are mapped to Python's standard exception
+//! hierarchy (e.g., `IOError`, `ValueError`) via the [`exceptions`] module.
 
 use pyo3::prelude::*;
 

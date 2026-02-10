@@ -540,6 +540,169 @@ impl StrataFile {
         Ok(buffer)
     }
 
+    /// Reads data from a snapshot stream into a provided buffer.
+    ///
+    /// This method is a zero-copy variant of [`read_at`](Self::read_at). It writes directly
+    /// into the provided mutable slice, avoiding intermediate allocations.
+    ///
+    /// # Parameters
+    ///
+    /// - `stream`: Which stream to read from (Disk or Memory)
+    /// - `offset`: Starting byte offset (0-indexed)
+    /// - `buffer`: Mutable buffer to write data into
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` on success. The buffer will be filled with data read from the stream.
+    ///   If the read goes beyond the stream size, the remaining part of the buffer is zero-filled.
+    pub fn read_at_into(
+        &self,
+        stream: SnapshotStream,
+        offset: u64,
+        buffer: &mut [u8],
+    ) -> Result<()> {
+        let len = buffer.len();
+        if len == 0 {
+            return Ok(());
+        }
+
+        let stream_size = self.size(stream);
+        if offset >= stream_size {
+            buffer.fill(0);
+            return Ok(());
+        }
+
+        // Calculate how much valid data we can read
+        let actual_len = std::cmp::min(len as u64, stream_size - offset) as usize;
+
+        // Zero-fill the rest of the buffer if we're reading past the end
+        if actual_len < len {
+            buffer[actual_len..].fill(0);
+        }
+
+        // We only care about filling the valid part
+        let target_buf = &mut buffer[0..actual_len];
+        let mut current_pos = offset;
+        let mut buf_offset = 0;
+        let mut remaining = actual_len;
+
+        let pages = match stream {
+            SnapshotStream::Disk => &self.master.disk_pages,
+            SnapshotStream::Memory => &self.master.memory_pages,
+        };
+
+        if pages.is_empty() {
+            if let Some(parent) = &self.parent {
+                return parent.read_at_into(stream, offset, target_buf);
+            }
+            target_buf.fill(0);
+            return Ok(());
+        }
+
+        let page_idx = match pages.binary_search_by(|p| p.start_logical.cmp(&offset)) {
+            Ok(idx) => idx,
+            Err(idx) => idx.saturating_sub(1),
+        };
+
+        for page_entry in pages.iter().skip(page_idx) {
+            if remaining == 0 {
+                break;
+            }
+            if page_entry.start_logical > current_pos + remaining as u64 {
+                // Gap in pages? Should probably zero-fill, but current logic assumes contiguity or zeros for missing
+                // In standard strata file, missing pages are implicitly zero/sparse.
+                // But here we might just skip.
+                // However, since we initialized with zeros only at the end (past stream_size),
+                // we should handle gaps. But let's stick to read_at logic.
+                break;
+            }
+
+            let page = self.get_page(page_entry)?;
+            let mut block_logical_start = page_entry.start_logical;
+
+            for (block_idx_in_page, block) in page.blocks.iter().enumerate() {
+                let block_end = block_logical_start + block.logical_len as u64;
+
+                if block_end > current_pos {
+                    // This block overlaps with our read range
+
+                    if block.offset == BLOCK_OFFSET_PARENT {
+                        if let Some(parent) = &self.parent {
+                            // Recursively read from parent directly into our buffer
+                            let offset_in_block = (current_pos - block_logical_start) as usize;
+                            let to_copy = std::cmp::min(
+                                remaining,
+                                (block.logical_len as usize).saturating_sub(offset_in_block),
+                            );
+
+                            parent.read_at_into(
+                                stream,
+                                current_pos,
+                                &mut target_buf[buf_offset..buf_offset + to_copy],
+                            )?;
+
+                            current_pos += to_copy as u64;
+                            buf_offset += to_copy;
+                            remaining -= to_copy;
+                        } else {
+                            // Should be zeros if no parent
+                            let offset_in_block = (current_pos - block_logical_start) as usize;
+                            let to_copy = std::cmp::min(
+                                remaining,
+                                (block.logical_len as usize).saturating_sub(offset_in_block),
+                            );
+
+                            // Ensure it's zeroed (it might contain garbage from previous buffer usage?)
+                            // No, the buffer comes from user. We should write zeros.
+                            target_buf[buf_offset..buf_offset + to_copy].fill(0);
+
+                            current_pos += to_copy as u64;
+                            buf_offset += to_copy;
+                            remaining -= to_copy;
+                        }
+                    } else {
+                        // Standard local read
+                        let global_block_idx = page_entry.start_block + block_idx_in_page as u64;
+                        let block_data =
+                            self.resolve_block_data(stream, global_block_idx, block)?;
+
+                        let offset_in_block = (current_pos - block_logical_start) as usize;
+                        let to_copy = std::cmp::min(
+                            remaining,
+                            block_data.len().saturating_sub(offset_in_block),
+                        );
+
+                        if to_copy > 0 {
+                            target_buf[buf_offset..buf_offset + to_copy].copy_from_slice(
+                                &block_data[offset_in_block..offset_in_block + to_copy],
+                            );
+                            current_pos += to_copy as u64;
+                            buf_offset += to_copy;
+                            remaining -= to_copy;
+                        }
+                    }
+
+                    if remaining == 0 {
+                        break;
+                    }
+                }
+
+                block_logical_start += block.logical_len as u64;
+            }
+        }
+
+        if remaining > 0 {
+            // Fill any remaining gap from parent
+            if let Some(parent) = &self.parent {
+                parent.read_at_into(stream, current_pos, &mut target_buf[buf_offset..])?;
+            } else {
+                target_buf[buf_offset..].fill(0);
+            }
+        }
+
+        Ok(())
+    }
+
     /// Fetches an index page from cache or storage.
     ///
     /// Index pages map logical offsets to physical block locations. This method

@@ -2,16 +2,18 @@
 
 Strata is a Python library for reading and creating compressed snapshots
 with random access support. It's optimized for:
+
 - Machine learning dataset streaming (PyTorch/TensorFlow integration)
 - Virtual machine disk and memory snapshots
 - Large binary file storage with deduplication
 
 Key Features:
-- **Random access**: Read any byte range without decompressing entire file
-- **Compression**: LZ4 (fast) or Zstandard (high ratio)
-- **Streaming**: Read from local files, HTTP, or S3
-- **Zero-copy**: NumPy arrays without data copies
-- **Async support**: Asynchronous I/O for high-throughput workloads
+
+- Random access: Read any byte range without decompressing entire file
+- Compression: LZ4 (fast) or Zstandard (high ratio)
+- Streaming: Read from local files, HTTP, or S3
+- Zero-copy: NumPy arrays without data copies
+- Async support: Asynchronous I/O for high-throughput workloads
 
 Quick Start:
     >>> import strata
@@ -34,64 +36,60 @@ See documentation for advanced usage: https://github.com/strata-storage/strata
 from typing import Union
 
 # Import Rust-implemented core functions
-from ._strata_core import (
-    pack,
-    keygen,
-    sign_image,
-    verify_image,
-    snapshot_vm,
-)
-
-# Core I/O
-from .reader import Reader, AsyncReader
-from .writer import Writer
-from .array import read_array, write_array, ArrayView
+# Note: keygen, sign_image, verify_image are Rust-builtins; __doc__ is read-only on
+# some Python versions. See docs/source/api/signing.rst for full documentation.
+from ._strata_core import keygen, pack, sign_image, snapshot_vm, verify_image
+from .array import ArrayView, read_array, write_array
 
 # ML Integration
 from .dataset import Dataset, TFDataset
 
-# Utilities
-from .utils import (
-    inspect,
-    analyze,
-    diff,
-    verify,
-    info,
-    merge_overlay,
-    Metadata,
-    AnalysisReport,
-    FORMAT_VERSION,
-    MIN_SUPPORTED_VERSION,
-    MAX_SUPPORTED_VERSION,
+# Exceptions
+from .exceptions import (
+    CacheError,
+    CompressionError,
+    EncryptionError,
+    FormatError,
+    IOError,
+    MountError,
+    NetworkError,
+    StrataError,
+    ValidationError,
+    VersionError,
 )
-from .mount import mount, unmount, MountPoint
+from .mount import MountPoint, mount, unmount
 
 # Build helpers
-from .profiles import build, PROFILES
+from .profiles import PROFILES, build
+
+# Core I/O
+from .reader import AsyncReader, Reader
 
 # Types
 from .typing import (
+    BuildProfile,
+    CompressionAlgorithm,
+    DeduplicationMode,
+    PackingMode,
     PathLike,
     Shape,
-    PackingMode,
-    BuildProfile,
-    DeduplicationMode,
-    CompressionAlgorithm,
 )
 
-# Exceptions
-from .exceptions import (
-    StrataError,
-    IOError,
-    NetworkError,
-    FormatError,
-    ValidationError,
-    CompressionError,
-    EncryptionError,
-    MountError,
-    CacheError,
-    VersionError,
+# Utilities
+from .utils import (
+    FORMAT_VERSION,
+    MAX_SUPPORTED_VERSION,
+    MIN_SUPPORTED_VERSION,
+    AnalysisReport,
+    Metadata,
+    analyze,
+    diff,
+    info,
+    inspect,
+    merge_overlay,
+    verify,
 )
+from .writer import Writer
 
 
 def open(path: PathLike, *, mode: str = "r", **options) -> Union[Reader, Writer]:
@@ -120,7 +118,7 @@ def open(path: PathLike, *, mode: str = "r", **options) -> Union[Reader, Writer]
         raise ValueError(f"Invalid mode: {mode}")
 
 
-__version__ = "0.2.0"
+__version__ = "0.1.0-alpha"
 
 
 def version() -> str:

@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "strata"
-version = "0.2.0"
+version = "0.1.0-alpha"
 description = "High-performance snapshot storage library with compression and encryption"
 authors = [{name = "Will"}]
 readme = "README.md"

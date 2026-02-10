@@ -2524,7 +2524,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "strata"
-version = "0.0.1"
+version = "0.1.0-alpha"
 dependencies = [
  "anyhow",
  "bincode",
@@ -2553,7 +2553,7 @@ dependencies = [
 
 [[package]]
 name = "strata-common"
-version = "0.0.1"
+version = "0.1.0-alpha"
 dependencies = [
  "bincode",
  "ed25519-dalek",
@@ -2567,7 +2567,7 @@ dependencies = [
 
 [[package]]
 name = "strata-core"
-version = "0.0.1"
+version = "0.1.0-alpha"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -2599,7 +2599,7 @@ dependencies = [
 
 [[package]]
 name = "strata-fuse"
-version = "0.0.1"
+version = "0.1.0-alpha"
 dependencies = [
  "anyhow",
  "bincode",
@@ -2613,7 +2613,7 @@ dependencies = [
 
 [[package]]
 name = "strata-loader"
-version = "0.0.1"
+version = "0.1.0-alpha"
 dependencies = [
  "bincode",
  "crc32fast",
@@ -2629,7 +2629,7 @@ dependencies = [
 
 [[package]]
 name = "strata-server"
-version = "0.0.1"
+version = "0.1.0-alpha"
 dependencies = [
  "anyhow",
  "axum",

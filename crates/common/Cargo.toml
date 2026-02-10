@@ -1,6 +1,6 @@
 [package]
 name = "strata-common"
-version = "0.0.1"
+version = "0.1.0-alpha"
 edition = "2024"
 authors = ["Will McCallion"]
 license = "Apache-2.0"

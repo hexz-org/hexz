@@ -43,11 +43,36 @@ impl std::fmt::Display for OpenError {
 
 impl std::error::Error for OpenError {}
 
-/// Configuration for opening a snapshot.
+/// Configuration for opening a Strata snapshot.
+///
+/// This struct aggregates all parameters required to locate and authenticate
+/// access to a snapshot, whether it resides on a local disk or a remote
+/// cloud provider.
 pub struct OpenConfig {
+    /// Path or URI to the snapshot file.
+    ///
+    /// Supports:
+    /// - Local paths: `/path/to/snap.st`
+    /// - HTTP/HTTPS: `https://example.com/snap.st`
+    /// - S3 URIs: `s3://bucket-name/key/path.st`
     pub path: String,
+
+    /// AWS Region to use for S3 requests.
+    ///
+    /// Defaults to `us-east-1` if not specified. Only used if `path`
+    /// starts with `s3://`.
     pub s3_region: Option<String>,
+
+    /// Custom endpoint URL for S3-compatible storage (e.g., MinIO, Ceph).
+    ///
+    /// If provided, this overrides the default AWS S3 endpoint.
     pub endpoint_url: Option<String>,
+
+    /// Security flag to allow connections to restricted/internal IP ranges.
+    ///
+    /// If `false` (default), the loader will refuse to connect to private
+    /// networks (RFC 1918) when using HTTP or S3 backends to prevent
+    /// SSRF (Server-Side Request Forgery) attacks in hosted environments.
     pub allow_restricted: bool,
 }
 

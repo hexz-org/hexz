@@ -55,8 +55,8 @@ class Writer:
             packing: Packing mode - "fast", "balanced", or "tight"
                   Controls compression level and speed tradeoff
             block_size: Block size in bytes
-            dedup: Enable content-defined chunking deduplication
-            encrypt: Enable encryption
+            dedup: Enable content-defined chunking deduplication (Note: Use strata.pack() for full dedup support)
+            encrypt: Enable encryption (Note: Use strata.pack() for encryption support)
             password: Encryption password (required if encrypt=True)
 
         Example:
@@ -95,17 +95,20 @@ class Writer:
             compression_level=compression_level,
         )
 
-        # Note: dedup/encrypt parameters are stored but not yet wired to StrataBuilder
-        # For full deduplication support, use strata.pack() or strata.build() with profiles
-        # which use the PackConfig interface that supports CDC chunking
+        # Note: Writer currently supports basic linear writing.
+        # For full deduplication and encryption support, use strata.pack()
+        # which utilizes the more advanced PackConfig pipeline.
 
-        # Only warn if user EXPLICITLY requested dedup (and we can't do it)
-        # Since dedup=True is default, we silently ignore it for now to avoid noise
-        # TODO: Implement dedup in StrataBuilder
+        if dedup:
+            warnings.warn(
+                "Deduplication in Writer is not fully implemented. "
+                "Use strata.pack() for full deduplication support.",
+                UserWarning,
+            )
 
         if encrypt:
             warnings.warn(
-                "encrypt parameter in Writer is not yet implemented. "
+                "Encryption in Writer is not yet implemented. "
                 "Use strata.pack() for encryption support.",
                 UserWarning,
             )
@@ -164,7 +167,15 @@ class Writer:
         else:
             raise ValidationError(f"Unknown kind: {kind}")
 
-        # TODO: Track bytes written
+        import os
+
+        try:
+            self._bytes_written += os.path.getsize(path_str)
+        except OSError:
+            # File might not exist or be accessible, but builder didn't fail?
+            # Just ignore if we can't get size
+            pass
+
         return self
 
     def add_bytes(self, data: bytes, **kwargs) -> "Writer":
@@ -177,9 +188,11 @@ class Writer:
         Returns:
             Self for method chaining
 
-        Note:
-            Current implementation writes to a temporary file.
-            Future versions will support direct byte writing.
+        .. warning::
+            **Performance Note:** This method currently writes the bytes to a
+            temporary file on disk before adding them to the snapshot. This
+            incurs significant I/O overhead. For large datasets, prefer using
+            `add_file()` with existing files.
         """
         # Write to temporary file and add it
         # This is not ideal but works with current Rust API
@@ -263,10 +276,10 @@ class Writer:
         self._metadata.update(metadata)
 
         # TODO: Write metadata to snapshot file
-        # This requires Rust support for metadata blocks
+        # This requires Rust support for metadata blocks in the StrataBuilder.
         warnings.warn(
-            "Metadata storage is not yet implemented. "
-            "Metadata will not be persisted to the snapshot file.",
+            "Metadata storage is not yet fully implemented in Writer. "
+            "Metadata will be stored in-memory but not persisted to the snapshot file.",
             UserWarning,
         )
 

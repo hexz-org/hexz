@@ -91,11 +91,6 @@ impl StrataReader {
         Ok(PyBytes::new(py, &data))
     }
 
-    /// Zero-copy read into a writable Python buffer.
-    ///
-    /// Uses the C buffer protocol to write directly into a pre-allocated
-    /// Python buffer (e.g., numpy array, bytearray) without an intermediate
-    /// copy. See `tensor::numpy` for the safety-critical FFI implementation.
     fn readinto(&self, py: Python<'_>, buffer: Bound<'_, PyAny>) -> PyResult<usize> {
         let mut cursor = self.cursor.lock().unwrap();
         let total_size = self.inner.size(SnapshotStream::Disk);
@@ -110,27 +105,25 @@ impl StrataReader {
         let inner = self.inner.clone();
         let start = *cursor;
 
-        // Release GIL for reading
-        let data_res =
-            py.allow_threads(move || inner.read_at(SnapshotStream::Disk, start, read_len));
+        // Cast pointer to usize to allow sending to allow_threads closure (usize is Send)
+        let ptr_addr = buf_info.ptr as usize;
 
-        match data_res {
-            Ok(data) => {
-                // SAFETY: buf_info.ptr is valid for buf_info.len bytes and writable,
-                // guaranteed by the successful PyObject_GetBuffer call with PY_BUF_WRITABLE.
-                // data.len() <= buf_info.len because read_len was clamped above.
-                unsafe {
-                    tensor::numpy::copy_to_buffer(&buf_info, &data);
-                }
-                // buf_info dropped here automatically
-                *cursor += data.len() as u64;
-                Ok(data.len())
-            }
-            Err(e) => {
-                // buf_info dropped here automatically
-                Err(PyIOError::new_err(e.to_string()))
-            }
-        }
+        // Release GIL for reading
+        let result = py.allow_threads(move || {
+            // SAFETY: buf_info.ptr is valid for buf_info.len bytes and writable.
+            // We clamped read_len to buf_info.len.
+            // The buffer is kept alive by buf_info in the outer scope (which waits for this closure).
+            let ptr = ptr_addr as *mut u8;
+            let slice = unsafe { std::slice::from_raw_parts_mut(ptr, read_len) };
+
+            inner
+                .read_at_into(SnapshotStream::Disk, start, slice)
+                .map(|_| read_len)
+                .map_err(|e| PyIOError::new_err(e.to_string()))
+        })?;
+
+        *cursor += result as u64;
+        Ok(result)
     }
 
     #[pyo3(signature = (offset, whence=None))]

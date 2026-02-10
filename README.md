@@ -113,6 +113,11 @@ The project is organized as a high-performance Rust Workspace:
 | **`crates/fuse`** | A FUSE adapter that mounts Strata archives as local filesystems (used for VMs). |
 | **`crates/server`** | High-throughput HTTP server for streaming data blocks. |
 
+## Documentation
+
+* **[Quick start](docs/quickstart.md)** — Create a snapshot and read it in 5 minutes.
+* **[Python API reference](docs/reference/python-api.md)** — All public APIs with docstrings and examples. Build a browsable version with: `make docs-python` (requires Sphinx; output in `docs/_build/html`).
+
 ## Build from Source
 
 ### Prerequisites

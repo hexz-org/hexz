@@ -9,13 +9,17 @@ Or from examples/:
     python quickstart.py
 """
 
-import tempfile
 import os
+import tempfile
+
 import strata
 
 
 def main():
     print("Strata quick start — 5 minutes to first result\n")
+    version = strata.version()
+
+    print(f"You are using version {version}")
 
     # Use a temp dir so we don't leave files behind
     with tempfile.TemporaryDirectory(prefix="strata_quickstart_") as tmp:

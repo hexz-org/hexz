@@ -1,6 +1,7 @@
-maturin 
-torch 
-pytest 
-pillow 
-numpy 
+maturin
+torch
+pytest
+pillow
+numpy
 tqdm
+sphinx>=7.0

@@ -32,6 +32,7 @@ const MAX_CHUNK_SIZE: u64 = 32 * 1024 * 1024;
 
 /// Shared application state for the HTTP serving layer.
 struct AppState {
+    /// The opened Strata snapshot file being served.
     snap: Arc<StrataFile>,
 }
 
@@ -39,6 +40,11 @@ struct AppState {
 ///
 /// This starts a TCP listener that speaks the NBD protocol, allowing
 /// Linux clients to mount the snapshot using `nbd-client`.
+///
+/// # Security Note
+///
+/// The NBD protocol is unencrypted. It is recommended to run this over
+/// a Unix socket or a localhost-only TCP port.
 pub async fn serve_nbd(snap: Arc<StrataFile>, port: u16) -> anyhow::Result<()> {
     let addr = SocketAddr::from((BIND_ADDR, port));
     let listener = TcpListener::bind(addr).await?;
@@ -64,6 +70,12 @@ pub async fn serve_nbd(snap: Arc<StrataFile>, port: u16) -> anyhow::Result<()> {
 }
 
 /// Exposes a `StrataFile` as an S3 caching gateway.
+///
+/// **WARNING: NOT IMPLEMENTED.**
+///
+/// Calling this function will panic immediately. It is reserved for future use.
+/// Do not use in production.
+#[deprecated(note = "Not implemented. Will panic.")]
 pub async fn serve_s3_gateway(_snap: Arc<StrataFile>, port: u16) -> anyhow::Result<()> {
     tracing::info!("Starting S3 Gateway on port {}", port);
     println!(
