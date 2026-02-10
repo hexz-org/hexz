@@ -29,8 +29,8 @@ def benchmark_profiles(source_dir: str):
 
         # Measure read time (sequential scan)
         start_read = time.time()
-        with strata.Reader(output_file) as reader:
-            # Read in 1MB chunks
+        with strata.open(output_file) as reader:
+            # Read in 1MB chunks (uses read(buffer=...) internally)
             for _ in reader.iter_chunks(1024 * 1024):
                 pass
         read_time = time.time() - start_read

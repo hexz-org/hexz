@@ -53,17 +53,21 @@ def test_file_interface(base_snap_path, raw_data_path):
     assert reader.tell() == len(raw_data) - 5
 
 
-def test_readinto(base_snap_path, raw_data_path):
+def test_read_buffer(base_snap_path, raw_data_path):
+    """read(buffer=...) fills buffer zero-copy and returns bytes read."""
     reader = strata.open(base_snap_path)
     with open(raw_data_path, "rb") as f:
         raw_data = f.read()
-
     buf = bytearray(10)
     reader.seek(50)
-    n = reader.readinto(buf)
-
+    n = reader.read(buffer=buf)
     assert n == 10
     assert buf == raw_data[50:60]
+    reader.seek(100)
+    buf2 = bytearray(20)
+    m = reader.read(buffer=buf2)
+    assert m == 20
+    assert buf2 == raw_data[100:120]
 
 
 def test_pickle(base_snap_path):

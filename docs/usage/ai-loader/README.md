@@ -42,7 +42,7 @@ data = reader.read_at(offset=1024, length=4096)
 
 # Zero-copy read into NumPy array
 buffer = np.zeros(4096, dtype=np.uint8)
-reader.readinto(buffer)  # Fills buffer without intermediate copy
+reader.read(buffer=buffer)  # Fills buffer without intermediate copy
 
 # File-like interface
 reader.seek(0)
@@ -244,7 +244,7 @@ chunk = reader.read(4096)
 remaining = reader.read()
 ```
 
-##### `readinto(buffer: bytearray | np.ndarray) -> int`
+##### `read(buffer: bytearray | np.ndarray) -> int`
 
 **Zero-copy read** into a pre-allocated writable buffer. This is the most efficient method for repeated reads of the same size.
 
@@ -263,7 +263,7 @@ buffer = np.zeros(65536, dtype=np.uint8)
 
 # Repeatedly read into same buffer (zero allocation)
 for _ in range(1000):
-    n = reader.readinto(buffer)
+    n = reader.read(buffer=buffer)
     if n == 0:
         break
     process_data(buffer[:n])

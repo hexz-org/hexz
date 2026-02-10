@@ -231,7 +231,7 @@ loader/
 
 1. **Engine/Interface Separation**: Pure Rust logic in `engine/` has no PyO3 dependency, making it reusable for non-Python contexts (future C FFI, WASM, etc.).
 
-2. **Zero-Copy Buffer Protocol**: The `readinto()` method uses CPython's buffer protocol to write directly into NumPy arrays without intermediate allocations.
+2. **Zero-Copy Buffer Protocol**: The `read(buffer=...)` method uses CPython's buffer protocol to write directly into NumPy arrays without intermediate allocations.
 
 3. **GIL Management**: All I/O operations use `py.allow_threads()` to release the GIL during blocking operations, enabling true parallelism in multi-worker DataLoaders.
 

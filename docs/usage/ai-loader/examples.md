@@ -204,7 +204,7 @@ class BrainMRIStrata(Dataset):
         # Zero-copy read into NumPy array
         volume_bytes = volume.view(np.uint8)
         self.reader.seek(vol_info['offset'])
-        self.reader.readinto(volume_bytes)
+        self.reader.read(buffer=volume_bytes)
 
         # Reshape to 3D
         volume = volume.reshape(d, h, w)  # DHW format

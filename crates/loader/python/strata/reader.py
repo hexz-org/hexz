@@ -4,7 +4,7 @@ This module provides the high-level Reader and AsyncReader classes that wrap
 the Rust-implemented StrataReader with a more pythonic interface.
 """
 
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, Union
 from pathlib import Path
 
 from . import _strata_core
@@ -22,6 +22,9 @@ class Reader:
     Example:
         >>> with strata.Reader("dataset.st") as reader:
         ...     data = reader.read(4096)
+        ...     # Zero-copy into buffer
+        ...     buf = bytearray(4096)
+        ...     n = reader.read(buffer=buf)
         ...     # Or random access
         ...     chunk = reader.read_at(offset=1000, size=100)
         ...     # Or slice notation
@@ -57,15 +60,32 @@ class Reader:
         )
         # TODO: Wire up cache_size and prefetch to Rust config
 
-    def read(self, size: int = -1) -> bytes:
-        """Read bytes from current position and advance cursor.
+    def read(
+        self,
+        size: int = -1,
+        *,
+        buffer: Optional[Union[bytearray, memoryview]] = None,
+    ) -> Union[bytes, int]:
+        """Read from current position and advance cursor.
+
+        With no buffer, returns bytes (may allocate). With a buffer, fills it
+        (zero-copy) and returns the number of bytes read.
 
         Args:
-            size: Number of bytes to read (-1 for all remaining)
+            size: Number of bytes to read (-1 for all remaining). Ignored when
+                buffer is provided (then up to len(buffer) bytes are read).
+            buffer: If provided, a writable buffer (e.g. bytearray) to fill.
+                Uses the zero-copy backend; returns number of bytes read (int).
 
         Returns:
-            Bytes read from the snapshot
+            If buffer is None: bytes read. If buffer is provided: int (bytes read).
+
+        Example:
+            >>> data = reader.read(4096)
+            >>> n = reader.read(buffer=bytearray(4096))
         """
+        if buffer is not None:
+            return self._reader.readinto(buffer)
         return self._reader.read(size)
 
     def read_at(self, offset: int, size: int) -> bytes:
@@ -79,17 +99,6 @@ class Reader:
             Bytes read from the snapshot
         """
         return self._reader.read_at(offset, size)
-
-    def readinto(self, buffer: bytearray) -> int:
-        """Read bytes into a writable buffer (zero-copy where possible).
-
-        Args:
-            buffer: Writable buffer (e.g. bytearray) to fill
-
-        Returns:
-            Number of bytes read
-        """
-        return self._reader.readinto(buffer)
 
     def read_range(self, start: int, end: int) -> bytes:
         """Read byte range [start, end).
@@ -136,19 +145,26 @@ class Reader:
     def iter_chunks(self, chunk_size: int = 1024 * 1024):
         """Iterate over the snapshot in fixed-size chunks.
 
+        Uses a single buffer and read(buffer=...) for zero-copy reads.
+
         Args:
             chunk_size: Size of each chunk in bytes (default 1MB)
 
         Yields:
             Bytes chunks from the snapshot
         """
+        buf = bytearray(chunk_size)
         offset = 0
         total = self.size
         while offset < total:
-            size = min(chunk_size, total - offset)
-            chunk = self.read_at(offset, size)
-            yield chunk
-            offset += size
+            to_read = min(chunk_size, total - offset)
+            self.seek(offset)
+            # Slice of memoryview so read(buffer=...) writes into buf (bytearray[:] is a copy)
+            n = self.read(buffer=memoryview(buf)[:to_read])
+            if n == 0:
+                break
+            yield bytes(buf[:n])
+            offset += n
 
     def close(self) -> None:
         """Close the snapshot and release resources."""

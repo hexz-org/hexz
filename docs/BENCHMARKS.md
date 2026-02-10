@@ -227,11 +227,11 @@ Memory allocations for 1000 reads (4KB each):
 Method                  Allocations   Total Memory   Overhead
 ------------------------------------------------------------------------
 Standard read()         1000          4 MB           100%
-readinto() NumPy        1             4 MB           0%
+read(buffer=...)        1             4 MB           0%
 Memory mapping          0             4 MB           -25% (shared)
 ```
 
-**Recommendation**: Always use `readinto()` for hot loops in training.
+**Recommendation**: Always use `read(buffer=...)` for hot loops in training.
 
 ---
 
@@ -362,7 +362,7 @@ def benchmark_throughput(path, read_size=1024*1024):
 
     reader.seek(0)
     while bytes_read < size:
-        n = reader.readinto(buffer)
+        n = reader.read(buffer=buffer)
         if n == 0:
             break
         bytes_read += n
