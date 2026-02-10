@@ -98,6 +98,32 @@ pub fn inspect(py: Python<'_>, path: String) -> PyResult<HashMap<String, PyObjec
     };
 
     let mut dict: HashMap<String, PyObject> = HashMap::new();
+
+    // Read user metadata if present
+    if let (Some(offset), Some(length)) = (header.metadata_offset, header.metadata_length) {
+        if length > 0 {
+            f.seek(SeekFrom::Start(offset))
+                .map_err(|e| PyIOError::new_err(e.to_string()))?;
+            let mut meta_bytes = vec![0u8; length as usize];
+            f.read_exact(&mut meta_bytes)
+                .map_err(|e| PyIOError::new_err(e.to_string()))?;
+
+            // Decode using Python's json module
+            if let Ok(json) = py.import("json") {
+                let bytes_obj = pyo3::types::PyBytes::new(py, &meta_bytes);
+                if let Ok(user_meta) = json.call_method1("loads", (bytes_obj,)) {
+                    if let Ok(user_dict) = user_meta.downcast::<pyo3::types::PyDict>() {
+                        for (k, v) in user_dict {
+                            if let Ok(key) = k.extract::<String>() {
+                                dict.insert(key, v.into_pyobject(py)?.unbind());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     dict.insert(
         "version".to_string(),
         header.version.into_pyobject(py)?.unbind().into(),
@@ -403,7 +429,17 @@ pub fn snapshot_vm(
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
 
-    let mut builder = StrataBuilder::new(output_path, 65536, "lz4", None)?;
+    let mut builder = StrataBuilder::new(
+        output_path,
+        65536,
+        "lz4",
+        None,
+        true,
+        false,
+        16384,
+        65536,
+        131072,
+    )?;
     builder.merge_overlay(py, base_path, overlay_path, false)?;
     builder.add_memory_file(py, mem_path)?;
     builder.finalize()?;

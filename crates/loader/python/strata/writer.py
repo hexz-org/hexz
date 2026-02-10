@@ -8,6 +8,7 @@ from typing import Optional, Any, Dict, Literal
 from pathlib import Path
 import tempfile
 import warnings
+import json
 
 from . import _strata_core
 from .exceptions import IOError, ValidationError
@@ -43,6 +44,7 @@ class Writer:
         packing: Optional[PackingMode] = None,
         block_size: int = 64 * 1024,
         dedup: bool = True,
+        cdc: bool = False,
         encrypt: bool = False,
         password: Optional[str] = None,
     ):
@@ -55,7 +57,8 @@ class Writer:
             packing: Packing mode - "fast", "balanced", or "tight"
                   Controls compression level and speed tradeoff
             block_size: Block size in bytes
-            dedup: Enable content-defined chunking deduplication (Note: Use strata.pack() for full dedup support)
+            dedup: Enable deduplication
+            cdc: Enable content-defined chunking (requires dedup=True)
             encrypt: Enable encryption (Note: Use strata.pack() for encryption support)
             password: Encryption password (required if encrypt=True)
 
@@ -75,8 +78,10 @@ class Writer:
         resolved_mode = packing or mode or "balanced"
         self._mode = resolved_mode
         self._dedup = dedup
+        self._cdc = cdc
         self._encrypt = encrypt
         self._password = password
+        self._metadata = {}
 
         # Map packing mode to compression level
         if resolved_mode not in COMPRESSION_LEVELS:
@@ -93,18 +98,13 @@ class Writer:
             block_size=block_size,
             compression=compression,
             compression_level=compression_level,
+            dedup=dedup,
+            cdc=cdc,
         )
 
         # Note: Writer currently supports basic linear writing.
-        # For full deduplication and encryption support, use strata.pack()
+        # For encryption support, use strata.pack()
         # which utilizes the more advanced PackConfig pipeline.
-
-        if dedup:
-            warnings.warn(
-                "Deduplication in Writer is not fully implemented. "
-                "Use strata.pack() for full deduplication support.",
-                UserWarning,
-            )
 
         if encrypt:
             warnings.warn(
@@ -167,15 +167,6 @@ class Writer:
         else:
             raise ValidationError(f"Unknown kind: {kind}")
 
-        import os
-
-        try:
-            self._bytes_written += os.path.getsize(path_str)
-        except OSError:
-            # File might not exist or be accessible, but builder didn't fail?
-            # Just ignore if we can't get size
-            pass
-
         return self
 
     def add_bytes(self, data: bytes, **kwargs) -> "Writer":
@@ -202,7 +193,6 @@ class Writer:
 
         try:
             self.add_file(temp_path)
-            self._bytes_written += len(data)
         finally:
             # Clean up temp file
             import os
@@ -263,26 +253,12 @@ class Writer:
 
         Returns:
             Self for method chaining
-
-        Note:
-            Metadata storage requires Rust implementation.
-            Currently stores metadata in-memory but not persisted to file.
-            TODO: Implement metadata serialization in Rust StrataBuilder.
         """
-        # Store metadata in-memory for now
+        # Store metadata in-memory
         if not hasattr(self, "_metadata"):
             self._metadata = {}
 
         self._metadata.update(metadata)
-
-        # TODO: Write metadata to snapshot file
-        # This requires Rust support for metadata blocks in the StrataBuilder.
-        warnings.warn(
-            "Metadata storage is not yet fully implemented in Writer. "
-            "Metadata will be stored in-memory but not persisted to the snapshot file.",
-            UserWarning,
-        )
-
         return self
 
     def write(self, data: bytes, *, offset: Optional[int] = None) -> int:
@@ -313,11 +289,11 @@ class Writer:
     @property
     def bytes_written(self) -> int:
         """Total bytes written so far."""
-        return self._bytes_written
+        return self._builder.get_bytes_written()
 
     def tell(self) -> int:
         """Get current write position."""
-        return self._bytes_written
+        return self.bytes_written
 
     def finalize(self) -> None:
         """Finalize the snapshot and write all metadata.
@@ -328,6 +304,17 @@ class Writer:
         - Flushes all buffers
         """
         if not self._finalized:
+            if self._metadata:
+                try:
+                    json_bytes = json.dumps(self._metadata).encode("utf-8")
+                    self._builder.set_metadata(json_bytes)
+                except (TypeError, ValueError) as e:
+                    warnings.warn(
+                        f"Failed to serialize metadata to JSON: {e}. "
+                        "Metadata will not be persisted.",
+                        UserWarning,
+                    )
+
             self._builder.finalize()
             self._finalized = True
 

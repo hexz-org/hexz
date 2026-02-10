@@ -5,7 +5,8 @@
 
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
-use std::collections::HashSet;
+use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
@@ -13,6 +14,7 @@ use std::sync::Arc;
 use strata_common::constants::{BLOCK_OFFSET_PARENT, DEFAULT_ZSTD_LEVEL};
 use strata_core::StrataFile;
 use strata_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
+use strata_core::algo::dedup::{cdc::StreamChunker, dcam::DedupeParams};
 use strata_core::api::stratafile::SnapshotStream;
 use strata_core::format::{
     header::{CompressionType, FeatureFlags, StrataHeader},
@@ -20,6 +22,39 @@ use strata_core::format::{
     magic::{FORMAT_VERSION, HEADER_SIZE, MAGIC_BYTES},
 };
 use strata_core::store::local::FileBackend;
+
+struct FixedChunker<R> {
+    reader: R,
+    block_size: usize,
+}
+
+impl<R: Read> FixedChunker<R> {
+    fn new(reader: R, block_size: usize) -> Self {
+        Self { reader, block_size }
+    }
+}
+
+impl<R: Read> Iterator for FixedChunker<R> {
+    type Item = std::io::Result<Vec<u8>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut buf = vec![0u8; self.block_size];
+        let mut pos = 0;
+        while pos < self.block_size {
+            match self.reader.read(&mut buf[pos..]) {
+                Ok(0) => break,
+                Ok(n) => pos += n,
+                Err(e) => return Some(Err(e)),
+            }
+        }
+        if pos == 0 {
+            None
+        } else {
+            buf.truncate(pos);
+            Some(Ok(buf))
+        }
+    }
+}
 
 #[pyclass(module = "strata._strata_core")]
 pub struct StrataBuilder {
@@ -32,17 +67,30 @@ pub struct StrataBuilder {
     parent_path: Option<String>,
     disk_blocks_count: u64,
     memory_blocks_count: u64,
+    dedup_enabled: bool,
+    dedup_map: HashMap<[u8; 32], u64>,
+    cdc_enabled: bool,
+    min_chunk: u32,
+    avg_chunk: u32,
+    max_chunk: u32,
+    metadata: Vec<u8>,
 }
 
 #[pymethods]
 impl StrataBuilder {
     #[new]
-    #[pyo3(signature = (output_path, block_size=65536, compression="lz4", compression_level=None))]
+    #[pyo3(signature = (output_path, block_size=65536, compression="lz4", compression_level=None, dedup=true, cdc=false, min_chunk=16384, avg_chunk=65536, max_chunk=131072))]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         output_path: String,
         block_size: u32,
         compression: &str,
         compression_level: Option<i32>,
+        dedup: bool,
+        cdc: bool,
+        min_chunk: u32,
+        avg_chunk: u32,
+        max_chunk: u32,
     ) -> PyResult<Self> {
         let path = PathBuf::from(output_path);
         let mut f = File::create(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
@@ -61,7 +109,22 @@ impl StrataBuilder {
             parent_path: None,
             disk_blocks_count: 0,
             memory_blocks_count: 0,
+            dedup_enabled: dedup,
+            dedup_map: HashMap::new(),
+            cdc_enabled: cdc,
+            min_chunk,
+            avg_chunk,
+            max_chunk,
+            metadata: Vec::new(),
         })
+    }
+
+    pub fn set_metadata(&mut self, metadata: Vec<u8>) {
+        self.metadata = metadata;
+    }
+
+    pub fn get_bytes_written(&self) -> u64 {
+        self.current_offset
     }
 
     pub fn add_disk_file<'py>(&mut self, py: Python<'py>, path: String) -> PyResult<()> {
@@ -140,8 +203,11 @@ impl StrataBuilder {
             .ok_or_else(|| PyValueError::new_err("Writer closed"))?;
         let mut current_offset = self.current_offset;
 
-        let (pages, new_offset, out_file) =
-            py.allow_threads(move || -> PyResult<(Vec<PageEntry>, u64, File)> {
+        let dedup_enabled = self.dedup_enabled;
+        let mut dedup_map = std::mem::take(&mut self.dedup_map);
+
+        let (pages, new_offset, out_file, dedup_map) = py.allow_threads(
+            move || -> PyResult<(Vec<PageEntry>, u64, File, HashMap<[u8; 32], u64>)> {
                 let mut pages = Vec::new();
                 let mut page = IndexPage::default();
                 let mut global_block_idx = 0;
@@ -250,16 +316,34 @@ impl StrataBuilder {
 
                         let checksum = crc32fast::hash(&compressed);
 
-                        out.write_all(&compressed)
-                            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+                        let mut block_offset = current_offset;
+                        let mut should_write = true;
+
+                        if dedup_enabled {
+                            let mut hasher = Sha256::new();
+                            hasher.update(&compressed);
+                            let hash: [u8; 32] = hasher.finalize().into();
+
+                            if let Some(&existing_offset) = dedup_map.get(&hash) {
+                                block_offset = existing_offset;
+                                should_write = false;
+                            } else {
+                                dedup_map.insert(hash, current_offset);
+                            }
+                        }
+
+                        if should_write {
+                            out.write_all(&compressed)
+                                .map_err(|e| PyIOError::new_err(e.to_string()))?;
+                            current_offset += compressed.len() as u64;
+                        }
 
                         page.blocks.push(BlockInfo {
-                            offset: current_offset,
+                            offset: block_offset,
                             length: compressed.len() as u32,
                             logical_len: len as u32,
                             checksum,
                         });
-                        current_offset += compressed.len() as u64;
                     }
 
                     global_block_idx += 1;
@@ -295,12 +379,14 @@ impl StrataBuilder {
                     });
                 }
 
-                Ok((pages, current_offset, out))
-            })?;
+                Ok((pages, current_offset, out, dedup_map))
+            },
+        )?;
 
         self.writer = Some(out_file);
         self.current_offset = new_offset;
         self.master.disk_pages = pages;
+        self.dedup_map = dedup_map;
 
         Ok(())
     }
@@ -311,11 +397,24 @@ impl StrataBuilder {
             .take()
             .ok_or_else(|| PyValueError::new_err("Writer already closed"))?;
 
+        // Write index first
         let index_offset = self.current_offset;
         let index_bytes =
             bincode::serialize(&self.master).map_err(|e| PyValueError::new_err(e.to_string()))?;
         out.write_all(&index_bytes)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        self.current_offset += index_bytes.len() as u64;
+
+        // Write metadata if present
+        let (meta_offset, meta_len) = if !self.metadata.is_empty() {
+            let offset = self.current_offset;
+            out.write_all(&self.metadata)
+                .map_err(|e| PyIOError::new_err(e.to_string()))?;
+            self.current_offset += self.metadata.len() as u64;
+            (Some(offset), Some(self.metadata.len() as u32))
+        } else {
+            (None, None)
+        };
 
         let comp_type = match self.compression.as_str() {
             "zstd" => CompressionType::Zstd,
@@ -330,8 +429,8 @@ impl StrataBuilder {
             parent_path: self.parent_path.clone(),
             dictionary_offset: None,
             dictionary_length: None,
-            metadata_offset: None,
-            metadata_length: None,
+            metadata_offset: meta_offset,
+            metadata_length: meta_len,
             signature_offset: None,
             signature_length: None,
             encryption: None,
@@ -339,7 +438,7 @@ impl StrataBuilder {
             features: FeatureFlags {
                 has_disk: !self.master.disk_pages.is_empty(),
                 has_memory: !self.master.memory_pages.is_empty(),
-                variable_blocks: false,
+                variable_blocks: self.cdc_enabled,
             },
         };
 
@@ -360,7 +459,7 @@ impl StrataBuilder {
         let comp_str = self.compression.clone();
         let compression_level = self.compression_level;
 
-        let mut f_in = File::open(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
+        let f_in = File::open(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
         let len = f_in
             .metadata()
             .map_err(|e| PyIOError::new_err(e.to_string()))?
@@ -391,10 +490,25 @@ impl StrataBuilder {
             .ok_or_else(|| PyValueError::new_err("Writer closed"))?;
         let mut current_offset = self.current_offset;
 
-        // Return: (pages, new_offset, out_file, added_blocks)
-        let (pages, new_offset, out_file, added_blocks) =
-            py.allow_threads(move || -> PyResult<(Vec<PageEntry>, u64, File, u64)> {
-                let mut buf = vec![0u8; block_size];
+        let dedup_enabled = self.dedup_enabled;
+        let mut dedup_map = std::mem::take(&mut self.dedup_map);
+
+        let cdc_enabled = self.cdc_enabled;
+        let cdc_params = if cdc_enabled {
+            Some(DedupeParams {
+                f: (self.avg_chunk as f64).log2() as u32,
+                m: self.min_chunk,
+                z: self.max_chunk,
+                w: 48,
+                v: 8,
+            })
+        } else {
+            None
+        };
+
+        // Return: (pages, new_offset, out_file, added_blocks, dedup_map)
+        let (pages, new_offset, out_file, added_blocks, dedup_map) = py.allow_threads(
+            move || -> PyResult<(Vec<PageEntry>, u64, File, u64, HashMap<[u8; 32], u64>)> {
                 let mut pages = Vec::new();
                 let mut page = IndexPage::default();
                 let mut global_block_idx = start_block_idx;
@@ -403,15 +517,15 @@ impl StrataBuilder {
                 let mut current_logical_pos = start_logical_pos;
                 let mut blocks_added = 0u64;
 
-                loop {
-                    let n = f_in
-                        .read(&mut buf)
-                        .map_err(|e| PyIOError::new_err(e.to_string()))?;
-                    if n == 0 {
-                        break;
-                    }
+                let chunker: Box<dyn Iterator<Item = std::io::Result<Vec<u8>>>> = if cdc_enabled {
+                    Box::new(StreamChunker::new(f_in, cdc_params.unwrap()))
+                } else {
+                    Box::new(FixedChunker::new(f_in, block_size))
+                };
 
-                    let chunk = &buf[..n];
+                for chunk_res in chunker {
+                    let chunk = chunk_res.map_err(|e| PyIOError::new_err(e.to_string()))?;
+                    let n = chunk.len();
 
                     if chunk.iter().all(|&b| b == 0) {
                         page.blocks.push(BlockInfo {
@@ -422,21 +536,38 @@ impl StrataBuilder {
                         });
                     } else {
                         let compressed = compressor
-                            .compress(chunk)
+                            .compress(&chunk)
                             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
                         let checksum = crc32fast::hash(&compressed);
+                        let mut block_offset = current_offset;
+                        let mut should_write = true;
 
-                        out.write_all(&compressed)
-                            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+                        if dedup_enabled {
+                            let mut hasher = Sha256::new();
+                            hasher.update(&compressed);
+                            let hash: [u8; 32] = hasher.finalize().into();
+
+                            if let Some(&existing_offset) = dedup_map.get(&hash) {
+                                block_offset = existing_offset;
+                                should_write = false;
+                            } else {
+                                dedup_map.insert(hash, current_offset);
+                            }
+                        }
+
+                        if should_write {
+                            out.write_all(&compressed)
+                                .map_err(|e| PyIOError::new_err(e.to_string()))?;
+                            current_offset += compressed.len() as u64;
+                        }
 
                         page.blocks.push(BlockInfo {
-                            offset: current_offset,
+                            offset: block_offset,
                             length: compressed.len() as u32,
                             logical_len: n as u32,
                             checksum,
                         });
-                        current_offset += compressed.len() as u64;
                     }
 
                     global_block_idx += 1;
@@ -475,11 +606,13 @@ impl StrataBuilder {
                     });
                 }
 
-                Ok((pages, current_offset, out, blocks_added))
-            })?;
+                Ok((pages, current_offset, out, blocks_added, dedup_map))
+            },
+        )?;
 
         self.writer = Some(out_file);
         self.current_offset = new_offset;
+        self.dedup_map = dedup_map;
 
         if is_disk {
             self.master.disk_pages.extend(pages);

@@ -10,6 +10,7 @@ SHELL      := /bin/bash
 LOADER_CRATE    := crates/loader
 MATURIN         ?= maturin
 CARGO           ?= cargo
+BLACK			?= black
 CRITERION_DIR   := target/criterion
 BENCH_STORE_DIR := .criterion
 
@@ -65,7 +66,7 @@ help:
 	@printf "  make test-python   Run Python tests only\n"
 	@printf "\n$(CYAN)Quality$(RESET)\n"
 	@printf "  make lint          Run clippy + fmt check + deny\n"
-	@printf "  make fmt           Auto-format all Rust code\n"
+	@printf "  make fmt           Auto-format all Rust and Python code\n"
 	@printf "  make clippy        Run clippy with strict lints\n"
 	@printf "  make deny          Run cargo-deny (licenses + advisories)\n"
 	@printf "  make check         Fast workspace-wide type check\n"
@@ -128,6 +129,9 @@ lint: fmt-check clippy deny
 fmt:
 	@printf "$(GREEN)Formatting…$(RESET)\n"
 	$(CARGO) fmt --all
+	$(BLACK) crates
+	$(BLACK) examples
+	$(BLACK) scripts
 
 fmt-check:
 	@printf "$(GREEN)Checking format…$(RESET)\n"
