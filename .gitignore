@@ -73,6 +73,7 @@ raw_data/
 flamegraph.svg
 perf.data*
 criterion/
+.criterion/
 
 # Documentation builds
 docs/_build/

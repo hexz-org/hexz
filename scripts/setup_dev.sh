@@ -34,6 +34,7 @@ info "Installing Cargo tools…"
 cargo install --locked cargo-deny 2>/dev/null || warn "cargo-deny already installed"
 cargo install --locked cargo-fuzz 2>/dev/null || warn "cargo-fuzz already installed"
 cargo install --locked maturin    2>/dev/null || warn "maturin already installed"
+cargo install --locked critcmp    2>/dev/null || warn "critcmp already installed"
 
 # ── System dependencies ──────────────────────────────────────────────────────
 info "Checking system dependencies…"

@@ -7,9 +7,26 @@ SHELL      := /bin/bash
 .DEFAULT_GOAL := help
 
 # ── Paths ────────────────────────────────────────────────────────────────────
-LOADER_CRATE := crates/loader
-MATURIN      ?= maturin
-CARGO        ?= cargo
+LOADER_CRATE    := crates/loader
+MATURIN         ?= maturin
+CARGO           ?= cargo
+CRITERION_DIR   := target/criterion
+BENCH_STORE_DIR := .criterion
+
+# ── Argument Handling for Baselines ──────────────────────────────────────────
+# Allows "make save-baseline name", "make compare-baseline old new" etc.
+
+ifneq (,$(filter save-baseline archive-baseline restore-baseline,$(firstword $(MAKECMDGOALS))))
+  BASELINE_NAME := $(word 2,$(MAKECMDGOALS))
+  $(eval $(BASELINE_NAME):;@:)
+endif
+
+ifneq (,$(filter compare-baseline,$(firstword $(MAKECMDGOALS))))
+  BASE_OLD := $(word 2,$(MAKECMDGOALS))
+  BASE_NEW := $(word 3,$(MAKECMDGOALS))
+  $(eval $(BASE_OLD):;@:)
+  $(eval $(BASE_NEW):;@:)
+endif
 
 # ── Colors (only when stdout is a terminal) ──────────────────────────────────
 ifneq ($(TERM),)
@@ -28,7 +45,7 @@ endif
 .PHONY: help build rust python install clean \
         test test-rust test-python test-integration \
         lint fmt clippy deny check \
-        bench save-baseline fuzz \
+        bench save-baseline archive-baseline restore-baseline compare-baseline fuzz \
         docker-dev docker-bench \
         docs docs-python setup ci
 
@@ -53,9 +70,12 @@ help:
 	@printf "  make deny          Run cargo-deny (licenses + advisories)\n"
 	@printf "  make check         Fast workspace-wide type check\n"
 	@printf "\n$(CYAN)Performance$(RESET)\n"
-	@printf "  make bench         Run criterion benchmarks\n"
-	@printf "  make save-baseline Save benchmark baseline (v0.1.0-alpha)\n"
-	@printf "  make fuzz          Run fuzz targets (requires cargo-fuzz)\n"
+	@printf "  make bench                     Run criterion benchmarks\n"
+	@printf "  make save-baseline <name>      Run benchmarks and save baseline\n"
+	@printf "  make archive-baseline <name>   Archive baseline to $(BENCH_STORE_DIR)/\n"
+	@printf "  make restore-baseline <name>   Restore baseline from archive\n"
+	@printf "  make compare-baseline <a> <b>  Compare two baselines (requires critcmp)\n"
+	@printf "  make fuzz                      Run fuzz targets (requires cargo-fuzz)\n"
 	@printf "\n$(CYAN)Infrastructure$(RESET)\n"
 	@printf "  make docker-dev    Build the development Docker image\n"
 	@printf "  make docker-bench  Build the benchmark Docker image\n"
@@ -133,8 +153,60 @@ bench:
 	$(CARGO) bench --package strata
 
 save-baseline:
-	@printf "$(GREEN)Saving benchmark baseline (v0.1.0-alpha)…$(RESET)\n"
-	$(CARGO) bench -p strata -- --save-baseline v0.1.0-alpha
+	@if [ -z "$(BASELINE_NAME)" ]; then \
+		echo "$(BOLD)Usage:$(RESET) make save-baseline <name>"; \
+		exit 1; \
+	fi
+	@printf "$(GREEN)Running benchmarks and saving baseline '$(BASELINE_NAME)'…$(RESET)\n"
+	$(CARGO) bench -p strata -- --save-baseline $(BASELINE_NAME)
+
+archive-baseline:
+	@if [ -z "$(BASELINE_NAME)" ]; then \
+		echo "$(BOLD)Usage:$(RESET) make archive-baseline <name>"; \
+		exit 1; \
+	fi
+	@printf "$(GREEN)Archiving baseline to $(BENCH_STORE_DIR)/$(BASELINE_NAME)...$(RESET)\n"
+	@mkdir -p $(BENCH_STORE_DIR)/$(BASELINE_NAME)
+	@if [ -d "$(CRITERION_DIR)" ]; then \
+		cp -r $(CRITERION_DIR)/* $(BENCH_STORE_DIR)/$(BASELINE_NAME)/; \
+		printf "$(CYAN)Baseline '$(BASELINE_NAME)' archived to $(BENCH_STORE_DIR)/$(BASELINE_NAME).$(RESET)\n"; \
+	else \
+		echo "$(BOLD)Error:$(RESET) No criterion directory found at $(CRITERION_DIR). Run 'make save-baseline <name>' first."; \
+		exit 1; \
+	fi
+
+restore-baseline:
+	@if [ -z "$(BASELINE_NAME)" ]; then \
+		echo "$(BOLD)Usage:$(RESET) make restore-baseline <name>"; \
+		exit 1; \
+	fi
+	@printf "$(GREEN)Restoring baseline '$(BASELINE_NAME)' from archive...$(RESET)\n"
+	@if [ -d "$(BENCH_STORE_DIR)/$(BASELINE_NAME)" ]; then \
+		rm -rf $(CRITERION_DIR); \
+		mkdir -p $(CRITERION_DIR); \
+		cp -r $(BENCH_STORE_DIR)/$(BASELINE_NAME)/* $(CRITERION_DIR)/; \
+		printf "$(CYAN)Baseline '$(BASELINE_NAME)' restored to $(CRITERION_DIR).$(RESET)\n"; \
+	else \
+		echo "$(BOLD)Error:$(RESET) Baseline archive '$(BASELINE_NAME)' not found in $(BENCH_STORE_DIR)."; \
+		exit 1; \
+	fi
+
+compare-baseline:
+	@if [ -z "$(BASE_OLD)" ] || [ -z "$(BASE_NEW)" ]; then \
+		echo "$(BOLD)Usage:$(RESET) make compare-baseline <old> <new>"; \
+		exit 1; \
+	fi
+	@command -v critcmp >/dev/null 2>&1 || { echo "$(BOLD)Error:$(RESET) critcmp not found. Install with 'cargo install critcmp'."; exit 1; }
+	@printf "$(GREEN)Preparing to compare '$(BASE_OLD)' vs '$(BASE_NEW)'...$(RESET)\n"
+	@mkdir -p $(CRITERION_DIR)
+	@if [ -d "$(BENCH_STORE_DIR)/$(BASE_OLD)" ]; then \
+		cp -rn $(BENCH_STORE_DIR)/$(BASE_OLD)/* $(CRITERION_DIR)/ 2>/dev/null || true; \
+	fi
+	@if [ -d "$(BENCH_STORE_DIR)/$(BASE_NEW)" ]; then \
+		cp -rn $(BENCH_STORE_DIR)/$(BASE_NEW)/* $(CRITERION_DIR)/ 2>/dev/null || true; \
+	fi
+	@printf "$(GREEN)Running critcmp...$(RESET)\n"
+	critcmp $(BASE_OLD) $(BASE_NEW)
 
 fuzz:
 	@printf "$(GREEN)Running fuzz targets (60 s each)…$(RESET)\n"
@@ -165,7 +237,7 @@ docs-python:
 setup:
 	@printf "$(GREEN)Installing development tools…$(RESET)\n"
 	rustup component add rustfmt clippy
-	cargo install cargo-deny cargo-fuzz maturin
+	cargo install cargo-deny cargo-fuzz maturin critcmp
 	@printf "$(GREEN)Done. Run 'make check' to verify.$(RESET)\n"
 
 # ═══════════════════════════════════════════════════════════════════════════════
