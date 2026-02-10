@@ -194,3 +194,54 @@ sequenceDiagram
     Note right of Writer: Content exists! Skip writing.
     Writer->>Index: Record(H1 at Offset 100)
 ```
+
+## Chunking Strategy (Fixed vs. CDC)
+
+Strata supports both fixed-size chunking and Content-Defined Chunking (CDC). Fixed chunking splits data at regular intervals (e.g., every 64KB), while CDC uses a rolling hash to find "cut points" based on the data's content. CDC is superior for deduplication because small insertions shift boundaries in fixed chunking (breaking all subsequent blocks), whereas CDC resynchronizes, preserving matching blocks.
+
+```mermaid
+graph TD
+    subgraph "Fixed Chunking"
+        F_Data[Data Stream]
+        F_Data --> F_Split[Split at 64KB, 128KB...]
+        F_Split --> F_B1[Block 1]
+        F_Split --> F_B2[Block 2]
+        F_Split --> F_B3[Block 3]
+        
+        F_Insert[Insertion at start] -.->|Shifts all boundaries| F_B1_New[New Block 1]
+        F_Insert -.-> F_B2_New[New Block 2]
+        F_Insert -.-> F_B3_New[New Block 3]
+    end
+
+    subgraph "Content-Defined Chunking (CDC)"
+        C_Data[Data Stream]
+        C_Data --> C_Scan[Scan for Cut Hash]
+        C_Scan --> C_B1[Block A]
+        C_Scan --> C_B2[Block B]
+        C_Scan --> C_B3[Block C]
+        
+        C_Insert[Insertion at start] -.->|Only first block changes| C_B1_New[New Block A']
+        C_Insert -.-> C_B2_Same[Block B (Same!)]
+        C_Insert -.-> C_B3_Same[Block C (Same!)]
+    end
+```
+
+## FUSE Overlay (Copy-On-Write)
+
+When a Strata archive is mounted with `--overlay`, it presents a writable filesystem. Since the `.st` file is immutable, writes are redirected to a temporary overlay file. A metadata map tracks which 4KB blocks have been modified. Read requests first check this map; if the block is modified, it is read from the overlay; otherwise, it is fetched from the base `.st` file.
+
+```mermaid
+flowchart TD
+    Request["I/O Request\n(Offset, Length)"] --> Type{Read or Write?}
+    
+    Type -- Write --> WriteOverlay[Write to Overlay File]
+    WriteOverlay --> UpdateMeta[Update .meta Map]
+    
+    Type -- Read --> CheckMeta{Block in Overlay?}
+    
+    CheckMeta -- Yes --> ReadOverlay[Read from Overlay File]
+    ReadOverlay --> Return
+    
+    CheckMeta -- No --> ReadBase[Read from Base .st File]
+    ReadBase --> Return[Return Data]
+```
