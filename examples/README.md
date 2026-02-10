@@ -2,6 +2,17 @@
 
 This directory contains modular examples demonstrating key features of the Strata Python API.
 
+## 0. Quick Start (`examples/quickstart.py`)
+
+**Run first.** Creates a tiny snapshot and reads it back — no CLI or extra data required.
+
+```bash
+# From repo root (after: cd crates/loader && maturin develop -E numpy)
+python examples/quickstart.py
+```
+
+See [docs/quickstart.md](../docs/quickstart.md) for the full 5-minute guide (install, pack, read).
+
 ## 1. Machine Learning Training (`examples/ml_training/`)
 
 Demonstrates how to use `strata.Dataset` with PyTorch for high-performance training loops.
