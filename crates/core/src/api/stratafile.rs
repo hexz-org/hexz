@@ -10,6 +10,7 @@ use crate::format::version::{VersionCompatibility, check_version, compatibility_
 use crate::store::StorageBackend;
 use crate::store::local::file::FileBackend;
 use bytes::Bytes;
+use crc32fast::hash as crc32_hash;
 use lru::LruCache;
 use std::num::NonZeroUsize;
 use std::path::Path;
@@ -377,7 +378,8 @@ impl StrataFile {
     ///
     /// # Errors
     ///
-    /// - `StrataError::Io` if backend read fails
+    /// - `StrataError::Io` if backend read fails (e.g. truncated file)
+    /// - `StrataError::Corruption(block_idx)` if block checksum does not match
     /// - `StrataError::Decompression` if block decompression fails
     /// - `StrataError::Decryption` if block decryption fails
     ///
@@ -574,9 +576,10 @@ impl StrataFile {
     /// This is the core decompression path. It:
     /// 1. Checks the block cache
     /// 2. Reads compressed block from backend
-    /// 3. Decrypts (if encrypted)
-    /// 4. Decompresses
-    /// 5. Caches the result
+    /// 3. Verifies CRC32 checksum (if stored) and returns `Corruption(block_idx)` on mismatch
+    /// 4. Decrypts (if encrypted)
+    /// 5. Decompresses
+    /// 6. Caches the result
     ///
     /// # Parameters
     ///
@@ -608,6 +611,14 @@ impl StrataFile {
         }
 
         let raw = self.backend.read_exact(info.offset, info.length as usize)?;
+
+        // Verify stored checksum (CRC32 of compressed/encrypted data) before decrypt/decompress
+        if info.checksum != 0 {
+            let computed = crc32_hash(&raw);
+            if computed != info.checksum {
+                return Err(StrataError::Corruption(block_idx));
+            }
+        }
 
         let compressed = if let Some(enc) = &self.encryptor {
             enc.decrypt(&raw, block_idx)?

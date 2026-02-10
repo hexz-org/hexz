@@ -266,8 +266,20 @@ def verify(
     elif public_key:
         return _strata_core.verify_image(str(path), public_key)
     else:
-        # TODO: Implement checksum/structure verification
-        raise NotImplementedError("Checksum/structure verification not yet implemented")
+        # Checksum and/or structure verification (no signature)
+        try:
+            if structure:
+                inspect(path)  # validates header and index can be read
+            if checksum:
+                # Read through entire snapshot so every block is verified on read
+                import strata as _strata
+
+                with _strata.open(path) as reader:
+                    for _ in reader.iter_chunks(chunk_size=256 * 1024):
+                        pass
+        except Exception:
+            return False
+        return True
 
 
 def info(path: PathLike) -> None:
