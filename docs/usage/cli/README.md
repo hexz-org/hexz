@@ -4,13 +4,11 @@ The `strata` command-line tool provides snapshot management for virtual machines
 
 ## Installation
 
-```bash
-# From source
-cargo install --path crates/cli
+From the **repository root** (all commands go through the Makefile; see **`make help`**):
 
-# Or build release binary
-cargo build --release -p strata-cli
-# Binary will be at: target/release/strata
+```bash
+make install   # Install strata CLI to your PATH
+make rust      # Or build release binary only → target/release/strata
 ```
 
 ## Command Structure

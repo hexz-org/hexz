@@ -5,7 +5,6 @@ import subprocess
 import socket
 import strata
 import shutil
-import sys
 
 pytest.importorskip("boto3")
 import boto3

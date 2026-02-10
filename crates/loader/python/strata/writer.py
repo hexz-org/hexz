@@ -11,7 +11,7 @@ import warnings
 import json
 
 from . import _strata_core
-from .exceptions import IOError, ValidationError
+from .exceptions import ValidationError
 from .typing import PathLike, PackingMode
 
 # Compression level mappings for different modes
@@ -195,11 +195,11 @@ class Writer:
             self.add_file(temp_path)
         finally:
             # Clean up temp file
-            import os
-
             try:
+                import os
+
                 os.unlink(temp_path)
-            except:
+            except Exception:
                 pass
 
         return self

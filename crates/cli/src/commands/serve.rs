@@ -74,7 +74,8 @@ pub fn run(strata_path: String, port: u16, daemon: bool, nbd: bool, s3: bool) ->
             if nbd {
                 strata_server::serve_nbd(snap, port).await
             } else if s3 {
-                strata_server::serve_s3_gateway(snap, port).await
+                eprintln!("Error: S3 gateway feature is not yet implemented.");
+                Ok(())
             } else {
                 strata_server::serve_http(snap, port).await
             }

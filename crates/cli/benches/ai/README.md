@@ -2,6 +2,8 @@
 
 Comprehensive benchmark suite for validating Strata's performance on AI and machine learning workloads. These benchmarks simulate realistic ML training scenarios including PyTorch DataLoader and TensorFlow tf.data patterns.
 
+**From the repo root**, the central entry point is the **Makefile**: **`make bench`** runs the main Criterion benchmarks. The sections below document the **AI-specific** benchmark harness and give the exact **`cargo bench`** invocations for fine-grained control (e.g. a single bench, filters, baselines). Run all commands from the **repository root**.
+
 ## Overview
 
 Strata is designed as a high-performance data loading backend for ML training pipelines. These benchmarks validate that design by measuring:

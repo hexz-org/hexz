@@ -1,13 +1,13 @@
 # Strata Examples
 
-This directory contains modular examples demonstrating key features of the Strata Python API.
+This directory contains modular examples demonstrating key features of the Strata Python API. **All commands assume you are in the repository root** and have run **`make develop`** at least once (see the main [README](../README.md) and **`make help`**).
 
 ## 0. Quick Start (`examples/quickstart.py`)
 
 **Run first.** Creates a tiny snapshot and reads it back — no CLI or extra data required.
 
 ```bash
-# From repo root (after: cd crates/loader && maturin develop -E numpy)
+# From repo root (after: make develop)
 python examples/quickstart.py
 ```
 
@@ -21,9 +21,9 @@ Demonstrates how to use `strata.Dataset` with PyTorch for high-performance train
   - `create_dataset.py`: Generates a dummy dataset (`dataset.st`) with variable-length items and an index file (`dataset.idx`).
   - `train.py`: Loads the dataset using `strata.Dataset` (with caching & prefetching) and iterates via `torch.utils.data.DataLoader`.
 
-- **Requires:** PyTorch (`pip install torch` or `pip install -e ".[torch]"` from `crates/loader`).
+- **Requires:** Strata from repo root (**`make develop`**); PyTorch (`pip install torch` or from `crates/loader`: `pip install -e ".[torch]"`).
 
-- **Run:**
+- **Run (from repo root):**
   ```bash
   cd examples/ml_training
   python3 create_dataset.py

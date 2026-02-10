@@ -9,7 +9,7 @@ Build profiles provide optimized configurations for different scenarios:
 - archival: Long-term storage (max compression and dedup)
 """
 
-from typing import Dict, Any, Literal, Optional
+from typing import Dict, Any
 from pathlib import Path
 import os
 

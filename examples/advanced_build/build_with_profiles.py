@@ -67,7 +67,6 @@ def advanced_build_demo(source_dir: str):
 
 
 if __name__ == "__main__":
-    import os
     import shutil
 
     # Use dedup_data/base as source

@@ -5,10 +5,8 @@ the Rust-implemented StrataReader with a more pythonic interface.
 """
 
 from typing import Optional, Any, Dict, Union
-from pathlib import Path
 
 from . import _strata_core
-from .exceptions import IOError, FormatError
 from .typing import PathLike
 from .utils import Metadata
 

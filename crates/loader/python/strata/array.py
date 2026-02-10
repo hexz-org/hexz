@@ -4,7 +4,7 @@ This module provides utilities for reading and writing NumPy arrays
 to/from Strata snapshots with zero-copy support where possible.
 """
 
-from typing import Optional, Tuple, Union
+from typing import Optional, Union
 from pathlib import Path
 import warnings
 
@@ -26,8 +26,7 @@ def _check_numpy():
     """Check if NumPy is available."""
     if not HAS_NUMPY:
         raise ImportError(
-            "NumPy is required for array operations. "
-            "Install it with: pip install numpy"
+            "NumPy is required for array operations. Install it with: pip install numpy"
         )
 
 
@@ -103,7 +102,7 @@ def read_array(
         else:
             # Warning about immutability of view
             warnings.warn(
-                "Returning a view into read-only buffer. " "Array will be immutable.",
+                "Returning a view into read-only buffer. Array will be immutable.",
                 UserWarning,
             )
             return arr
@@ -141,8 +140,7 @@ def write_array(
     # Ensure contiguous array
     if not array.flags["C_CONTIGUOUS"]:
         warnings.warn(
-            "Array is not C-contiguous, making a copy. "
-            "This may use additional memory.",
+            "Array is not C-contiguous, making a copy. This may use additional memory.",
             UserWarning,
         )
         array = np.ascontiguousarray(array)

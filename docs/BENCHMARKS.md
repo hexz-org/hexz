@@ -1,6 +1,6 @@
 # Strata Performance Benchmarks
 
-This document provides performance metrics, comparisons with other storage formats, and methodology for reproducing benchmarks.
+This document provides performance metrics, comparisons with other storage formats, and methodology for reproducing benchmarks. **All build and benchmark commands are run from the repository root** using the **Makefile** (e.g. **`make bench`**, **`make rust`**). Run **`make help`** for the full list of targets.
 
 ---
 
@@ -290,8 +290,8 @@ HDF5                    28%         81%        File I/O wait
 ### Environment Setup
 
 ```bash
-# Install Strata
-cargo build --release -p strata-cli
+# Build Strata CLI (from repo root)
+make rust
 
 # Create test dataset (10GB)
 dd if=/dev/urandom of=test-data.img bs=1M count=10240
@@ -313,8 +313,8 @@ dd if=/dev/urandom of=test-data.img bs=1M count=10240
 ### Running Benchmarks
 
 ```bash
-# Built-in benchmarks
-cargo bench
+# Built-in benchmarks (from repo root)
+make bench
 
 # System benchmarks
 ./target/release/strata sys bench
@@ -503,4 +503,4 @@ For most AI workloads, **Strata + LZ4 + 64KB blocks** is the optimal configurati
 
 **Last Updated**: 2026-02-08
 **Strata Version**: 0.1.0-alpha
-**Benchmark Suite**: `cargo bench` + `strata sys bench`
+**Benchmark Suite**: `make bench` + `strata sys bench`

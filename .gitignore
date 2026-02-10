@@ -60,6 +60,9 @@ pythonenv*/
 Thumbs.db
 Desktop.ini
 
+# Make (local overrides)
+.make.env
+
 # Project Specific
 vm/
 data/

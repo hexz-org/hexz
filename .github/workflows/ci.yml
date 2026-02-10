@@ -16,30 +16,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── Format check ───────────────────────────────────────────────────────────
+  # ── Format and lint (Rust + Python) ────────────────────────────────────────
   fmt:
-    name: Rustfmt
+    name: Format & Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - run: cargo fmt --all -- --check
-
-  # ── Python Lint ─────────────────────────────────────────────────────────────
-  lint-python:
-    name: Python Lint (Ruff)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
       - name: Install Ruff
         run: pip install ruff
-      - name: Run Ruff
-        run: ruff check .
+      - run: make fmt-check
 
   # ── Clippy ─────────────────────────────────────────────────────────────────
   clippy:
@@ -53,15 +44,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libfuse-dev pkg-config
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-
-  # ── Cargo deny (licenses + advisories) ─────────────────────────────────────
-  deny:
-    name: Cargo Deny
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v1
+      - run: make clippy
 
   # ── Rust tests ─────────────────────────────────────────────────────────────
   test:
@@ -87,7 +70,7 @@ jobs:
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
         run: brew install macfuse pkg-config || true
-      - run: cargo test --workspace
+      - run: make test-rust
 
   # ── Python tests ───────────────────────────────────────────────────────────
   test-python:
@@ -106,14 +89,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libfuse-dev pkg-config
-      - name: Build strata CLI (for E2E pack-read roundtrip tests)
-        run: cargo build --release -p strata
-      - name: Install maturin and build
-        run: |
-          pip install maturin pytest pytest-asyncio
-          cd crates/loader && maturin develop
-      - name: Run Python tests
-        run: cd crates/loader && pytest tests/ -v
+      - name: Install maturin and pytest (for make test-python)
+        run: pip install maturin pytest pytest-asyncio
+      - name: Build and run Python tests
+        run: make rust && make test-python
 
   # ── VM Boot Tests ──────────────────────────────────────────────────────────
   test-vm:
@@ -134,7 +113,7 @@ jobs:
   build:
     name: Build (${{ matrix.os }})
     # Now waits for all new tests to pass before building release artifacts
-    needs: [fmt, clippy, lint-python, test, test-python, test-vm]
+    needs: [fmt, clippy, test, test-python, test-vm]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -149,7 +128,7 @@ jobs:
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
         run: brew install macfuse pkg-config || true
-      - run: cargo build --release --workspace
+      - run: make build
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:

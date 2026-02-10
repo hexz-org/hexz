@@ -77,7 +77,7 @@ impl BlockCache {
             (1, NonZeroUsize::new(capacity).unwrap())
         } else {
             // Ceiling division so total capacity >= capacity
-            let cap_per = (capacity + SHARD_COUNT - 1) / SHARD_COUNT;
+            let cap_per = capacity.div_ceil(SHARD_COUNT);
             (SHARD_COUNT, NonZeroUsize::new(cap_per.max(1)).unwrap())
         };
         let mut shards = Vec::with_capacity(num_shards);

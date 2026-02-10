@@ -3,8 +3,7 @@
 //! These tests verify end-to-end functionality of creating snapshots
 //! and reading them back with various configurations.
 
-#[path = "../common/mod.rs"]
-mod common;
+use super::common;
 use common::*;
 
 use std::fs;

@@ -1,7 +1,5 @@
 import strata
 import os
-import json
-import pytest
 
 
 def test_writer_metadata(test_dir):
@@ -37,7 +35,7 @@ def test_writer_bytes_written(test_dir):
         # StrataBuilder::current_offset tracks file offset.
         assert w.bytes_written > initial
 
-    final_size = os.path.getsize(path)
+    os.path.getsize(path)
     # bytes_written should match file size approx (offset includes headers)
     # The builder.get_bytes_written() returns current_offset which is file size.
 
@@ -57,7 +55,6 @@ def test_writer_dedup_cdc(test_dir):
     # Write with CDC
     with strata.Writer(path, dedup=True, cdc=True, compression="lz4") as w:
         w.add_bytes(data)
-        size_dedup = w.bytes_written
 
     # Write without CDC (fixed block dedup might catch it if aligned, but let's see)
     # Actually, if we use same chunk 4 times, fixed block dedup should catch it too.

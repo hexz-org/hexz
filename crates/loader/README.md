@@ -4,18 +4,15 @@ Python bindings for Strata, a snapshot storage system.
 
 ## Installation
 
-This library requires a Rust compiler to build.
+This library requires a Rust compiler and is built from the **repository root** using the central Makefile.
+
+**From source (recommended for development):** from repo root:
 
 ```bash
-pip install .
+make develop
 ```
 
-For development:
-
-```bash
-pip install maturin
-maturin develop --release
-```
+This installs the package in editable mode with the correct Rust + Python toolchain. To build a wheel only (e.g. for distribution): **`make python`**, then `pip install target/wheels/*.whl`.
 
 ## Usage
 
@@ -97,8 +94,8 @@ array = strata.read_array(reader, offset=0, shape=(100, 100), dtype=np.float32)
 
 ## Testing
 
-Run the test suite using pytest:
+From repo root:
 
 ```bash
-pytest tests/
+make test-python
 ```

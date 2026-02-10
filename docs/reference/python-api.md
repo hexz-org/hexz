@@ -1,14 +1,14 @@
 # Strata Python API Reference
 
-Browsable API documentation is generated with **Sphinx**. Build it from the repository root:
+Browsable API documentation is generated with **Sphinx**. All build commands are run from the **repository root** via the **Makefile** (**`make help`** for the full list):
 
 ```bash
-# Install Sphinx and the strata package
+# Optional: install Sphinx (make docs-python uses it if present)
 pip install sphinx
-cd crates/loader && maturin develop -E numpy && cd ../..
 
-# Build HTML docs
-sphinx-build -b html docs/source docs/_build/html
+# From repo root
+make develop
+make docs-python
 ```
 
 Then open `docs/_build/html/index.html` in a browser.

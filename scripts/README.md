@@ -1,20 +1,17 @@
 # Strata Scripts
 
-This directory contains utility scripts for development, testing, and VM management.
+This directory contains utility scripts for development, testing, and VM management. **The central entry point for all development is the Makefile at the repo root** — run **`make help`** there for build, test, lint, and setup targets. The scripts below complement the Makefile.
 
 ## Development Utilities
 
 ### `setup_dev.sh`
-One-command setup for the development environment.
-- Installs Rust toolchain (stable).
-- Installs Python virtual environment and dependencies.
-- Installs required system packages (Linux/macOS).
-- Verifies workspace compilation.
+Calls **`make setup`** from the repo root. Prefer running from repo root:
 
-**Usage:**
 ```bash
-./scripts/setup_dev.sh
+make setup
 ```
+
+**`make setup`** installs Rust components, cargo tools, and a Python venv; run **`make setup-check`** first to see required system packages (rustup, pkg-config, libfuse, python) and install any that are missing.
 
 ### `run.sh`
 Helper script to build and run the Strata CLI in one step.

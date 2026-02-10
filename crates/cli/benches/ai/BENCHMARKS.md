@@ -1,5 +1,7 @@
 # AI/ML Benchmark Quick Start
 
+From the **repository root**, use the **Makefile** for the main benchmark entry point: **`make bench`**. The commands below are **AI-specific** `cargo bench` invocations for this harness; run them from the **repo root**.
+
 ## Overview
 
 The AI benchmark suite contains 6 comprehensive benchmark modules designed to validate Strata's performance for machine learning workloads. All benchmarks are production-ready and follow Criterion.rs best practices.

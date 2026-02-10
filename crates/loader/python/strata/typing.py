@@ -3,7 +3,7 @@
 This module defines common types used throughout the Strata API.
 """
 
-from typing import Union, Tuple, Protocol, Any, Dict, Optional, Literal
+from typing import Union, Tuple, Protocol, Any, Dict, Literal
 from pathlib import Path
 import os
 

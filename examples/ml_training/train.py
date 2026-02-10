@@ -3,7 +3,6 @@ Script to demonstrate training loop with Strata Dataset.
 """
 
 import time
-import torch
 import strata
 from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
@@ -45,7 +44,7 @@ def train_loop():
     start_time = time.time()
 
     for epoch in range(3):
-        print(f"\nEpoch {epoch+1}/3")
+        print(f"\nEpoch {epoch + 1}/3")
         dataset.set_epoch(epoch)  # Important for DDP shuffling
 
         items_processed = 0

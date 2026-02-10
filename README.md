@@ -39,8 +39,8 @@ Strata acts as a drop-in replacement for standard PyTorch datasets.
 git clone https://github.com/Alethic-Systems/strata.git
 cd strata
 
-# Build the Python loader
-maturin develop --manifest-path crates/loader/Cargo.toml --release
+# Build and install the Python loader
+make develop
 ```
 
 ### 2. Stream data directly to GPU
@@ -113,29 +113,45 @@ The project is organized as a high-performance Rust Workspace:
 | **`crates/fuse`** | A FUSE adapter that mounts Strata archives as local filesystems (used for VMs). |
 | **`crates/server`** | High-throughput HTTP server for streaming data blocks. |
 
+## Development
+
+**All development commands go through the Makefile.** From the repo root, run **`make help`** to see every target. There are no separate setup scripts or one-off cargo/maturin commands to remember.
+
+| What you want | Command |
+|---------------|--------|
+| List all commands | `make help` |
+| One-time setup (tools + venv) | `make setup` (run `make setup-check` first to see required system packages) |
+| Build CLI + Python | `make build` or `make rust` / `make develop` |
+| Run all tests | `make test` |
+| Lint & format | `make lint` / `make fmt` |
+| Full CI locally | `make ci` |
+
 ## Documentation
 
 * **[Quick start](docs/quickstart.md)** — Create a snapshot and read it in 5 minutes.
-* **[Python API reference](docs/reference/python-api.md)** — All public APIs with docstrings and examples. Build a browsable version with: `make docs-python` (requires Sphinx; output in `docs/_build/html`).
+* **[Python API reference](docs/reference/python-api.md)** — All public APIs. Build a browsable version: **`make docs-python`** (output in `docs/_build/html`).
+* **[Contributing](docs/CONTRIBUTING.md)** — Setup, branching, and PR checklist (all Makefile-based).
 
 ## Build from Source
 
-### Prerequisites
+### Prerequisites (checked by `make setup`)
 
-* Rust (stable)
-* `maturin` (for Python integration)
-* `libfuse` headers (only if building VM support)
-* `qemu` (only if running VMs)
+Run **`make setup-check`** from the repo root. It will report any missing system packages and show install commands for your OS. You need:
+
+* **Rust** — rustup + cargo ([rustup.rs](https://rustup.rs))
+* **pkg-config** — for C library detection
+* **Python 3** — for the AI loader
+* **libfuse** — dev headers (VM/mount support; Linux: libfuse-dev or fuse2; macOS: macFUSE)
+* **qemu** — optional, only for VM boot tests
 
 ### Compiling
 
+From repo root (after installing any packages suggested by `make setup-check`):
+
 ```bash
-# 1. Build the AI Loader (Python Wheel)
-maturin build --release --manifest-path crates/loader/Cargo.toml
-
-# 2. Build the CLI Tool (Packer & VM Manager)
-cargo build --release --bin strata
-
+make setup    # one-time: Rust components, cargo tools, Python venv
+make build    # Rust workspace + Python wheel
+# Or: make rust (CLI only), make develop (editable Python package)
 ```
 
 ## Benchmarks

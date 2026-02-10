@@ -19,13 +19,14 @@ The Strata Python loader provides high-performance, zero-copy access to compress
 
 ### Installation
 
+All build and test commands are run from the **repository root** via the **Makefile** (run **`make help`** for the full list).
+
 ```bash
 # From PyPI (when published)
 pip install strata
 
-# From source
-cd crates/loader
-maturin develop --release
+# From source (from repo root)
+make develop
 ```
 
 ### Basic Usage

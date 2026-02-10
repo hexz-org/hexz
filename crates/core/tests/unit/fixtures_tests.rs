@@ -1,7 +1,6 @@
 //! Tests for test fixtures and generators
 
-#[path = "../common/mod.rs"]
-mod common;
+use super::common;
 use common::*;
 
 #[test]

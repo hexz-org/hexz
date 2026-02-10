@@ -1,7 +1,6 @@
 //! Unit tests for Content-Defined Chunking (CDC)
 
-#[path = "../../common/mod.rs"]
-mod common;
+use super::common;
 use common::*;
 
 use std::io::Cursor;
@@ -136,8 +135,8 @@ fn test_cdc_localized_changes() {
 
     // Modify 100 bytes in the middle
     let mut modified = data.clone();
-    for i in 25000..25100 {
-        modified[i] ^= 0xFF;
+    for item in &mut modified[25000..25100] {
+        *item ^= 0xFF;
     }
     let stats2 = analyze_stream(Cursor::new(modified), &params).unwrap();
 

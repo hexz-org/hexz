@@ -3,8 +3,7 @@
 //! Tests verify correct compression/decompression round-trips, error handling,
 //! and compression ratio characteristics for different data patterns.
 
-#[path = "../common/mod.rs"]
-mod common;
+use super::common;
 use common::*;
 
 use strata_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
@@ -143,8 +142,8 @@ fn test_zstd_with_dictionary() {
         .map(|i| {
             let mut data = vec![0u8; 1024];
             // Add some structure
-            for j in 0..1024 {
-                data[j] = ((i + j) % 256) as u8;
+            for (j, item) in data.iter_mut().enumerate().take(1024) {
+                *item = ((i + j) % 256) as u8;
             }
             data
         })
@@ -217,8 +216,8 @@ fn test_compression_ratio_comparison() {
 
     // Create data with some structure
     let mut original = vec![0u8; 16384];
-    for i in 0..16384 {
-        original[i] = (i % 128) as u8;
+    for (i, item) in original.iter_mut().enumerate() {
+        *item = (i % 128) as u8;
     }
 
     let lz4_compressed = lz4.compress(&original).expect("LZ4 compression failed");

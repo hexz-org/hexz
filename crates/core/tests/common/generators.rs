@@ -46,9 +46,7 @@ pub fn create_random_data(size: usize) -> Vec<u8> {
 pub fn create_random_data_with_seed(size: usize, seed: u64) -> Vec<u8> {
     let mut rng = StdRng::seed_from_u64(seed);
     let mut data = vec![0u8; size];
-    for i in 0..size {
-        data[i] = rng.r#gen();
-    }
+    rng.fill(&mut data[..]);
     data
 }
 
@@ -56,7 +54,7 @@ pub fn create_random_data_with_seed(size: usize, seed: u64) -> Vec<u8> {
 /// `sparsity` is the fraction of zeros (0.0 = no zeros, 1.0 = all zeros)
 pub fn create_sparse_data(size: usize, sparsity: f64) -> Vec<u8> {
     assert!(
-        sparsity >= 0.0 && sparsity <= 1.0,
+        (0.0..=1.0).contains(&sparsity),
         "Sparsity must be in [0.0, 1.0]"
     );
 
@@ -80,7 +78,7 @@ pub fn create_sparse_data(size: usize, sparsity: f64) -> Vec<u8> {
 /// `entropy` is approximate entropy in bits per byte (0.0 = all same, 8.0 = random)
 pub fn create_compressible_data(size: usize, entropy: f64) -> Vec<u8> {
     assert!(
-        entropy >= 0.0 && entropy <= 8.0,
+        (0.0..=8.0).contains(&entropy),
         "Entropy must be in [0.0, 8.0]"
     );
 

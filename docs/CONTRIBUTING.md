@@ -30,49 +30,32 @@ We use a Stable Main workflow.
 
 ## Development Setup
 
-### Prerequisites
-* Rust: Stable toolchain.
-* Python: 3.10 or higher.
-* Build Tools:
-    * maturin (for Python wheels): pip install maturin
-    * libfuse-dev (Linux only, for VM support)
-    * qemu (Optional, for VM tests)
+All setup, build, and test commands go through the **Makefile** at the repo root. There are no separate setup scripts or one-off commands to remember.
 
-### Setup Steps
-1. Clone the repo:
+### Prerequisites (checked by `make setup`)
+
+Run **`make setup-check`** from the repo root. It will list any missing system packages and show install commands for your OS. You need:
+
+* **Rust** — rustup + cargo (https://rustup.rs)
+* **pkg-config** — for C library detection
+* **Python 3** — for the AI loader and docs
+* **libfuse** — dev headers (Linux: libfuse-dev or fuse2/fuse3; macOS: macFUSE via Homebrew)
+* **qemu** — optional, only for VM boot tests
+
+### Setup (one command)
+
+1. Clone the repo and run the central setup from the repo root:
    ```bash
    git clone https://github.com/willmccallion/strata.git
    cd strata
+   make setup
    ```
+   This installs Rust components (rustfmt, clippy), cargo tools (cargo-deny, maturin, etc.), and creates a Python venv with docs requirements. If anything is missing, run **`make setup-check`** first and install what it suggests.
 
-2. (Reccomended) Set up Python development environment for AI loader:
+2. Verify the workspace and (optionally) install the Python loader for development:
    ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
-
-3. Build the Rust workspace to verify everything compiles:
-   ```bash
-   rustup override set nightly
-
-   # Get Python version dynamically
-   PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-
-   # Get Python prefix (installation location)
-   PYTHON_PREFIX=$(python3 -c "import sys; print(sys.prefix)")
-
-   # Set PyO3 environment variables
-   export PYO3_PYTHON=$(which python3)
-   export RUSTFLAGS="-L ${PYTHON_PREFIX}/lib -l python${PYTHON_VERSION}"
-
-   cargo build
-   cargo test --no-run
-   ```
-
-4. (Optional) Build the Python loader:
-   ```bash
-   maturin develop --manifest-path crates/loader/Cargo.toml
+   make check      # type-check
+   make develop    # editable Python package for AI loader
    ```
 
 ---
@@ -94,74 +77,73 @@ Strata is a Rust Cargo Workspace.
 ## Building & Running
 
 ### 1. Building the CLI Tool (Rust)
-Use this for packing datasets.
 
-# Build release binary
-cargo build --release --bin strata
+From repo root:
 
-# Run the binary
+```bash
+make rust
 ./target/release/strata --help
+```
 
 ### 2. Building the Python Library (AI Loader)
-Use this to test the PyTorch integration.
 
-# Must have .venv activated
-maturin develop --manifest-path crates/loader/Cargo.toml --release
+From repo root (Makefile handles venv and maturin):
 
-# Verify installation
+```bash
+make develop
 python -c "import strata; print(strata.__version__)"
+```
 
 ---
 
 ## Testing
 
 ### Rust Unit Tests (Core Logic)
-Test compression and file format logic.
 
-# Run all tests
-cargo test
+From repo root:
 
-# Run core tests only
-cargo test -p strata-core
+```bash
+make test-rust
+```
+
+To run tests for a single crate only: `cargo test -p strata-core` (the Makefile does not define per-crate targets).
 
 ### Python Integration Tests (AI Loader)
-Test that the loader works with PyTorch.
 
-# 1. Build latest version
-maturin develop --manifest-path crates/loader/Cargo.toml
+From repo root:
 
-# 2. Run Python tests
-pytest tests/python/
+```bash
+make test-python
+```
 
 ### VM Boot Tests (Systems)
-Requires Linux and QEMU.
 
+Requires Linux and QEMU. From repo root:
+
+```bash
 ./scripts/test_vm_boot.sh
+```
 
 ---
 
 ## Style Guide
 
-### Rust
-Code must be formatted.
-cargo fmt
-cargo clippy -- -D warnings
+### Rust & Python
 
-### Python
-We use ruff or black.
-pip install ruff
-ruff check .
+From repo root:
+
+```bash
+make fmt      # Format code
+make lint     # Format check + clippy + ruff
+```
 
 ---
 
 ## Pull Request Checklist
 
 Before submitting to dev:
-1. ✅ Builds pass: `cargo build --all-features`
-2. ✅ Tests pass: `cargo test --all-features`
-3. ✅ Code is formatted: `cargo fmt --all`
-4. ✅ Lints pass: `cargo clippy --all-features -- -D warnings`
-5. ✅ No large binary files or test artifacts committed
+1. ✅ Run full CI pipeline locally: `make ci`
+2. ✅ No large binary files or test artifacts committed
 6. ✅ Update relevant documentation if adding new features
 7. ✅ Pull Request title is descriptive and follows conventional commits style
 
@@ -188,9 +170,9 @@ Before submitting to dev:
 - Unit tests go in the same file as the code (Rust convention)
 - Integration tests go in `crates/*/tests/`
 - Test fixtures are in `crates/core/tests/common/`
-- Use `cargo test <test_name>` to run specific tests
+- **Primary:** `make test` (Rust + Python). For a single test: `cargo test <test_name>`.
 
 ### Documentation
 - Use `///` doc comments for public APIs
-- Run `cargo doc --open` to build and view documentation locally
+- **Primary:** `make docs` (rustdoc) and `make docs-python` (Sphinx). For a single crate: `cargo doc --open -p <crate>`.
 - Examples in doc comments should be runnable (`cargo test --doc`)

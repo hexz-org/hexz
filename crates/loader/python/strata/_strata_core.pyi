@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Any, Tuple, List, Union
+from typing import Optional, Dict, Any, Tuple
 
 class StrataReader:
     """Synchronous reader for Strata snapshots.

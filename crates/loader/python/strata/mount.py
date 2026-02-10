@@ -70,8 +70,7 @@ class MountPoint:
             curr = parent
 
         raise FileNotFoundError(
-            f"Could not find '{self.binary}' binary. "
-            "Ensure it is installed or in PATH."
+            f"Could not find '{self.binary}' binary. Ensure it is installed or in PATH."
         )
 
     def __enter__(self):

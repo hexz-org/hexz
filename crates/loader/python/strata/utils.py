@@ -5,7 +5,6 @@ and manipulating Strata snapshots.
 """
 
 from typing import Any, Dict, Optional
-from pathlib import Path
 
 from . import _strata_core
 from .typing import PathLike

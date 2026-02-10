@@ -1,6 +1,6 @@
 # Quick Start: 5 Minutes to First Result
 
-Get from zero to reading data from a Strata snapshot in a few minutes.
+Get from zero to reading data from a Strata snapshot in a few minutes. **All commands below are run from the repository root**; the **Makefile** is the single entry point (run **`make help`** for the full list).
 
 ## 1. Install
 
@@ -11,13 +11,13 @@ git clone https://github.com/Alethic-Systems/strata.git
 cd strata
 
 # Build and install the Python package (from repo root)
-cd crates/loader && maturin develop -E numpy && cd ../..
+make develop
 ```
 
 Optional: install the CLI for packing from the command line:
 
 ```bash
-cargo build --release -p strata
+make rust
 # Binary: target/release/strata
 ```
 
@@ -69,9 +69,9 @@ You should see the snapshot built, **original vs .st file size** (so you can see
 
 ## Summary
 
-| Step        | Python                              | CLI                          |
-|------------|--------------------------------------|------------------------------|
-| Install    | `maturin develop` in `crates/loader` | `cargo build -p strata`      |
+| Step        | Python        | CLI         |
+|------------|----------------|-------------|
+| Install    | `make develop` | `make rust` |
 | Create .st | `strata.open(path, mode="w")` + `writer.add(...)` or `strata.build(dir, out)` | `strata data pack --disk <file> --output out.st` |
 | Read       | `strata.open(path)` then `reader.read(n)` or `reader.iter_chunks()` | (use Python or `strata vm mount` for access) |
 

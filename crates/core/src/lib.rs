@@ -70,7 +70,7 @@
 //!
 //! Compression and encryption are pluggable via traits:
 //! - [`algo::compression::Compressor`]: LZ4 ([`algo::compression::lz4`]) or Zstandard ([`algo::compression::zstd`])
-//! - [`algo::encryption::Encryptor`]: AES-256-GCM ([`algo::encryption::aes_gcm`])
+//! - [`algo::encryption::Encryptor`][]: AES-256-GCM ([`algo::encryption::aes_gcm`])
 //!
 //! Each block is compressed independently, then optionally encrypted. This enables:
 //! - Parallel decompression (each block is self-contained)

@@ -3,8 +3,7 @@
 //! Tests verify correct encryption round-trips, nonce generation,
 //! tamper detection, and error handling.
 
-#[path = "../common/mod.rs"]
-mod common;
+use super::common;
 use common::*;
 
 use strata_core::algo::encryption::{Encryptor, aes_gcm::AesGcmEncryptor};
@@ -497,7 +496,7 @@ fn test_encrypt_empty_data() {
 
     assert_eq!(decrypted, plaintext);
     // Even empty data should have an auth tag
-    assert!(ciphertext.len() > 0);
+    assert!(!ciphertext.is_empty());
 }
 
 #[test]

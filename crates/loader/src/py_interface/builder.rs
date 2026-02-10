@@ -23,6 +23,12 @@ use strata_core::format::{
 };
 use strata_core::store::local::FileBackend;
 
+/// Result tuple returned by the thread-safe block processing closure.
+/// Contains: (generated pages, new file offset, output file handle, number of blocks added, updated dedup map)
+type BuilderResult = (Vec<PageEntry>, u64, File, u64, HashMap<[u8; 32], u64>);
+
+type OverlayBuilderResult = (Vec<PageEntry>, u64, File, HashMap<[u8; 32], u64>);
+
 struct FixedChunker<R> {
     reader: R,
     block_size: usize,
@@ -206,8 +212,8 @@ impl StrataBuilder {
         let dedup_enabled = self.dedup_enabled;
         let mut dedup_map = std::mem::take(&mut self.dedup_map);
 
-        let (pages, new_offset, out_file, dedup_map) = py.allow_threads(
-            move || -> PyResult<(Vec<PageEntry>, u64, File, HashMap<[u8; 32], u64>)> {
+        let (pages, new_offset, out_file, dedup_map) =
+            py.allow_threads(move || -> PyResult<OverlayBuilderResult> {
                 let mut pages = Vec::new();
                 let mut page = IndexPage::default();
                 let mut global_block_idx = 0;
@@ -380,8 +386,7 @@ impl StrataBuilder {
                 }
 
                 Ok((pages, current_offset, out, dedup_map))
-            },
-        )?;
+            })?;
 
         self.writer = Some(out_file);
         self.current_offset = new_offset;
@@ -507,8 +512,8 @@ impl StrataBuilder {
         };
 
         // Return: (pages, new_offset, out_file, added_blocks, dedup_map)
-        let (pages, new_offset, out_file, added_blocks, dedup_map) = py.allow_threads(
-            move || -> PyResult<(Vec<PageEntry>, u64, File, u64, HashMap<[u8; 32], u64>)> {
+        let (pages, new_offset, out_file, added_blocks, dedup_map) =
+            py.allow_threads(move || -> PyResult<BuilderResult> {
                 let mut pages = Vec::new();
                 let mut page = IndexPage::default();
                 let mut global_block_idx = start_block_idx;
@@ -607,8 +612,7 @@ impl StrataBuilder {
                 }
 
                 Ok((pages, current_offset, out, blocks_added, dedup_map))
-            },
-        )?;
+            })?;
 
         self.writer = Some(out_file);
         self.current_offset = new_offset;

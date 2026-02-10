@@ -1,7 +1,6 @@
 //! Unit tests for FileBackend storage
 
-#[path = "../../common/mod.rs"]
-mod common;
+use super::common;
 use common::*;
 
 use strata_core::store::{StorageBackend, local::file::FileBackend};

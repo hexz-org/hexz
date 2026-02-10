@@ -6,7 +6,6 @@ import threading
 import http.server
 import socketserver
 import strata
-import numpy as np
 
 
 @pytest.fixture(scope="session")

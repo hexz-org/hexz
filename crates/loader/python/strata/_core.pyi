@@ -4,7 +4,7 @@ This file provides type hints for the _strata_core extension module
 implemented in Rust using PyO3.
 """
 
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 
 class StrataReader:
     """Low-level reader for Strata snapshots (Rust implementation)."""

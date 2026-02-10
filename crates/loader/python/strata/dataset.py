@@ -5,13 +5,12 @@ with features like smart caching, prefetching, and shuffling.
 """
 
 from typing import Optional, Callable, Dict, Any, List, Tuple, Literal
-import warnings
 from concurrent.futures import ThreadPoolExecutor, Future
 from threading import Lock
 from pathlib import Path
 
 try:
-    import torch
+    import torch  # noqa: F401
     from torch.utils.data import Dataset as TorchDataset
 
     HAS_TORCH = True
@@ -20,7 +19,7 @@ except ImportError:
     HAS_TORCH = False
 
 from .reader import Reader
-from .typing import PathLike, Shape
+from .typing import PathLike
 from .exceptions import ValidationError
 
 
@@ -327,7 +326,7 @@ class Dataset(TorchDataset):
         """
         if not HAS_TORCH:
             raise ImportError(
-                "PyTorch is required for Dataset. " "Install with: pip install torch"
+                "PyTorch is required for Dataset. Install with: pip install torch"
             )
 
         if item_size is None and index_file is None:
@@ -589,7 +588,8 @@ class TFDataset:
         # - Create generator function
         # - Return tf.data.Dataset.from_generator(...)
         try:
-            import tensorflow as tf
+            # import tensorflow as tf
+            pass
         except ImportError:
             raise ImportError(
                 "TensorFlow is required for TFDataset. "

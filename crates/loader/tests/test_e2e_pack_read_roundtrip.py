@@ -94,9 +94,9 @@ def _pack_with_cli(
         timeout=120,
         cwd=os.path.dirname(disk_path) or ".",
     )
-    assert (
-        result.returncode == 0
-    ), f"strata data pack failed: {result.stderr or result.stdout}"
+    assert result.returncode == 0, (
+        f"strata data pack failed: {result.stderr or result.stdout}"
+    )
 
 
 def _read_all_via_python(snap_path: str) -> bytes:
@@ -133,9 +133,9 @@ def test_e2e_pack_lz4_roundtrip(strata_binary, e2e_temp_dir):
     _pack_with_cli(strata_binary, disk_path, snap_path, "lz4")
 
     actual = _read_all_via_python(snap_path)
-    assert (
-        actual == expected
-    ), f"Round-trip mismatch: len(expected)={len(expected)}, len(actual)={len(actual)}"
+    assert actual == expected, (
+        f"Round-trip mismatch: len(expected)={len(expected)}, len(actual)={len(actual)}"
+    )
 
 
 def test_e2e_pack_zstd_roundtrip(strata_binary, e2e_temp_dir):
@@ -189,9 +189,9 @@ def test_e2e_pack_varying_sizes_and_patterns(
     _pack_with_cli(strata_binary, disk_path, snap_path, "lz4")
 
     actual = _read_all_via_python(snap_path)
-    assert len(actual) == len(
-        expected
-    ), f"Size mismatch: {len(actual)} vs {len(expected)}"
+    assert len(actual) == len(expected), (
+        f"Size mismatch: {len(actual)} vs {len(expected)}"
+    )
     assert actual == expected
 
 
@@ -208,9 +208,9 @@ def test_e2e_pack_checksum_consistency(strata_binary, e2e_temp_dir):
 
     expected_hash = hashlib.sha256(expected).hexdigest()
     actual_hash = hashlib.sha256(actual).hexdigest()
-    assert (
-        actual_hash == expected_hash
-    ), f"SHA-256 mismatch: {actual_hash} vs {expected_hash}"
+    assert actual_hash == expected_hash, (
+        f"SHA-256 mismatch: {actual_hash} vs {expected_hash}"
+    )
 
 
 def test_e2e_inspect_after_pack(strata_binary, e2e_temp_dir):
