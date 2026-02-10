@@ -21,6 +21,26 @@ use strata_core::format::version::{
 
 use super::builder::StrataBuilder;
 
+/// Generate an Ed25519 keypair for signing snapshots.
+///
+/// Writes `private.key` and `public.key` into the given directory (default: current directory).
+/// Returns (private_key_path, public_key_path).
+#[pyfunction]
+#[pyo3(signature = (output_dir=None))]
+pub fn keygen(output_dir: Option<String>) -> PyResult<(String, String)> {
+    let dir = match output_dir {
+        Some(ref d) => PathBuf::from(d),
+        None => std::env::current_dir().map_err(|e| PyIOError::new_err(e.to_string()))?,
+    };
+    let priv_path = dir.join("private.key");
+    let pub_path = dir.join("public.key");
+    sign::generate_keypair(&priv_path, &pub_path).map_err(|e| PyIOError::new_err(e.to_string()))?;
+    Ok((
+        priv_path.to_string_lossy().into_owned(),
+        pub_path.to_string_lossy().into_owned(),
+    ))
+}
+
 /// Get the current format version.
 #[pyfunction]
 pub fn get_format_version() -> u32 {

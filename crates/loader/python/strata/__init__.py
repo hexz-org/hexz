@@ -36,6 +36,7 @@ from typing import Union
 # Import Rust-implemented core functions
 from ._strata_core import (
     pack,
+    keygen,
     sign_image,
     verify_image,
     snapshot_vm,
@@ -155,7 +156,8 @@ __all__ = [
     "PROFILES",
     "pack",
     "merge_overlay",
-    # VM
+    # VM / signing
+    "keygen",
     "sign_image",
     "verify_image",
     "snapshot_vm",
