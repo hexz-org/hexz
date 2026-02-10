@@ -2598,16 +2598,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-ffi"
-version = "0.0.1"
-dependencies = [
- "anyhow",
- "libc",
- "strata-common",
- "strata-core",
-]
-
-[[package]]
 name = "strata-fuse"
 version = "0.0.1"
 dependencies = [

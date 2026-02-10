@@ -7,7 +7,6 @@ members = [
     "crates/server",
     "crates/cli",
     "crates/loader",
-    "crates/ffi",
 ]
 
 [workspace.dependencies]
