@@ -578,33 +578,88 @@ Size       Compression   Decompression   Ratio
 **Purpose**: Generate Ed25519 keypair for signing snapshots.
 
 ```bash
-strata sys keygen --output <PREFIX>
+strata sys keygen [--output-dir <DIR>]
 ```
+
+If `--output-dir` is omitted, keys are created in the current directory as `private.key` and `public.key`.
 
 #### Output
 
 ```
-Generated keypair:
-  Private key: mykey.priv
-  Public key:  mykey.pub
-
-IMPORTANT: Keep mykey.priv secure!
+Generating Ed25519 keypair...
+Keys generated:
+  Private: /path/to/private.key
+  Public:  /path/to/public.key
+Keep the private key safe!
 ```
 
-#### Usage with Signing
+---
 
+### Signing workflow
+
+Snapshots can be signed so consumers can verify integrity and origin before use.
+
+#### 1. Generate keys (once)
+
+**CLI:**
 ```bash
-# Generate keys
-strata sys keygen --output release
-
-# Sign a snapshot
-strata data pack --disk image.img --output release.st
-# TODO: Add signing support
-# strata data sign --snapshot release.st --key release.priv
-
-# Verify signature
-# strata data verify --snapshot release.st --key release.pub
+strata sys keygen --output-dir ./keys
+# Creates keys/private.key and keys/public.key
 ```
+
+**Python:**
+```python
+import strata
+priv_path, pub_path = strata.keygen(output_dir="./keys")
+```
+
+#### 2. Pack and sign a snapshot
+
+**CLI:**
+```bash
+# Pack the snapshot
+strata data pack --disk image.img --output release.st
+
+# Sign it (writes signature into the .st file)
+strata sys sign --key keys/private.key release.st
+```
+
+**Python:**
+```python
+# After building a snapshot (e.g. with strata.build() or Writer):
+strata.sign_image("release.st", "keys/private.key")
+```
+
+#### 3. Verify before use
+
+**CLI:**
+```bash
+strata sys verify --key keys/public.key release.st
+# Succeeds silently if signature is valid; exits with error if missing or invalid
+```
+
+**Python:**
+```python
+strata.verify_image("release.st", "keys/public.key")  # raises on failure
+# Or use the high-level verifier:
+valid = strata.verify("release.st", public_key="keys/public.key")
+if not valid:
+    raise RuntimeError("Snapshot verification failed")
+```
+
+#### Enforcing verification when loading
+
+To fail if a snapshot is unsigned or invalid when opening it:
+
+- **CLI:** Run `strata sys verify --key keys/public.key snapshot.st` before any operation that uses the snapshot; use a script or wrapper that always verifies first.
+- **Python:** Call `strata.verify(path, public_key="keys/public.key")` before `strata.open(path)`. If you need to require signing for all reads, wrap the open step:
+
+  ```python
+  if not strata.verify(path, public_key=pub_key):
+      raise ValueError("Snapshot must be verified before use")
+  with strata.open(path) as reader:
+      ...
+  ```
 
 ---
 
