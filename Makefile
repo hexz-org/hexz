@@ -23,14 +23,16 @@ RUFF            := $(shell [ -f .venv/bin/ruff ] && echo .venv/bin/ruff || echo 
 # ── Pass-through args ─────────────────────────────────────────────────────────
 #  make test cache            →  cargo test -- cache
 #  make test-python writer    →  pytest -k writer
-#  make bench read_throughput  →  cargo bench -- read_throughput
+#  make bench <name>  →  cargo bench --bench <name> (only that binary); make bench  →  all
 #  make run serve             →  cargo run -- serve
 ifneq (,$(filter test test-rust test-python,$(firstword $(MAKECMDGOALS))))
   TEST_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
   $(foreach a,$(TEST_ARGS),$(eval $a:;@:))
 endif
 ifneq (,$(filter bench,$(firstword $(MAKECMDGOALS))))
-  BENCH_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  BENCH_ARGS   := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  BENCH_BIN    := $(firstword $(BENCH_ARGS))
+  BENCH_EXTRA  := $(wordlist 2,$(words $(BENCH_ARGS)),$(BENCH_ARGS))
   $(foreach a,$(BENCH_ARGS),$(eval $a:;@:))
 endif
 ifneq (,$(filter run,$(firstword $(MAKECMDGOALS))))
@@ -206,7 +208,11 @@ check:
 # ═══════════════════════════════════════════════════════════════════════════════
 bench:
 	@printf "$(GREEN)Running benchmarks…$(RESET)\n"
-	$(CARGO) bench --package $(BENCH_PACKAGE) -- $(BENCH_ARGS)
+	@if [ -n "$(BENCH_BIN)" ]; then \
+		$(CARGO) bench --package $(BENCH_PACKAGE) --bench $(BENCH_BIN) -- $(BENCH_EXTRA); \
+	else \
+		$(CARGO) bench --package $(BENCH_PACKAGE) -- $(BENCH_ARGS); \
+	fi
 
 bench-list:
 	@BENCH_DIR=""; \

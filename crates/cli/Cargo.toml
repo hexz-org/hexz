@@ -104,6 +104,11 @@ name = "ai_ml_workloads"
 harness = false
 path = "benches/ai/ml_workloads.rs"
 
+[[bench]]
+name = "cache_concurrent"
+harness = false
+path = "benches/micro/cache_concurrent.rs"
+
 [features]
 default = ["fuse", "server", "compression-zstd", "encryption", "diagnostics", "signing"]
 
