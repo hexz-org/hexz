@@ -21,13 +21,14 @@ pub struct AsyncStrataReader {
 #[pymethods]
 impl AsyncStrataReader {
     #[staticmethod]
-    #[pyo3(signature = (path, s3_region=None, endpoint_url=None, allow_restricted=false))]
+    #[pyo3(signature = (path, s3_region=None, endpoint_url=None, allow_restricted=false, prefetch_count=0))]
     fn create(
         py: Python<'_>,
         path: String,
         s3_region: Option<String>,
         endpoint_url: Option<String>,
         allow_restricted: bool,
+        prefetch_count: u32,
     ) -> PyResult<Bound<'_, PyAny>> {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let core = tokio::task::spawn_blocking(move || -> PyResult<Arc<StrataFile>> {
@@ -36,6 +37,7 @@ impl AsyncStrataReader {
                     s3_region,
                     endpoint_url,
                     allow_restricted,
+                    prefetch_count,
                 };
                 engine::open_snapshot(config).map_err(|e| PyIOError::new_err(e.to_string()))
             })

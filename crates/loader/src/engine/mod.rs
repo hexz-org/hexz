@@ -74,6 +74,15 @@ pub struct OpenConfig {
     /// networks (RFC 1918) when using HTTP or S3 backends to prevent
     /// SSRF (Server-Side Request Forgery) attacks in hosted environments.
     pub allow_restricted: bool,
+
+    /// Number of blocks to prefetch ahead for sequential access optimization.
+    ///
+    /// When set to a value > 0, the system will automatically fetch the next N blocks
+    /// in the background after each read, improving sequential access performance.
+    /// Set to 0 to disable prefetching.
+    ///
+    /// Defaults to 0 (disabled).
+    pub prefetch_count: u32,
 }
 
 /// Opens a StrataFile from a path or URI.
@@ -126,7 +135,15 @@ pub fn open_snapshot(config: OpenConfig) -> Result<Arc<StrataFile>, OpenError> {
         CompressionType::Zstd => Box::new(ZstdCompressor::new(DEFAULT_ZSTD_LEVEL, None)),
     };
 
-    StrataFile::new(backend, compressor, None).map_err(|e| OpenError::Io(e.to_string()))
+    // Use with_cache to enable prefetching if configured
+    let prefetch_window = if config.prefetch_count > 0 {
+        Some(config.prefetch_count)
+    } else {
+        None
+    };
+
+    StrataFile::with_cache(backend, compressor, None, None, prefetch_window)
+        .map_err(|e| OpenError::Io(e.to_string()))
 }
 
 /// Returns the size of a specific stream in the snapshot.

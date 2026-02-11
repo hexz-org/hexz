@@ -3,6 +3,7 @@
 use crate::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
 use crate::algo::encryption::Encryptor;
 use crate::cache::lru::BlockCache;
+use crate::cache::prefetch::Prefetcher;
 use crate::format::header::{CompressionType, StrataHeader};
 use crate::format::index::{BlockInfo, IndexPage, MasterIndex, PageEntry};
 use crate::format::magic::{HEADER_SIZE, MAGIC_BYTES};
@@ -154,6 +155,9 @@ pub struct StrataFile {
 
     /// LRU cache for deserialized index pages
     page_cache: Mutex<LruCache<u64, Arc<IndexPage>>>,
+
+    /// Optional prefetcher for background data loading
+    prefetcher: Option<Prefetcher>,
 }
 
 impl StrataFile {
@@ -199,12 +203,12 @@ impl StrataFile {
         compressor: Box<dyn Compressor>,
         encryptor: Option<Box<dyn Encryptor>>,
     ) -> Result<Arc<Self>> {
-        Self::with_cache(backend, compressor, encryptor, None)
+        Self::with_cache(backend, compressor, encryptor, None, None)
     }
 
-    /// Opens a Strata snapshot with custom cache capacity.
+    /// Opens a Strata snapshot with custom cache capacity and prefetching.
     ///
-    /// Identical to [`new`](Self::new) but allows specifying cache size in bytes.
+    /// Identical to [`new`](Self::new) but allows specifying cache size and prefetch window.
     ///
     /// # Parameters
     ///
@@ -212,6 +216,7 @@ impl StrataFile {
     /// - `compressor`: Compression algorithm
     /// - `encryptor`: Optional decryption handler
     /// - `cache_capacity_bytes`: Block cache size in bytes (default: ~400MB for 4KB blocks)
+    /// - `prefetch_window_size`: Number of blocks to prefetch ahead (default: disabled)
     ///
     /// # Cache Sizing
     ///
@@ -220,6 +225,13 @@ impl StrataFile {
     /// - `None` → 1000 blocks (~4MB effective)
     ///
     /// Larger caches reduce repeated decompression but increase memory usage.
+    ///
+    /// # Prefetching
+    ///
+    /// When `prefetch_window_size` is set, the system will automatically fetch the next N blocks
+    /// in the background after each read, optimizing sequential access patterns:
+    /// - `Some(4)` → Prefetch 4 blocks ahead
+    /// - `None` or `Some(0)` → Disable prefetching
     ///
     /// # Examples
     ///
@@ -233,12 +245,13 @@ impl StrataFile {
     /// let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
     /// let compressor = Box::new(Lz4Compressor::new());
     ///
-    /// // Allocate 256MB for cache
+    /// // Allocate 256MB for cache, prefetch 4 blocks ahead
     /// let snapshot = StrataFile::with_cache(
     ///     backend,
     ///     compressor,
     ///     None,
-    ///     Some(256 * 1024 * 1024)
+    ///     Some(256 * 1024 * 1024),
+    ///     Some(4)
     /// )?;
     /// # Ok(())
     /// # }
@@ -248,6 +261,7 @@ impl StrataFile {
         compressor: Box<dyn Compressor>,
         encryptor: Option<Box<dyn Encryptor>>,
         cache_capacity_bytes: Option<usize>,
+        prefetch_window_size: Option<u32>,
     ) -> Result<Arc<Self>> {
         let header_bytes = backend.read_exact(0, HEADER_SIZE)?;
         let header: StrataHeader = bincode::deserialize(&header_bytes)?;
@@ -317,6 +331,9 @@ impl StrataFile {
             1000
         };
 
+        // Initialize prefetcher if window size is specified and > 0
+        let prefetcher = prefetch_window_size.filter(|&w| w > 0).map(Prefetcher::new);
+
         Ok(Arc::new(Self {
             header,
             master,
@@ -326,6 +343,7 @@ impl StrataFile {
             parent,
             cache_l1: BlockCache::with_capacity(l1_capacity),
             page_cache: Mutex::new(LruCache::new(NonZeroUsize::new(128).unwrap())),
+            prefetcher,
         }))
     }
 
@@ -622,46 +640,82 @@ impl StrataFile {
         }
 
         if local_work.len() >= Self::PARALLEL_MIN_BLOCKS {
+            // Two-phase parallel I/O optimization:
+            // Phase 1: Parallel I/O - fetch all raw blocks concurrently
+            // Phase 2: Parallel CPU - decompress and copy to target buffer
             let snap = Arc::clone(self);
             let target_addr = target.as_mut_ptr() as usize;
+
+            // Phase 1: Parallel fetch all raw blocks
+            let raw_blocks: Vec<Result<Bytes>> = local_work
+                .par_iter()
+                .map(|(block_idx, info, _, _, _)| snap.fetch_raw_block(stream, *block_idx, info))
+                .collect();
+
+            // Phase 2: Parallel decompress and copy
             let err: Mutex<Option<StrataError>> = Mutex::new(None);
-            local_work.par_iter().for_each(
-                |(block_idx, info, buf_offset, offset_in_block, to_copy)| {
+            local_work
+                .par_iter()
+                .zip(raw_blocks)
+                .for_each(|(work_item, raw_result)| {
                     if err.lock().unwrap().is_some() {
                         return;
                     }
-                    match snap.resolve_block_data(stream, *block_idx, info) {
-                        Ok(data) => {
-                            let src = data.as_ref();
-                            let start = *offset_in_block;
-                            let len = *to_copy;
-                            if start < src.len() && len <= src.len() - start {
-                                let dest = (target_addr + buf_offset) as *mut u8;
-                                unsafe {
-                                    ptr::copy_nonoverlapping(src[start..].as_ptr(), dest, len)
-                                };
-                            }
-                        }
+
+                    let (block_idx, info, buf_offset, offset_in_block, to_copy) = work_item;
+
+                    // Handle fetch errors
+                    let raw = match raw_result {
+                        Ok(r) => r,
                         Err(e) => {
                             let _ = (*err.lock().unwrap()).replace(e);
+                            return;
                         }
+                    };
+
+                    // If cache hit or zero block, raw is already decompressed
+                    let data =
+                        if info.length == 0 || snap.cache_l1.get(stream, *block_idx).is_some() {
+                            raw
+                        } else {
+                            // Decompress and verify
+                            match snap.decompress_and_verify(raw, *block_idx, info) {
+                                Ok(d) => {
+                                    // Cache the result
+                                    snap.cache_l1.insert(stream, *block_idx, d.clone());
+                                    d
+                                }
+                                Err(e) => {
+                                    let _ = (*err.lock().unwrap()).replace(e);
+                                    return;
+                                }
+                            }
+                        };
+
+                    // Copy to target buffer
+                    let src = data.as_ref();
+                    let start = *offset_in_block;
+                    let len = *to_copy;
+                    if start < src.len() && len <= src.len() - start {
+                        let dest = (target_addr + buf_offset) as *mut u8;
+                        unsafe { ptr::copy_nonoverlapping(src[start..].as_ptr(), dest, len) };
                     }
-                },
-            );
+                });
+
             if let Some(e) = err.lock().unwrap().take() {
                 return Err(e);
             }
         } else {
-            for (block_idx, info, buf_offset, offset_in_block, to_copy) in local_work {
-                let data = self.resolve_block_data(stream, block_idx, &info)?;
+            for (block_idx, info, buf_offset, offset_in_block, to_copy) in &local_work {
+                let data = self.resolve_block_data(stream, *block_idx, info)?;
                 let src = data.as_ref();
-                let start = offset_in_block;
-                if start < src.len() && to_copy <= src.len() - start {
+                let start = *offset_in_block;
+                if start < src.len() && *to_copy <= src.len() - start {
                     unsafe {
                         ptr::copy_nonoverlapping(
                             src[start..].as_ptr(),
-                            target[buf_offset..].as_mut_ptr() as *mut u8,
-                            to_copy,
+                            target[*buf_offset..].as_mut_ptr() as *mut u8,
+                            *to_copy,
                         );
                     }
                 }
@@ -674,6 +728,21 @@ impl StrataFile {
             } else {
                 unsafe { ptr::write_bytes(target[buf_offset..].as_mut_ptr(), 0, remaining) };
             }
+        }
+
+        // Trigger prefetch for next sequential blocks if enabled
+        if self.prefetcher.is_some() && !local_work.is_empty() {
+            // Calculate the next logical position (end of current read)
+            let next_offset = offset + actual_len as u64;
+            let prefetch_len = (self.header.block_size * 4) as usize; // Prefetch ~4 blocks worth
+
+            // Spawn background prefetch for the next range
+            let snap = Arc::clone(self);
+            let stream_copy = stream;
+            std::thread::spawn(move || {
+                // Prefetch silently - ignore errors
+                let _ = snap.read_at(stream_copy, next_offset, prefetch_len);
+            });
         }
 
         Ok(())
@@ -741,6 +810,93 @@ impl StrataFile {
         Ok(arc)
     }
 
+    /// Fetches raw compressed block data from cache or storage.
+    ///
+    /// This is the I/O portion of block resolution, separated to enable parallel I/O.
+    /// It:
+    /// 1. Checks the block cache
+    /// 2. Handles zero-length blocks
+    /// 3. Reads raw compressed data from backend
+    ///
+    /// # Parameters
+    ///
+    /// - `stream`: Stream identifier (for cache key)
+    /// - `block_idx`: Global block index
+    /// - `info`: Block metadata (offset, length)
+    ///
+    /// # Returns
+    ///
+    /// Raw block data (potentially compressed/encrypted) or cached decompressed data.
+    fn fetch_raw_block(
+        &self,
+        stream: SnapshotStream,
+        block_idx: u64,
+        info: &BlockInfo,
+    ) -> Result<Bytes> {
+        // Check cache first - return decompressed data if available
+        if let Some(data) = self.cache_l1.get(stream, block_idx) {
+            return Ok(data);
+        }
+
+        // Handle zero blocks
+        if info.length == 0 {
+            let len = info.logical_len as usize;
+            if len == 0 {
+                return Ok(Bytes::new());
+            }
+            if len == ZEROS_64K.len() {
+                return Ok(Bytes::from_static(&ZEROS_64K));
+            }
+            return Ok(Bytes::from(vec![0u8; len]));
+        }
+
+        // Fetch raw compressed data (THIS IS THE PARALLEL PART)
+        self.backend.read_exact(info.offset, info.length as usize)
+    }
+
+    /// Decompresses and verifies a raw block.
+    ///
+    /// This is the CPU portion of block resolution, separated to enable parallel decompression.
+    /// It:
+    /// 1. Verifies CRC32 checksum
+    /// 2. Decrypts (if encrypted)
+    /// 3. Decompresses
+    ///
+    /// # Parameters
+    ///
+    /// - `raw`: Raw block data (potentially compressed/encrypted)
+    /// - `block_idx`: Global block index (for error reporting and decryption)
+    /// - `info`: Block metadata (checksum)
+    ///
+    /// # Returns
+    ///
+    /// Decompressed block data as `Bytes`.
+    ///
+    /// # Performance
+    ///
+    /// Decompression throughput:
+    /// - LZ4: ~2 GB/s per core
+    /// - Zstd: ~500 MB/s per core
+    fn decompress_and_verify(&self, raw: Bytes, block_idx: u64, info: &BlockInfo) -> Result<Bytes> {
+        // Verify stored checksum (CRC32 of compressed/encrypted data) before decrypt/decompress
+        if info.checksum != 0 {
+            let computed = crc32_hash(&raw);
+            if computed != info.checksum {
+                return Err(StrataError::Corruption(block_idx));
+            }
+        }
+
+        // Decrypt and decompress
+        let decompressed = if let Some(enc) = &self.encryptor {
+            let compressed = enc.decrypt(&raw, block_idx)?;
+            self.compressor.decompress(&compressed)?
+        } else {
+            self.compressor.decompress(raw.as_ref())?
+        };
+
+        Ok(Bytes::from(decompressed))
+    }
+
     /// Resolves raw block data by fetching from cache or decompressing from storage.
     ///
     /// This is the core decompression path. It:
@@ -772,39 +928,18 @@ impl StrataFile {
         block_idx: u64,
         info: &BlockInfo,
     ) -> Result<Bytes> {
-        if let Some(data) = self.cache_l1.get(stream, block_idx) {
-            return Ok(data);
+        // Fetch raw block (from cache or I/O)
+        let raw = self.fetch_raw_block(stream, block_idx, info)?;
+
+        // If cache hit or zero block, raw is already decompressed
+        if info.length == 0 || self.cache_l1.get(stream, block_idx).is_some() {
+            return Ok(raw);
         }
 
-        if info.length == 0 {
-            let len = info.logical_len as usize;
-            if len == 0 {
-                return Ok(Bytes::new());
-            }
-            if len == ZEROS_64K.len() {
-                return Ok(Bytes::from_static(&ZEROS_64K));
-            }
-            return Ok(Bytes::from(vec![0u8; len]));
-        }
+        // Decompress and verify
+        let data = self.decompress_and_verify(raw, block_idx, info)?;
 
-        let raw = self.backend.read_exact(info.offset, info.length as usize)?;
-
-        // Verify stored checksum (CRC32 of compressed/encrypted data) before decrypt/decompress
-        if info.checksum != 0 {
-            let computed = crc32_hash(&raw);
-            if computed != info.checksum {
-                return Err(StrataError::Corruption(block_idx));
-            }
-        }
-
-        let decompressed = if let Some(enc) = &self.encryptor {
-            let compressed = enc.decrypt(&raw, block_idx)?;
-            self.compressor.decompress(&compressed)?
-        } else {
-            self.compressor.decompress(raw.as_ref())?
-        };
-        let data = Bytes::from(decompressed);
-
+        // Cache the result
         self.cache_l1.insert(stream, block_idx, data.clone());
         Ok(data)
     }

@@ -92,6 +92,7 @@ fn open_snapshot(strata_path: &str, cache_size: Option<String>) -> Result<Arc<St
         compressor,
         encryptor,
         cache_capacity,
+        None, // No prefetching for mount command
     )?)
 }
 
