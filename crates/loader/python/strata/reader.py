@@ -5,6 +5,7 @@ the Rust-implemented StrataReader with a more pythonic interface.
 """
 
 from typing import TYPE_CHECKING, Optional, Any, Dict, Union, Iterator
+import re
 
 from . import strata_loader
 from .typing import PathLike
@@ -12,6 +13,59 @@ from .utils import Metadata
 
 if TYPE_CHECKING:
     from .utils import AnalysisReport
+
+
+def _parse_cache_size(size_str: str) -> int:
+    """Parse a cache size string like '512M', '1G', '2GB' into bytes.
+
+    Args:
+        size_str: Cache size string (e.g., "512M", "1G", "2GB", "1024")
+
+    Returns:
+        Size in bytes
+
+    Raises:
+        ValueError: If the string format is invalid
+
+    Examples:
+        >>> _parse_cache_size("512M")
+        536870912
+        >>> _parse_cache_size("1G")
+        1073741824
+        >>> _parse_cache_size("2GB")
+        2147483648
+        >>> _parse_cache_size("1024")
+        1024
+    """
+    size_str = size_str.strip().upper()
+
+    # Match number followed by optional unit
+    match = re.match(r"^(\d+(?:\.\d+)?)\s*([KMGT]I?B?)?$", size_str)
+    if not match:
+        raise ValueError(f"Invalid cache size format: {size_str}")
+
+    number_str, unit = match.groups()
+    number = float(number_str)
+
+    # Parse unit
+    if not unit:
+        # No unit means bytes
+        return int(number)
+
+    # Normalize unit (remove 'I' and 'B' variations)
+    unit = unit.replace("I", "").replace("B", "")
+
+    multipliers = {
+        "K": 1024,
+        "M": 1024**2,
+        "G": 1024**3,
+        "T": 1024**4,
+    }
+
+    if unit not in multipliers:
+        raise ValueError(f"Unknown unit in cache size: {unit}")
+
+    return int(number * multipliers[unit])
 
 
 class Reader:
@@ -45,20 +99,30 @@ class Reader:
 
         Args:
             path: Path or URL to the snapshot file
-            cache_size: Cache size (e.g., "512M", "1G")
-            prefetch: Enable prefetching for sequential reads
+            cache_size: Cache size (e.g., "512M", "1G", "2GB"). If None, uses default.
+            prefetch: Enable prefetching for sequential reads (default: True)
             s3_region: AWS region for S3 URLs
             endpoint_url: Custom S3 endpoint URL
             allow_restricted: Allow connections to private/internal IPs
         """
         self._path = str(path)
+
+        # Parse cache size if provided
+        cache_capacity_bytes = None
+        if cache_size is not None:
+            cache_capacity_bytes = _parse_cache_size(cache_size)
+
+        # Default to 4 blocks of prefetch when enabled
+        prefetch_count = 4 if prefetch else 0
+
         self._reader = strata_loader.StrataReader(
             self._path,
             s3_region=s3_region,
             endpoint_url=endpoint_url,
             allow_restricted=allow_restricted,
+            prefetch_count=prefetch_count,
+            cache_capacity_bytes=cache_capacity_bytes,
         )
-        # TODO: Wire up cache_size and prefetch to Rust config
 
     def read(
         self,
@@ -259,6 +323,8 @@ class AsyncReader:
         self,
         path: PathLike,
         *,
+        cache_size: Optional[str] = None,
+        prefetch: bool = True,
         s3_region: Optional[str] = None,
         endpoint_url: Optional[str] = None,
         allow_restricted: bool = False,
@@ -267,11 +333,17 @@ class AsyncReader:
 
         Args:
             path: Path or URL to the snapshot file
+            cache_size: Cache size (e.g., "512M", "1G", "2GB"). If None, uses default.
+            prefetch: Enable prefetching for sequential reads (default: True)
             s3_region: AWS region for S3 URLs
             endpoint_url: Custom S3 endpoint URL
             allow_restricted: Allow connections to private/internal IPs
         """
         self._path = str(path)
+        self._cache_capacity_bytes = (
+            _parse_cache_size(cache_size) if cache_size else None
+        )
+        self._prefetch_count = 4 if prefetch else 0
         self._s3_region = s3_region
         self._endpoint_url = endpoint_url
         self._allow_restricted = allow_restricted
@@ -284,6 +356,8 @@ class AsyncReader:
             s3_region=self._s3_region,
             endpoint_url=self._endpoint_url,
             allow_restricted=self._allow_restricted,
+            prefetch_count=self._prefetch_count,
+            cache_capacity_bytes=self._cache_capacity_bytes,
         )
         return self
 

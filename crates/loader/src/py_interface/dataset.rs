@@ -23,7 +23,7 @@ pub struct StrataReader {
 #[pymethods]
 impl StrataReader {
     #[new]
-    #[pyo3(signature = (path, s3_region=None, endpoint_url=None, allow_restricted=false, prefetch_count=0))]
+    #[pyo3(signature = (path, s3_region=None, endpoint_url=None, allow_restricted=false, prefetch_count=0, cache_capacity_bytes=None))]
     fn new(
         py: Python<'_>,
         path: String,
@@ -31,6 +31,7 @@ impl StrataReader {
         endpoint_url: Option<String>,
         allow_restricted: bool,
         prefetch_count: u32,
+        cache_capacity_bytes: Option<usize>,
     ) -> PyResult<Self> {
         let config = OpenConfig {
             path: path.clone(),
@@ -38,6 +39,7 @@ impl StrataReader {
             endpoint_url,
             allow_restricted,
             prefetch_count,
+            cache_capacity_bytes,
         };
 
         let inner = py.allow_threads(move || -> PyResult<Arc<StrataFile>> {

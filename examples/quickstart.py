@@ -46,6 +46,8 @@ def main():
 
         # 3. Open and read — your first result
         print("Reading back...")
+        # Note: prefetch=True by default for sequential reads
+        # Set prefetch=False to disable background prefetching
         with strata.open(snap_path) as reader:
             chunk = reader.read(64)  # from start (cursor at 0)
             # Random access: reader.read(size, offset=...) does not move the cursor

@@ -83,6 +83,14 @@ pub struct OpenConfig {
     ///
     /// Defaults to 0 (disabled).
     pub prefetch_count: u32,
+
+    /// Block cache capacity in bytes.
+    ///
+    /// Controls how many decompressed blocks are kept in memory. Larger caches
+    /// reduce repeated decompression but increase memory usage.
+    ///
+    /// If None, uses the default cache size (~4MB effective for 4KB blocks).
+    pub cache_capacity_bytes: Option<usize>,
 }
 
 /// Opens a StrataFile from a path or URI.
@@ -135,15 +143,21 @@ pub fn open_snapshot(config: OpenConfig) -> Result<Arc<StrataFile>, OpenError> {
         CompressionType::Zstd => Box::new(ZstdCompressor::new(DEFAULT_ZSTD_LEVEL, None)),
     };
 
-    // Use with_cache to enable prefetching if configured
+    // Use with_cache to enable prefetching and custom cache size if configured
     let prefetch_window = if config.prefetch_count > 0 {
         Some(config.prefetch_count)
     } else {
         None
     };
 
-    StrataFile::with_cache(backend, compressor, None, None, prefetch_window)
-        .map_err(|e| OpenError::Io(e.to_string()))
+    StrataFile::with_cache(
+        backend,
+        compressor,
+        None,
+        config.cache_capacity_bytes,
+        prefetch_window,
+    )
+    .map_err(|e| OpenError::Io(e.to_string()))
 }
 
 /// Returns the size of a specific stream in the snapshot.
