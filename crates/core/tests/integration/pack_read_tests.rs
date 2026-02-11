@@ -8,6 +8,7 @@ use common::*;
 
 use std::fs;
 use std::io::Write;
+use std::mem::MaybeUninit;
 use std::path::PathBuf;
 use std::sync::Arc;
 use strata_core::algo::compression::lz4::Lz4Compressor;
@@ -946,4 +947,137 @@ fn test_pack_verify_all_patterns() {
             .unwrap();
         verify_pattern(&data, expected_pattern);
     }
+}
+
+// --- read_at_into_uninit tests -------------------------------------------------
+
+/// read_at_into_uninit must return the same bytes as read_at for the same (offset, len).
+#[test]
+fn test_read_at_into_uninit_matches_read_at() {
+    let temp_dir = TempDir::new().unwrap();
+    let disk_path = create_test_file(&temp_dir, "disk.img", 1024 * 1024, 0x42);
+    let output_path = temp_dir.path().join("snapshot.st");
+
+    let config = PackConfig {
+        disk: Some(disk_path),
+        memory: None,
+        output: output_path.clone(),
+        compression: "lz4".to_string(),
+        encrypt: false,
+        password: None,
+        train_dict: false,
+        block_size: 65536,
+        cdc_enabled: false,
+        ..Default::default()
+    };
+    pack_snapshot(config, None::<fn(u64, u64)>).expect("Packing failed");
+
+    let backend = Arc::new(FileBackend::new(&output_path).unwrap());
+    let compressor = Box::new(Lz4Compressor::new());
+    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+
+    let cases = [(0u64, 4096), (0, 0), (512 * 1024, 8192), (100, 100)];
+    for (offset, len) in cases {
+        if len == 0 {
+            let mut uninit_buf = [MaybeUninit::uninit(); 1];
+            snapshot
+                .read_at_into_uninit(SnapshotStream::Disk, offset, &mut uninit_buf[..0])
+                .unwrap();
+            continue;
+        }
+        let expected = snapshot.read_at(SnapshotStream::Disk, offset, len).unwrap();
+        let mut uninit_buf = vec![MaybeUninit::uninit(); len];
+        snapshot
+            .read_at_into_uninit(SnapshotStream::Disk, offset, &mut uninit_buf)
+            .unwrap();
+        let actual: &[u8] = unsafe {
+            std::slice::from_raw_parts(uninit_buf.as_ptr() as *const u8, uninit_buf.len())
+        };
+        assert_eq!(actual, expected.as_slice(), "offset={} len={}", offset, len);
+    }
+}
+
+/// read_at_into_uninit: offset past end zero-fills buffer; empty buffer is no-op.
+#[test]
+fn test_read_at_into_uninit_edge_cases() {
+    let temp_dir = TempDir::new().unwrap();
+    let disk_path = create_test_file(&temp_dir, "disk.img", 4096, 0xAB);
+    let output_path = temp_dir.path().join("snapshot.st");
+
+    let config = PackConfig {
+        disk: Some(disk_path),
+        memory: None,
+        output: output_path.clone(),
+        compression: "lz4".to_string(),
+        encrypt: false,
+        password: None,
+        train_dict: false,
+        block_size: 4096,
+        cdc_enabled: false,
+        ..Default::default()
+    };
+    pack_snapshot(config, None::<fn(u64, u64)>).expect("Packing failed");
+
+    let backend = Arc::new(FileBackend::new(&output_path).unwrap());
+    let compressor = Box::new(Lz4Compressor::new());
+    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+
+    // Empty buffer: must not crash
+    let mut uninit_empty = [MaybeUninit::uninit(); 0];
+    snapshot
+        .read_at_into_uninit(SnapshotStream::Disk, 0, &mut uninit_empty)
+        .unwrap();
+
+    // Offset past end: buffer must be zero-filled
+    let mut buf_past_end = [MaybeUninit::uninit(); 8];
+    snapshot
+        .read_at_into_uninit(SnapshotStream::Disk, 10000, &mut buf_past_end)
+        .unwrap();
+    let read_back: &[u8] = unsafe {
+        std::slice::from_raw_parts(buf_past_end.as_ptr() as *const u8, buf_past_end.len())
+    };
+    assert_eq!(read_back, &[0u8; 8]);
+
+    // Read past end of stream: partial fill + zero rest
+    let mut buf_over = [MaybeUninit::uninit(); 16];
+    snapshot
+        .read_at_into_uninit(SnapshotStream::Disk, 4080, &mut buf_over)
+        .unwrap();
+    let read_back: &[u8] =
+        unsafe { std::slice::from_raw_parts(buf_over.as_ptr() as *const u8, buf_over.len()) };
+    assert_eq!(read_back.len(), 16);
+    assert_eq!(&read_back[..16], &[0xABu8; 16]); // stream is 4096, we read from 4080 so 16 bytes
+}
+
+/// read_at_into_uninit_bytes (&mut [u8] wrapper) matches read_at.
+#[test]
+fn test_read_at_into_uninit_bytes_matches_read_at() {
+    let temp_dir = TempDir::new().unwrap();
+    let disk_path = create_test_file(&temp_dir, "disk.img", 8192, 0xCD);
+    let output_path = temp_dir.path().join("snapshot.st");
+
+    let config = PackConfig {
+        disk: Some(disk_path),
+        memory: None,
+        output: output_path.clone(),
+        compression: "lz4".to_string(),
+        encrypt: false,
+        password: None,
+        train_dict: false,
+        block_size: 4096,
+        cdc_enabled: false,
+        ..Default::default()
+    };
+    pack_snapshot(config, None::<fn(u64, u64)>).expect("Packing failed");
+
+    let backend = Arc::new(FileBackend::new(&output_path).unwrap());
+    let compressor = Box::new(Lz4Compressor::new());
+    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+
+    let expected = snapshot.read_at(SnapshotStream::Disk, 100, 200).unwrap();
+    let mut buf = vec![0xFFu8; 200]; // dirty buffer
+    snapshot
+        .read_at_into_uninit_bytes(SnapshotStream::Disk, 100, &mut buf)
+        .unwrap();
+    assert_eq!(&buf[..expected.len()], expected.as_slice());
 }

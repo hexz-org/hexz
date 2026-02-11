@@ -14,11 +14,17 @@
 //! Logical MB/s = reads/s × 64/1024. Read Hit yields very high reads/s (and thus
 //! huge GiB/s if reported as bytes) because each "read" is just lock + cache lookup +
 //! copy—not actual I/O or memory bandwidth.
+//!
+//! **Criterion "change" / "regressed":** Those lines compare this run to a *saved baseline*
+//! in `target/criterion/`. If you switched code (e.g. read_at → read_at_into_uninit) or
+//! the baseline is from another machine, ignore "change" or re-save: e.g.
+//! `make bench cache_concurrent -- --save-baseline my_baseline`.
 
 use criterion::{
-    BenchmarkId, Criterion, SamplingMode, Throughput, criterion_group, criterion_main,
+    BenchmarkId, Criterion, SamplingMode, Throughput, black_box, criterion_group, criterion_main,
 };
 use std::io::Write;
+use std::mem::MaybeUninit;
 use std::sync::Arc;
 use std::thread;
 use strata_cli::cmd::data::pack;
@@ -108,13 +114,18 @@ fn bench_concurrent_read_hit(c: &mut Criterion) {
                     for _ in 0..n {
                         let fs = snap.clone();
                         handles.push(thread::spawn(move || {
+                            let mut buf = [MaybeUninit::uninit(); READ_SIZE];
                             for i in 0..READS_PER_THREAD_HIT {
                                 let offset = ((i * 31) % (WORKING_SET_BYTES as usize / READ_SIZE))
                                     * READ_SIZE;
-                                let _ = fs
-                                    .read_at(SnapshotStream::Disk, offset as u64, READ_SIZE)
-                                    .unwrap();
+                                fs.read_at_into_uninit(
+                                    SnapshotStream::Disk,
+                                    offset as u64,
+                                    &mut buf,
+                                )
+                                .unwrap();
                             }
+                            black_box(&buf);
                         }));
                     }
                     for h in handles {
@@ -173,7 +184,10 @@ fn bench_concurrent_read_miss(c: &mut Criterion) {
                             .saturating_mul(stride)
                             .min(stream_size.saturating_sub(READ_SIZE as u64));
                         handles.push(thread::spawn(move || {
-                            let _ = fs.read_at(SnapshotStream::Disk, offset, READ_SIZE).unwrap();
+                            let mut buf = [MaybeUninit::uninit(); READ_SIZE];
+                            fs.read_at_into_uninit(SnapshotStream::Disk, offset, &mut buf)
+                                .unwrap();
+                            black_box(&buf);
                         }));
                     }
                     for h in handles {

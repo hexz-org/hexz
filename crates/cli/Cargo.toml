@@ -109,6 +109,16 @@ name = "cache_concurrent"
 harness = false
 path = "benches/micro/cache_concurrent.rs"
 
+[[bench]]
+name = "scatter_gather"
+harness = false
+path = "benches/micro/scatter_gather.rs"
+
+[[bench]]
+name = "read_api_comparison"
+harness = false
+path = "benches/micro/read_api_comparison.rs"
+
 [features]
 default = ["fuse", "server", "compression-zstd", "encryption", "diagnostics", "signing"]
 

@@ -154,9 +154,21 @@ run:
 # ═══════════════════════════════════════════════════════════════════════════════
 test: test-rust test-python
 
+# When TEST_ARGS is set, pipe through awk to hide "running 0 tests" blocks so only matching tests are shown.
 test-rust:
 	@printf "$(GREEN)Running Rust tests…$(RESET)\n"
-	$(CARGO) test --workspace -- $(TEST_ARGS)
+	@if [ -z "$(TEST_ARGS)" ]; then \
+		$(CARGO) test --workspace -- $(TEST_ARGS); \
+	else \
+		$(CARGO) test --workspace -- $(TEST_ARGS) 2>&1 | awk '\
+/^[[:space:]]+Running/ { \
+	if (buf != "") { if (!skip) printf "%s", buf; buf = "" } \
+	skip = 0; buf = $$0 "\n"; next \
+} \
+{ buf = buf $$0 "\n"; if ($$0 ~ /running 0 tests/) skip = 1 } \
+END { if (buf != "" && !skip) printf "%s", buf }'; \
+		exit $${PIPESTATUS[0]}; \
+	fi
 
 test-python:
 	@printf "$(GREEN)Running Python tests…$(RESET)\n"

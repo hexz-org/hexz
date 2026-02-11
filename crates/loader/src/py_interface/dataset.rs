@@ -66,6 +66,32 @@ impl StrataReader {
         Ok(PyBytes::new(py, &data))
     }
 
+    /// Read at `offset` into a writable buffer (e.g. bytearray). Returns number of bytes read.
+    /// Uses uninitialized buffer path; buffer need not be zeroed.
+    fn read_at_into(
+        &self,
+        py: Python<'_>,
+        offset: u64,
+        buffer: Bound<'_, PyAny>,
+    ) -> PyResult<usize> {
+        let buf_info = tensor::numpy::acquire_writable_buffer(&buffer)?;
+        let stream_size = self.inner.size(SnapshotStream::Disk);
+        if offset >= stream_size {
+            return Ok(0);
+        }
+        let read_len = std::cmp::min(buf_info.len, (stream_size - offset) as usize);
+        let inner = self.inner.clone();
+        let ptr_addr = buf_info.ptr as usize;
+        let result = py.allow_threads(move || {
+            let slice = unsafe { std::slice::from_raw_parts_mut(ptr_addr as *mut u8, read_len) };
+            inner
+                .read_at_into_uninit_bytes(SnapshotStream::Disk, offset, slice)
+                .map(|_| read_len)
+                .map_err(|e| PyIOError::new_err(e.to_string()))
+        })?;
+        Ok(result)
+    }
+
     #[pyo3(signature = (size=None))]
     fn read<'py>(&self, py: Python<'py>, size: Option<usize>) -> PyResult<Bound<'py, PyBytes>> {
         let mut cursor = self.cursor.lock().unwrap();

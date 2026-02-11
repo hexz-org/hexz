@@ -12,8 +12,10 @@ use crate::store::local::file::FileBackend;
 use bytes::Bytes;
 use crc32fast::hash as crc32_hash;
 use lru::LruCache;
+use std::mem::MaybeUninit;
 use std::num::NonZeroUsize;
 use std::path::Path;
+use std::ptr;
 use std::sync::{Arc, Mutex};
 use strata_common::constants::{BLOCK_OFFSET_PARENT, DEFAULT_ZSTD_LEVEL};
 use strata_common::{Result, StrataError};
@@ -555,6 +557,9 @@ impl StrataFile {
     ///
     /// - `Ok(())` on success. The buffer will be filled with data read from the stream.
     ///   If the read goes beyond the stream size, the remaining part of the buffer is zero-filled.
+    ///
+    /// **On error:** The buffer contents are undefined (possibly partially written).
+    /// Callers must not read from the buffer on error.
     pub fn read_at_into(
         &self,
         stream: SnapshotStream,
@@ -701,6 +706,178 @@ impl StrataFile {
         }
 
         Ok(())
+    }
+
+    /// Like [`read_at_into`](Self::read_at_into) but writes into uninitialized memory.
+    ///
+    /// Callers can pass a buffer that has not been zeroed; the method overwrites the
+    /// requested range. Useful to avoid zeroing large buffers when the contents are
+    /// immediately overwritten.
+    ///
+    /// The buffer is written from the start; any unused suffix (e.g. past stream end)
+    /// is zero-filled. After `Ok(())`, the written region contains valid bytes.
+    ///
+    /// **On error:** The buffer contents are undefined (possibly partially written).
+    /// Callers must not read from the buffer on error; treat it as uninitialized.
+    pub fn read_at_into_uninit(
+        &self,
+        stream: SnapshotStream,
+        offset: u64,
+        buffer: &mut [MaybeUninit<u8>],
+    ) -> Result<()> {
+        let len = buffer.len();
+        if len == 0 {
+            return Ok(());
+        }
+
+        let stream_size = self.size(stream);
+        if offset >= stream_size {
+            // SAFETY: we are writing to the entire buffer; no uninitialized read.
+            unsafe { ptr::write_bytes(buffer.as_mut_ptr(), 0, len) };
+            return Ok(());
+        }
+
+        let actual_len = std::cmp::min(len as u64, stream_size - offset) as usize;
+        if actual_len < len {
+            // SAFETY: we are writing to the suffix; no uninitialized read.
+            unsafe { ptr::write_bytes(buffer[actual_len..].as_mut_ptr(), 0, len - actual_len) };
+        }
+
+        let target = &mut buffer[0..actual_len];
+        let mut buf_offset = 0;
+        let mut current_pos = offset;
+        let mut remaining = actual_len;
+
+        let pages = match stream {
+            SnapshotStream::Disk => &self.master.disk_pages,
+            SnapshotStream::Memory => &self.master.memory_pages,
+        };
+
+        if pages.is_empty() {
+            if let Some(parent) = &self.parent {
+                return parent.read_at_into_uninit(stream, offset, target);
+            }
+            // SAFETY: we are writing to the entire slice; no uninitialized read.
+            unsafe { ptr::write_bytes(target.as_mut_ptr(), 0, target.len()) };
+            return Ok(());
+        }
+
+        let page_idx = match pages.binary_search_by(|p| p.start_logical.cmp(&offset)) {
+            Ok(idx) => idx,
+            Err(idx) => idx.saturating_sub(1),
+        };
+
+        for page_entry in pages.iter().skip(page_idx) {
+            if remaining == 0 {
+                break;
+            }
+            if page_entry.start_logical > current_pos + remaining as u64 {
+                break;
+            }
+
+            let page = self.get_page(page_entry)?;
+            let mut block_logical_start = page_entry.start_logical;
+
+            for (block_idx_in_page, block) in page.blocks.iter().enumerate() {
+                let block_end = block_logical_start + block.logical_len as u64;
+
+                if block_end > current_pos {
+                    let global_block_idx = page_entry.start_block + block_idx_in_page as u64;
+
+                    if block.offset == BLOCK_OFFSET_PARENT {
+                        if let Some(parent) = &self.parent {
+                            let offset_in_block = (current_pos - block_logical_start) as usize;
+                            let to_copy = std::cmp::min(
+                                remaining,
+                                (block.logical_len as usize).saturating_sub(offset_in_block),
+                            );
+                            let dest = &mut target[buf_offset..buf_offset + to_copy];
+                            parent.read_at_into_uninit(stream, current_pos, dest)?;
+                            current_pos += to_copy as u64;
+                            buf_offset += to_copy;
+                            remaining -= to_copy;
+                        } else {
+                            let offset_in_block = (current_pos - block_logical_start) as usize;
+                            let to_copy = std::cmp::min(
+                                remaining,
+                                (block.logical_len as usize).saturating_sub(offset_in_block),
+                            );
+                            // SAFETY: we are writing to the slice; no uninitialized read.
+                            unsafe {
+                                ptr::write_bytes(
+                                    target[buf_offset..buf_offset + to_copy].as_mut_ptr(),
+                                    0,
+                                    to_copy,
+                                )
+                            };
+                            current_pos += to_copy as u64;
+                            buf_offset += to_copy;
+                            remaining -= to_copy;
+                        }
+                    } else {
+                        let block_data =
+                            self.resolve_block_data(stream, global_block_idx, block)?;
+                        let offset_in_block = (current_pos - block_logical_start) as usize;
+                        let to_copy = std::cmp::min(
+                            remaining,
+                            block_data.len().saturating_sub(offset_in_block),
+                        );
+                        if to_copy > 0 {
+                            // SAFETY: non-overlapping; source is valid for read, dest is valid for write.
+                            unsafe {
+                                ptr::copy_nonoverlapping(
+                                    block_data[offset_in_block..].as_ptr(),
+                                    target[buf_offset..].as_mut_ptr() as *mut u8,
+                                    to_copy,
+                                )
+                            };
+                            current_pos += to_copy as u64;
+                            buf_offset += to_copy;
+                            remaining -= to_copy;
+                        }
+                    }
+
+                    if remaining == 0 {
+                        break;
+                    }
+                }
+                block_logical_start += block.logical_len as u64;
+            }
+        }
+
+        if remaining > 0 {
+            if let Some(parent) = &self.parent {
+                parent.read_at_into_uninit(stream, current_pos, &mut target[buf_offset..])?;
+            } else {
+                // SAFETY: we are writing to the remainder; no uninitialized read.
+                unsafe { ptr::write_bytes(target[buf_offset..].as_mut_ptr(), 0, remaining) };
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Like [`read_at_into_uninit`](Self::read_at_into_uninit) but accepts `&mut [u8]`.
+    ///
+    /// Safe to call with an uninitialized or reused buffer; the method overwrites
+    /// the slice. Useful for FFI (e.g. Python bytearray) where `MaybeUninit` is not available.
+    ///
+    /// **On error:** The buffer contents are undefined (possibly partially written).
+    /// Callers must not read from the buffer on error; treat it as uninitialized.
+    #[inline]
+    pub fn read_at_into_uninit_bytes(
+        &self,
+        stream: SnapshotStream,
+        offset: u64,
+        buf: &mut [u8],
+    ) -> Result<()> {
+        if buf.is_empty() {
+            return Ok(());
+        }
+        // SAFETY: We only write into buf via read_at_into_uninit; we never read
+        // uninitialized bytes. Casting to MaybeUninit is valid for write-only use.
+        let uninit = unsafe { &mut *(buf as *mut [u8] as *mut [MaybeUninit<u8>]) };
+        self.read_at_into_uninit(stream, offset, uninit)
     }
 
     /// Fetches an index page from cache or storage.

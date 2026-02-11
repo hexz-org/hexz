@@ -98,6 +98,26 @@ class Reader:
         """
         return self._reader.read_at(offset, size)
 
+    def read_at_into(self, offset: int, buffer: bytearray) -> int:
+        """Read at offset into a writable buffer (e.g. bytearray). Returns bytes read.
+
+        The buffer is overwritten; it need not be zeroed. Uses the uninit read path
+        for performance when reusing large buffers.
+
+        Args:
+            offset: Byte offset to read from
+            buffer: Writable buffer (e.g. bytearray) to fill
+
+        Returns:
+            Number of bytes read (0 if offset >= size or buffer empty).
+
+        Raises:
+            OSError: On I/O or format error. On failure, the buffer contents are
+                undefined (possibly partially written) and must not be read; treat
+                it as garbage.
+        """
+        return self._reader.read_at_into(offset, buffer)
+
     def read_range(self, start: int, end: int) -> bytes:
         """Read byte range [start, end).
 

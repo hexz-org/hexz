@@ -38,6 +38,11 @@ class StrataReader:
         """
         ...
 
+    def read_at_into(self, offset: int, buffer: bytearray) -> int:
+        """Read at offset into a writable buffer. Returns bytes read. Buffer need not be zeroed.
+        On OSError, buffer contents are undefined and must not be read."""
+        ...
+
     def seek(self, offset: int, whence: int = 0) -> int:
         """Seek to a position in the file.
 
