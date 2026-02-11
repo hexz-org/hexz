@@ -2540,6 +2540,7 @@ dependencies = [
  "libc",
  "lz4_flex",
  "rand",
+ "rayon",
  "rpassword",
  "serde_json",
  "sha2",

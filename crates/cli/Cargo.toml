@@ -33,6 +33,7 @@ ctrlc = "3.5.1"
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 rand = { workspace = true }
+rayon = "1.10"
 flate2 = "1.0"
 
 [lib]
@@ -118,6 +119,11 @@ path = "benches/micro/scatter_gather.rs"
 name = "read_api_comparison"
 harness = false
 path = "benches/micro/read_api_comparison.rs"
+
+[[bench]]
+name = "decompress_scaling"
+harness = false
+path = "benches/micro/decompress_scaling.rs"
 
 [features]
 default = ["fuse", "server", "compression-zstd", "encryption", "diagnostics", "signing"]
