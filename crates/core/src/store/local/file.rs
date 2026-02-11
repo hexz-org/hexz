@@ -73,6 +73,8 @@ impl StorageBackend for FileBackend {
     fn read_exact(&self, offset: u64, len: usize) -> Result<Bytes> {
         let mut buffer = BytesMut::with_capacity(len);
 
+        // SAFETY: Buffer has been pre-allocated to exactly `len` bytes via with_capacity.
+        // read_exact_at will initialize all bytes before we access them, so set_len is safe.
         unsafe {
             buffer.set_len(len);
         }

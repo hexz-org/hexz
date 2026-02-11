@@ -1,0 +1,85 @@
+site_name: Strata Documentation
+theme:
+  name: material
+  palette:
+    scheme: slate
+  features:
+    - navigation.tabs
+    - navigation.indexes
+
+# 1. Enable Mermaid support
+markdown_extensions:
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+plugins:
+  - search
+  # 2. Enable Python auto-docs
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [crates/loader/python]
+
+# 3. Full site navigation matching your tree
+nav:
+  - Home: index.md
+  - Tutorials:
+    - Getting Started: tutorials/getting-started.md
+    - First ML Pipeline: tutorials/first-ml-pipeline.md
+    - Booting Your First VM: tutorials/booting-your-first-vm.md
+    - Understanding Compression: tutorials/understanding-compression.md
+  - How-To Guides:
+    - ML Workflows:
+      - Setup S3 Streaming: how-to/ml-workflows/setup-s3-streaming.md
+      - Optimize PyTorch DataLoader: how-to/ml-workflows/optimize-pytorch-dataloader.md
+      - Migrate from WebDataset: how-to/ml-workflows/migrate-from-webdataset.md
+      - Streaming Best Practices: how-to/ml-workflows/streaming-best-practices.md
+    - VM Management:
+      - Create VM Snapshots: how-to/vm-management/create-vm-snapshots.md
+      - Setup VM Networking: how-to/vm-management/setup-vm-networking.md
+      - Boot VM from Snapshot: how-to/vm-management/boot-vm-from-snapshot.md
+      - Commit Overlay Changes: how-to/vm-management/commit-overlay-changes.md
+    - CLI Usage:
+      - Install Strata: how-to/cli-usage/install-strata.md
+      - Pack Datasets: how-to/cli-usage/pack-datasets.md
+      - Verify Signatures: how-to/cli-usage/verify-signatures.md
+    - General:
+      - Troubleshooting: how-to/troubleshooting.md
+      - Performance Tuning: how-to/performance-tuning.md
+  - Explanation:
+    - System Architecture: explanation/architecture.md
+    - Why Strata for ML: explanation/why-strata-for-ml.md
+    - Deduplication Deep Dive: explanation/deduplication-deep-dive.md
+    - Compression Strategy: explanation/compression-strategy.md
+    - Content-Defined Chunking: explanation/content-defined-chunking.md
+    - Zero-Copy I/O: explanation/zero-copy-io.md
+    - Storage Backend Design: explanation/storage-backend-design.md
+    - Block vs File Compression: explanation/block-vs-file-compression.md
+  - Reference:
+    - Python API: reference/python-api.md
+    - CLI Reference: reference/cli-reference.md
+    - File Format Spec: reference/file-format-spec.md
+    - Compression Algorithms: reference/compression-algorithms.md
+    - Configuration: reference/configuration.md
+    - Version Compatibility: reference/version-compatibility.md
+    - Rust API:
+      - strata-core: /rust/strata_core/index.html
+      - strata-loader: /rust/strata_loader/index.html
+      - strata-common: /rust/strata_common/index.html
+      - strata-cli: /rust/strata_cli/index.html
+      - strata-fuse: /rust/strata_fuse/index.html
+      - strata-server: /rust/strata_server/index.html
+  - ADRs:
+    - ADR-0001 Rust for Core Engine: adr/0001-rust-for-core-engine.md
+    - ADR-0002 Block-Level Compression: adr/0002-block-level-compression.md
+    - ADR-0003 BLAKE3 FastCDC Deduplication: adr/0003-blake3-fastcdc-deduplication.md
+    - ADR-0004 Storage Backend Abstraction: adr/0004-storage-backend-abstraction.md
+    - ADR-0005 PyO3 Python Bindings: adr/0005-pyo3-python-bindings.md
+  - Project Info:
+    - Benchmarks: project-docs/BENCHMARKS.md
+    - Contributing: project-docs/CONTRIBUTING.md
+    - Roadmap: project-docs/ROADMAP.md
+    - Release Notes: project-docs/release/RELEASE_NOTES_v0.1.0-alpha.md

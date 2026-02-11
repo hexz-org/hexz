@@ -10,7 +10,7 @@ import tempfile
 import warnings
 import json
 
-from . import _strata_core
+from . import strata_loader
 from .exceptions import ValidationError
 from .typing import PathLike, PackingMode
 
@@ -93,7 +93,7 @@ class Writer:
         compression_level = COMPRESSION_LEVELS[resolved_mode].get(compression)
 
         # Create underlying builder
-        self._builder = _strata_core.StrataBuilder(
+        self._builder = strata_loader.StrataBuilder(
             self._path,
             block_size=block_size,
             compression=compression,
@@ -145,7 +145,7 @@ class Writer:
         return self
 
     def add_file(
-        self, path: PathLike, *, kind: Optional[str] = None, **kwargs
+        self, path: PathLike, *, kind: Optional[str] = None, **kwargs: Any
     ) -> "Writer":
         """Add a file to the snapshot.
 
@@ -169,7 +169,7 @@ class Writer:
 
         return self
 
-    def add_bytes(self, data: bytes, **kwargs) -> "Writer":
+    def add_bytes(self, data: bytes, **kwargs: Any) -> "Writer":
         """Add raw bytes to the snapshot.
 
         Args:
@@ -210,7 +210,7 @@ class Writer:
         *,
         offset: Optional[int] = None,
         name: Optional[str] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> "Writer":
         """Add a NumPy array to the snapshot.
 
@@ -294,6 +294,34 @@ class Writer:
     def tell(self) -> int:
         """Get current write position."""
         return self.bytes_written
+
+    def merge_overlay(
+        self,
+        *,
+        base: PathLike,
+        overlay: PathLike,
+        thin: bool = False,
+    ) -> "Writer":
+        """Merge a copy-on-write overlay with a base snapshot.
+
+        Args:
+            base: Path to the base .st snapshot
+            overlay: Path to the overlay data file
+            thin: If True, create a thin snapshot that references the base
+
+        Returns:
+            Self for method chaining
+
+        Example:
+            >>> with strata.Writer("merged.st") as writer:
+            ...     writer.merge_overlay(base="base.st", overlay="overlay.img")
+            ...
+            >>> # Thin snapshot (references base for unmodified blocks)
+            >>> with strata.Writer("thin.st") as writer:
+            ...     writer.merge_overlay(base="base.st", overlay="overlay.img", thin=True)
+        """
+        self._builder.merge_overlay(str(base), str(overlay), thin)
+        return self
 
     def finalize(self) -> None:
         """Finalize the snapshot and write all metadata.

@@ -8,6 +8,60 @@ use std::io::{Read, Write};
 use std::path::Path;
 
 /// Generates a new Ed25519 keypair and writes the private/public keys to disk.
+///
+/// This function creates a cryptographically secure Ed25519 keypair using the
+/// operating system's random number generator (`OsRng`). The private and public
+/// keys are written as raw 32-byte binary files.
+///
+/// # Security Considerations
+///
+/// - **Private key storage**: The private key is written to disk without encryption.
+///   Callers should ensure appropriate file permissions (e.g., chmod 600) and
+///   consider using OS keychain services for production use.
+/// - **Key backup**: Loss of the private key means signatures cannot be created.
+///   Consider implementing a secure backup strategy.
+/// - **Key rotation**: For long-term use, implement periodic key rotation.
+///
+/// # Arguments
+///
+/// * `private_out` - Path where the private key (32 bytes) will be written
+/// * `public_out` - Path where the public key (32 bytes) will be written
+///
+/// # Returns
+///
+/// Returns `Ok(())` on success, or an error if file creation fails.
+///
+/// # Errors
+///
+/// This function returns an error if:
+/// - File creation fails (permission denied, disk full, etc.)
+/// - Write operations fail (I/O errors)
+///
+/// # Example
+///
+/// ```no_run
+/// use std::path::Path;
+/// use strata_common::sign::generate_keypair;
+///
+/// # fn main() -> strata_common::Result<()> {
+/// // Generate a new keypair
+/// let private_key = Path::new("snapshot.key");
+/// let public_key = Path::new("snapshot.pub");
+///
+/// generate_keypair(private_key, public_key)?;
+///
+/// // Set restrictive permissions on private key (Unix only)
+/// #[cfg(unix)]
+/// {
+///     use std::fs;
+///     use std::os::unix::fs::PermissionsExt;
+///     let mut perms = fs::metadata(private_key)?.permissions();
+///     perms.set_mode(0o600);
+///     fs::set_permissions(private_key, perms)?;
+/// }
+/// # Ok(())
+/// # }
+/// ```
 pub fn generate_keypair(private_out: &Path, public_out: &Path) -> Result<()> {
     let mut csprng = OsRng;
     let signing_key = SigningKey::generate(&mut csprng);
@@ -30,6 +84,59 @@ pub fn generate_keypair(private_out: &Path, public_out: &Path) -> Result<()> {
 }
 
 /// Signs a digest with a private key loaded from a file.
+///
+/// This function loads an Ed25519 private key from disk and uses it to sign
+/// the provided digest. The signature can later be verified using the
+/// corresponding public key via [`verify_digest`].
+///
+/// # Security Considerations
+///
+/// - **Digest input**: The caller must provide a cryptographic hash (e.g., SHA-256)
+///   of the data to sign, not the raw data itself. See [`compute_snapshot_digest`]
+///   for snapshot-specific hashing.
+/// - **Key protection**: Private key is read from disk without encryption.
+/// - **Signature properties**: Ed25519 signatures are deterministic and do not
+///   require additional randomness.
+///
+/// # Arguments
+///
+/// * `private_key_path` - Path to the private key file (32 bytes, raw binary)
+/// * `digest` - The digest to sign (typically 32 bytes for SHA-256)
+///
+/// # Returns
+///
+/// Returns a 64-byte Ed25519 signature on success.
+///
+/// # Errors
+///
+/// This function returns an error if:
+/// - The private key file cannot be read ([`StrataError::Io`])
+/// - The file is not exactly 32 bytes ([`StrataError::Io`])
+///
+/// [`StrataError::Io`]: crate::StrataError::Io
+///
+/// # Example
+///
+/// ```no_run
+/// use std::path::Path;
+/// use sha2::{Sha256, Digest};
+/// use strata_common::sign::sign_digest;
+///
+/// # fn main() -> strata_common::Result<()> {
+/// // Compute SHA-256 digest of data
+/// let data = b"snapshot contents";
+/// let mut hasher = Sha256::new();
+/// hasher.update(data);
+/// let digest = hasher.finalize();
+///
+/// // Sign the digest
+/// let private_key = Path::new("snapshot.key");
+/// let signature = sign_digest(private_key, &digest)?;
+///
+/// println!("Signature: {} bytes", signature.len());
+/// # Ok(())
+/// # }
+/// ```
 pub fn sign_digest(private_key_path: &Path, digest: &[u8]) -> Result<[u8; 64]> {
     let mut f = File::open(private_key_path)?;
     let mut key_bytes = [0u8; 32];
@@ -41,6 +148,64 @@ pub fn sign_digest(private_key_path: &Path, digest: &[u8]) -> Result<[u8; 64]> {
 }
 
 /// Verifies a signature against a digest using a public key from a file.
+///
+/// This function loads an Ed25519 public key from disk and uses it to verify
+/// that the provided signature was created by the corresponding private key
+/// over the given digest.
+///
+/// # Security Considerations
+///
+/// - **Signature verification**: Verification failure does not distinguish between
+///   invalid signatures and corrupted data. Both cases return an error.
+/// - **Public key trust**: This function does not establish trust in the public key
+///   itself. Callers must verify public key authenticity through out-of-band means
+///   (e.g., certificate chains, key fingerprints).
+///
+/// # Arguments
+///
+/// * `public_key_path` - Path to the public key file (32 bytes, raw binary)
+/// * `digest` - The digest that was signed (typically 32 bytes for SHA-256)
+/// * `signature_bytes` - The 64-byte Ed25519 signature to verify
+///
+/// # Returns
+///
+/// Returns `Ok(())` if the signature is valid, or an error otherwise.
+///
+/// # Errors
+///
+/// This function returns an error if:
+/// - The public key file cannot be read ([`StrataError::Io`])
+/// - The file is not exactly 32 bytes ([`StrataError::Io`])
+/// - The public key bytes are invalid ([`StrataError::Format`])
+/// - The signature verification fails ([`StrataError::Format`])
+///
+/// [`StrataError::Io`]: crate::StrataError::Io
+/// [`StrataError::Format`]: crate::StrataError::Format
+///
+/// # Example
+///
+/// ```no_run
+/// use std::path::Path;
+/// use sha2::{Sha256, Digest};
+/// use strata_common::sign::{sign_digest, verify_digest};
+///
+/// # fn main() -> strata_common::Result<()> {
+/// let data = b"snapshot contents";
+/// let mut hasher = Sha256::new();
+/// hasher.update(data);
+/// let digest = hasher.finalize();
+///
+/// // Sign with private key
+/// let signature = sign_digest(Path::new("snapshot.key"), &digest)?;
+///
+/// // Verify with public key
+/// let public_key = Path::new("snapshot.pub");
+/// verify_digest(public_key, &digest, &signature)?;
+///
+/// println!("Signature verified successfully");
+/// # Ok(())
+/// # }
+/// ```
 pub fn verify_digest(
     public_key_path: &Path,
     digest: &[u8],

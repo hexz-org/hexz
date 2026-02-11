@@ -30,7 +30,7 @@
 //! # Error Handling
 //!
 //! Errors from the core engine are mapped to Python's standard exception
-//! hierarchy (e.g., `IOError`, `ValueError`) via the [`exceptions`] module.
+//! hierarchy (e.g., `IOError`, `ValueError`) via the [`py_interface::exceptions`] module.
 
 use pyo3::prelude::*;
 
@@ -39,7 +39,7 @@ pub mod py_interface;
 pub mod tensor;
 
 #[pymodule]
-fn _strata_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn strata_loader(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Register custom exceptions
     let py = m.py();
     py_interface::exceptions::register_exceptions(py, m)?;

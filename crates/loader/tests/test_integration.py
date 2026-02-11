@@ -189,7 +189,8 @@ def test_overlay_commit(sample_snapshot, temp_dir):
         f.write((0).to_bytes(8, byteorder="little"))
 
     # 2. Commit the overlay
-    strata.merge_overlay(base_path, overlay_path, final_path)
+    with strata.open(final_path, mode="w") as writer:
+        writer.merge_overlay(base=base_path, overlay=overlay_path)
 
     # 3. Verify
     reader = strata.open(final_path)
@@ -210,7 +211,8 @@ def test_thin_snapshot(sample_snapshot, temp_dir):
     open(meta_path, "wb").close()
 
     # Create thin snapshot (references base for unmodified blocks)
-    strata.merge_overlay(base_path, overlay_path, thin_path, thin=True)
+    with strata.open(thin_path, mode="w") as writer:
+        writer.merge_overlay(base=base_path, overlay=overlay_path, thin=True)
 
     # Verify inspection shows parent
     info = strata.inspect(thin_path)

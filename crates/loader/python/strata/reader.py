@@ -4,11 +4,14 @@ This module provides the high-level Reader and AsyncReader classes that wrap
 the Rust-implemented StrataReader with a more pythonic interface.
 """
 
-from typing import Optional, Any, Dict, Union
+from typing import TYPE_CHECKING, Optional, Any, Dict, Union, Iterator
 
-from . import _strata_core
+from . import strata_loader
 from .typing import PathLike
 from .utils import Metadata
+
+if TYPE_CHECKING:
+    from .utils import AnalysisReport
 
 
 class Reader:
@@ -49,7 +52,7 @@ class Reader:
             allow_restricted: Allow connections to private/internal IPs
         """
         self._path = str(path)
-        self._reader = _strata_core.StrataReader(
+        self._reader = strata_loader.StrataReader(
             self._path,
             s3_region=s3_region,
             endpoint_url=endpoint_url,
@@ -146,9 +149,34 @@ class Reader:
     @property
     def metadata(self) -> Metadata:
         """File metadata (version, compression, etc.)."""
-        return Metadata(self._reader.metadata())
+        meta_dict = self._reader.metadata()
+        meta_dict["path"] = self._path
+        return Metadata(meta_dict)
 
-    def iter_chunks(self, chunk_size: int = 1024 * 1024):
+    def analyze(self) -> "AnalysisReport":
+        """Analyze snapshot for deduplication statistics.
+
+        Returns:
+            AnalysisReport with dedup ratio and savings information
+
+        Example:
+            >>> with strata.open("snapshot.st") as reader:
+            ...     report = reader.analyze()
+            ...     print(f"Dedup savings: {report.savings_percent:.1f}%")
+        """
+        from .utils import AnalysisReport
+        import os
+
+        # Use the Rust analyze function on the path
+        from . import strata_loader
+
+        raw_report = strata_loader.analyze(self._path)
+        # Add total_bytes from file size
+        file_size = os.path.getsize(self._path)
+        raw_report["total_bytes"] = float(file_size)
+        return AnalysisReport(raw_report)
+
+    def iter_chunks(self, chunk_size: int = 1024 * 1024) -> Iterator[memoryview]:
         """Iterate over the snapshot in fixed-size chunks using a single reused buffer.
 
         Uses :meth:`read` with a reused buffer so each chunk does not allocate.
@@ -184,7 +212,7 @@ class Reader:
         """Context manager exit."""
         self.close()
 
-    def __getitem__(self, key) -> bytes:
+    def __getitem__(self, key: Union[int, slice]) -> bytes:
         """Support slice notation: reader[100:200].
 
         Args:
@@ -209,7 +237,7 @@ class Reader:
     def __setstate__(self, state: Dict[str, Any]) -> None:
         """Support for pickle deserialization."""
         self._path = state["path"]
-        self._reader = _strata_core.StrataReader(self._path)
+        self._reader = strata_loader.StrataReader(self._path)
         self._reader.seek(state.get("position", 0), 0)
 
     def __repr__(self) -> str:
@@ -251,7 +279,7 @@ class AsyncReader:
 
     async def __aenter__(self) -> "AsyncReader":
         """Open the snapshot; use as async with strata.AsyncReader(path) as reader."""
-        self._reader = await _strata_core.AsyncStrataReader.create(
+        self._reader = await strata_loader.AsyncStrataReader.create(
             self._path,
             s3_region=self._s3_region,
             endpoint_url=self._endpoint_url,

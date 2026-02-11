@@ -2,11 +2,14 @@ import strata
 import pickle
 
 
-def test_analyze(raw_data_path):
-    stats = strata.analyze(raw_data_path)
-    assert hasattr(stats, "unique_bytes")
-    assert hasattr(stats, "predicted_ratio")
-    assert getattr(stats, "unique_bytes", None) is not None
+def test_analyze(base_snap_path):
+    # Use reader.analyze() on snapshot instead of top-level analyze()
+    with strata.open(base_snap_path) as reader:
+        report = reader.analyze()
+        assert hasattr(report, "unique_bytes")
+        assert hasattr(report, "predicted_ratio")
+        assert report.unique_bytes > 0
+        assert report.total_bytes > 0
 
 
 def test_inspect(base_snap_path):

@@ -2,6 +2,82 @@
 //!
 //! Provides the low-level `StrataBuilder` that can create archives from
 //! disk images, memory dumps, and overlay merges.
+//!
+//! # Python Usage Examples
+//!
+//! ## Basic Snapshot Creation
+//!
+//! ```python
+//! from strata import StrataBuilder
+//!
+//! # Create a new snapshot with LZ4 compression
+//! builder = StrataBuilder("output.st", compression="lz4")
+//! builder.add_disk_file("disk.img")
+//! builder.finalize()
+//! ```
+//!
+//! ## Full VM Snapshot with Memory
+//!
+//! ```python
+//! from strata import StrataBuilder
+//!
+//! # Create snapshot with both disk and memory
+//! builder = StrataBuilder("vm-snapshot.st", compression="zstd", compression_level=5)
+//! builder.add_disk_file("disk.img")
+//! builder.add_memory_file("memory.dump")
+//! builder.finalize()
+//! ```
+//!
+//! ## Content-Defined Chunking (CDC)
+//!
+//! ```python
+//! from strata import StrataBuilder
+//!
+//! # Enable CDC for better deduplication
+//! builder = StrataBuilder(
+//!     "snapshot.st",
+//!     compression="zstd",
+//!     cdc=True,
+//!     min_chunk=16384,   # 16 KiB
+//!     avg_chunk=65536,   # 64 KiB
+//!     max_chunk=131072,  # 128 KiB
+//! )
+//! builder.add_disk_file("disk.img")
+//! builder.finalize()
+//! ```
+//!
+//! ## Overlay Merge (Thin Snapshots)
+//!
+//! ```python
+//! from strata import StrataBuilder
+//!
+//! # Merge overlay changes into a new thin snapshot
+//! builder = StrataBuilder("merged.st", compression="lz4")
+//! builder.merge_overlay(
+//!     base_path="base-snapshot.st",
+//!     overlay_path="overlay.img",
+//!     thin=True  # Create thin snapshot referencing base
+//! )
+//! builder.finalize()
+//! ```
+//!
+//! ## Custom Metadata
+//!
+//! ```python
+//! from strata import StrataBuilder
+//! import json
+//!
+//! # Add custom metadata to snapshot
+//! builder = StrataBuilder("snapshot.st")
+//! metadata = {
+//!     "vm_name": "production-db",
+//!     "created_by": "backup-script",
+//!     "tags": ["production", "database"]
+//! }
+//! builder.set_metadata(json.dumps(metadata).encode())
+//! builder.add_disk_file("disk.img")
+//! builder.finalize()
+//! ```
 
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
@@ -62,7 +138,7 @@ impl<R: Read> Iterator for FixedChunker<R> {
     }
 }
 
-#[pyclass(module = "strata._strata_core")]
+#[pyclass(module = "strata.strata_loader")]
 pub struct StrataBuilder {
     block_size: u32,
     compression: String,
@@ -82,8 +158,64 @@ pub struct StrataBuilder {
     metadata: Vec<u8>,
 }
 
+/// Python interface for building Strata snapshot files.
+///
+/// This class provides a low-level API for creating `.st` snapshot files from
+/// disk images, memory dumps, or overlay files. It supports various compression
+/// algorithms, deduplication, and content-defined chunking.
+///
+/// # Workflow
+///
+/// 1. Create a `StrataBuilder` instance with desired compression settings
+/// 2. Add disk and/or memory files using `add_disk_file()` and `add_memory_file()`
+/// 3. Optionally merge overlay files with `merge_overlay()`
+/// 4. Call `finalize()` to write the index and header
+///
+/// # Performance Notes
+///
+/// - Deduplication is enabled by default and adds ~5-10% overhead
+/// - Dictionary training can improve Zstd compression by 10-30%
+/// - CDC chunking improves deduplication at the cost of metadata size
+/// - Progress tracking is handled by the caller via callbacks (CLI layer)
 #[pymethods]
 impl StrataBuilder {
+    /// Create a new snapshot builder.
+    ///
+    /// # Arguments
+    ///
+    /// - `output_path`: Path where the `.st` file will be written
+    /// - `block_size`: Block size in bytes (default: 64 KiB)
+    /// - `compression`: Compression algorithm: "lz4" or "zstd" (default: "lz4")
+    /// - `compression_level`: Compression level for Zstd (default: 3)
+    /// - `dedup`: Enable block-level deduplication (default: True)
+    /// - `cdc`: Enable content-defined chunking for variable blocks (default: False)
+    /// - `min_chunk`: Minimum chunk size for CDC in bytes (default: 16 KiB)
+    /// - `avg_chunk`: Average chunk size for CDC in bytes (default: 64 KiB)
+    /// - `max_chunk`: Maximum chunk size for CDC in bytes (default: 128 KiB)
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// # Basic usage with defaults
+    /// builder = StrataBuilder("output.st")
+    ///
+    /// # Custom compression settings
+    /// builder = StrataBuilder(
+    ///     "output.st",
+    ///     compression="zstd",
+    ///     compression_level=5,
+    ///     block_size=131072  # 128 KiB blocks
+    /// )
+    ///
+    /// # Enable CDC for better deduplication
+    /// builder = StrataBuilder(
+    ///     "output.st",
+    ///     cdc=True,
+    ///     min_chunk=32768,
+    ///     avg_chunk=65536,
+    ///     max_chunk=131072
+    /// )
+    /// ```
     #[new]
     #[pyo3(signature = (output_path, block_size=65536, compression="lz4", compression_level=None, dedup=true, cdc=false, min_chunk=16384, avg_chunk=65536, max_chunk=131072))]
     #[allow(clippy::too_many_arguments)]
@@ -125,22 +257,129 @@ impl StrataBuilder {
         })
     }
 
+    /// Set custom metadata to be embedded in the snapshot.
+    ///
+    /// The metadata is stored as an opaque byte array in the snapshot and can be
+    /// retrieved later using `StrataReader.metadata()`. Typical use cases include
+    /// storing JSON-encoded configuration, tags, or provenance information.
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// import json
+    ///
+    /// builder = StrataBuilder("snapshot.st")
+    /// metadata = {"vm_name": "web-server", "version": "1.0"}
+    /// builder.set_metadata(json.dumps(metadata).encode())
+    /// ```
     pub fn set_metadata(&mut self, metadata: Vec<u8>) {
         self.metadata = metadata;
     }
 
+    /// Get the current number of bytes written to the output file.
+    ///
+    /// This includes compressed block data and index pages but not the final
+    /// header (which is written during `finalize()`).
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// builder = StrataBuilder("snapshot.st")
+    /// builder.add_disk_file("disk.img")
+    /// print(f"Bytes written: {builder.get_bytes_written()}")
+    /// ```
     pub fn get_bytes_written(&self) -> u64 {
         self.current_offset
     }
 
+    /// Add a disk image file to the snapshot.
+    ///
+    /// This method reads the disk image, chunks it into blocks (fixed-size or CDC),
+    /// compresses each block, performs deduplication, and writes the compressed data
+    /// to the output file. The disk stream will be accessible via `SnapshotStream::Disk`
+    /// when reading the snapshot.
+    ///
+    /// # Arguments
+    ///
+    /// - `path`: Path to the disk image file (raw format, qcow2, etc.)
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// builder = StrataBuilder("snapshot.st")
+    /// builder.add_disk_file("/path/to/disk.img")
+    /// builder.finalize()
+    /// ```
     pub fn add_disk_file<'py>(&mut self, py: Python<'py>, path: String) -> PyResult<()> {
         self.process_stream(py, path, true)
     }
 
+    /// Add a memory dump file to the snapshot.
+    ///
+    /// This method reads the memory dump, chunks it, compresses, and deduplicates
+    /// it just like `add_disk_file()`. The memory stream will be accessible via
+    /// `SnapshotStream::Memory` when reading the snapshot, enabling VM live migration
+    /// or checkpoint/restore scenarios.
+    ///
+    /// # Arguments
+    ///
+    /// - `path`: Path to the memory dump file
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// # Create a full VM snapshot with disk and memory
+    /// builder = StrataBuilder("vm-snapshot.st")
+    /// builder.add_disk_file("disk.img")
+    /// builder.add_memory_file("memory.dump")
+    /// builder.finalize()
+    /// ```
     pub fn add_memory_file<'py>(&mut self, py: Python<'py>, path: String) -> PyResult<()> {
         self.process_stream(py, path, false)
     }
 
+    /// Merge an overlay file with a base snapshot to create a new snapshot.
+    ///
+    /// This method combines a base snapshot with an overlay file (created by FUSE mounts
+    /// or VM overlays) to produce a new snapshot. Modified blocks are identified via the
+    /// `.meta` file and merged with base snapshot data.
+    ///
+    /// # Thin vs. Thick Snapshots
+    ///
+    /// - **Thin snapshot** (`thin=True`): Unmodified blocks reference the parent snapshot
+    ///   using the `BLOCK_OFFSET_PARENT` sentinel. The resulting snapshot requires the
+    ///   parent to be accessible at read time.
+    ///
+    /// - **Thick snapshot** (`thin=False`): All blocks are copied into the new snapshot,
+    ///   creating a standalone file that does not depend on the parent.
+    ///
+    /// # Arguments
+    ///
+    /// - `base_path`: Path to the base snapshot (`.st` file)
+    /// - `overlay_path`: Path to the overlay file (raw image with modifications)
+    /// - `thin`: If True, create a thin snapshot; if False, create a thick snapshot
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// # Merge overlay changes into a thin snapshot
+    /// builder = StrataBuilder("merged.st")
+    /// builder.merge_overlay(
+    ///     base_path="base-snapshot.st",
+    ///     overlay_path="overlay.img",
+    ///     thin=True
+    /// )
+    /// builder.finalize()
+    ///
+    /// # Create a standalone thick snapshot
+    /// builder = StrataBuilder("standalone.st")
+    /// builder.merge_overlay(
+    ///     base_path="base-snapshot.st",
+    ///     overlay_path="overlay.img",
+    ///     thin=False
+    /// )
+    /// builder.finalize()
+    /// ```
     #[pyo3(signature = (base_path, overlay_path, thin=false))]
     pub fn merge_overlay<'py>(
         &mut self,
@@ -394,6 +633,26 @@ impl StrataBuilder {
         Ok(())
     }
 
+    /// Finalize the snapshot by writing the index, metadata, and header.
+    ///
+    /// This method must be called after adding all disk/memory files or merging overlays.
+    /// It performs the following steps:
+    ///
+    /// 1. Serializes and writes the master index structure
+    /// 2. Writes custom metadata (if set via `set_metadata()`)
+    /// 3. Constructs and writes the snapshot header with all offsets
+    /// 4. Closes the output file
+    ///
+    /// After calling `finalize()`, the builder cannot be reused.
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// builder = StrataBuilder("snapshot.st")
+    /// builder.add_disk_file("disk.img")
+    /// builder.finalize()
+    /// print("Snapshot created successfully")
+    /// ```
     pub fn finalize(&mut self) -> PyResult<()> {
         let mut out = self
             .writer

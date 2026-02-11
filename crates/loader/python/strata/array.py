@@ -230,7 +230,7 @@ class ArrayView:
         """Length of first dimension."""
         return self._shape[0] if self._shape else 0
 
-    def __getitem__(self, key) -> "np.ndarray":
+    def __getitem__(self, key: Union[int, slice, tuple]) -> "np.ndarray":
         """Support slicing: view[0:10] or view[0:10, :]
 
         Args:

@@ -4,7 +4,7 @@ This module provides high-performance dataset classes backed by Strata snapshots
 with features like smart caching, prefetching, and shuffling.
 """
 
-from typing import Optional, Callable, Dict, Any, List, Tuple, Literal
+from typing import Optional, Callable, Dict, Any, List, Tuple, Literal, Union
 from concurrent.futures import ThreadPoolExecutor, Future
 from threading import Lock
 from pathlib import Path
@@ -427,7 +427,7 @@ class Dataset(TorchDataset):
             return len(self._index)
         return self._reader.size // self._item_size
 
-    def __getitem__(self, idx: int):
+    def __getitem__(self, idx: int) -> Union[bytes, Any]:
         """Get item at index.
 
         Args:
@@ -562,7 +562,7 @@ class TFDataset:
     Provides integration with TensorFlow's data loading pipeline.
     """
 
-    def __init__(self, path: PathLike, **kwargs):
+    def __init__(self, path: PathLike, **kwargs: Any):
         """Create TensorFlow dataset.
 
         Args:
@@ -577,7 +577,7 @@ class TFDataset:
         # - Initialize when as_dataset() is called
         raise NotImplementedError("TensorFlow dataset not yet implemented")
 
-    def as_dataset(self):
+    def as_dataset(self) -> Any:
         """Convert to tf.data.Dataset.
 
         Returns:

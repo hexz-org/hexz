@@ -12,7 +12,7 @@ use strata_core::api::stratafile::SnapshotStream;
 
 use crate::engine::{self, OpenConfig};
 
-#[pyclass(module = "strata._strata_core")]
+#[pyclass(module = "strata.strata_loader")]
 pub struct AsyncStrataReader {
     inner: Arc<StrataFile>,
     cursor: Arc<Mutex<u64>>,

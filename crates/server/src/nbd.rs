@@ -1,3 +1,82 @@
+//! Network Block Device (NBD) protocol server implementation.
+//!
+//! This module implements the NBD protocol (version 3.0+, fixed newstyle negotiation)
+//! to expose Strata snapshots as block devices over TCP. Clients can mount the snapshot
+//! using standard NBD client tools like `nbd-client` (Linux) or connect directly via
+//! the NBD protocol.
+//!
+//! # Protocol Overview
+//!
+//! The NBD protocol consists of three phases:
+//!
+//! 1. **Handshake**: Server announces capabilities (flags) and magic values
+//! 2. **Option Negotiation**: Client requests export info and flags
+//! 3. **Transmission**: Client sends read/write/flush/trim commands
+//!
+//! This implementation follows the "fixed newstyle" negotiation introduced in NBD 3.0,
+//! which is more robust than the legacy "oldstyle" protocol.
+//!
+//! # Protocol Reference
+//!
+//! - NBD Protocol Specification: <https://github.com/NetworkBlockDevice/nbd/blob/master/doc/proto.md>
+//! - RFC (draft): <https://www.ietf.org/archive/id/draft-ietf-nbd-protocol-00.html>
+//!
+//! # Security Considerations
+//!
+//! - **Read-only mode**: This implementation always exports snapshots as read-only
+//!   to prevent accidental modification
+//! - **No encryption**: The NBD protocol does not include built-in encryption.
+//!   For secure access over untrusted networks, use an SSH tunnel or VPN.
+//! - **No authentication**: NBD does not provide authentication. Access control
+//!   must be implemented at the network level (firewall, localhost-only binding).
+//!
+//! # Performance Characteristics
+//!
+//! - **Throughput**: Typically limited by snapshot decompression (~500-2000 MB/s)
+//!   rather than network bandwidth for local connections
+//! - **Latency**: Read latency includes network RTT + decompression time (~1-5 ms total)
+//! - **Concurrency**: Each client connection is handled by a separate Tokio task
+//!
+//! # Example Usage
+//!
+//! ```no_run
+//! # use std::sync::Arc;
+//! # use strata_core::StrataFile;
+//! # use strata_server::nbd::handle_client;
+//! # use tokio::net::TcpListener;
+//! # #[tokio::main]
+//! # async fn main() -> anyhow::Result<()> {
+//! // Server-side (in strata-server)
+//! let listener = TcpListener::bind("127.0.0.1:10809").await?;
+//! // ... load snapshot into Arc<StrataFile> ...
+//! # let snap: Arc<StrataFile> = Arc::new(todo!());
+//!
+//! loop {
+//!     let (socket, _) = listener.accept().await?;
+//!     let snap = snap.clone();
+//!     tokio::spawn(async move {
+//!         if let Err(e) = handle_client(socket, snap).await {
+//!             eprintln!("NBD client error: {}", e);
+//!         }
+//!     });
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Client-Side Usage (Linux)
+//!
+//! ```bash
+//! # Connect NBD client to server
+//! sudo nbd-client localhost 10809 /dev/nbd0
+//!
+//! # Mount the block device
+//! sudo mount -o ro /dev/nbd0 /mnt/snapshot
+//!
+//! # Disconnect when done
+//! sudo nbd-client -d /dev/nbd0
+//! ```
+
 use anyhow::Result;
 use std::sync::Arc;
 use strata_core::{SnapshotStream, StrataFile};
@@ -33,6 +112,40 @@ const NBD_CMD_TRIM: u16 = 4;
 const NBD_REQUEST_MAGIC: u32 = 0x25609513;
 const NBD_REPLY_MAGIC: u32 = 0x67446698;
 
+/// Handle a single NBD client connection.
+///
+/// This function implements the complete NBD server lifecycle for one client:
+/// 1. Performs the NBD handshake and option negotiation
+/// 2. Enters the transmission phase to serve read requests
+/// 3. Handles disconnect when the client sends NBD_CMD_DISC
+///
+/// The connection is read-only and blocks are served directly from the snapshot's
+/// disk stream. Write, flush, and trim commands return error responses.
+///
+/// # Connection Lifecycle
+///
+/// ```text
+/// Client connects → Handshake → Option Negotiation → Transmission → Disconnect
+///                      ↓              ↓                    ↓
+///                  Send magic    Send export info    Serve read commands
+/// ```
+///
+/// # Arguments
+///
+/// - `socket`: TCP connection to the NBD client
+/// - `snap`: Shared reference to the Strata snapshot file
+///
+/// # Returns
+///
+/// Returns `Ok(())` when the client disconnects normally, or an error if the protocol
+/// is violated or I/O fails.
+///
+/// # Errors
+///
+/// This function returns an error if:
+/// - The client sends invalid magic values or malformed requests
+/// - Socket I/O fails (connection reset, timeout, etc.)
+/// - The snapshot cannot be read (decompression errors, backend failures)
 pub async fn handle_client(mut socket: TcpStream, snap: Arc<StrataFile>) -> Result<()> {
     // --- Handshake (Fixed Newstyle) ---
 

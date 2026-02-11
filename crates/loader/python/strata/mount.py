@@ -15,8 +15,10 @@ from .typing import PathLike
 from .exceptions import MountError
 
 
-class MountPoint:
-    """Context manager to mount a Strata snapshot.
+class _MountPoint:
+    """Internal context manager to mount a Strata snapshot.
+
+    Users should use the :func:`mount` function instead of instantiating this directly.
 
     Usage:
         with strata.mount("my_snap.st") as mp:
@@ -143,8 +145,10 @@ def mount(
     *,
     mount_point: Optional[PathLike] = None,
     binary: str = "strata",
-) -> MountPoint:
+) -> _MountPoint:
     """Mount a Strata snapshot as a filesystem.
+
+    The snapshot is automatically unmounted when exiting the context manager.
 
     Args:
         snapshot: Path to .st file
@@ -152,49 +156,23 @@ def mount(
         binary: Path to strata CLI binary
 
     Returns:
-        MountPoint context manager
+        Context manager that provides mount point access
 
     Example:
         >>> with strata.mount("snapshot.st") as mp:
         ...     files = os.listdir(mp.path)
         ...     print(files)
+        ... # Automatically unmounted here
     """
-    return MountPoint(
+    return _MountPoint(
         str(snapshot),
         mount_point=str(mount_point) if mount_point else None,
         binary=binary,
     )
 
 
-def unmount(mount_point: PathLike) -> None:
-    """Unmount a Strata filesystem.
-
-    Args:
-        mount_point: Path to mounted directory
-
-    Example:
-        >>> strata.unmount("/mnt/snapshot")
-    """
-    mount_point = str(mount_point)
-
-    # Try fusermount first (Linux)
-    if shutil.which("fusermount"):
-        result = subprocess.run(
-            ["fusermount", "-u", mount_point],
-            check=False,
-            capture_output=True,
-        )
-        if result.returncode == 0:
-            return
-
-    # Try umount (macOS/BSD)
-    result = subprocess.run(
-        ["umount", mount_point],
-        check=False,
-        capture_output=True,
-    )
-    if result.returncode != 0:
-        raise MountError(f"Failed to unmount {mount_point}: {result.stderr.decode()}")
+# unmount() has been removed in v0.1.0-beta
+# Use the mount() context manager which automatically unmounts on exit
 
 
-__all__ = ["MountPoint", "mount", "unmount"]
+__all__ = ["mount"]  # Only export mount(), MountPoint is internal

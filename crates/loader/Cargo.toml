@@ -8,7 +8,7 @@ repository = "https://github.com/willmccallion/strata"
 description = "Python bindings for Strata - high-performance ML data loading"
 
 [lib]
-name = "_strata_core"
+name = "strata_loader"
 crate-type = ["cdylib"]
 
 [dependencies]

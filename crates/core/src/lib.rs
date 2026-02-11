@@ -11,7 +11,7 @@
 //!
 //! The crate is organized into several independent modules:
 //!
-//! - **[`format`]**: On-disk structures (headers, indices) defining the file format
+//! - **[`mod@format`]**: On-disk structures (headers, indices) defining the file format
 //! - **[`store`]**: Storage backend abstraction (local files, HTTP, S3)
 //! - **[`algo`]**: Compression, encryption, hashing, and deduplication algorithms
 //! - **[`cache`]**: LRU caching for decompressed blocks and index pages
@@ -54,7 +54,7 @@
 //! - Dual streams (separate disk and memory data)
 //! - Content-defined chunking for deduplication
 //!
-//! See [`format`] module for detailed specification.
+//! See [`mod@format`] module for detailed specification.
 //!
 //! # Storage Backends
 //!

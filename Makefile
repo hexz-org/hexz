@@ -19,6 +19,8 @@ BENCH_CMP_TMP   := _cmp
 MATURIN         ?= maturin
 CARGO           ?= cargo
 RUFF            := $(shell [ -f .venv/bin/ruff ] && echo .venv/bin/ruff || echo ruff)
+PYTHON          ?= $(shell [ -f .venv/bin/python ] && echo .venv/bin/python || echo python3)
+MKDOCS          := $(shell [ -f .venv/bin/mkdocs ] && echo .venv/bin/mkdocs || echo mkdocs)
 
 # ── Pass-through args ─────────────────────────────────────────────────────────
 #  make test cache            →  cargo test -- cache
@@ -116,8 +118,8 @@ help:
 	@printf "\n  $(CYAN)Infrastructure$(RESET)\n"
 	@printf "    %-$(HELP_W)s  Build dev Docker image\n" "make docker-dev"
 	@printf "    %-$(HELP_W)s  Build benchmark Docker image\n" "make docker-bench"
-	@printf "    %-$(HELP_W)s  rustdoc for workspace\n" "make docs"
-	@printf "    %-$(HELP_W)s  Sphinx API docs (docs/_build/html)\n" "make docs-python"
+	@printf "    %-$(HELP_W)s  Build unified MkDocs + Rust documentation\n" "make docs"
+	@printf "    %-$(HELP_W)s  Serve unified docs locally for viewing\n" "make docs-serve"
 	@printf "    %-$(HELP_W)s  Dev tools + Python venv\n" "make setup"
 	@printf "    %-$(HELP_W)s  Verify system deps\n" "make setup-check"
 	@printf "    %-$(HELP_W)s  Full CI (lint + test + build)\n" "make ci"
@@ -172,7 +174,7 @@ END { if (buf != "" && !skip) printf "%s", buf }'; \
 
 test-python:
 	@printf "$(GREEN)Running Python tests…$(RESET)\n"
-	cd $(LOADER_CRATE) && $(MATURIN) develop -E test,numpy && .venv/bin/python -m pytest tests/ -v $(if $(TEST_ARGS),-k "$(TEST_ARGS)",)
+	cd $(LOADER_CRATE) && $(MATURIN) develop -E test,numpy && $(PYTHON) -m pytest tests/ -v $(if $(TEST_ARGS),-k "$(TEST_ARGS)",)
 
 test-integration:
 	@printf "$(GREEN)Running integration tests…$(RESET)\n"
@@ -329,14 +331,19 @@ docker-bench:
 	docker build -f docker/bench.Dockerfile -t strata-bench .
 
 docs:
-	@printf "$(GREEN)Building documentation…$(RESET)\n"
+	@printf "$(GREEN)Building Rust docs…$(RESET)\n"
 	$(CARGO) doc --workspace --no-deps --document-private-items
+	@printf "$(GREEN)Building MkDocs (Guides & Python API)…$(RESET)\n"
+	@command -v $(MKDOCS) >/dev/null 2>&1 || (echo "Install mkdocs: $(PYTHON) -m pip install -r docs/requirements.txt" && exit 1)
+	$(MKDOCS) build
+	@printf "$(GREEN)Stitching Rust docs into main site…$(RESET)\n"
+	@mkdir -p site/rust
+	cp -r target/doc/* site/rust/
+	@printf "$(GREEN)Done! Site built in site/$(RESET)\n"
 
-docs-python:
-	@printf "$(GREEN)Building Python API docs (Sphinx)…$(RESET)\n"
-	@command -v sphinx-build >/dev/null 2>&1 || (echo "Install sphinx: pip install sphinx" && exit 1)
-	sphinx-build -b html docs/source docs/_build/html
-	@printf "$(GREEN)Open docs/_build/html/index.html$(RESET)\n"
+docs-serve: docs
+	@printf "$(GREEN)Serving unified documentation on port 8000…$(RESET)\n"
+	$(PYTHON) -m http.server 8000 -d site
 
 # Check required system packages; exit with clear install instructions if missing
 setup-check:

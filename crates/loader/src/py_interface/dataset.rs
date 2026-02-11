@@ -13,7 +13,7 @@ use strata_core::api::stratafile::SnapshotStream;
 use crate::engine::{self, OpenConfig};
 use crate::tensor;
 
-#[pyclass(module = "strata._strata_core")]
+#[pyclass(module = "strata.strata_loader")]
 pub struct StrataReader {
     pub(crate) inner: Arc<StrataFile>,
     path: String,
@@ -53,8 +53,30 @@ impl StrataReader {
         self.inner.size(SnapshotStream::Disk)
     }
 
-    /// Read bytes. If `offset` is None, reads from current position and advances cursor.
-    /// If `offset` is Some(k), reads from that position without moving the cursor.
+    /// Read bytes from the snapshot.
+    ///
+    /// If `offset` is None, reads from the current cursor position and advances it.
+    /// If `offset` is provided, reads from that absolute position without moving the cursor.
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// from strata import StrataReader
+    ///
+    /// # Open a snapshot
+    /// reader = StrataReader("snapshot.st")
+    ///
+    /// # Read 4096 bytes from the beginning
+    /// data = reader.read(size=4096, offset=0)
+    /// print(f"Read {len(data)} bytes")
+    ///
+    /// # Sequential reads using cursor
+    /// chunk1 = reader.read(size=1024)  # reads from position 0
+    /// chunk2 = reader.read(size=1024)  # reads from position 1024
+    ///
+    /// # Random access without moving cursor
+    /// data_at_offset = reader.read(size=512, offset=8192)
+    /// ```
     #[pyo3(signature = (size=None, offset=None))]
     fn read<'py>(
         &self,
@@ -102,8 +124,30 @@ impl StrataReader {
     }
 
     /// Read at `offset` into a writable buffer (e.g. bytearray). Returns number of bytes read.
+    ///
+    /// This method provides zero-copy reads into pre-allocated buffers, which is more
+    /// efficient than `read()` when working with NumPy arrays or other buffer objects.
+    ///
     /// Python buffers are always initialized (e.g. bytearray is zeroed); we use the
     /// write-only (uninit) path because we overwrite the range entirely.
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// from strata import StrataReader
+    /// import numpy as np
+    ///
+    /// reader = StrataReader("snapshot.st")
+    ///
+    /// # Read into a NumPy array (zero-copy)
+    /// buffer = np.zeros(4096, dtype=np.uint8)
+    /// bytes_read = reader.read_at_into(offset=0, buffer=buffer)
+    /// print(f"Read {bytes_read} bytes into NumPy array")
+    ///
+    /// # Read into a bytearray
+    /// ba = bytearray(1024)
+    /// bytes_read = reader.read_at_into(offset=8192, buffer=ba)
+    /// ```
     fn read_at_into(
         &self,
         py: Python<'_>,
@@ -163,6 +207,41 @@ impl StrataReader {
         Ok(result)
     }
 
+    /// Seek to a position in the snapshot.
+    ///
+    /// Changes the current cursor position for subsequent reads without an explicit offset.
+    /// Follows Python's standard `seek()` semantics with `whence` parameter.
+    ///
+    /// # Arguments
+    ///
+    /// - `offset`: The offset to seek to (interpretation depends on `whence`)
+    /// - `whence`: Optional seek mode (default: 0)
+    ///   - 0 (SEEK_SET): Seek from start of file
+    ///   - 1 (SEEK_CUR): Seek relative to current position
+    ///   - 2 (SEEK_END): Seek from end of file
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// from strata import StrataReader
+    /// import os
+    ///
+    /// reader = StrataReader("snapshot.st")
+    ///
+    /// # Seek to absolute position
+    /// reader.seek(4096)
+    /// data = reader.read(512)  # reads from position 4096
+    ///
+    /// # Seek relative to current position
+    /// reader.seek(1024, os.SEEK_CUR)
+    ///
+    /// # Seek from end
+    /// reader.seek(-4096, os.SEEK_END)
+    /// trailer = reader.read(4096)  # reads last 4 KiB
+    ///
+    /// # Get current position
+    /// pos = reader.tell()
+    /// ```
     #[pyo3(signature = (offset, whence=None))]
     fn seek(&self, offset: i64, whence: Option<i32>) -> PyResult<u64> {
         let mut cursor = self.cursor.lock().unwrap();
@@ -201,6 +280,25 @@ impl StrataReader {
         Err(PyOSError::new_err("StrataReader is a virtual file stream"))
     }
 
+    /// Get snapshot metadata including format information and statistics.
+    ///
+    /// Returns a dictionary containing header information, compression settings,
+    /// size statistics, and other snapshot properties.
+    ///
+    /// # Python Example
+    ///
+    /// ```python
+    /// from strata import StrataReader
+    ///
+    /// reader = StrataReader("snapshot.st")
+    /// meta = reader.metadata()
+    ///
+    /// print(f"Format version: {meta['version']}")
+    /// print(f"Compression: {meta['compression']}")
+    /// print(f"Block size: {meta['block_size']}")
+    /// print(f"Disk size: {meta['disk_size']} bytes")
+    /// print(f"Encrypted: {meta.get('encrypted', False)}")
+    /// ```
     fn metadata(&self, py: Python<'_>) -> PyResult<PyObject> {
         // Delegate to the inspect function to get metadata
         use pyo3::types::PyDict;

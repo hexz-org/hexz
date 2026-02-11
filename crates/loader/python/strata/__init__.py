@@ -25,24 +25,55 @@ Quick Start:
     >>> with strata.open("dataset.st") as reader:
     ...     data = reader[0:4096]  # Slice notation!
     ...     meta = reader.metadata  # Property access!
+    ...     print(meta)  # Human-readable info
     >>>
     >>> # ML integration
     >>> dataset = strata.Dataset("dataset.st", item_size=1024)
     >>> loader = torch.utils.data.DataLoader(dataset, batch_size=32)
+    >>>
+    >>> # Cryptographic signing
+    >>> from strata import crypto
+    >>> crypto.keygen("key.priv", "key.pub")
+    >>> crypto.sign("dataset.st", "key.priv")
+    >>> crypto.verify("dataset.st", "key.pub")
 
 See documentation for advanced usage: https://github.com/strata-storage/strata
 """
 
-from typing import Union
+from typing import Union, Any
 
-# Import Rust-implemented core functions
-# Note: keygen, sign_image, verify_image are Rust-builtins; __doc__ is read-only on
-# some Python versions. See docs/source/api/signing.rst for full documentation.
-from ._strata_core import keygen, pack, sign_image, snapshot_vm, verify_image
-from .array import ArrayView, read_array, write_array
+# Import submodules for qualified access
+from . import crypto  # strata.crypto.keygen(), etc.
+
+# Core I/O
+from .reader import AsyncReader, Reader
+from .writer import Writer
 
 # ML Integration
 from .dataset import Dataset, TFDataset
+
+# Arrays
+from .array import ArrayView, read_array, write_array
+
+# Build helpers
+from .profiles import PROFILES, build
+
+# Inspection & Utilities
+from .utils import (
+    FORMAT_VERSION,
+    MAX_SUPPORTED_VERSION,
+    MIN_SUPPORTED_VERSION,
+    AnalysisReport,
+    Metadata,
+    inspect,
+    verify,
+)
+
+# Mount
+from .mount import mount
+
+# Types (commonly used only)
+from .typing import PathLike
 
 # Exceptions
 from .exceptions import (
@@ -57,42 +88,9 @@ from .exceptions import (
     ValidationError,
     VersionError,
 )
-from .mount import MountPoint, mount, unmount
-
-# Build helpers
-from .profiles import PROFILES, build
-
-# Core I/O
-from .reader import AsyncReader, Reader
-
-# Types
-from .typing import (
-    BuildProfile,
-    CompressionAlgorithm,
-    DeduplicationMode,
-    PackingMode,
-    PathLike,
-    Shape,
-)
-
-# Utilities
-from .utils import (
-    FORMAT_VERSION,
-    MAX_SUPPORTED_VERSION,
-    MIN_SUPPORTED_VERSION,
-    AnalysisReport,
-    Metadata,
-    analyze,
-    diff,
-    info,
-    inspect,
-    merge_overlay,
-    verify,
-)
-from .writer import Writer
 
 
-def open(path: PathLike, *, mode: str = "r", **options) -> Union[Reader, Writer]:
+def open(path: PathLike, *, mode: str = "r", **options: Any) -> Union[Reader, Writer]:
     """Open a Strata snapshot for reading or writing.
 
     Args:
@@ -128,52 +126,39 @@ def version() -> str:
 
 
 __all__ = [
-    # I/O
+    # === Core I/O (5) ===
     "open",
     "version",
     "Reader",
     "AsyncReader",
     "Writer",
-    # Arrays
+    # === ML Integration (2) ===
+    "Dataset",
+    "TFDataset",
+    # === Arrays (3) ===
     "read_array",
     "write_array",
     "ArrayView",
-    # ML
-    "Dataset",
-    "TFDataset",
-    # Utilities
-    "inspect",
-    "analyze",
-    "diff",
-    "verify",
-    "info",
-    "mount",
-    "unmount",
-    "MountPoint",
-    # Build
+    # === Build (2) ===
     "build",
     "PROFILES",
-    "pack",
-    "merge_overlay",
-    # VM / signing
-    "keygen",
-    "sign_image",
-    "verify_image",
-    "snapshot_vm",
-    # Types
-    "Metadata",
+    # === Inspection (1) ===
+    "inspect",
+    # === Utilities (1) ===
+    "verify",
+    # === Mount (1) ===
+    "mount",
+    # === Submodules (1) ===
+    "crypto",  # strata.crypto.keygen/sign/verify
+    # === Types (3) ===
     "AnalysisReport",
+    "Metadata",
     "PathLike",
-    "Shape",
-    "PackingMode",
-    "BuildProfile",
-    "DeduplicationMode",
-    "CompressionAlgorithm",
-    # Version constants
+    # === Version Constants (3) ===
     "FORMAT_VERSION",
     "MIN_SUPPORTED_VERSION",
     "MAX_SUPPORTED_VERSION",
-    # Exceptions
+    # === Exceptions (10) ===
     "StrataError",
     "IOError",
     "NetworkError",
