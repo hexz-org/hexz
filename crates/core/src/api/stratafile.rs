@@ -709,19 +709,35 @@ impl StrataFile {
     ///
     /// # Thread Safety
     ///
-    /// This method acquires a lock on the page cache. Concurrent calls may block.
+    /// This method acquires a lock on the page cache only for cache lookup and insertion.
+    /// I/O and deserialization are performed without holding the lock to avoid blocking
+    /// other threads during cache misses.
     fn get_page(&self, entry: &PageEntry) -> Result<Arc<IndexPage>> {
-        let mut cache = self.page_cache.lock().unwrap();
-        if let Some(p) = cache.get(&entry.offset) {
-            return Ok(p.clone());
+        // Fast path: check cache with lock held
+        {
+            let mut cache = self.page_cache.lock().unwrap();
+            if let Some(p) = cache.get(&entry.offset) {
+                return Ok(p.clone());
+            }
         }
 
+        // Slow path: release lock before I/O and deserialization
         let bytes = self
             .backend
             .read_exact(entry.offset, entry.length as usize)?;
         let page: IndexPage = bincode::deserialize(&bytes)?;
         let arc = Arc::new(page);
-        cache.put(entry.offset, arc.clone());
+
+        // Re-acquire lock only for insertion
+        {
+            let mut cache = self.page_cache.lock().unwrap();
+            // Check again in case another thread inserted while we were doing I/O
+            if let Some(p) = cache.get(&entry.offset) {
+                return Ok(p.clone());
+            }
+            cache.put(entry.offset, arc.clone());
+        }
+
         Ok(arc)
     }
 
