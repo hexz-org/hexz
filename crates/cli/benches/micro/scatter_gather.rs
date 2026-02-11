@@ -73,7 +73,7 @@ fn bench_scatter_gather_latency(c: &mut Criterion) {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snap = Arc::new(StrataFile::new(backend, compressor, None).unwrap());
+    let snap = StrataFile::new(backend, compressor, None).unwrap();
 
     let stream_size = snap.size(SnapshotStream::Disk);
     let num_blocks = stream_size / BLOCK_SIZE;

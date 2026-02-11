@@ -163,10 +163,10 @@ def test_http_backend(sample_snapshot):
         assert reader.size == len(raw_data)
 
         # Read start (triggers Range: bytes=0-3)
-        assert reader.read_at(0, 4) == raw_data[:4]
+        assert reader.read(4, offset=0) == raw_data[:4]
 
         # Read random location (triggers Range: bytes=5000-5009)
-        assert reader.read_at(5000, 10) == raw_data[5000:5010]
+        assert reader.read(10, offset=5000) == raw_data[5000:5010]
 
     finally:
         httpd.shutdown()
@@ -194,9 +194,9 @@ def test_overlay_commit(sample_snapshot, temp_dir):
     # 3. Verify
     reader = strata.open(final_path)
     # First block should be modified
-    assert reader.read_at(0, 1) == b"M"
+    assert reader.read(1, offset=0) == b"M"
     # Later blocks should be original
-    assert reader.read_at(4096, 1) == original_data[4096:4097]
+    assert reader.read(1, offset=4096) == original_data[4096:4097]
 
 
 def test_thin_snapshot(sample_snapshot, temp_dir):
@@ -218,7 +218,7 @@ def test_thin_snapshot(sample_snapshot, temp_dir):
 
     # Verify data is readable (transparently resolved)
     reader = strata.open(thin_path)
-    assert reader.read_at(0, 10) == strata.open(base_path).read_at(0, 10)
+    assert reader.read(10, offset=0) == strata.open(base_path).read(10, offset=0)
 
 
 def test_mount(sample_snapshot, temp_dir):

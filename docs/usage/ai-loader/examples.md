@@ -33,16 +33,16 @@ class ImageNetStrata(Dataset):
             split: 'train' or 'val' (for label lookup)
             transform: torchvision transforms
         """
-        self.reader = strata.StrataReader(snapshot_path)
+        self.reader = strata.open(snapshot_path)
         self.transform = transform or self._default_transform(split)
 
         # Read metadata header
-        header = self.reader.read_at(0, 8)
+        header = self.reader.read(8, offset=0)
         self.num_images = int.from_bytes(header, 'little')
 
         # Load index into memory (16 bytes per image)
         index_size = self.num_images * 16
-        index_bytes = self.reader.read_at(8, index_size)
+        index_bytes = self.reader.read(index_size, offset=8)
         self.index = np.frombuffer(index_bytes, dtype=np.uint64).reshape(-1, 2)
 
         # Offset to account for header + index
@@ -79,7 +79,7 @@ class ImageNetStrata(Dataset):
         actual_offset = self.data_offset + offset
 
         # Read JPEG bytes
-        jpeg_bytes = self.reader.read_at(actual_offset, int(length))
+        jpeg_bytes = self.reader.read(int(length), offset=actual_offset)
 
         # Decode to PIL Image
         image = Image.open(io.BytesIO(jpeg_bytes)).convert('RGB')
@@ -165,11 +165,11 @@ from torch.utils.data import Dataset
 
 class BrainMRIStrata(Dataset):
     def __init__(self, snapshot_path, transform=None):
-        self.reader = strata.StrataReader(snapshot_path)
+        self.reader = strata.open(snapshot_path)
         self.transform = transform
 
         # Read number of volumes
-        num_vols_bytes = self.reader.read_at(0, 8)
+        num_vols_bytes = self.reader.read(8, offset=0)
         self.num_volumes = int.from_bytes(num_vols_bytes, 'little')
 
         # Build index of (offset, dimensions) for each volume
@@ -178,7 +178,7 @@ class BrainMRIStrata(Dataset):
 
         for _ in range(self.num_volumes):
             # Read dimensions
-            dim_bytes = self.reader.read_at(current_offset, 12)
+            dim_bytes = self.reader.read(12, offset=current_offset)
             dims = np.frombuffer(dim_bytes, dtype=np.uint32)
             w, h, d = dims
 
@@ -248,16 +248,16 @@ from torch.utils.data import IterableDataset
 
 class WikipediaStrata(IterableDataset):
     def __init__(self, snapshot_path, tokenizer, max_length=512):
-        self.reader = strata.StrataReader(snapshot_path)
+        self.reader = strata.open(snapshot_path)
         self.tokenizer = tokenizer
         self.max_length = max_length
 
         # Read index
-        num_articles_bytes = self.reader.read_at(0, 8)
+        num_articles_bytes = self.reader.read(8, offset=0)
         self.num_articles = int.from_bytes(num_articles_bytes, 'little')
 
         index_size = self.num_articles * 16
-        index_bytes = self.reader.read_at(8, index_size)
+        index_bytes = self.reader.read(index_size, offset=8)
         self.index = np.frombuffer(index_bytes, dtype=np.uint64).reshape(-1, 2)
 
         self.data_offset = 8 + index_size
@@ -281,7 +281,7 @@ class WikipediaStrata(IterableDataset):
             actual_offset = self.data_offset + offset
 
             # Read article text
-            text_bytes = self.reader.read_at(actual_offset, int(length))
+            text_bytes = self.reader.read(int(length), offset=actual_offset)
             text = text_bytes.decode('utf-8')
 
             # Tokenize
@@ -470,7 +470,7 @@ create_delta_snapshot(
 )
 
 # Train on v2 (transparently reads from v1 for unchanged data)
-reader = strata.StrataReader("dataset-v2.st")
+reader = strata.open("dataset-v2.st")
 ```
 
 ## Example 6: Multi-Modal Datasets
@@ -500,16 +500,16 @@ import io
 
 class COCOStrata(Dataset):
     def __init__(self, snapshot_path, transform=None, tokenizer=None):
-        self.reader = strata.StrataReader(snapshot_path)
+        self.reader = strata.open(snapshot_path)
         self.transform = transform
         self.tokenizer = tokenizer
 
         # Read index
-        num_samples_bytes = self.reader.read_at(0, 8)
+        num_samples_bytes = self.reader.read(8, offset=0)
         self.num_samples = int.from_bytes(num_samples_bytes, 'little')
 
         index_size = self.num_samples * 32
-        index_bytes = self.reader.read_at(8, index_size)
+        index_bytes = self.reader.read(index_size, offset=8)
         self.index = np.frombuffer(index_bytes, dtype=np.uint64).reshape(-1, 4)
 
         self.data_offset = 8 + index_size
@@ -521,9 +521,9 @@ class COCOStrata(Dataset):
         img_off, img_len, cap_off, cap_len = self.index[idx]
 
         # Read image
-        img_bytes = self.reader.read_at(
-            self.data_offset + img_off,
-            int(img_len)
+        img_bytes = self.reader.read(
+            int(img_len),
+            offset=self.data_offset + img_off
         )
         image = Image.open(io.BytesIO(img_bytes)).convert('RGB')
 
@@ -531,9 +531,9 @@ class COCOStrata(Dataset):
             image = self.transform(image)
 
         # Read caption
-        cap_bytes = self.reader.read_at(
-            self.data_offset + cap_off,
-            int(cap_len)
+        cap_bytes = self.reader.read(
+            int(cap_len),
+            offset=self.data_offset + cap_off
         )
         caption = cap_bytes.decode('utf-8')
 
@@ -602,7 +602,7 @@ def get_cached_reader(s3_path, cache_dir="/tmp/strata-cache"):
         import subprocess
         subprocess.run(['aws', 's3', 'cp', s3_path, cache_path], check=True)
 
-    return strata.StrataReader(cache_path)
+    return strata.open(cache_path)
 
 
 # Usage

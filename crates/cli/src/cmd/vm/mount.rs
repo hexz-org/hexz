@@ -87,12 +87,12 @@ fn open_snapshot(strata_path: &str, cache_size: Option<String>) -> Result<Arc<St
         None
     };
 
-    Ok(Arc::new(StrataFile::with_cache(
+    Ok(StrataFile::with_cache(
         backend,
         compressor,
         encryptor,
         cache_capacity,
-    )?))
+    )?)
 }
 
 #[allow(clippy::too_many_arguments)]

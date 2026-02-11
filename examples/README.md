@@ -2,6 +2,12 @@
 
 This directory contains modular examples demonstrating key features of the Strata Python API. **All commands assume you are in the repository root** and have run **`make develop`** at least once (see the main [README](../README.md) and **`make help`**).
 
+**Reading from snapshots:** Use a single `read()` API. Open with `strata.open(path)` to get a `Reader`, then:
+- `reader.read(n)` — read `n` bytes from current position (advances cursor).
+- `reader.read(n, offset=k)` — read `n` bytes at offset `k` (cursor unchanged).
+- `reader.read(buffer=buf)` — fill a buffer from cursor; `reader.read(buffer=buf, offset=k)` for offset.
+- `reader.iter_chunks(chunk_size=...)` — iterate in fixed-size chunks with one reused buffer.
+
 ## 0. Quick Start (`examples/quickstart.py`)
 
 **Run first.** Creates a tiny snapshot and reads it back — no CLI or extra data required.

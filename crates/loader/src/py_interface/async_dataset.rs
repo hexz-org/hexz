@@ -30,7 +30,7 @@ impl AsyncStrataReader {
         allow_restricted: bool,
     ) -> PyResult<Bound<'_, PyAny>> {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let core = tokio::task::spawn_blocking(move || -> PyResult<StrataFile> {
+            let core = tokio::task::spawn_blocking(move || -> PyResult<Arc<StrataFile>> {
                 let config = OpenConfig {
                     path,
                     s3_region,
@@ -43,7 +43,7 @@ impl AsyncStrataReader {
             .map_err(|e: tokio::task::JoinError| PyRuntimeError::new_err(e.to_string()))??;
 
             let reader = AsyncStrataReader {
-                inner: Arc::new(core),
+                inner: core,
                 cursor: Arc::new(Mutex::new(0)),
             };
 
@@ -55,55 +55,51 @@ impl AsyncStrataReader {
         self.inner.size(SnapshotStream::Disk)
     }
 
-    fn read_at<'p>(
+    /// Read bytes. If `offset` is None, reads from current position and advances cursor.
+    /// If `offset` is Some(k), reads from that position without moving the cursor.
+    #[pyo3(signature = (size=None, offset=None))]
+    fn read<'p>(
         &self,
         py: Python<'p>,
-        offset: u64,
-        length: usize,
+        size: Option<usize>,
+        offset: Option<u64>,
     ) -> PyResult<Bound<'p, PyAny>> {
-        let inner = self.inner.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let data = tokio::task::spawn_blocking(move || {
-                inner
-                    .read_at(SnapshotStream::Disk, offset, length)
-                    .map_err(|e| PyIOError::new_err(e.to_string()))
-            })
-            .await
-            .map_err(|e: tokio::task::JoinError| PyRuntimeError::new_err(e.to_string()))??;
-
-            Python::with_gil(|py| {
-                let bytes = PyBytes::new(py, &data);
-                Ok(bytes.unbind().into_any())
-            })
-        })
-    }
-
-    #[pyo3(signature = (size=None))]
-    fn read<'p>(&self, py: Python<'p>, size: Option<usize>) -> PyResult<Bound<'p, PyAny>> {
         let inner = self.inner.clone();
         let cursor = self.cursor.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let data = tokio::task::spawn_blocking(move || -> PyResult<Vec<u8>> {
-                let mut pos = cursor.lock().unwrap();
                 let total_size = inner.size(SnapshotStream::Disk);
-
-                if *pos >= total_size {
-                    return Ok(Vec::new());
+                match offset {
+                    None => {
+                        let mut pos = cursor.lock().unwrap();
+                        if *pos >= total_size {
+                            return Ok(Vec::new());
+                        }
+                        let start = *pos;
+                        let len = match size {
+                            Some(s) => std::cmp::min(s as u64, total_size - *pos) as usize,
+                            None => (total_size - *pos) as usize,
+                        };
+                        let bytes = inner
+                            .read_at(SnapshotStream::Disk, start, len)
+                            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+                        *pos += bytes.len() as u64;
+                        Ok(bytes)
+                    }
+                    Some(at) => {
+                        if at >= total_size {
+                            return Ok(Vec::new());
+                        }
+                        let len = match size {
+                            Some(s) => std::cmp::min(s as u64, total_size - at) as usize,
+                            None => (total_size - at) as usize,
+                        };
+                        inner
+                            .read_at(SnapshotStream::Disk, at, len)
+                            .map_err(|e| PyIOError::new_err(e.to_string()))
+                    }
                 }
-
-                let len = match size {
-                    Some(s) => std::cmp::min(s as u64, total_size - *pos) as usize,
-                    None => (total_size - *pos) as usize,
-                };
-
-                let bytes = inner
-                    .read_at(SnapshotStream::Disk, *pos, len)
-                    .map_err(|e| PyIOError::new_err(e.to_string()))?;
-
-                *pos += bytes.len() as u64;
-                Ok(bytes)
             })
             .await
             .map_err(|e: tokio::task::JoinError| PyRuntimeError::new_err(e.to_string()))??;

@@ -69,7 +69,7 @@ pub fn run(strata_path: String, port: u16, daemon: bool, nbd: bool, s3: bool) ->
                 }
             };
 
-            let snap = Arc::new(StrataFile::new(backend, compressor, None)?);
+            let snap = StrataFile::new(backend, compressor, None)?;
 
             if nbd {
                 strata_server::serve_nbd(snap, port).await

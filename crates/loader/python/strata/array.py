@@ -83,7 +83,7 @@ def read_array(
 
     try:
         # Read data at offset
-        data = reader.read_at(offset, size)
+        data = reader.read(size, offset=offset)
 
         # Create array from buffer
         arr = np.frombuffer(data, dtype=dtype)
@@ -245,13 +245,13 @@ class ArrayView:
             if self.ndim == 1:
                 # 1D array: read single element
                 byte_offset = self._offset + key * self._itemsize
-                data = self._reader.read_at(byte_offset, self._itemsize)
+                data = self._reader.read(self._itemsize, offset=byte_offset)
                 return np.frombuffer(data, dtype=self._dtype)[0]
             else:
                 # Multi-D array: read single row
                 row_size = int(np.prod(self._shape[1:])) * self._itemsize
                 byte_offset = self._offset + key * row_size
-                data = self._reader.read_at(byte_offset, row_size)
+                data = self._reader.read(row_size, offset=byte_offset)
                 arr = np.frombuffer(data, dtype=self._dtype)
                 return arr.reshape(self._shape[1:])
 
@@ -267,7 +267,7 @@ class ArrayView:
                 byte_offset = self._offset + start * self._itemsize
                 byte_size = num_elements * self._itemsize
 
-                data = self._reader.read_at(byte_offset, byte_size)
+                data = self._reader.read(byte_size, offset=byte_offset)
                 return np.frombuffer(data, dtype=self._dtype)
 
             # For 2D+ arrays, read rows
@@ -281,7 +281,7 @@ class ArrayView:
                 byte_offset = self._offset + start * row_size
                 byte_size = num_rows * row_size
 
-                data = self._reader.read_at(byte_offset, byte_size)
+                data = self._reader.read(byte_size, offset=byte_offset)
                 arr = np.frombuffer(data, dtype=self._dtype)
                 result_shape = (num_rows,) + self._shape[1:]
                 return arr.reshape(result_shape)

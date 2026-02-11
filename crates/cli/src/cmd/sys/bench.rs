@@ -41,7 +41,7 @@ pub fn run(
         CompressionType::Zstd => Box::new(ZstdCompressor::new(DEFAULT_ZSTD_LEVEL, dictionary)),
     };
 
-    let snap = Arc::new(StrataFile::new(backend, compressor, None)?);
+    let snap = StrataFile::new(backend, compressor, None)?;
     let disk_size = snap.size(SnapshotStream::Disk);
 
     println!("Image Size: {}", HumanBytes(disk_size));

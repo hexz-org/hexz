@@ -220,7 +220,7 @@ class Prefetcher:
             size = self.item_size
 
         # Read data
-        data = self.reader.read_at(offset, size)
+        data = self.reader.read(size, offset=offset)
 
         # Store in prefetched dict
         with self.lock:
@@ -468,7 +468,7 @@ class Dataset(TorchDataset):
                     self._prefetcher.hint(idx + i)
 
         # Read data
-        data = self._reader.read_at(offset, size)
+        data = self._reader.read(size, offset=offset)
 
         # Cache it
         if self._cache:

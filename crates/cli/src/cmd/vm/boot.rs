@@ -208,10 +208,8 @@ fn boot_qemu(
                 _ => Box::new(strata_core::algo::compression::lz4::Lz4Compressor::new()),
             };
 
-        let snap = Arc::new(
-            strata_core::StrataFile::new(backend, compressor, None)
-                .context("Failed to create StrataFile")?,
-        );
+        let snap = strata_core::StrataFile::new(backend, compressor, None)
+            .context("Failed to create StrataFile")?;
 
         mounted_clone.store(true, Ordering::Release);
 

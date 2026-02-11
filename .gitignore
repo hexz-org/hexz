@@ -67,6 +67,7 @@ Desktop.ini
 vm/
 data/
 test_artifacts/
+mnt_large_test/
 *.st
 *.raw
 raw_data/

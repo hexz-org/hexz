@@ -117,10 +117,10 @@ def test_async_s3_read(s3_server, s3_client, tmp_path):
     assert reader.size == len(data)
 
     # Read header from logical disk
-    header = reader.read_at(0, 4)
+    header = reader.read(4, offset=0)
     assert header == data[:4]
 
     # Read middle from logical disk
     mid = len(data) // 2
-    chunk = reader.read_at(mid, 100)
+    chunk = reader.read(100, offset=mid)
     assert chunk == data[mid : mid + 100]

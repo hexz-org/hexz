@@ -295,7 +295,7 @@ struct PageEntry {
 ### Read Path
 
 ```
-User requests: read_at(offset=1MB, length=4KB)
+User requests: read(4KB, offset=1MB)
     │
     ├─> StrataFile::read_at()
     │       │

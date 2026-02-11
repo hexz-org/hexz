@@ -38,12 +38,12 @@ impl StrataReader {
             allow_restricted,
         };
 
-        let inner = py.allow_threads(move || -> PyResult<StrataFile> {
+        let inner = py.allow_threads(move || -> PyResult<Arc<StrataFile>> {
             engine::open_snapshot(config).map_err(|e| PyIOError::new_err(e.to_string()))
         })?;
 
         Ok(StrataReader {
-            inner: Arc::new(inner),
+            inner,
             path,
             cursor: Mutex::new(0),
         })
@@ -53,21 +53,57 @@ impl StrataReader {
         self.inner.size(SnapshotStream::Disk)
     }
 
-    fn read_at<'py>(
+    /// Read bytes. If `offset` is None, reads from current position and advances cursor.
+    /// If `offset` is Some(k), reads from that position without moving the cursor.
+    #[pyo3(signature = (size=None, offset=None))]
+    fn read<'py>(
         &self,
         py: Python<'py>,
-        offset: u64,
-        length: usize,
+        size: Option<usize>,
+        offset: Option<u64>,
     ) -> PyResult<Bound<'py, PyBytes>> {
         let inner = self.inner.clone();
+        let total_size = self.inner.size(SnapshotStream::Disk);
+
+        let start = match offset {
+            None => {
+                let mut cursor = self.cursor.lock().unwrap();
+                if *cursor >= total_size {
+                    return Ok(PyBytes::new(py, &[]));
+                }
+                let start = *cursor;
+                let len = match size {
+                    Some(s) => std::cmp::min(s as u64, total_size - *cursor) as usize,
+                    None => (total_size - *cursor) as usize,
+                };
+                let data = py
+                    .allow_threads({
+                        let inner = inner.clone();
+                        move || inner.read_at(SnapshotStream::Disk, start, len)
+                    })
+                    .map_err(|e| PyIOError::new_err(e.to_string()))?;
+                *cursor += data.len() as u64;
+                return Ok(PyBytes::new(py, &data));
+            }
+            Some(at) => at,
+        };
+
+        if start >= total_size {
+            return Ok(PyBytes::new(py, &[]));
+        }
+        let len = match size {
+            Some(s) => std::cmp::min(s as u64, total_size - start) as usize,
+            None => (total_size - start) as usize,
+        };
         let data = py
-            .allow_threads(move || inner.read_at(SnapshotStream::Disk, offset, length))
+            .allow_threads(move || inner.read_at(SnapshotStream::Disk, start, len))
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
         Ok(PyBytes::new(py, &data))
     }
 
     /// Read at `offset` into a writable buffer (e.g. bytearray). Returns number of bytes read.
-    /// Uses uninitialized buffer path; buffer need not be zeroed.
+    /// Python buffers are always initialized (e.g. bytearray is zeroed); we use the
+    /// write-only (uninit) path because we overwrite the range entirely.
     fn read_at_into(
         &self,
         py: Python<'_>,
@@ -90,31 +126,6 @@ impl StrataReader {
                 .map_err(|e| PyIOError::new_err(e.to_string()))
         })?;
         Ok(result)
-    }
-
-    #[pyo3(signature = (size=None))]
-    fn read<'py>(&self, py: Python<'py>, size: Option<usize>) -> PyResult<Bound<'py, PyBytes>> {
-        let mut cursor = self.cursor.lock().unwrap();
-        let total_size = self.inner.size(SnapshotStream::Disk);
-
-        if *cursor >= total_size {
-            return Ok(PyBytes::new(py, &[]));
-        }
-
-        let len = match size {
-            Some(s) => std::cmp::min(s as u64, total_size - *cursor) as usize,
-            None => (total_size - *cursor) as usize,
-        };
-
-        let inner = self.inner.clone();
-        let start = *cursor;
-
-        let data = py
-            .allow_threads(move || inner.read_at(SnapshotStream::Disk, start, len))
-            .map_err(|e| PyIOError::new_err(e.to_string()))?;
-
-        *cursor += data.len() as u64;
-        Ok(PyBytes::new(py, &data))
     }
 
     fn readinto(&self, py: Python<'_>, buffer: Bound<'_, PyAny>) -> PyResult<usize> {
@@ -143,7 +154,7 @@ impl StrataReader {
             let slice = unsafe { std::slice::from_raw_parts_mut(ptr, read_len) };
 
             inner
-                .read_at_into(SnapshotStream::Disk, start, slice)
+                .read_at_into_uninit_bytes(SnapshotStream::Disk, start, slice)
                 .map(|_| read_len)
                 .map_err(|e| PyIOError::new_err(e.to_string()))
         })?;

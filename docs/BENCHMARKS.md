@@ -332,15 +332,15 @@ import numpy as np
 
 def benchmark_random_access(path, num_reads=10000, read_size=4096):
     """Benchmark random access latency"""
-    reader = strata.StrataReader(path)
-    size = reader.size()
+    reader = strata.open(path)
+    size = reader.size
 
     latencies = []
     for _ in range(num_reads):
         offset = np.random.randint(0, size - read_size)
 
         start = time.perf_counter()
-        data = reader.read_at(offset, read_size)
+        data = reader.read(read_size, offset=offset)
         latency = (time.perf_counter() - start) * 1e6  # microseconds
 
         latencies.append(latency)
@@ -353,8 +353,8 @@ def benchmark_random_access(path, num_reads=10000, read_size=4096):
 
 def benchmark_throughput(path, read_size=1024*1024):
     """Benchmark sequential throughput"""
-    reader = strata.StrataReader(path)
-    size = reader.size()
+    reader = strata.open(path)
+    size = reader.size
 
     buffer = np.zeros(read_size, dtype=np.uint8)
     start = time.time()

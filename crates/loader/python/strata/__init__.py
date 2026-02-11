@@ -106,6 +106,7 @@ def open(path: PathLike, *, mode: str = "r", **options) -> Union[Reader, Writer]
     Example:
         >>> with strata.open("data.st") as reader:
         ...     data = reader.read(4096)
+        ...     chunk = reader.read(100, offset=0)  # random access
         ...
         >>> with strata.open("out.st", mode="w", packing="tight") as writer:
         ...     writer.add("input.img")

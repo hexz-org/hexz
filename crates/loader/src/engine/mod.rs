@@ -80,7 +80,7 @@ pub struct OpenConfig {
 ///
 /// Supports local files, HTTP(S) URLs, and S3 URIs.
 /// This is pure Rust with no PyO3 dependency.
-pub fn open_snapshot(config: OpenConfig) -> Result<StrataFile, OpenError> {
+pub fn open_snapshot(config: OpenConfig) -> Result<Arc<StrataFile>, OpenError> {
     let backend: Arc<dyn StorageBackend> = if config.path.starts_with("http://")
         || config.path.starts_with("https://")
     {
@@ -136,7 +136,7 @@ pub fn stream_size(snap: &StrataFile, stream: SnapshotStream) -> u64 {
 
 /// Reads bytes from a specific stream at a given offset.
 pub fn read_stream(
-    snap: &StrataFile,
+    snap: &Arc<StrataFile>,
     stream: SnapshotStream,
     offset: u64,
     length: usize,

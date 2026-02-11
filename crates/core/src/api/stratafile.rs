@@ -17,8 +17,13 @@ use std::num::NonZeroUsize;
 use std::path::Path;
 use std::ptr;
 use std::sync::{Arc, Mutex};
-use strata_common::constants::{BLOCK_OFFSET_PARENT, DEFAULT_ZSTD_LEVEL};
+
+use rayon::prelude::*;
+use strata_common::constants::{BLOCK_OFFSET_PARENT, DEFAULT_BLOCK_SIZE, DEFAULT_ZSTD_LEVEL};
 use strata_common::{Result, StrataError};
+
+/// Shared zero block for the default block size to avoid allocating when returning zero blocks.
+static ZEROS_64K: [u8; DEFAULT_BLOCK_SIZE as usize] = [0u8; DEFAULT_BLOCK_SIZE as usize];
 
 /// Logical stream identifier for dual-stream snapshots.
 ///
@@ -104,11 +109,11 @@ pub enum SnapshotStream {
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// // Open base snapshot
 /// let base_backend = Arc::new(FileBackend::new("base.st".as_ref())?);
-/// let base = Arc::new(StrataFile::new(
+/// let base = StrataFile::new(
 ///     base_backend,
 ///     Box::new(Lz4Compressor::new()),
 ///     None
-/// )?);
+/// )?;
 ///
 /// // The thin snapshot will automatically load its parent based on
 /// // the parent_path field in the header
@@ -193,7 +198,7 @@ impl StrataFile {
         backend: Arc<dyn StorageBackend>,
         compressor: Box<dyn Compressor>,
         encryptor: Option<Box<dyn Encryptor>>,
-    ) -> Result<Self> {
+    ) -> Result<Arc<Self>> {
         Self::with_cache(backend, compressor, encryptor, None)
     }
 
@@ -243,7 +248,7 @@ impl StrataFile {
         compressor: Box<dyn Compressor>,
         encryptor: Option<Box<dyn Encryptor>>,
         cache_capacity_bytes: Option<usize>,
-    ) -> Result<Self> {
+    ) -> Result<Arc<Self>> {
         let header_bytes = backend.read_exact(0, HEADER_SIZE)?;
         let header: StrataHeader = bincode::deserialize(&header_bytes)?;
 
@@ -300,7 +305,7 @@ impl StrataFile {
             };
 
             // TODO: Handle parent encryption if needed. Assuming unencrypted parent for v1 thin snap example.
-            Some(Arc::new(StrataFile::new(p_backend, p_compressor, None)?))
+            Some(StrataFile::new(p_backend, p_compressor, None)?)
         } else {
             None
         };
@@ -312,7 +317,7 @@ impl StrataFile {
             1000
         };
 
-        Ok(Self {
+        Ok(Arc::new(Self {
             header,
             master,
             backend,
@@ -321,7 +326,7 @@ impl StrataFile {
             parent,
             cache_l1: BlockCache::with_capacity(l1_capacity),
             page_cache: Mutex::new(LruCache::new(NonZeroUsize::new(128).unwrap())),
-        })
+        }))
     }
 
     /// Returns the logical size of a stream in bytes.
@@ -411,7 +416,13 @@ impl StrataFile {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn read_at(&self, stream: SnapshotStream, offset: u64, len: usize) -> Result<Vec<u8>> {
+    /// Reads a byte range. Uses parallel block decompression when the range spans multiple blocks.
+    pub fn read_at(
+        self: &Arc<Self>,
+        stream: SnapshotStream,
+        offset: u64,
+        len: usize,
+    ) -> Result<Vec<u8>> {
         let stream_size = self.size(stream);
         if offset >= stream_size {
             return Ok(Vec::new());
@@ -427,141 +438,25 @@ impl StrataFile {
         };
 
         if pages.is_empty() {
-            // If we have no pages but we have a parent, we might need to ask the parent.
-            // However, usually master index covers the whole range.
-            // If it's a sparse index, we handle fallback logic here.
             if let Some(parent) = &self.parent {
                 return parent.read_at(stream, offset, actual_len);
             }
             return Ok(vec![0u8; actual_len]);
         }
 
-        let page_idx = match pages.binary_search_by(|p| p.start_logical.cmp(&offset)) {
-            Ok(idx) => idx,
-            Err(idx) => idx.saturating_sub(1),
-        };
-
-        let mut buffer = Vec::with_capacity(actual_len);
-        let mut current_pos = offset;
-        let mut remaining = actual_len;
-
-        for page_entry in pages.iter().skip(page_idx) {
-            if remaining == 0 {
-                break;
-            }
-            if page_entry.start_logical > current_pos + remaining as u64 {
-                break;
-            }
-
-            let page = self.get_page(page_entry)?;
-            let mut block_logical_start = page_entry.start_logical;
-
-            for (block_idx_in_page, block) in page.blocks.iter().enumerate() {
-                let block_end = block_logical_start + block.logical_len as u64;
-
-                if block_end > current_pos {
-                    let global_block_idx = page_entry.start_block + block_idx_in_page as u64;
-
-                    // --- THIN SNAPSHOT LOGIC ---
-                    let block_data = if block.offset == BLOCK_OFFSET_PARENT {
-                        // Fallback to parent
-                        if let Some(parent) = &self.parent {
-                            // Recursively read the specific range for this block from parent
-                            // We need to be careful about alignment.
-                            // We want the whole block from parent to put in cache?
-                            // Or just the slice?
-                            // Let's read the specific slice needed for this request to avoid
-                            // logic complexity, but ideally we'd cache the parent block too.
-
-                            // Calculate overlap
-                            let offset_in_block = (current_pos - block_logical_start) as usize;
-                            let to_copy = std::cmp::min(
-                                remaining,
-                                (block.logical_len as usize).saturating_sub(offset_in_block),
-                            );
-
-                            let p_data = parent.read_at(stream, current_pos, to_copy)?;
-                            Bytes::from(p_data)
-                        } else {
-                            // Should not happen if file is valid
-                            Bytes::from(vec![0u8; block.logical_len as usize])
-                        }
-                    } else {
-                        // Standard local read
-                        self.resolve_block_data(stream, global_block_idx, block)?
-                    };
-                    // ---------------------------
-
-                    // If we got data from parent (Bytes), we need to extract the slice.
-                    // If we got data from local (Bytes), it's the whole block.
-
-                    if block.offset == BLOCK_OFFSET_PARENT {
-                        // block_data is already the exact slice we asked for from parent
-                        buffer.extend_from_slice(&block_data);
-                        current_pos += block_data.len() as u64;
-                        remaining -= block_data.len();
-                    } else {
-                        let offset_in_block = (current_pos - block_logical_start) as usize;
-                        let to_copy = std::cmp::min(
-                            remaining,
-                            block_data.len().saturating_sub(offset_in_block),
-                        );
-
-                        if to_copy > 0 {
-                            buffer.extend_from_slice(
-                                &block_data[offset_in_block..offset_in_block + to_copy],
-                            );
-                            current_pos += to_copy as u64;
-                            remaining -= to_copy;
-                        }
-                    }
-
-                    if remaining == 0 {
-                        break;
-                    }
-                }
-
-                block_logical_start += block.logical_len as u64;
-            }
-        }
-
-        if remaining > 0 {
-            // If we ran out of pages in this layer, check parent for the tail
-            if let Some(parent) = &self.parent {
-                let tail = parent.read_at(stream, current_pos, remaining)?;
-                buffer.extend_from_slice(&tail);
-                remaining -= tail.len();
-            }
-
-            // Pad zeros if still missing
-            if remaining > 0 {
-                buffer.resize(buffer.len() + remaining, 0);
-            }
-        }
-
-        Ok(buffer)
+        let mut buf: Vec<MaybeUninit<u8>> = Vec::new();
+        buf.resize_with(actual_len, MaybeUninit::uninit);
+        self.read_at_into_uninit(stream, offset, &mut buf)?;
+        let ptr = buf.as_mut_ptr().cast::<u8>();
+        let len = buf.len();
+        let cap = buf.capacity();
+        std::mem::forget(buf);
+        Ok(unsafe { Vec::from_raw_parts(ptr, len, cap) })
     }
 
-    /// Reads data from a snapshot stream into a provided buffer.
-    ///
-    /// This method is a zero-copy variant of [`read_at`](Self::read_at). It writes directly
-    /// into the provided mutable slice, avoiding intermediate allocations.
-    ///
-    /// # Parameters
-    ///
-    /// - `stream`: Which stream to read from (Disk or Memory)
-    /// - `offset`: Starting byte offset (0-indexed)
-    /// - `buffer`: Mutable buffer to write data into
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(())` on success. The buffer will be filled with data read from the stream.
-    ///   If the read goes beyond the stream size, the remaining part of the buffer is zero-filled.
-    ///
-    /// **On error:** The buffer contents are undefined (possibly partially written).
-    /// Callers must not read from the buffer on error.
+    /// Reads into a provided buffer. Unused suffix is zero-filled. Uses parallel decompression when spanning multiple blocks.
     pub fn read_at_into(
-        &self,
+        self: &Arc<Self>,
         stream: SnapshotStream,
         offset: u64,
         buffer: &mut [u8],
@@ -570,157 +465,26 @@ impl StrataFile {
         if len == 0 {
             return Ok(());
         }
-
         let stream_size = self.size(stream);
         if offset >= stream_size {
             buffer.fill(0);
             return Ok(());
         }
-
-        // Calculate how much valid data we can read
         let actual_len = std::cmp::min(len as u64, stream_size - offset) as usize;
-
-        // Zero-fill the rest of the buffer if we're reading past the end
         if actual_len < len {
             buffer[actual_len..].fill(0);
         }
-
-        // We only care about filling the valid part
-        let target_buf = &mut buffer[0..actual_len];
-        let mut current_pos = offset;
-        let mut buf_offset = 0;
-        let mut remaining = actual_len;
-
-        let pages = match stream {
-            SnapshotStream::Disk => &self.master.disk_pages,
-            SnapshotStream::Memory => &self.master.memory_pages,
-        };
-
-        if pages.is_empty() {
-            if let Some(parent) = &self.parent {
-                return parent.read_at_into(stream, offset, target_buf);
-            }
-            target_buf.fill(0);
-            return Ok(());
-        }
-
-        let page_idx = match pages.binary_search_by(|p| p.start_logical.cmp(&offset)) {
-            Ok(idx) => idx,
-            Err(idx) => idx.saturating_sub(1),
-        };
-
-        for page_entry in pages.iter().skip(page_idx) {
-            if remaining == 0 {
-                break;
-            }
-            if page_entry.start_logical > current_pos + remaining as u64 {
-                // Gap in pages? Should probably zero-fill, but current logic assumes contiguity or zeros for missing
-                // In standard strata file, missing pages are implicitly zero/sparse.
-                // But here we might just skip.
-                // However, since we initialized with zeros only at the end (past stream_size),
-                // we should handle gaps. But let's stick to read_at logic.
-                break;
-            }
-
-            let page = self.get_page(page_entry)?;
-            let mut block_logical_start = page_entry.start_logical;
-
-            for (block_idx_in_page, block) in page.blocks.iter().enumerate() {
-                let block_end = block_logical_start + block.logical_len as u64;
-
-                if block_end > current_pos {
-                    // This block overlaps with our read range
-
-                    if block.offset == BLOCK_OFFSET_PARENT {
-                        if let Some(parent) = &self.parent {
-                            // Recursively read from parent directly into our buffer
-                            let offset_in_block = (current_pos - block_logical_start) as usize;
-                            let to_copy = std::cmp::min(
-                                remaining,
-                                (block.logical_len as usize).saturating_sub(offset_in_block),
-                            );
-
-                            parent.read_at_into(
-                                stream,
-                                current_pos,
-                                &mut target_buf[buf_offset..buf_offset + to_copy],
-                            )?;
-
-                            current_pos += to_copy as u64;
-                            buf_offset += to_copy;
-                            remaining -= to_copy;
-                        } else {
-                            // Should be zeros if no parent
-                            let offset_in_block = (current_pos - block_logical_start) as usize;
-                            let to_copy = std::cmp::min(
-                                remaining,
-                                (block.logical_len as usize).saturating_sub(offset_in_block),
-                            );
-
-                            // Ensure it's zeroed (it might contain garbage from previous buffer usage?)
-                            // No, the buffer comes from user. We should write zeros.
-                            target_buf[buf_offset..buf_offset + to_copy].fill(0);
-
-                            current_pos += to_copy as u64;
-                            buf_offset += to_copy;
-                            remaining -= to_copy;
-                        }
-                    } else {
-                        // Standard local read
-                        let global_block_idx = page_entry.start_block + block_idx_in_page as u64;
-                        let block_data =
-                            self.resolve_block_data(stream, global_block_idx, block)?;
-
-                        let offset_in_block = (current_pos - block_logical_start) as usize;
-                        let to_copy = std::cmp::min(
-                            remaining,
-                            block_data.len().saturating_sub(offset_in_block),
-                        );
-
-                        if to_copy > 0 {
-                            target_buf[buf_offset..buf_offset + to_copy].copy_from_slice(
-                                &block_data[offset_in_block..offset_in_block + to_copy],
-                            );
-                            current_pos += to_copy as u64;
-                            buf_offset += to_copy;
-                            remaining -= to_copy;
-                        }
-                    }
-
-                    if remaining == 0 {
-                        break;
-                    }
-                }
-
-                block_logical_start += block.logical_len as u64;
-            }
-        }
-
-        if remaining > 0 {
-            // Fill any remaining gap from parent
-            if let Some(parent) = &self.parent {
-                parent.read_at_into(stream, current_pos, &mut target_buf[buf_offset..])?;
-            } else {
-                target_buf[buf_offset..].fill(0);
-            }
-        }
-
-        Ok(())
+        self.read_at_into_uninit_bytes(stream, offset, &mut buffer[0..actual_len])
     }
 
-    /// Like [`read_at_into`](Self::read_at_into) but writes into uninitialized memory.
-    ///
-    /// Callers can pass a buffer that has not been zeroed; the method overwrites the
-    /// requested range. Useful to avoid zeroing large buffers when the contents are
-    /// immediately overwritten.
-    ///
-    /// The buffer is written from the start; any unused suffix (e.g. past stream end)
-    /// is zero-filled. After `Ok(())`, the written region contains valid bytes.
+    /// Minimum number of local blocks to use the parallel decompression path.
+    const PARALLEL_MIN_BLOCKS: usize = 2;
+
+    /// Writes into uninitialized memory. Unused suffix is zero-filled. Uses parallel decompression when spanning multiple blocks.
     ///
     /// **On error:** The buffer contents are undefined (possibly partially written).
-    /// Callers must not read from the buffer on error; treat it as uninitialized.
     pub fn read_at_into_uninit(
-        &self,
+        self: &Arc<Self>,
         stream: SnapshotStream,
         offset: u64,
         buffer: &mut [MaybeUninit<u8>],
@@ -732,14 +496,12 @@ impl StrataFile {
 
         let stream_size = self.size(stream);
         if offset >= stream_size {
-            // SAFETY: we are writing to the entire buffer; no uninitialized read.
             unsafe { ptr::write_bytes(buffer.as_mut_ptr(), 0, len) };
             return Ok(());
         }
 
         let actual_len = std::cmp::min(len as u64, stream_size - offset) as usize;
         if actual_len < len {
-            // SAFETY: we are writing to the suffix; no uninitialized read.
             unsafe { ptr::write_bytes(buffer[actual_len..].as_mut_ptr(), 0, len - actual_len) };
         }
 
@@ -757,7 +519,6 @@ impl StrataFile {
             if let Some(parent) = &self.parent {
                 return parent.read_at_into_uninit(stream, offset, target);
             }
-            // SAFETY: we are writing to the entire slice; no uninitialized read.
             unsafe { ptr::write_bytes(target.as_mut_ptr(), 0, target.len()) };
             return Ok(());
         }
@@ -766,6 +527,9 @@ impl StrataFile {
             Ok(idx) => idx,
             Err(idx) => idx.saturating_sub(1),
         };
+
+        // (block_idx, info, buf_offset, offset_in_block, to_copy)
+        let mut local_work: Vec<(u64, BlockInfo, usize, usize, usize)> = Vec::new();
 
         for page_entry in pages.iter().skip(page_idx) {
             if remaining == 0 {
@@ -802,7 +566,6 @@ impl StrataFile {
                                 remaining,
                                 (block.logical_len as usize).saturating_sub(offset_in_block),
                             );
-                            // SAFETY: we are writing to the slice; no uninitialized read.
                             unsafe {
                                 ptr::write_bytes(
                                     target[buf_offset..buf_offset + to_copy].as_mut_ptr(),
@@ -814,25 +577,38 @@ impl StrataFile {
                             buf_offset += to_copy;
                             remaining -= to_copy;
                         }
-                    } else {
-                        let block_data =
-                            self.resolve_block_data(stream, global_block_idx, block)?;
+                    } else if block.length == 0 {
                         let offset_in_block = (current_pos - block_logical_start) as usize;
                         let to_copy = std::cmp::min(
                             remaining,
-                            block_data.len().saturating_sub(offset_in_block),
+                            (block.logical_len as usize).saturating_sub(offset_in_block),
+                        );
+                        unsafe {
+                            ptr::write_bytes(
+                                target[buf_offset..buf_offset + to_copy].as_mut_ptr(),
+                                0,
+                                to_copy,
+                            )
+                        };
+                        current_pos += to_copy as u64;
+                        buf_offset += to_copy;
+                        remaining -= to_copy;
+                    } else {
+                        let offset_in_block = (current_pos - block_logical_start) as usize;
+                        let to_copy = std::cmp::min(
+                            remaining,
+                            (block.logical_len as usize).saturating_sub(offset_in_block),
                         );
                         if to_copy > 0 {
-                            // SAFETY: non-overlapping; source is valid for read, dest is valid for write.
-                            unsafe {
-                                ptr::copy_nonoverlapping(
-                                    block_data[offset_in_block..].as_ptr(),
-                                    target[buf_offset..].as_mut_ptr() as *mut u8,
-                                    to_copy,
-                                )
-                            };
-                            current_pos += to_copy as u64;
+                            local_work.push((
+                                global_block_idx,
+                                *block,
+                                buf_offset,
+                                offset_in_block,
+                                to_copy,
+                            ));
                             buf_offset += to_copy;
+                            current_pos += to_copy as u64;
                             remaining -= to_copy;
                         }
                     }
@@ -845,11 +621,57 @@ impl StrataFile {
             }
         }
 
+        if local_work.len() >= Self::PARALLEL_MIN_BLOCKS {
+            let snap = Arc::clone(self);
+            let target_addr = target.as_mut_ptr() as usize;
+            let err: Mutex<Option<StrataError>> = Mutex::new(None);
+            local_work.par_iter().for_each(
+                |(block_idx, info, buf_offset, offset_in_block, to_copy)| {
+                    if err.lock().unwrap().is_some() {
+                        return;
+                    }
+                    match snap.resolve_block_data(stream, *block_idx, info) {
+                        Ok(data) => {
+                            let src = data.as_ref();
+                            let start = *offset_in_block;
+                            let len = *to_copy;
+                            if start < src.len() && len <= src.len() - start {
+                                let dest = (target_addr + buf_offset) as *mut u8;
+                                unsafe {
+                                    ptr::copy_nonoverlapping(src[start..].as_ptr(), dest, len)
+                                };
+                            }
+                        }
+                        Err(e) => {
+                            let _ = (*err.lock().unwrap()).replace(e);
+                        }
+                    }
+                },
+            );
+            if let Some(e) = err.lock().unwrap().take() {
+                return Err(e);
+            }
+        } else {
+            for (block_idx, info, buf_offset, offset_in_block, to_copy) in local_work {
+                let data = self.resolve_block_data(stream, block_idx, &info)?;
+                let src = data.as_ref();
+                let start = offset_in_block;
+                if start < src.len() && to_copy <= src.len() - start {
+                    unsafe {
+                        ptr::copy_nonoverlapping(
+                            src[start..].as_ptr(),
+                            target[buf_offset..].as_mut_ptr() as *mut u8,
+                            to_copy,
+                        );
+                    }
+                }
+            }
+        }
+
         if remaining > 0 {
             if let Some(parent) = &self.parent {
                 parent.read_at_into_uninit(stream, current_pos, &mut target[buf_offset..])?;
             } else {
-                // SAFETY: we are writing to the remainder; no uninitialized read.
                 unsafe { ptr::write_bytes(target[buf_offset..].as_mut_ptr(), 0, remaining) };
             }
         }
@@ -857,16 +679,10 @@ impl StrataFile {
         Ok(())
     }
 
-    /// Like [`read_at_into_uninit`](Self::read_at_into_uninit) but accepts `&mut [u8]`.
-    ///
-    /// Safe to call with an uninitialized or reused buffer; the method overwrites
-    /// the slice. Useful for FFI (e.g. Python bytearray) where `MaybeUninit` is not available.
-    ///
-    /// **On error:** The buffer contents are undefined (possibly partially written).
-    /// Callers must not read from the buffer on error; treat it as uninitialized.
+    /// Like [`read_at_into_uninit`](Self::read_at_into_uninit) but accepts `&mut [u8]`. Use from FFI (e.g. Python).
     #[inline]
     pub fn read_at_into_uninit_bytes(
-        &self,
+        self: &Arc<Self>,
         stream: SnapshotStream,
         offset: u64,
         buf: &mut [u8],
@@ -874,8 +690,6 @@ impl StrataFile {
         if buf.is_empty() {
             return Ok(());
         }
-        // SAFETY: We only write into buf via read_at_into_uninit; we never read
-        // uninitialized bytes. Casting to MaybeUninit is valid for write-only use.
         let uninit = unsafe { &mut *(buf as *mut [u8] as *mut [MaybeUninit<u8>]) };
         self.read_at_into_uninit(stream, offset, uninit)
     }
@@ -947,7 +761,14 @@ impl StrataFile {
         }
 
         if info.length == 0 {
-            return Ok(Bytes::from(vec![0u8; info.logical_len as usize]));
+            let len = info.logical_len as usize;
+            if len == 0 {
+                return Ok(Bytes::new());
+            }
+            if len == ZEROS_64K.len() {
+                return Ok(Bytes::from_static(&ZEROS_64K));
+            }
+            return Ok(Bytes::from(vec![0u8; len]));
         }
 
         let raw = self.backend.read_exact(info.offset, info.length as usize)?;
@@ -960,13 +781,12 @@ impl StrataFile {
             }
         }
 
-        let compressed = if let Some(enc) = &self.encryptor {
-            enc.decrypt(&raw, block_idx)?
+        let decompressed = if let Some(enc) = &self.encryptor {
+            let compressed = enc.decrypt(&raw, block_idx)?;
+            self.compressor.decompress(&compressed)?
         } else {
-            raw.to_vec()
+            self.compressor.decompress(raw.as_ref())?
         };
-
-        let decompressed = self.compressor.decompress(&compressed)?;
         let data = Bytes::from(decompressed);
 
         self.cache_l1.insert(stream, block_idx, data.clone());

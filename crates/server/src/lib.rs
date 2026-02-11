@@ -113,7 +113,7 @@ async fn get_memory(headers: HeaderMap, State(state): State<Arc<AppState>>) -> i
 }
 
 /// Core HTTP handler that translates `Range` headers into snapshot reads.
-fn handle_request(headers: HeaderMap, snap: &StrataFile, stream: SnapshotStream) -> Response {
+fn handle_request(headers: HeaderMap, snap: &Arc<StrataFile>, stream: SnapshotStream) -> Response {
     let total_size = snap.size(stream);
 
     let (start, mut end) = if let Some(range) = headers.get(header::RANGE) {

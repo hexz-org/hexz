@@ -177,10 +177,8 @@ impl StrataBuilder {
             FileBackend::new(&abs_base_path).map_err(|e| PyIOError::new_err(e.to_string()))?,
         );
         let read_compressor = Box::new(Lz4Compressor::new());
-        let base_snap = Arc::new(
-            StrataFile::new(backend, read_compressor, None)
-                .map_err(|e| PyIOError::new_err(e.to_string()))?,
-        );
+        let base_snap = StrataFile::new(backend, read_compressor, None)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
         let base_size = base_snap.size(SnapshotStream::Disk);
 

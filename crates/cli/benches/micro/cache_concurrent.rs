@@ -86,7 +86,7 @@ fn bench_concurrent_read_hit(c: &mut Criterion) {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snap = Arc::new(StrataFile::new(backend, compressor, None).unwrap());
+    let snap = StrataFile::new(backend, compressor, None).unwrap();
 
     // Warm cache: read working set so all subsequent reads hit L1 and page cache.
     for offset in (0..WORKING_SET_BYTES).step_by(READ_SIZE) {
@@ -156,7 +156,7 @@ fn bench_concurrent_read_miss(c: &mut Criterion) {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snap = Arc::new(StrataFile::new(backend, compressor, None).unwrap());
+    let snap = StrataFile::new(backend, compressor, None).unwrap();
 
     let stream_size = snap.size(SnapshotStream::Disk);
     // Stride so each thread hits different blocks and ideally different index pages.

@@ -8,7 +8,7 @@ async def test_async_read(base_snap_path, raw_data_path):
         raw_data = f.read()
 
     async with strata.AsyncReader(base_snap_path) as reader:
-        data = await reader.read_at(0, 10)
+        data = await reader.read(10, offset=0)
         assert bytes(data) == raw_data[:10]
 
         await reader.seek(100)

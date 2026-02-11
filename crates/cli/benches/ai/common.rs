@@ -18,12 +18,12 @@ use tempfile::NamedTempFile;
 /// each of size `sample_size` bytes. The data is deterministic (based
 /// on sample index) for reproducibility across benchmark runs.
 ///
-/// Returns a tuple of (input_file, output_file, StrataFile) where the
+/// Returns a tuple of (input_file, output_file, Arc<StrataFile>) where the
 /// files must be kept alive for the duration of the benchmark.
 pub fn create_dataset(
     num_samples: usize,
     sample_size: usize,
-) -> (NamedTempFile, NamedTempFile, StrataFile) {
+) -> (NamedTempFile, NamedTempFile, Arc<StrataFile>) {
     let input = NamedTempFile::new().unwrap();
     let output = NamedTempFile::new().unwrap();
 
@@ -57,7 +57,7 @@ pub fn create_dataset(
 /// Opens a StrataFile from a path with default settings.
 ///
 /// Uses FileBackend for local files and Lz4Compressor for decompression.
-pub fn open_snapshot(path: &Path) -> StrataFile {
+pub fn open_snapshot(path: &Path) -> Arc<StrataFile> {
     let backend = Arc::new(FileBackend::new(path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
     StrataFile::new(backend, compressor, None).unwrap()

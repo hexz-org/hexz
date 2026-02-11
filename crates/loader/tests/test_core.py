@@ -24,7 +24,7 @@ def test_read_random_access(base_snap_path, raw_data_path):
         raw_data = f.read()
 
     # Read at offset
-    chunk = reader.read_at(100, 10)
+    chunk = reader.read(10, offset=100)
     assert bytes(chunk) == raw_data[100:110]
 
 
@@ -68,32 +68,28 @@ def test_read_buffer(base_snap_path, raw_data_path):
     assert buf2 == raw_data[100:120]
 
 
-def test_read_at_into(base_snap_path, raw_data_path):
-    """read_at_into(offset, buffer) fills buffer and returns bytes read; matches read_at."""
+def test_read_into_buffer(base_snap_path, raw_data_path):
+    """read(buffer=buf, offset=...) fills buffer and returns bytes read; matches read(size, offset=)."""
     reader = strata.open(base_snap_path)
     with open(raw_data_path, "rb") as f:
         raw_data = f.read()
 
-    # Same as read_at(100, 10)
     buf = bytearray(10)
-    n = reader.read_at_into(100, buf)
+    n = reader.read(buffer=buf, offset=100)
     assert n == 10
     assert bytes(buf) == raw_data[100:110]
 
-    # Larger read
     buf2 = bytearray(4096)
-    n2 = reader.read_at_into(0, buf2)
+    n2 = reader.read(buffer=buf2, offset=0)
     assert n2 == 4096
     assert bytes(buf2) == raw_data[:4096]
 
-    # Offset past end returns 0
     buf3 = bytearray(8)
-    n3 = reader.read_at_into(reader.size + 1000, buf3)
+    n3 = reader.read(buffer=buf3, offset=reader.size + 1000)
     assert n3 == 0
 
-    # Buffer larger than remaining: only available bytes written
     buf4 = bytearray(100)
-    n4 = reader.read_at_into(reader.size - 20, buf4)
+    n4 = reader.read(buffer=buf4, offset=reader.size - 20)
     assert n4 == 20
     assert bytes(buf4[:20]) == raw_data[-20:]
 

@@ -73,6 +73,6 @@ You should see the snapshot built, **original vs .st file size** (so you can see
 |------------|----------------|-------------|
 | Install    | `make develop` | `make rust` |
 | Create .st | `strata.open(path, mode="w")` + `writer.add(...)` or `strata.build(dir, out)` | `strata data pack --disk <file> --output out.st` |
-| Read       | `strata.open(path)` then `reader.read(n)` or `reader.iter_chunks()` | (use Python or `strata vm mount` for access) |
+| Read       | `strata.open(path)` then `reader.read(n)`, `reader.read(n, offset=...)`, or `reader.iter_chunks()` | (use Python or `strata vm mount` for access) |
 
 That’s it. You’ve created a snapshot and read from it.

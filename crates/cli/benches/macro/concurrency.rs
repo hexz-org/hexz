@@ -70,7 +70,7 @@ fn bench_concurrent_reads(c: &mut Criterion) {
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
 
-    let snap = Arc::new(StrataFile::new(backend, compressor, None).unwrap());
+    let snap = StrataFile::new(backend, compressor, None).unwrap();
 
     let mut group = c.benchmark_group("concurrency_large");
 

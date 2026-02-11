@@ -47,8 +47,11 @@ def main():
         # 3. Open and read — your first result
         print("Reading back...")
         with strata.open(snap_path) as reader:
-            chunk = reader.read(64)
+            chunk = reader.read(64)  # from start (cursor at 0)
+            # Random access: reader.read(size, offset=...) does not move the cursor
+            same = reader.read(64, offset=0)
         print(f"  First 64 bytes: {chunk!r}")
+        assert chunk == same
 
         # 4. Optional: inspect metadata
         meta = strata.inspect(snap_path)

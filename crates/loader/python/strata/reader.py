@@ -23,8 +23,7 @@ class Reader:
         ...     # Zero-copy into buffer
         ...     buf = bytearray(4096)
         ...     n = reader.read(buffer=buf)
-        ...     # Or random access
-        ...     chunk = reader.read_at(offset=1000, size=100)
+        ...     chunk = reader.read(100, offset=1000)  # random access
         ...     # Or slice notation
         ...     chunk = reader[1000:1100]
     """
@@ -62,61 +61,50 @@ class Reader:
         self,
         size: int = -1,
         *,
+        offset: Optional[int] = None,
         buffer: Optional[Union[bytearray, memoryview]] = None,
     ) -> Union[bytes, int]:
-        """Read from current position and advance cursor.
+        """Read bytes or fill a buffer. Single method for stream and random access.
 
-        With no buffer, returns bytes (may allocate). With a buffer, fills it
-        (zero-copy) and returns the number of bytes read.
+        From current position (default) or at a specific offset. With a buffer,
+        fills it and returns the number of bytes read.
 
         Args:
             size: Number of bytes to read (-1 for all remaining). Ignored when
                 buffer is provided (then up to len(buffer) bytes are read).
-            buffer: If provided, a writable buffer (e.g. bytearray) to fill.
-                Uses the zero-copy backend; returns number of bytes read (int).
+            offset: If given, read from this byte offset without moving the cursor.
+                If None (default), read from current position and advance the cursor.
+            buffer: If provided, fill this writable buffer and return bytes read (int).
+                Use when reusing one buffer in a loop; combine with offset= for random access.
 
         Returns:
-            If buffer is None: bytes read. If buffer is provided: int (bytes read).
+            If buffer is None: bytes. If buffer is provided: int (bytes read).
 
         Example:
             >>> data = reader.read(4096)
-            >>> n = reader.read(buffer=bytearray(4096))
+            >>> chunk = reader.read(100, offset=1000)
+            >>> n = reader.read(buffer=buf)
+            >>> n = reader.read(buffer=buf, offset=0)
         """
         if buffer is not None:
-            return self._reader.readinto(buffer)
-        return self._reader.read(size)
+            return self._read_into(buffer, offset=offset)
+        rust_size = None if size == -1 else size
+        return self._reader.read(rust_size, offset)
 
-    def read_at(self, offset: int, size: int) -> bytes:
-        """Read bytes at a specific offset without moving cursor.
+    def _read_into(
+        self,
+        buffer: Union[bytearray, memoryview],
+        *,
+        offset: Optional[int] = None,
+    ) -> int:
+        """Read into a writable buffer (private). Used by read() when buffer= is given."""
+        if offset is not None:
+            return self._reader.read_at_into(offset, buffer)
+        return self._reader.readinto(buffer)
 
-        Args:
-            offset: Byte offset to read from
-            size: Number of bytes to read
-
-        Returns:
-            Bytes read from the snapshot
-        """
-        return self._reader.read_at(offset, size)
-
-    def read_at_into(self, offset: int, buffer: bytearray) -> int:
-        """Read at offset into a writable buffer (e.g. bytearray). Returns bytes read.
-
-        The buffer is overwritten; it need not be zeroed. Uses the uninit read path
-        for performance when reusing large buffers.
-
-        Args:
-            offset: Byte offset to read from
-            buffer: Writable buffer (e.g. bytearray) to fill
-
-        Returns:
-            Number of bytes read (0 if offset >= size or buffer empty).
-
-        Raises:
-            OSError: On I/O or format error. On failure, the buffer contents are
-                undefined (possibly partially written) and must not be read; treat
-                it as garbage.
-        """
-        return self._reader.read_at_into(offset, buffer)
+    def readinto(self, buffer: Union[bytearray, memoryview]) -> int:
+        """Read from current position into buffer. File-like API; returns bytes read."""
+        return self.read(buffer=buffer)
 
     def read_range(self, start: int, end: int) -> bytes:
         """Read byte range [start, end).
@@ -128,7 +116,7 @@ class Reader:
         Returns:
             Bytes in the specified range
         """
-        return self._reader.read_at(start, end - start)
+        return self.read(end - start, offset=start)
 
     def seek(self, offset: int, whence: int = 0) -> int:
         """Seek to a position in the file.
@@ -161,27 +149,27 @@ class Reader:
         return Metadata(self._reader.metadata())
 
     def iter_chunks(self, chunk_size: int = 1024 * 1024):
-        """Iterate over the snapshot in fixed-size chunks.
+        """Iterate over the snapshot in fixed-size chunks using a single reused buffer.
 
-        Uses a single buffer and read(buffer=...) for zero-copy reads.
+        Uses :meth:`read` with a reused buffer so each chunk does not allocate.
 
         Args:
-            chunk_size: Size of each chunk in bytes (default 1MB)
+            chunk_size: Size of each chunk in bytes (default 1MB).
 
         Yields:
-            Bytes chunks from the snapshot
+            :class:`memoryview` of each chunk. **Valid only until the next iteration**
+            or until the iterator is advanced; use ``bytes(chunk)`` if you need to
+            keep the data (e.g. for ``b"".join(iter_chunks())`` a copy is made).
         """
         buf = bytearray(chunk_size)
         offset = 0
         total = self.size
         while offset < total:
             to_read = min(chunk_size, total - offset)
-            self.seek(offset)
-            # Slice of memoryview so read(buffer=...) writes into buf (bytearray[:] is a copy)
-            n = self.read(buffer=memoryview(buf)[:to_read])
+            n = self.read(buffer=memoryview(buf)[:to_read], offset=offset)
             if n == 0:
                 break
-            yield bytes(buf[:n])
+            yield memoryview(buf)[:n]
             offset += n
 
     def close(self) -> None:
@@ -211,7 +199,7 @@ class Reader:
         if isinstance(key, slice):
             start = key.start or 0
             stop = key.stop or self.size
-            return self.read_at(start, stop - start)
+            return self.read(stop - start, offset=start)
         raise TypeError("indices must be slices")
 
     def __getstate__(self) -> Dict[str, Any]:
@@ -236,7 +224,7 @@ class AsyncReader:
     Example:
         >>> async with strata.AsyncReader("dataset.st") as reader:
         ...     data = await reader.read(4096)
-        ...     chunk = await reader.read_at(0, 100)
+        ...     chunk = await reader.read(100, offset=0)
     """
 
     def __init__(
@@ -286,30 +274,21 @@ class AsyncReader:
         self._ensure_open()
         return self._reader.size()
 
-    async def read(self, size: Optional[int] = None) -> bytes:
-        """Read bytes from current position.
+    async def read(
+        self, size: Optional[int] = None, *, offset: Optional[int] = None
+    ) -> bytes:
+        """Read bytes. From current position (default) or at a specific offset.
 
         Args:
-            size: Number of bytes to read (None for all remaining)
+            size: Number of bytes to read (None for all remaining).
+            offset: If given, read from this byte offset without moving the cursor.
+                If None (default), read from current position and advance the cursor.
 
         Returns:
             Bytes read from the snapshot
         """
         self._ensure_open()
-        return await self._reader.read(size)
-
-    async def read_at(self, offset: int, length: int) -> bytes:
-        """Read bytes at a specific offset.
-
-        Args:
-            offset: Byte offset to read from
-            length: Number of bytes to read
-
-        Returns:
-            Bytes read from the snapshot
-        """
-        self._ensure_open()
-        return await self._reader.read_at(offset, length)
+        return await self._reader.read(size, offset)
 
     async def seek(self, offset: int, whence: int = 0) -> int:
         """Seek to a position. Returns new position."""

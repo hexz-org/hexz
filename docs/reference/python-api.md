@@ -20,7 +20,7 @@ Then open `docs/_build/html/index.html` in a browser.
 | API | Description |
 |-----|-------------|
 | **strata.open** | Open a snapshot for reading or writing (returns `Reader` or `Writer`) |
-| **Reader** | File-like reader with `read()`, `read_at()`, `iter_chunks()`, slice notation |
+| **Reader** | File-like reader with `read(size=-1, *, offset=None, buffer=None)`, `readinto()`, `iter_chunks()`, slice notation |
 | **AsyncReader** | Async context manager for reading snapshots |
 | **Writer** | Build snapshots with `add()`, `add_file()`, `add_bytes()`, `add_array()` |
 | **strata.build** | Build a snapshot from a path using a profile (`ml`, `generic`, `archival`, etc.) |

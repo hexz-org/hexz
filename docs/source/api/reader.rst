@@ -19,8 +19,8 @@ Example: sequential and random access
    with strata.Reader("dataset.st") as reader:
        # Sequential read
        chunk = reader.read(4096)
-       # Random access
-       block = reader.read_at(offset=10000, size=1024)
+       # Random access (same read() with offset=)
+       block = reader.read(1024, offset=10000)
        # Slice notation
        block = reader[10000:11024]
        # Iterate in 1MB chunks (zero-copy)

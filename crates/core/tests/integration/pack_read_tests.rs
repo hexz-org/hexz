@@ -1023,7 +1023,7 @@ fn test_read_at_into_uninit_edge_cases() {
     let snapshot = StrataFile::new(backend, compressor, None).unwrap();
 
     // Empty buffer: must not crash
-    let mut uninit_empty = [MaybeUninit::uninit(); 0];
+    let mut uninit_empty: [std::mem::MaybeUninit<u8>; 0] = [];
     snapshot
         .read_at_into_uninit(SnapshotStream::Disk, 0, &mut uninit_empty)
         .unwrap();
@@ -1080,4 +1080,53 @@ fn test_read_at_into_uninit_bytes_matches_read_at() {
         .read_at_into_uninit_bytes(SnapshotStream::Disk, 100, &mut buf)
         .unwrap();
     assert_eq!(&buf[..expected.len()], expected.as_slice());
+}
+
+// --- parallel read path tests -------------------------------------------------
+
+/// read_at and read_at_into_uninit_bytes return consistent data for multi-block reads.
+#[test]
+fn test_parallel_read_consistency() {
+    let temp_dir = TempDir::new().unwrap();
+    let disk_path = create_test_file(&temp_dir, "disk.img", 512 * 1024, 0x42);
+    let output_path = temp_dir.path().join("snapshot.st");
+
+    let config = PackConfig {
+        disk: Some(disk_path),
+        memory: None,
+        output: output_path.clone(),
+        compression: "lz4".to_string(),
+        encrypt: false,
+        password: None,
+        train_dict: false,
+        block_size: 65536,
+        cdc_enabled: false,
+        ..Default::default()
+    };
+    pack_snapshot(config, None::<fn(u64, u64)>).expect("Packing failed");
+
+    let backend = Arc::new(FileBackend::new(&output_path).unwrap());
+    let compressor = Box::new(Lz4Compressor::new());
+    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+
+    // Multi-block read: offset and length chosen to span several 64K blocks
+    let cases = [
+        (0u64, 128 * 1024),
+        (64 * 1024, 128 * 1024),
+        (100, 256 * 1024),
+    ];
+    for (offset, len) in cases {
+        let expected = snapshot.read_at(SnapshotStream::Disk, offset, len).unwrap();
+        let mut buf = vec![0u8; len];
+        snapshot
+            .read_at_into_uninit_bytes(SnapshotStream::Disk, offset, &mut buf)
+            .unwrap();
+        assert_eq!(
+            &buf[..expected.len()],
+            expected.as_slice(),
+            "offset={} len={}",
+            offset,
+            len
+        );
+    }
 }

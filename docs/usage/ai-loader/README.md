@@ -36,10 +36,10 @@ import strata
 import numpy as np
 
 # Open a snapshot (local, S3, or HTTP)
-reader = strata.StrataReader("dataset.st")
+reader = strata.open("dataset.st")
 
-# Read raw bytes at offset
-data = reader.read_at(offset=1024, length=4096)
+# Read raw bytes at offset (single read() API with optional offset=)
+data = reader.read(4096, offset=1024)
 
 # Zero-copy read into NumPy array
 buffer = np.zeros(4096, dtype=np.uint8)
@@ -54,13 +54,13 @@ chunk = reader.read(8192)
 
 ```python
 # Stream directly from S3 (no local download)
-reader = strata.StrataReader(
+reader = strata.open(
     "s3://my-bucket/datasets/imagenet-train.st",
     s3_region="us-west-2"
 )
 
 # Or from HTTP/HTTPS
-reader = strata.StrataReader(
+reader = strata.open(
     "https://datasets.example.com/coco-2017.st"
 )
 ```
@@ -83,17 +83,17 @@ class StrataImageDataset(Dataset):
     Format: Each image is stored as [4-byte length][JPEG bytes]
     """
     def __init__(self, snapshot_path, transform=None):
-        self.reader = strata.StrataReader(snapshot_path)
+        self.reader = strata.open(snapshot_path)
         self.transform = transform
 
         # Read index: [offset, length] pairs for each image
         # Stored in first 8*N bytes
-        num_images_bytes = self.reader.read_at(0, 8)
+        num_images_bytes = self.reader.read(8, offset=0)
         self.num_images = int.from_bytes(num_images_bytes, 'little')
 
         # Read all offsets at once (efficient for large datasets)
         index_size = self.num_images * 16  # 8 bytes offset + 8 bytes length
-        index_bytes = self.reader.read_at(8, index_size)
+        index_bytes = self.reader.read(index_size, offset=8)
         self.index = np.frombuffer(index_bytes, dtype=np.uint64).reshape(-1, 2)
 
     def __len__(self):
@@ -103,7 +103,7 @@ class StrataImageDataset(Dataset):
         offset, length = self.index[idx]
 
         # Read JPEG bytes for this image
-        jpeg_bytes = self.reader.read_at(offset, length)
+        jpeg_bytes = self.reader.read(length, offset=offset)
 
         # Decode image
         image = Image.open(io.BytesIO(jpeg_bytes))
@@ -134,7 +134,7 @@ for batch in loader:
 # 1. Prefetch metadata during initialization
 class OptimizedStrataDataset(Dataset):
     def __init__(self, snapshot_path, cache_index=True):
-        self.reader = strata.StrataReader(snapshot_path)
+        self.reader = strata.open(snapshot_path)
 
         if cache_index:
             # Load entire index into memory (cheap for most datasets)
@@ -145,7 +145,7 @@ class OptimizedStrataDataset(Dataset):
         pass
 
 # 2. Use memory mapping for local files
-reader = strata.StrataReader(
+reader = strata.open(
     "/nvme/dataset.st",
     # Memory mapping happens automatically for local files
 )
@@ -156,26 +156,22 @@ lengths = [self.index[i][1] for i in range(batch_start, batch_end)]
 
 # Read all images in batch with one call (reduces overhead)
 batch_data = [
-    self.reader.read_at(off, ln)
+    self.reader.read(ln, offset=off)
     for off, ln in zip(offsets, lengths)
 ]
 ```
 
 ## API Reference
 
-### `StrataReader`
+### `Reader` (use `strata.open(path)`)
 
-**Purpose**: Synchronous file-like interface for reading Strata snapshots with support for random access and zero-copy operations.
+**Purpose**: Synchronous file-like interface for reading Strata snapshots with support for random access and zero-copy operations. Use **`strata.open(path)`** to get a Reader.
 
 #### Constructor
 
 ```python
-StrataReader(
-    path: str,
-    s3_region: Optional[str] = None,
-    endpoint_url: Optional[str] = None,
-    allow_restricted: bool = False
-)
+# Prefer strata.open() for the high-level Reader
+reader = strata.open(path, s3_region=..., endpoint_url=..., allow_restricted=...)
 ```
 
 **Parameters**:
@@ -190,16 +186,16 @@ StrataReader(
 **Example**:
 ```python
 # Local file
-reader = StrataReader("/data/train.st")
+reader = strata.open("/data/train.st")
 
 # S3 with custom region
-reader = StrataReader(
+reader = strata.open(
     "s3://ml-datasets/imagenet.st",
     s3_region="eu-west-1"
 )
 
 # MinIO/custom S3
-reader = StrataReader(
+reader = strata.open(
     "s3://mybucket/data.st",
     endpoint_url="https://minio.example.com:9000"
 )
@@ -207,18 +203,23 @@ reader = StrataReader(
 
 #### Methods
 
-##### `size() -> int`
+##### `size` (property) -> int
 
 Returns the total uncompressed size of the snapshot in bytes.
 
 ```python
-total_bytes = reader.size()
+total_bytes = reader.size
 print(f"Dataset size: {total_bytes / 1e9:.2f} GB")
 ```
 
-##### `read_at(offset: int, length: int) -> bytes`
+##### `read(size: int = -1, *, offset: Optional[int] = None, buffer: Optional[bytearray | np.ndarray] = None) -> bytes | int`
 
-Reads exactly `length` bytes starting at `offset`. This is the most efficient method for random access as it only decompresses the necessary blocks.
+Single method for all reads. From current position (default) or at a specific offset. With a buffer, fills it and returns the number of bytes read.
+
+**Parameters**:
+- `size`: Bytes to read (-1 for all remaining). Ignored when `buffer` is provided.
+- `offset`: If given, read from this byte offset without moving the cursor.
+- `buffer`: If provided, fill this writable buffer and return bytes read (int).
 
 **Performance characteristics**:
 - Decompresses only the blocks containing the requested range
@@ -226,26 +227,18 @@ Reads exactly `length` bytes starting at `offset`. This is the most efficient me
 - Thread-safe: multiple threads can call this concurrently
 
 ```python
-# Read 1KB starting at 1MB offset
-data = reader.read_at(1024 * 1024, 1024)
-
-# Read image at known offset
-image_bytes = reader.read_at(sample_offset, sample_size)
-```
-
-##### `read(size: Optional[int] = None) -> bytes`
-
-Reads `size` bytes from current cursor position, or all remaining bytes if `size` is None. Advances the cursor.
-
-```python
-# Read next 4KB
+# Sequential: read next 4KB (advances cursor)
 chunk = reader.read(4096)
 
-# Read all remaining data
+# Random access: read at offset (cursor unchanged)
+data = reader.read(1024, offset=1024 * 1024)
+image_bytes = reader.read(sample_size, offset=sample_offset)
+
+# Read all remaining from cursor
 remaining = reader.read()
 ```
 
-##### `read(buffer: bytearray | np.ndarray) -> int`
+##### `read(buffer=...)` (zero-copy)
 
 **Zero-copy read** into a pre-allocated writable buffer. This is the most efficient method for repeated reads of the same size.
 
@@ -297,33 +290,31 @@ Returns current cursor position.
 ##### Context Manager Support
 
 ```python
-with StrataReader("data.st") as reader:
-    data = reader.read_at(0, 1024)
+with strata.open("data.st") as reader:
+    data = reader.read(1024, offset=0)
 # Automatically closes reader
 ```
 
-### `AsyncStrataReader`
+### `AsyncReader`
 
-**Purpose**: Asynchronous interface for asyncio-based applications. Useful for concurrent data loading in async frameworks.
+**Purpose**: Asynchronous interface for asyncio-based applications. Useful for concurrent data loading in async frameworks. Use **`strata.AsyncReader`** with async context manager.
 
 #### Constructor
 
 ```python
-# Must use async factory method
-reader = await AsyncStrataReader.create(
-    path="s3://bucket/data.st",
-    s3_region="us-east-1"
-)
+# Use async context manager
+async with strata.AsyncReader("s3://bucket/data.st") as reader:
+    ...
 ```
 
 #### Methods
 
-All methods are async versions of `StrataReader`:
+All methods are async versions of `Reader`; same single `read(size, offset=...)` API:
 
 ```python
-async with await AsyncStrataReader.create("data.st") as reader:
+async with strata.AsyncReader("data.st") as reader:
     size = reader.size()  # Synchronous
-    data = await reader.read_at(0, 1024)  # Async
+    data = await reader.read(1024, offset=0)  # Async
     await reader.seek(1000)
 ```
 
@@ -333,12 +324,12 @@ async with await AsyncStrataReader.create("data.st") as reader:
 import asyncio
 
 async def load_batch(reader, offsets):
-    tasks = [reader.read_at(off, size) for off in offsets]
+    tasks = [reader.read(size, offset=off) for off in offsets]
     return await asyncio.gather(*tasks)
 
 async def main():
-    reader = await AsyncStrataReader.create("data.st")
-    batches = await load_batch(reader, [0, 1000, 2000, 3000])
+    async with strata.AsyncReader("data.st") as reader:
+        batches = await load_batch(reader, [0, 1000, 2000, 3000])
 ```
 
 ### `pack()`
@@ -395,8 +386,8 @@ Strata supports separate disk and memory streams in a single snapshot (useful fo
 
 ```python
 # Access disk stream (default)
-reader = StrataReader("vm-snapshot.st")
-disk_data = reader.read_at(0, 1024)
+reader = strata.open("vm-snapshot.st")
+disk_data = reader.read(1024, offset=0)
 
 # Access memory stream (requires special API - future enhancement)
 # memory_data = reader.read_memory_at(0, 1024)
@@ -405,17 +396,17 @@ disk_data = reader.read_at(0, 1024)
 ### Error Handling
 
 ```python
-from strata import StrataReader
+import strata
 import logging
 
 try:
-    reader = StrataReader("s3://bucket/missing.st")
+    reader = strata.open("s3://bucket/missing.st")
 except IOError as e:
     logging.error(f"Failed to open snapshot: {e}")
     # Handle: file not found, network error, auth failure
 
 try:
-    data = reader.read_at(0, 999999999999)
+    data = reader.read(999999999999, offset=0)
 except IOError as e:
     logging.error(f"Read failed: {e}")
     # Handle: offset out of bounds, decompression error
@@ -498,8 +489,8 @@ with h5py.File("data.h5", "r") as f:
     data = f["images"][idx]
 
 # After (Strata)
-reader = StrataReader("data.st")
-data = reader.read_at(offset_for_idx, length_for_idx)
+reader = strata.open("data.st")
+data = reader.read(length_for_idx, offset=offset_for_idx)
 ```
 
 **Advantages over HDF5**:
