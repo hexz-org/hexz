@@ -12,7 +12,3 @@ pub mod cmd;
 
 /// User interface utilities (progress bars, spinners).
 pub mod ui;
-
-/// Legacy commands module for backwards compatibility during migration.
-#[deprecated(note = "Use cmd module instead")]
-pub mod commands;

@@ -46,4 +46,4 @@ Each of these has docstrings and at least one code example in the Sphinx API ref
 
 - [Quick start](../quickstart.md) — 5-minute tutorial
 - [CLI usage](../usage/cli/README.md) — Packing and VM commands
-- [AI loader usage](../usage/ai_loader.md) — ML streaming
+- [AI loader usage](../usage/ai-loader/README.md) — ML streaming
