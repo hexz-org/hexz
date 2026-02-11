@@ -1,10 +1,76 @@
-//! Centralized progress bar utilities.
+//! Centralized progress bar and spinner utilities.
 //!
-//! Provides consistent progress bar creation and styling across all CLI commands.
+//! This module provides consistent progress bar creation and styling across all
+//! CLI commands, ensuring uniform user feedback during long-running operations.
+//!
+//! # Progress Bar Styling
+//!
+//! All progress bars use a standardized format:
+//! ```text
+//! [00:01:23] =========>------------------------------ 234MB/1GB (00:02:15)
+//!  ^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^     ^^^^^^^^^^^  ^^^^^^^^
+//!  elapsed   visual bar (40 chars)                    bytes        ETA
+//! ```
+//!
+//! # Spinner Styling
+//!
+//! Spinners are used for indeterminate operations (e.g., waiting for network):
+//! ```text
+//! ⠋ Connecting to remote storage...
+//! ```
+//!
+//! # Usage
+//!
+//! ```no_run
+//! use strata_cli::ui::progress::{create_progress_bar, create_spinner};
+//!
+//! // Determinate operation
+//! let pb = create_progress_bar(1024 * 1024 * 100); // 100 MB
+//! for _ in 0..100 {
+//!     pb.inc(1024 * 1024); // 1 MB per iteration
+//! }
+//! pb.finish_with_message("Complete");
+//!
+//! // Indeterminate operation
+//! let sp = create_spinner("Processing...");
+//! std::thread::sleep(std::time::Duration::from_millis(100));
+//! sp.finish_with_message("Done");
+//! ```
 
 use indicatif::{ProgressBar, ProgressStyle};
 
-/// Create a standard progress bar with the given total size.
+/// Creates a standardized progress bar for determinate operations.
+///
+/// # Arguments
+///
+/// * `total` - Total number of bytes or units to process
+///
+/// # Returns
+///
+/// A configured [`ProgressBar`] with:
+/// - 40-character visual bar
+/// - Elapsed time display
+/// - Bytes progress (current/total)
+/// - Estimated time to completion (ETA)
+///
+/// # Display Format
+///
+/// ```text
+/// [00:01:23] =========>------------------------------ 234MB/1GB (00:02:15)
+/// ```
+///
+/// # Example
+///
+/// ```no_run
+/// # use strata_cli::ui::progress::create_progress_bar;
+/// let file_size = 1024 * 1024 * 100; // 100 MB
+/// let pb = create_progress_bar(file_size);
+///
+/// for _ in 0..100 {
+///     pb.inc(1024 * 1024);
+/// }
+/// pb.finish_with_message("Download complete");
+/// ```
 pub fn create_progress_bar(total: u64) -> ProgressBar {
     let pb = ProgressBar::new(total);
     pb.set_style(
@@ -16,7 +82,45 @@ pub fn create_progress_bar(total: u64) -> ProgressBar {
     pb
 }
 
-/// Create a spinner for indeterminate operations.
+/// Creates a spinner for indeterminate operations.
+///
+/// Spinners are used when the total duration or progress cannot be determined,
+/// such as waiting for network responses or performing iterative searches.
+///
+/// # Arguments
+///
+/// * `message` - Initial status message to display next to the spinner
+///
+/// # Returns
+///
+/// A configured [`ProgressBar`] in spinner mode with a green spinner animation.
+///
+/// # Display Format
+///
+/// ```text
+/// ⠋ Connecting to remote storage...
+/// ⠙ Connecting to remote storage...
+/// ⠹ Connecting to remote storage...
+/// ```
+///
+/// # Example
+///
+/// ```no_run
+/// # use strata_cli::ui::progress::create_spinner;
+/// let sp = create_spinner("Initializing...");
+///
+/// std::thread::sleep(std::time::Duration::from_millis(100));
+/// sp.set_message("Connecting...");
+///
+/// std::thread::sleep(std::time::Duration::from_millis(100));
+/// sp.finish_with_message("Ready");
+/// ```
+///
+/// # Notes
+///
+/// - The spinner auto-ticks to create the animation effect
+/// - Update the message with [`set_message`](ProgressBar::set_message)
+/// - Call [`finish`](ProgressBar::finish) or [`finish_with_message`](ProgressBar::finish_with_message) when done
 pub fn create_spinner(message: &str) -> ProgressBar {
     let pb = ProgressBar::new_spinner();
     pb.set_style(

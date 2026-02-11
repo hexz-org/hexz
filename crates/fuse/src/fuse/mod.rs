@@ -1,7 +1,51 @@
 //! FUSE filesystem implementation for Strata snapshots.
 //!
-//! Implements the `Filesystem` trait from the `fuser` crate, bridging
-//! StrataFile and optional overlay to a minimal FUSE mount point.
+//! This module implements the [`fuser::Filesystem`] trait, translating POSIX
+//! filesystem operations into reads/writes on Strata snapshots and overlays.
+//!
+//! # Architecture
+//!
+//! The FUSE layer consists of three handler modules:
+//!
+//! - [`lookup`]: Inode lookup, directory listing, attribute queries
+//! - [`read`]: Read operations on disk/memory files
+//! - [`write`]: Write operations (redirected to overlay)
+//!
+//! # Inode Structure
+//!
+//! The filesystem uses a fixed inode layout:
+//!
+//! | Inode | Type      | Name     | Description                |
+//! |-------|-----------|----------|----------------------------|
+//! | 1     | Directory | `.`      | Root directory             |
+//! | 2     | File      | `disk`   | Disk stream (main data)    |
+//! | 3     | File      | `memory` | Memory stream (if present) |
+//!
+//! # Operation Routing
+//!
+//! ```text
+//! User Operation (read /mnt/snapshot/disk)
+//!         │
+//!         ↓
+//! Kernel FUSE Driver
+//!         │
+//!         ↓
+//! fuser::Filesystem::read()
+//!         │
+//!         ↓
+//! read::handle_read()
+//!         │
+//!    ┌────┴────┐
+//!    ↓         ↓
+//! Overlay  StrataFile
+//! (if set) (base snapshot)
+//! ```
+//!
+//! # Thread Safety
+//!
+//! The [`Strata`] filesystem struct is `!Send` due to FUSE constraints but
+//! uses `Arc<StrataFile>` internally, allowing the snapshot to be shared
+//! across threads outside the FUSE context.
 
 mod lookup;
 mod read;

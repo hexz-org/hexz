@@ -1,8 +1,40 @@
 //! Unmounting of FUSE-mounted Strata filesystems.
 //!
-//! Invokes the platform unmount tool (`fusermount -u` on Linux, `umount`
-//! elsewhere) to detach a mount point previously created by the mount
-//! subcommand. Does not modify the snapshot or overlay files.
+//! This command safely detaches Strata snapshots that were mounted as filesystems
+//! using the `mount` command. It uses platform-specific unmount tools and handles
+//! error cases gracefully.
+//!
+//! # Unmount Strategy
+//!
+//! The command tries unmount methods in order:
+//!
+//! 1. **Linux**: `fusermount -u` (preferred for FUSE mounts)
+//! 2. **Fallback**: `umount` (generic unmount tool)
+//!
+//! # Usage
+//!
+//! ```bash
+//! # Unmount a previously mounted snapshot
+//! strata vm unmount /mnt/snapshot
+//! ```
+//!
+//! # Error Handling
+//!
+//! The command handles several cases gracefully:
+//! - **Not mounted**: Returns success (already unmounted)
+//! - **Busy**: Reports error if mountpoint is in use
+//! - **Permission denied**: Reports error if insufficient privileges
+//!
+//! # Safety
+//!
+//! - Does not modify the snapshot or overlay files
+//! - Safe to run even if already unmounted
+//! - Does not affect other mounts
+//!
+//! # Overlay Persistence
+//!
+//! If the mount was created with an overlay (`--overlay`), the overlay file
+//! remains intact after unmounting and can be used for future mounts or commits.
 
 use anyhow::{Context, Result};
 use std::path::PathBuf;

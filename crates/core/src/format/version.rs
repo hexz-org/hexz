@@ -1,31 +1,362 @@
+//! Format version management and compatibility checking.
+//!
+//! This module defines the versioning strategy for Strata snapshot files (`.st`),
+//! enabling safe evolution of the on-disk format while maintaining backward and
+//! forward compatibility guarantees. Version negotiation ensures that readers can
+//! detect incompatible snapshots and provide actionable error messages.
+//!
+//! # Versioning Strategy
+//!
+//! Strata uses a monotonic integer versioning scheme where each version number
+//! represents a distinct on-disk format:
+//!
+//! - **Version 1**: Initial format with two-level index, LZ4/Zstd compression,
+//!   optional encryption, thin provisioning support
+//! - **Future versions**: Reserved for incompatible format changes (e.g., new
+//!   index structures, alternative serialization formats, block metadata extensions)
+//!
+//! ## Semantic Versioning Alignment
+//!
+//! Format versions are independent of Strata software versions (semver). A software
+//! release may support multiple format versions for backward compatibility. The
+//! mapping is defined as:
+//!
+//! | Format Version | Strata Software Versions | Key Changes |
+//! |----------------|--------------------------|-------------|
+//! | 1              | 0.1.0+                   | Initial release |
+//!
+//! # Compatibility Model
+//!
+//! ## Backward Compatibility (Reading Old Snapshots)
+//!
+//! Strata readers maintain compatibility with snapshots created by older software:
+//!
+//! - **MIN_SUPPORTED_VERSION**: Oldest format version we can read (currently 1)
+//! - **Upgrade Path**: Snapshots older than MIN_SUPPORTED_VERSION must be migrated
+//!   using the `strata-migrate` tool (see Migration section below)
+//!
+//! ## Forward Compatibility (Reading New Snapshots)
+//!
+//! Strata readers handle snapshots created by newer software:
+//!
+//! - **MAX_SUPPORTED_VERSION**: Newest format version we can read (currently 1)
+//! - **Degraded Mode**: Future versions may enable partial reads with warnings if
+//!   minor features are unrecognized (not yet implemented)
+//! - **Strict Rejection**: Snapshots with `version > MAX_SUPPORTED_VERSION` are
+//!   rejected with an actionable error message
+//!
+//! # Version Negotiation Workflow
+//!
+//! When opening a snapshot file:
+//!
+//! ```text
+//! 1. Read header magic bytes (validate "STRT" signature)
+//! 2. Read header.version field
+//! 3. Call check_version(header.version)
+//! 4. If VersionCompatibility::Incompatible:
+//!       - Generate human-readable error via compatibility_message()
+//!       - Suggest upgrade/migration path
+//!       - Abort operation
+//! 5. If VersionCompatibility::Full:
+//!       - Proceed with normal operations
+//! 6. If VersionCompatibility::Degraded (future):
+//!       - Log warning about unsupported features
+//!       - Proceed with limited functionality
+//! ```
+//!
+//! # Adding New Format Versions
+//!
+//! To introduce a breaking format change:
+//!
+//! ## Step 1: Increment Version Constant
+//!
+//! ```rust,ignore
+//! pub const CURRENT_VERSION: u32 = 2;  // Changed from 1
+//! pub const MAX_SUPPORTED_VERSION: u32 = 2;
+//! ```
+//!
+//! ## Step 2: Update Serialization Logic
+//!
+//! Modify [`crate::format::header::StrataHeader`] or [`crate::format::index::MasterIndex`]
+//! to include new fields or change existing structures. Use serde attributes to
+//! maintain compatibility:
+//!
+//! ```rust,ignore
+//! #[derive(Serialize, Deserialize)]
+//! pub struct StrataHeader {
+//!     // Existing fields...
+//!     #[serde(skip_serializing_if = "Option::is_none")]
+//!     pub new_feature: Option<NewFeatureData>,  // Version 2+ only
+//! }
+//! ```
+//!
+//! ## Step 3: Conditional Deserialization
+//!
+//! Add version-aware deserialization in reader code:
+//!
+//! ```rust,ignore
+//! match header.version {
+//!     1 => {
+//!         // Legacy path for version 1
+//!         read_index_v1(reader)?
+//!     }
+//!     2 => {
+//!         // New path for version 2
+//!         read_index_v2(reader)?
+//!     }
+//!     _ => unreachable!("check_version already validated"),
+//! }
+//! ```
+//!
+//! ## Step 4: Update Tests
+//!
+//! Add test fixtures for the new format version:
+//!
+//! ```rust,ignore
+//! #[test]
+//! fn test_read_v2_snapshot() {
+//!     let snapshot = load_fixture("testdata/v2_snapshot.st");
+//!     assert_eq!(snapshot.header.version, 2);
+//!     // Verify new features work correctly
+//! }
+//! ```
+//!
+//! ## Step 5: Document Migration Path
+//!
+//! Update the migration guide with conversion instructions (see Migration section).
+//!
+//! # Migration Between Versions
+//!
+//! The `strata-migrate` tool converts snapshots between format versions:
+//!
+//! ```bash
+//! # Upgrade old snapshot to current format
+//! strata-migrate upgrade --input old_v1.st --output new_v2.st
+//!
+//! # Downgrade for compatibility (if supported)
+//! strata-migrate downgrade --input new_v2.st --output legacy_v1.st \
+//!     --target-version 1
+//! ```
+//!
+//! ## Migration Algorithm
+//!
+//! The migration tool performs a streaming rewrite:
+//!
+//! 1. Open source snapshot with reader for version N
+//! 2. Create destination snapshot with writer for version M
+//! 3. Stream all blocks through decompression/re-compression
+//! 4. Rebuild index in target format
+//! 5. Preserve metadata (encryption keys, parent references, etc.)
+//!
+//! ## Lossy Migrations
+//!
+//! Downgrading may lose features unsupported in the target version:
+//!
+//! - Version 2 → 1: Hypothetical new features would be discarded with warnings
+//!
+//! # Performance Considerations
+//!
+//! Version checking is performed once per snapshot open operation:
+//!
+//! - **Overhead**: Negligible (~100ns for integer comparison)
+//! - **Caching**: Version is cached in [`crate::api::stratafile::StrataFile`] struct
+//! - **Hot Path**: Not in block read/write paths
+//!
+//! # Examples
+//!
+//! ## Basic Version Check
+//!
+//! ```
+//! use strata_core::format::version::{check_version, VersionCompatibility};
+//!
+//! let snapshot_version = 1;
+//! let compat = check_version(snapshot_version);
+//!
+//! match compat {
+//!     VersionCompatibility::Full => {
+//!         println!("Snapshot is fully compatible");
+//!     }
+//!     VersionCompatibility::Incompatible => {
+//!         eprintln!("Cannot read snapshot (incompatible version)");
+//!     }
+//!     VersionCompatibility::Degraded => {
+//!         println!("Snapshot readable with warnings");
+//!     }
+//! }
+//! ```
+//!
+//! ## User-Facing Error Messages
+//!
+//! ```
+//! use strata_core::format::version::compatibility_message;
+//!
+//! let version = 999;  // Future version
+//! let message = compatibility_message(version);
+//! println!("{}", message);
+//! // Output: "Version 999 is too new (max supported: 1). Please upgrade Strata."
+//! ```
+//!
+//! ## Reader Implementation
+//!
+//! ```rust,ignore
+//! use strata_core::format::version::check_version;
+//! use strata_core::error::StrataError;
+//!
+//! fn open_snapshot(path: &Path) -> Result<Snapshot, StrataError> {
+//!     let header = read_header(path)?;
+//!
+//!     if !check_version(header.version).is_compatible() {
+//!         return Err(StrataError::IncompatibleVersion {
+//!             found: header.version,
+//!             min_supported: MIN_SUPPORTED_VERSION,
+//!             max_supported: MAX_SUPPORTED_VERSION,
+//!         });
+//!     }
+//!
+//!     // Proceed with version-aware deserialization
+//!     Ok(Snapshot { header, /* ... */ })
+//! }
+//! ```
+
 use std::fmt;
 
-/// Current format version of Strata snapshots.
+/// Current format version written by this build of Strata.
 ///
-/// Incremented whenever the on-disk format changes in a way that affects readers.
+/// This constant defines the format version number written to the `version` field
+/// of new snapshot headers. It is incremented when the on-disk format changes in
+/// a way that requires readers to adapt their parsing logic.
+///
+/// # Incrementing Policy
+///
+/// Increment `CURRENT_VERSION` when:
+/// - Header fields are added/removed/reordered
+/// - Index structure changes (e.g., new page entry fields)
+/// - Serialization format changes (e.g., switch from bincode to another codec)
+/// - Block metadata semantics change
+///
+/// Do NOT increment for:
+/// - New compression algorithms (use header.compression field)
+/// - New encryption modes (use header.encryption field)
+/// - Performance optimizations that don't affect format
+///
+/// # Current Version
+///
+/// **Version 1** (initial release):
+/// - Two-level index (master index + pages)
+/// - bincode serialization
+/// - LZ4/Zstd compression support
+/// - Optional AES-256-GCM encryption
+/// - Thin provisioning via parent snapshots
+/// - Dual streams (disk + memory)
 pub const CURRENT_VERSION: u32 = 1;
 
-/// Minimum supported version (oldest version we can read).
+/// Minimum format version readable by this build.
+///
+/// Snapshots with `version < MIN_SUPPORTED_VERSION` are rejected with an
+/// [`VersionCompatibility::Incompatible`] error. Users must migrate such
+/// snapshots using `strata-migrate upgrade` before reading.
+///
+/// # Rationale
+///
+/// Maintaining backward compatibility indefinitely is untenable as format
+/// complexity grows. This constant defines the "support horizon" for old
+/// snapshots. When incrementing, ensure migration tooling exists.
+///
+/// # Current Policy
+///
+/// - **Strata 0.1.x - 0.9.x**: Support version 1 only
+/// - **Strata 1.0+**: May drop support for version 1 (TBD based on adoption)
 pub const MIN_SUPPORTED_VERSION: u32 = 1;
 
-/// Maximum supported version (newest version we can read).
+/// Maximum format version readable by this build.
+///
+/// Snapshots with `version > MAX_SUPPORTED_VERSION` are rejected unless
+/// degraded mode is enabled (not yet implemented). This prevents crashes
+/// when reading snapshots created by future Strata versions.
+///
+/// # Forward Compatibility
+///
+/// Currently, Strata uses strict versioning: any version mismatch results
+/// in incompatibility. Future releases may implement graceful degradation
+/// for minor version increments (e.g., ignore unknown header fields).
+///
+/// # Upgrade Path
+///
+/// If you encounter a snapshot with `version > MAX_SUPPORTED_VERSION`,
+/// upgrade Strata to a newer release that supports that version.
 pub const MAX_SUPPORTED_VERSION: u32 = 1;
 
-/// Compatibility status of a snapshot version.
+/// Result of snapshot version compatibility analysis.
+///
+/// Returned by [`check_version`] to indicate whether a snapshot with a given
+/// format version can be read by this build of Strata. This enum enables
+/// graceful handling of version mismatches with appropriate error messages.
+///
+/// # Variants
+///
+/// - **Full**: Version is within [`MIN_SUPPORTED_VERSION`]..=[`MAX_SUPPORTED_VERSION`]
+///   and all features are supported. Proceed with normal operations.
+///
+/// - **Degraded**: Version is newer than [`MAX_SUPPORTED_VERSION`] but forward
+///   compatibility rules allow partial reads with warnings. Unsupported features
+///   are ignored or substituted with defaults. (Not yet implemented; currently
+///   treated as Incompatible.)
+///
+/// - **Incompatible**: Version is outside the supported range and cannot be read.
+///   The user must upgrade Strata (for newer snapshots) or migrate the snapshot
+///   (for older snapshots).
+///
+/// # Examples
+///
+/// ```
+/// use strata_core::format::version::{check_version, VersionCompatibility};
+///
+/// let result = check_version(1);
+/// assert_eq!(result, VersionCompatibility::Full);
+///
+/// let result = check_version(999);
+/// assert_eq!(result, VersionCompatibility::Incompatible);
+/// assert!(!result.is_compatible());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VersionCompatibility {
-    /// Fully supported version.
+    /// Fully supported version with all features available.
     Full,
-    /// Newer version than we support, but we might be able to read it (with warnings).
-    /// This happens if the major version is the same but minor is higher, or if we define
-    /// forward compatibility rules. For now, strict versioning.
+    /// Newer version with partial support (warnings emitted, some features unavailable).
+    ///
+    /// This variant is reserved for future forward compatibility modes. Currently,
+    /// all versions outside the supported range are marked as Incompatible.
     Degraded,
-    /// Incompatible version (too old or too new).
+    /// Incompatible version that cannot be read (too old or too new).
     Incompatible,
 }
 
 impl VersionCompatibility {
-    /// Returns true if the version is compatible (Full or Degraded).
+    /// Tests whether the snapshot can be read with this compatibility status.
+    ///
+    /// Returns `true` for [`Full`](VersionCompatibility::Full) and
+    /// [`Degraded`](VersionCompatibility::Degraded) compatibility, indicating
+    /// that read operations can proceed (possibly with warnings). Returns `false`
+    /// for [`Incompatible`](VersionCompatibility::Incompatible), indicating that
+    /// the snapshot must be rejected.
+    ///
+    /// # Returns
+    ///
+    /// - `true`: Snapshot can be opened (possibly with limited functionality)
+    /// - `false`: Snapshot cannot be opened (hard error)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use strata_core::format::version::{check_version, VersionCompatibility};
+    ///
+    /// let compat = check_version(1);
+    /// if compat.is_compatible() {
+    ///     println!("Snapshot can be read");
+    /// } else {
+    ///     eprintln!("Snapshot is incompatible");
+    /// }
+    /// ```
     pub fn is_compatible(&self) -> bool {
         match self {
             VersionCompatibility::Full | VersionCompatibility::Degraded => true,
@@ -34,19 +365,192 @@ impl VersionCompatibility {
     }
 }
 
-/// Checks compatibility of a given format version.
+/// Determines compatibility status of a snapshot format version.
+///
+/// This function implements the version negotiation logic by comparing the
+/// provided version number against the supported range defined by
+/// [`MIN_SUPPORTED_VERSION`] and [`MAX_SUPPORTED_VERSION`].
+///
+/// # Parameters
+///
+/// - `version`: The format version number read from a snapshot header
+///
+/// # Returns
+///
+/// A [`VersionCompatibility`] value indicating whether the snapshot can be read:
+///
+/// - [`Full`](VersionCompatibility::Full): Version is within supported range
+/// - [`Incompatible`](VersionCompatibility::Incompatible): Version is too old or too new
+/// - [`Degraded`](VersionCompatibility::Degraded): Currently unused (reserved for future)
+///
+/// # Version Ranges
+///
+/// | Condition | Result | Reason |
+/// |-----------|--------|--------|
+/// | `version < MIN_SUPPORTED_VERSION` | Incompatible | Too old, needs migration |
+/// | `MIN_SUPPORTED_VERSION <= version <= MAX_SUPPORTED_VERSION` | Full | Within supported range |
+/// | `version > MAX_SUPPORTED_VERSION` | Incompatible | Too new, upgrade Strata |
+///
+/// # Future Extensions
+///
+/// In future versions, this function may return `Degraded` for snapshots with
+/// minor version mismatches, enabling partial reads with warnings. For example:
+///
+/// ```rust,ignore
+/// // Hypothetical future behavior with major.minor versioning
+/// if version.major == CURRENT_VERSION.major && version.minor > CURRENT_VERSION.minor {
+///     VersionCompatibility::Degraded  // Newer minor version, try best-effort read
+/// }
+/// ```
+///
+/// # Performance
+///
+/// This function performs two integer comparisons and has negligible overhead
+/// (~100ns). It is called once per snapshot open operation and does not affect
+/// hot path performance.
+///
+/// # Examples
+///
+/// ```
+/// use strata_core::format::version::{
+///     check_version, VersionCompatibility,
+///     MIN_SUPPORTED_VERSION, MAX_SUPPORTED_VERSION
+/// };
+///
+/// // Version within supported range
+/// let compat = check_version(1);
+/// assert_eq!(compat, VersionCompatibility::Full);
+///
+/// // Version too old (hypothetical example if MIN_SUPPORTED_VERSION > 1)
+/// let compat = check_version(0);
+/// assert_eq!(compat, VersionCompatibility::Incompatible);
+///
+/// // Version too new
+/// let compat = check_version(MAX_SUPPORTED_VERSION + 1);
+/// assert_eq!(compat, VersionCompatibility::Incompatible);
+/// ```
+///
+/// ## Error Handling
+///
+/// ```rust,ignore
+/// use strata_core::format::version::check_version;
+///
+/// fn open_snapshot(header: &Header) -> Result<Snapshot, StrataError> {
+///     let compat = check_version(header.version);
+///     if !compat.is_compatible() {
+///         return Err(StrataError::IncompatibleVersion {
+///             found: header.version,
+///             supported_range: (MIN_SUPPORTED_VERSION, MAX_SUPPORTED_VERSION),
+///         });
+///     }
+///     // Proceed with read operations
+///     Ok(Snapshot::new(header))
+/// }
+/// ```
 pub fn check_version(version: u32) -> VersionCompatibility {
     if version < MIN_SUPPORTED_VERSION {
         VersionCompatibility::Incompatible
     } else if version > MAX_SUPPORTED_VERSION {
-        // For now, strict versioning. Future: Check major/minor.
+        // For now, strict versioning. Future: Check major/minor for degraded mode.
         VersionCompatibility::Incompatible
     } else {
         VersionCompatibility::Full
     }
 }
 
-/// Returns a human-readable message describing compatibility.
+/// Generates a user-facing message describing version compatibility status.
+///
+/// This function produces human-readable error messages and recommendations
+/// for handling version mismatches. The messages are designed to be displayed
+/// directly to end users in error logs or CLI output.
+///
+/// # Parameters
+///
+/// - `version`: The format version number from a snapshot header
+///
+/// # Returns
+///
+/// A `String` containing:
+/// - **Full compatibility**: Confirmation message
+/// - **Degraded compatibility**: Warning about potential feature limitations
+/// - **Incompatibility**: Error message with actionable remediation steps
+///
+/// # Message Content
+///
+/// ## Fully Supported Version
+///
+/// ```text
+/// "Version 1 is fully supported."
+/// ```
+///
+/// ## Too Old (version < MIN_SUPPORTED_VERSION)
+///
+/// ```text
+/// "Version 0 is too old (min supported: 1). Please upgrade the snapshot."
+/// ```
+///
+/// Remediation: Use `strata-migrate upgrade` to convert the snapshot.
+///
+/// ## Too New (version > MAX_SUPPORTED_VERSION)
+///
+/// ```text
+/// "Version 2 is too new (max supported: 1). Please upgrade Strata."
+/// ```
+///
+/// Remediation: Install a newer version of the Strata toolchain.
+///
+/// ## Degraded Compatibility (Future)
+///
+/// ```text
+/// "Version 2 is newer than supported (1), features may be missing."
+/// ```
+///
+/// Remediation: Upgrade Strata for full feature support, or proceed with warnings.
+///
+/// # Usage in Error Handling
+///
+/// This function is typically called when displaying compatibility errors to users:
+///
+/// ```rust,ignore
+/// use strata_core::format::version::{check_version, compatibility_message};
+///
+/// fn validate_snapshot(header: &Header) -> Result<(), String> {
+///     let compat = check_version(header.version);
+///     if !compat.is_compatible() {
+///         return Err(compatibility_message(header.version));
+///     }
+///     Ok(())
+/// }
+/// ```
+///
+/// # Examples
+///
+/// ```
+/// use strata_core::format::version::{compatibility_message, MAX_SUPPORTED_VERSION};
+///
+/// // Supported version
+/// let msg = compatibility_message(1);
+/// assert!(msg.contains("fully supported"));
+///
+/// // Version too new
+/// let msg = compatibility_message(MAX_SUPPORTED_VERSION + 1);
+/// assert!(msg.contains("too new"));
+/// assert!(msg.contains("upgrade Strata"));
+///
+/// // Version too old (hypothetical if MIN_SUPPORTED_VERSION > 1)
+/// let msg = compatibility_message(0);
+/// assert!(msg.contains("too old"));
+/// assert!(msg.contains("upgrade the snapshot"));
+/// ```
+///
+/// ## CLI Integration
+///
+/// ```bash
+/// $ strata open old_snapshot.st
+/// Error: Version 0 is too old (min supported: 1). Please upgrade the snapshot.
+///
+/// Run: strata-migrate upgrade old_snapshot.st new_snapshot.st
+/// ```
 pub fn compatibility_message(version: u32) -> String {
     match check_version(version) {
         VersionCompatibility::Full => format!("Version {} is fully supported.", version),

@@ -1,7 +1,44 @@
-//! OS installation from ISO and conversion to snapshot.
+//! OS installation from ISO and conversion to Strata snapshot.
 //!
-//! Automates creation of a raw disk, running a QEMU-based installer, and
-//! feeding the resulting disk through the snapshot creation pipeline.
+//! This command automates the process of installing an operating system from
+//! an ISO image and converting the result into a Strata snapshot archive.
+//!
+//! # Installation Workflow
+//!
+//! 1. **Create Virtual Disk**: Generate temporary raw disk image
+//! 2. **Launch Installer**: Boot QEMU with ISO attached
+//! 3. **User Interaction**: User completes OS installation
+//! 4. **Shutdown VM**: User powers off after installation
+//! 5. **Pack Snapshot**: Convert raw disk to compressed `.st` archive
+//! 6. **Cleanup**: Remove temporary raw disk
+//!
+//! # Usage Example
+//!
+//! ```bash
+//! # Install Ubuntu with 20GB disk and 4GB RAM
+//! strata vm install --iso ubuntu-24.04.iso \
+//!   --disk-size 20G --ram 4G --output ubuntu.st
+//!
+//! # Install with VNC (for headless servers)
+//! strata vm install --iso debian.iso --disk-size 10G \
+//!   --ram 2G --output debian.st --vnc
+//!
+//! # Install with CDC for better deduplication
+//! strata vm install --iso alpine.iso --disk-size 5G \
+//!   --ram 1G --output alpine.st --cdc
+//! ```
+//!
+//! # Requirements
+//!
+//! - `qemu-img`: For creating virtual disks
+//! - `qemu-system-x86_64`: For running the installer VM
+//! - Sufficient disk space for temporary raw image (= `disk_size`)
+//!
+//! # Performance Notes
+//!
+//! - Installation speed depends on ISO and hardware
+//! - Packing uses LZ4 compression by default (fast)
+//! - Add `--cdc` for better deduplication (slower but smaller)
 
 use anyhow::{Context, Result};
 use std::path::PathBuf;

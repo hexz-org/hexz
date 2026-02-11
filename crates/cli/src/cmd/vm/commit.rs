@@ -1,4 +1,131 @@
 //! Commit overlay and optional memory into a new snapshot.
+//!
+//! This command merges changes from a writable overlay (created during VM execution)
+//! with a base snapshot to produce a new snapshot. It supports both "thick" snapshots
+//! (standalone, contains all data) and "thin" snapshots (references parent for
+//! unmodified blocks), providing flexibility for different storage and deployment scenarios.
+//!
+//! # Thin vs. Thick Snapshots
+//!
+//! ## Thick Snapshots (Default, `--thin=false`)
+//!
+//! **Characteristics:**
+//! - Contains all disk data (modified + unmodified blocks)
+//! - Standalone file that does not require parent snapshot
+//! - Larger file size but completely self-contained
+//! - Can be moved, copied, or distributed independently
+//!
+//! **Use Cases:**
+//! - Production deployments where parent may not be available
+//! - Archival and long-term storage
+//! - Sharing snapshots with other users/systems
+//! - Migrating VMs to different infrastructure
+//!
+//! **Storage Cost:**
+//! - File size ≈ compressed size of entire disk
+//! - Example: 10 GB disk → 3-5 GB thick snapshot (with compression)
+//!
+//! ## Thin Snapshots (`--thin=true`)
+//!
+//! **Characteristics:**
+//! - Contains only modified blocks + metadata referencing parent
+//! - Requires parent snapshot to be accessible at runtime
+//! - Much smaller file size for incremental changes
+//! - Parent path stored in snapshot header (absolute path)
+//!
+//! **Use Cases:**
+//! - Incremental backups and version control
+//! - Development and testing (quick snapshots of state)
+//! - Space-efficient snapshot chains
+//! - Checkpoint and rollback workflows
+//!
+//! **Storage Cost:**
+//! - File size ≈ compressed size of modified blocks only
+//! - Example: 10 GB disk with 500 MB changes → ~200 MB thin snapshot
+//!
+//! **Parent Reference Mechanism:**
+//! - Parent path stored in `StrataHeader.parent_path` field (absolute path)
+//! - Unmodified blocks marked with `BLOCK_OFFSET_PARENT` sentinel value
+//! - Read path resolves parent recursively at runtime
+//!
+//! # Commit Workflow
+//!
+//! 1. **Read Base Snapshot**: Opens parent snapshot and extracts header
+//! 2. **Load Overlay Metadata**: Reads `.meta` file to get modified block list
+//! 3. **Process Disk Blocks**: For each block in final disk size:
+//!    - If thin mode + unmodified: Write parent reference marker
+//!    - If modified: Read base, apply overlay, compress, write
+//!    - If thick mode + unmodified: Read from base, compress, write
+//! 4. **Process Memory**: If memory dump provided, compress and append
+//! 5. **Write Master Index**: Serialize index with all page entries
+//! 6. **Update Header**: Write header with parent path (thin) or None (thick)
+//! 7. **Clean Up**: Optionally delete overlay files
+//!
+//! # Block Processing Logic
+//!
+//! ```text
+//! For each block in final disk:
+//!   is_modified = block overlaps modified 4K chunks in .meta file
+//!
+//!   if thin AND not is_modified AND exists_in_base:
+//!     write BLOCK_OFFSET_PARENT marker  // Reference parent
+//!   else:
+//!     if is_modified:
+//!       data = base[block] + overlay[block]  // Merge changes
+//!     else:  // Thick mode
+//!       data = base[block]                   // Copy from base
+//!     compress and write data
+//! ```
+//!
+//! # Overlay Format
+//!
+//! **Overlay File (`.overlay`):**
+//! - Sparse file containing modified 4 KiB chunks
+//! - Chunks written at their logical disk offsets
+//! - Unmodified regions remain as holes (zero-filled)
+//!
+//! **Metadata File (`.meta`):**
+//! - Array of `u64` block indices (8 bytes each)
+//! - Each entry is a 4 KiB block number that was written
+//! - Sorted order for efficient lookup
+//!
+//! # Compression and Deduplication
+//!
+//! Committed blocks are:
+//! 1. **Zero-Detected**: All-zero blocks stored as metadata only (no data written)
+//! 2. **Compressed**: Non-zero blocks compressed with specified algorithm (LZ4 or Zstd)
+//! 3. **Checksummed**: Each block includes CRC32 checksum for integrity verification
+//!
+//! # Common Usage Patterns
+//!
+//! ```bash
+//! # Create thick (standalone) snapshot after VM modifications
+//! strata vm commit \
+//!   --base vm-base.st \
+//!   --overlay vm-state.overlay \
+//!   --output vm-updated.st
+//!
+//! # Create thin (incremental) snapshot for space efficiency
+//! strata vm commit \
+//!   --base vm-base.st \
+//!   --overlay vm-state.overlay \
+//!   --output vm-incremental.st \
+//!   --thin
+//!
+//! # Commit with memory dump (from live snapshot)
+//! strata vm commit \
+//!   --base vm-base.st \
+//!   --overlay vm-state.overlay \
+//!   --memory vm-memory.dump \
+//!   --output vm-checkpoint.st
+//!
+//! # Keep overlay after commit (for debugging)
+//! strata vm commit \
+//!   --base vm-base.st \
+//!   --overlay vm-state.overlay \
+//!   --output vm-new.st \
+//!   --keep-overlay
+//! ```
 
 use anyhow::Result;
 use indicatif::ProgressBar;
@@ -21,6 +148,112 @@ use strata_core::store::local::FileBackend;
 const OVERLAY_BLOCK_SIZE: u64 = 4096;
 const META_ENTRY_SIZE: usize = 8;
 
+/// Executes the commit command to merge overlay changes into a new snapshot.
+///
+/// Reads the base snapshot and overlay file to create a new snapshot containing
+/// either all disk data (thick mode) or only modified blocks with parent references
+/// (thin mode). Optionally includes a memory dump for full VM state preservation.
+///
+/// # Arguments
+///
+/// * `base_path` - Path to the base `.st` snapshot file
+/// * `overlay_path` - Path to the overlay file containing modified blocks
+/// * `memory_path` - Optional path to memory dump file (from live snapshot or migration)
+/// * `output_path` - Path for the output snapshot file
+/// * `algo` - Compression algorithm: "lz4" (fast) or "zstd" (higher ratio)
+/// * `block_size` - Block size in bytes for chunking (typically 64 KiB)
+/// * `keep_overlay` - If true, preserve overlay files after commit; otherwise delete
+/// * `message` - Optional metadata message to embed in snapshot header
+/// * `thin` - If true, create thin snapshot with parent references; otherwise thick
+///
+/// # Thin vs. Thick Behavior
+///
+/// **Thin Mode (`thin=true`):**
+/// - Unmodified blocks: Write `BLOCK_OFFSET_PARENT` marker (no data)
+/// - Modified blocks: Write compressed data as usual
+/// - Header: Set `parent_path` to absolute path of `base_path`
+/// - Result: Small snapshot dependent on parent
+///
+/// **Thick Mode (`thin=false`):**
+/// - Unmodified blocks: Read from base, compress, write
+/// - Modified blocks: Merge base + overlay, compress, write
+/// - Header: Set `parent_path` to `None`
+/// - Result: Large standalone snapshot
+///
+/// # Block Processing Algorithm
+///
+/// For each block in the final disk size:
+/// 1. Determine if block is modified (check overlay metadata)
+/// 2. Apply thin/thick logic:
+///    - Thin + unmodified + in base → write parent reference
+///    - Modified → read base, apply overlay patches, compress
+///    - Thick + unmodified → read base, compress
+/// 3. Write compressed data or reference marker to output
+/// 4. Update index page with block metadata
+///
+/// # Memory Handling
+///
+/// Memory dumps are always stored in thick mode (no parent references) because:
+/// - Memory state changes drastically between snapshots
+/// - Parent memory state is rarely useful for incremental storage
+/// - Simplifies implementation and reduces complexity
+///
+/// # Overlay Cleanup
+///
+/// If `keep_overlay=false` (default):
+/// - Deletes overlay file after successful commit
+/// - Deletes metadata file (`.meta`)
+/// - Preserves original files if commit fails
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Base snapshot cannot be opened or read
+/// - Overlay or metadata files cannot be read
+/// - Output file cannot be created or written
+/// - Compression or serialization fails
+/// - Disk I/O errors occur during processing
+///
+/// # Performance Characteristics
+///
+/// - **Thin commit**: Processes only modified blocks (~200-500 MB/s)
+/// - **Thick commit**: Processes entire disk (~200-500 MB/s depending on compression)
+/// - **With memory**: Adds memory size / compression throughput to total time
+/// - **Progress bar**: Updates in real-time showing bytes processed
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::path::PathBuf;
+/// use strata_cli::cmd::vm::commit;
+///
+/// // Create thick snapshot with LZ4 compression
+/// commit::run(
+///     PathBuf::from("base.st"),
+///     PathBuf::from("changes.overlay"),
+///     None,
+///     PathBuf::from("updated.st"),
+///     "lz4".to_string(),
+///     65536,     // 64 KiB blocks
+///     false,     // delete overlay
+///     None,      // no message
+///     false,     // thick mode
+/// )?;
+///
+/// // Create thin snapshot with Zstd and memory
+/// commit::run(
+///     PathBuf::from("base.st"),
+///     PathBuf::from("state.overlay"),
+///     Some(PathBuf::from("memory.dump")),
+///     PathBuf::from("checkpoint.st"),
+///     "zstd".to_string(),
+///     65536,
+///     true,      // keep overlay
+///     Some("Checkpoint before upgrade".to_string()),
+///     true,      // thin mode
+/// )?;
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 #[allow(clippy::too_many_arguments)]
 pub fn run(
     base_path: PathBuf,

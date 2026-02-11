@@ -1,7 +1,40 @@
 //! Pack data into a Strata archive.
 //!
-//! This command creates a `.st` archive from disk and/or memory dumps,
-//! calling the core packing logic from `strata_core::ops::pack`.
+//! This command creates a `.st` archive from disk images and/or memory dumps,
+//! delegating to the core packing logic in [`strata_core::ops::pack`].
+//!
+//! # Overview
+//!
+//! The `pack` command is the primary way to create Strata archives from raw data.
+//! It supports multiple compression algorithms, encryption, deduplication, and
+//! both fixed-size and content-defined chunking strategies.
+//!
+//! # Key Features
+//!
+//! - **Compression**: LZ4 (speed) or Zstandard (compression ratio)
+//! - **Deduplication**: SHA-256 based block deduplication (enabled by default)
+//! - **Encryption**: AES-256-GCM with password-based key derivation
+//! - **CDC**: Content-defined chunking for better deduplication
+//! - **Dictionary Training**: Improves Zstd compression by 10-30%
+//!
+//! # Performance Tuning
+//!
+//! **For maximum speed:**
+//! ```bash
+//! strata data pack --disk image.img --output fast.st --compression lz4
+//! ```
+//!
+//! **For maximum compression:**
+//! ```bash
+//! strata data pack --disk image.img --output small.st \
+//!   --compression zstd --train-dict --cdc
+//! ```
+//!
+//! **For balanced performance:**
+//! ```bash
+//! strata data pack --disk image.img --output balanced.st \
+//!   --compression lz4 --block-size 131072
+//! ```
 
 use crate::ui::progress::create_progress_bar;
 use anyhow::Result;

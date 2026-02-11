@@ -1,7 +1,42 @@
 //! Boot a VM from a Strata snapshot with optional persistence.
 //!
-//! Mounts the snapshot via FUSE, configures an overlay for writable state,
-//! and launches QEMU with appropriate parameters (RAM, KVM, networking, QMP).
+//! This command implements the full VM boot workflow, combining FUSE mounting,
+//! overlay management, and hypervisor configuration to launch virtual machines
+//! directly from compressed Strata snapshots.
+//!
+//! # Boot Process
+//!
+//! 1. **Mount Snapshot**: Mount the `.st` archive via FUSE as a block device
+//! 2. **Create Overlay**: Set up writable overlay if `--persist` specified
+//! 3. **Launch Hypervisor**: Start QEMU with configured parameters
+//! 4. **Setup QMP**: Connect to QEMU Machine Protocol for control
+//! 5. **Resume VM**: Trigger execution if VM is paused
+//!
+//! # Hypervisor Support
+//!
+//! - **QEMU** (default): Full featured, supports KVM acceleration
+//! - **Firecracker**: Lightweight microVM (future support)
+//!
+//! # Persistence Modes
+//!
+//! **Ephemeral** (no overlay):
+//! ```bash
+//! strata vm boot snapshot.st
+//! # Changes lost on shutdown
+//! ```
+//!
+//! **Persistent** (with overlay):
+//! ```bash
+//! strata vm boot snapshot.st --persist overlay.bin
+//! # Writes saved to overlay.bin
+//! # Commit with: strata vm commit snapshot.st overlay.bin new-snapshot.st
+//! ```
+//!
+//! # Performance Features
+//!
+//! - **KVM Acceleration**: Enabled by default (disable with `--no-kvm`)
+//! - **Transparent Decompression**: FUSE layer handles LZ4/Zstd on-the-fly
+//! - **Block Cache**: Reduces repeated decompression overhead
 
 use anyhow::{Context, Result};
 use serde_json::Value;

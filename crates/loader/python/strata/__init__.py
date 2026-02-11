@@ -94,18 +94,36 @@ def open(path: PathLike, *, mode: str = "r", **options: Any) -> Union[Reader, Wr
     """Open a Strata snapshot for reading or writing.
 
     Args:
-        path: Path to .st file
+        path: Path to .st file. Supports local paths, HTTP/HTTPS URLs, and S3 URIs.
         mode: 'r' for reading, 'w' for writing
         **options: Additional options for Reader or Writer
+
+    Keyword Arguments (Read Mode):
+        cache_size (str): Block cache size (e.g., "512M", "1G", "2GB"). Default: ~4MB
+        prefetch (bool): Enable background prefetching for sequential reads. Default: True
+        s3_region (str): AWS region for S3 URLs
+        endpoint_url (str): Custom S3 endpoint URL (for MinIO, Ceph, etc.)
+        allow_restricted (bool): Allow connections to private/internal IPs. Default: False
+
+    Keyword Arguments (Write Mode):
+        compression (str): Compression algorithm ('lz4' or 'zstd')
+        block_size (int): Block size in bytes
+        packing (str): Packing strategy ('fast', 'tight', etc.)
 
     Returns:
         Reader or Writer instance
 
     Example:
+        >>> # Read with default settings (cache_size=default, prefetch=True)
         >>> with strata.open("data.st") as reader:
         ...     data = reader.read(4096)
         ...     chunk = reader.read(100, offset=0)  # random access
         ...
+        >>> # Read with custom cache and prefetch disabled
+        >>> with strata.open("data.st", cache_size="2G", prefetch=False) as reader:
+        ...     data = reader.read(4096)
+        ...
+        >>> # Write a new snapshot
         >>> with strata.open("out.st", mode="w", packing="tight") as writer:
         ...     writer.add("input.img")
     """

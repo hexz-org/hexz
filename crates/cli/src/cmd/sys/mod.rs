@@ -1,4 +1,59 @@
-//! System utility commands.
+//! System utility commands for diagnostics and services.
+//!
+//! This module provides system-level utilities for troubleshooting, performance
+//! testing, network serving, and cryptographic operations.
+//!
+//! # Available Commands
+//!
+//! ## Diagnostics (feature = "diagnostics")
+//!
+//! - [`doctor`]: Run comprehensive system diagnostics
+//!   - Check for required dependencies (QEMU, KVM, FUSE)
+//!   - Verify storage backend connectivity
+//!   - Test compression and encryption functionality
+//!
+//! - [`bench`]: Benchmark archive performance
+//!   - Measure read throughput at various block sizes
+//!   - Test cache effectiveness
+//!   - Profile compression/decompression speed
+//!
+//! ## Network Serving (feature = "server")
+//!
+//! - [`serve`]: Serve archives over network protocols
+//!   - NBD (Network Block Device) protocol
+//!   - S3-compatible API
+//!   - HTTP range requests
+//!
+//! ## Cryptographic Operations (feature = "signing")
+//!
+//! - [`keygen`]: Generate Ed25519 signing key pairs
+//! - [`sign`]: Sign archives with private keys
+//! - [`verify`]: Verify archive signatures with public keys
+//!
+//! # Usage Examples
+//!
+//! ```bash
+//! # Check system health
+//! strata sys doctor
+//!
+//! # Benchmark an archive
+//! strata sys bench snapshot.st --threads 8 --duration 60
+//!
+//! # Serve via NBD
+//! strata sys serve snapshot.st --nbd --port 10809
+//!
+//! # Generate and use signing keys
+//! strata sys keygen --output-dir ~/.strata/keys
+//! strata sys sign --key ~/.strata/keys/private.key snapshot.st
+//! strata sys verify --key ~/.strata/keys/public.key snapshot.st
+//! ```
+//!
+//! # Feature Flags
+//!
+//! These commands require specific feature flags to be enabled at compile time:
+//! - `diagnostics`: doctor, bench
+//! - `server`: serve
+//! - `signing`: keygen, sign, verify
 
 #[cfg(feature = "diagnostics")]
 pub mod doctor;

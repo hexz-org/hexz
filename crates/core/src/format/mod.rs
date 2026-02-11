@@ -1,8 +1,66 @@
 //! On-disk format structures for Strata snapshot files.
 //!
-//! Defines the header (magic, version, block size, compression, features)
-//! and the index layout (master index, pages, block metadata) that are
-//! serialized with bincode and must remain backward compatible.
+//! This module defines the binary format of `.st` files, including headers,
+//! indices, and metadata structures. All types are serialized with `bincode`
+//! and must maintain backward compatibility across versions.
+//!
+//! # File Structure
+//!
+//! A complete Strata archive has the following layout:
+//!
+//! ```text
+//! ╔══════════════════════════════════════════════════════════╗
+//! ║                  STRATA ARCHIVE (.st)                    ║
+//! ╠══════════════════════════════════════════════════════════╣
+//! ║ Offset 0: HEADER (4096 bytes)                           ║
+//! ║   - Magic: "STRT" (4 bytes)                             ║
+//! ║   - Version: u32                                         ║
+//! ║   - Block size: u32                                      ║
+//! ║   - Index offset: u64                                    ║
+//! ║   - Compression: enum (LZ4/Zstd)                         ║
+//! ║   - Features: bitflags                                   ║
+//! ║   - Optional: dictionary, metadata, signature offsets    ║
+//! ╠══════════════════════════════════════════════════════════╣
+//! ║ DATA REGION (variable size)                             ║
+//! ║   - Compressed blocks                                    ║
+//! ║   - Optional: encrypted blocks                           ║
+//! ║   - Optional: compression dictionary                     ║
+//! ╠══════════════════════════════════════════════════════════╣
+//! ║ INDEX REGION (variable size)                            ║
+//! ║   - Index pages (B-tree or hash-based)                   ║
+//! ║   - Block metadata (offset, length, CRC32)               ║
+//! ╠══════════════════════════════════════════════════════════╣
+//! ║ MASTER INDEX (at header.index_offset)                   ║
+//! ║   - Page entries                                         ║
+//! ║   - Stream sizes (disk, memory)                          ║
+//! ║   - Deduplication statistics                             ║
+//! ╠══════════════════════════════════════════════════════════╣
+//! ║ Optional: SIGNATURE (Ed25519, 64 bytes)                 ║
+//! ╚══════════════════════════════════════════════════════════╝
+//! ```
+//!
+//! # Format Versioning
+//!
+//! The format version follows semantic versioning:
+//! - **Major**: Incompatible changes (readers must reject)
+//! - **Minor**: Backward-compatible additions (old readers work)
+//! - **Patch**: Bug fixes, no format changes
+//!
+//! Current version: [`magic::FORMAT_VERSION`]
+//!
+//! # Serialization
+//!
+//! All structures use `bincode` with the following settings:
+//! - **Endianness**: Little-endian
+//! - **Size limits**: Bounded (prevents DOS attacks)
+//! - **Compatibility**: Fixed-size where possible
+//!
+//! # Submodules
+//!
+//! - [`magic`]: Magic bytes and version constants
+//! - [`header`]: File header structure and enums
+//! - [`index`]: Index pages and block metadata
+//! - [`version`]: Version compatibility checking
 
 /// Magic bytes and version constants.
 ///
