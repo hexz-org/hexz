@@ -10,6 +10,31 @@ The loader bypasses Python's multiprocessing by handling prefetching in lightwei
 
 ## Installation
 
+### From PyPI (Coming Soon)
+
+```bash
+# Minimal installation (core features only, ~5MB)
+pip install strata
+
+# With PyTorch support
+pip install strata[torch]
+
+# With TensorFlow support
+pip install strata[tensorflow]
+
+# With NumPy arrays
+pip install strata[numpy]
+
+# ML bundle (PyTorch + NumPy)
+pip install strata[ml]
+
+# Everything
+pip install strata[full]
+
+# Development
+pip install strata[dev]
+```
+
 ### From Source (Development)
 
 Build and install from the repository root using the Makefile:
@@ -27,6 +52,34 @@ pip install target/wheels/*.whl
 ```
 
 **Note**: Requires Rust toolchain and Python 3.8+. Run `make setup-check` to verify dependencies.
+
+### Custom Feature Selection
+
+For advanced users who want to control binary size and compile-time features:
+
+```bash
+# Build with minimal features (no S3, zstd compression only)
+maturin build --release --no-default-features --features compression-zstd
+
+# Build with S3 but no compression-zstd (LZ4 only)
+maturin build --release --no-default-features --features s3
+
+# Build with all features
+maturin build --release --features full
+
+# Install custom build
+pip install target/wheels/*.whl
+```
+
+**Binary Size Comparison (release, stripped):**
+- Minimal build (no default features): 12MB
+- Default (S3 + zstd + signing): 12MB
+- Full features: 12MB
+
+**Note**: Binary size is dominated by PyO3 runtime and Tokio async runtime. The main benefits of feature gates are:
+- Reduced dependency complexity and faster compilation
+- Smaller dependency tree (fewer crates to audit/update)
+- Cleaner runtime without unused functionality
 
 ## Quick Start
 
@@ -99,6 +152,52 @@ asyncio.run(main())
 - **NumPy Integration**: Read directly into NumPy arrays
 - **Encryption Support**: Transparent decryption of encrypted snapshots
 - **GIL-Free**: Critical paths run in Rust without Python GIL contention
+
+## Feature Matrix
+
+Strata is designed with modularity in mind. Install only what you need:
+
+| Feature | Default | Description | Size Impact |
+|---------|---------|-------------|-------------|
+| **LZ4 Compression** | ✅ | Fast compression (always included) | ~1MB |
+| **S3 Storage** | ✅ | Stream from AWS S3, MinIO, Cloudflare R2 | ~3MB |
+| **Zstd Compression** | ✅ | High-ratio compression | ~2MB |
+| **Encryption** | ❌ | AES-GCM encryption for snapshots | ~1MB |
+| **Signing** | ❌ | Ed25519 cryptographic signatures | ~500KB |
+
+### Python Extras
+
+| Extra | Includes | Use Case |
+|-------|----------|----------|
+| `[torch]` | PyTorch ≥2.0 | ML training with PyTorch DataLoader |
+| `[tensorflow]` | TensorFlow ≥2.13 | ML training with TensorFlow Dataset |
+| `[numpy]` | NumPy ≥1.20 | Scientific computing, array operations |
+| `[ml]` | NumPy + PyTorch | Common ML stack |
+| `[full]` | All ML frameworks | Everything for ML workflows |
+| `[dev]` | Testing + linting tools | Development and contribution |
+
+### Compile-Time Features
+
+Control Rust features at build time for minimal deployments:
+
+```bash
+# Minimal: local files only, LZ4 compression
+maturin build --no-default-features
+
+# Add S3 support
+maturin build --no-default-features --features s3
+
+# Add encryption
+maturin build --no-default-features --features encryption,s3
+
+# Everything
+maturin build --features full
+```
+
+**Use Cases:**
+- **Edge Deployments**: Disable S3 to reduce binary size for IoT/embedded
+- **Air-Gapped Systems**: Build without network features for secure environments
+- **Size-Constrained Containers**: Minimal builds for Lambda/Cloud Run
 
 ## Architecture
 

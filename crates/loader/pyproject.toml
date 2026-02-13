@@ -18,8 +18,31 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
+# ML frameworks (optional - install only what you need)
 numpy = ["numpy>=1.20"]
 torch = ["torch>=2.0"]
+tensorflow = ["tensorflow>=2.13"]
+
+# Common ML combinations
+ml = ["numpy>=1.20", "torch>=2.0"]
+
+# All features
+full = ["numpy>=1.20", "torch>=2.0", "tensorflow>=2.13"]
+
+# Development and testing
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-benchmark>=4.0",
+    "hypothesis>=6.0",
+    "pytest-timeout>=2.0",
+    "pytest-mock>=3.0",
+    "moto[server]>=5.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+]
+
+# Legacy alias for test dependencies
 test = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",

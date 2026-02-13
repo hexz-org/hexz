@@ -64,6 +64,7 @@ nav:
       - Pack Datasets: how-to/cli-usage/pack-datasets.md
       - Verify Signatures: how-to/cli-usage/verify-signatures.md
     - General:
+      - Feature Gates & Modular Builds: how-to/feature-gates.md
       - Troubleshooting: how-to/troubleshooting.md
       - Performance Tuning: how-to/performance-tuning.md
   - Explanation:

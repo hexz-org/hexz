@@ -42,23 +42,17 @@ See documentation for advanced usage: https://github.com/strata-storage/strata
 
 from typing import Union, Any
 
-# Import submodules for qualified access
-from . import crypto  # strata.crypto.keygen(), etc.
-
-# Core I/O
+# Core I/O (always available)
 from .reader import AsyncReader, Reader
 from .writer import Writer
 
-# ML Integration
-from .dataset import Dataset, TFDataset
-
-# Arrays
+# Arrays (always available)
 from .array import ArrayView, read_array, write_array
 
-# Build helpers
+# Build helpers (always available)
 from .profiles import PROFILES, build
 
-# Inspection & Utilities
+# Inspection & Utilities (always available)
 from .utils import (
     FORMAT_VERSION,
     MAX_SUPPORTED_VERSION,
@@ -69,13 +63,10 @@ from .utils import (
     verify,
 )
 
-# Mount
-from .mount import mount
-
-# Types (commonly used only)
+# Types (always available)
 from .typing import PathLike
 
-# Exceptions
+# Exceptions (always available)
 from .exceptions import (
     CacheError,
     CompressionError,
@@ -88,6 +79,41 @@ from .exceptions import (
     ValidationError,
     VersionError,
 )
+
+# Optional: ML Integration (requires torch/tensorflow)
+try:
+    from .dataset import Dataset
+
+    _HAS_DATASET = True
+except ImportError:
+    _HAS_DATASET = False
+    Dataset = None  # type: ignore
+
+try:
+    from .dataset import TFDataset
+
+    _HAS_TFDATASET = True
+except ImportError:
+    _HAS_TFDATASET = False
+    TFDataset = None  # type: ignore
+
+# Optional: Cryptographic signing (requires signing feature)
+try:
+    from . import crypto
+
+    _HAS_CRYPTO = True
+except ImportError:
+    _HAS_CRYPTO = False
+    crypto = None  # type: ignore
+
+# Optional: FUSE mounting (requires FUSE and platform support)
+try:
+    from .mount import mount
+
+    _HAS_MOUNT = True
+except ImportError:
+    _HAS_MOUNT = False
+    mount = None  # type: ignore
 
 
 def open(path: PathLike, *, mode: str = "r", **options: Any) -> Union[Reader, Writer]:
@@ -143,6 +169,7 @@ def version() -> str:
     return __version__
 
 
+# Build __all__ dynamically based on available features
 __all__ = [
     # === Core I/O (5) ===
     "open",
@@ -150,9 +177,6 @@ __all__ = [
     "Reader",
     "AsyncReader",
     "Writer",
-    # === ML Integration (2) ===
-    "Dataset",
-    "TFDataset",
     # === Arrays (3) ===
     "read_array",
     "write_array",
@@ -164,10 +188,6 @@ __all__ = [
     "inspect",
     # === Utilities (1) ===
     "verify",
-    # === Mount (1) ===
-    "mount",
-    # === Submodules (1) ===
-    "crypto",  # strata.crypto.keygen/sign/verify
     # === Types (3) ===
     "AnalysisReport",
     "Metadata",
@@ -188,3 +208,16 @@ __all__ = [
     "CacheError",
     "VersionError",
 ]
+
+# Add optional features if available
+if _HAS_DATASET:
+    __all__.append("Dataset")
+
+if _HAS_TFDATASET:
+    __all__.append("TFDataset")
+
+if _HAS_CRYPTO:
+    __all__.append("crypto")
+
+if _HAS_MOUNT:
+    __all__.append("mount")

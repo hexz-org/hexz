@@ -137,12 +137,16 @@
 
 use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
+#[cfg(feature = "signing")]
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::fs::{File, OpenOptions};
+use std::fs::File;
+#[cfg(feature = "signing")]
+use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
+#[cfg(feature = "signing")]
 use strata_common::sign;
 use strata_core::algo::dedup::{cdc, dcam};
 use strata_core::format::header::StrataHeader;
@@ -195,6 +199,7 @@ use super::builder::StrataBuilder;
 /// - Keep private keys secure and never commit them to version control
 /// - Public keys can be safely distributed
 /// - Ed25519 provides ~128-bit security level
+#[cfg(feature = "signing")]
 #[pyfunction]
 #[pyo3(signature = (output_dir=None))]
 pub fn keygen(output_dir: Option<String>) -> PyResult<(String, String)> {
@@ -667,6 +672,7 @@ pub fn diff(overlay_path: String) -> PyResult<HashMap<String, u64>> {
 /// - The signature does NOT cover block data (only structural integrity)
 /// - Ed25519 signatures are 64 bytes
 /// - Signatures are deterministic for the same key and message
+#[cfg(feature = "signing")]
 #[pyfunction]
 pub fn sign_image(image_path: String, key_path: String) -> PyResult<()> {
     let image_path = PathBuf::from(image_path);
@@ -749,6 +755,7 @@ pub fn sign_image(image_path: String, key_path: String) -> PyResult<()> {
 /// - Does NOT verify block data integrity (use checksums for that)
 /// - Ed25519 verification is fast (~50k signatures/sec on modern CPUs)
 /// - Public keys can be safely distributed
+#[cfg(feature = "signing")]
 #[pyfunction]
 pub fn verify_image(image_path: String, key_path: String) -> PyResult<()> {
     let image_path = PathBuf::from(image_path);

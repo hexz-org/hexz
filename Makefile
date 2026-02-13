@@ -22,6 +22,12 @@ RUFF            := $(shell [ -f .venv/bin/ruff ] && echo .venv/bin/ruff || echo 
 PYTHON          ?= $(shell [ -f .venv/bin/python3 ] && echo .venv/bin/python3 || ([ -f .venv/bin/python ] && echo .venv/bin/python || echo python3))
 MKDOCS          := $(shell [ -f .venv/bin/mkdocs ] && echo .venv/bin/mkdocs || echo mkdocs)
 
+# ── Feature flags ─────────────────────────────────────────────────────────────
+#  Override with: make develop FEATURES=full
+#  Or:            make python FEATURES="s3 compression-zstd"
+#  Or:            make build FEATURES=minimal
+FEATURES        ?= default
+
 # ── Pass-through args ─────────────────────────────────────────────────────────
 #  make test cache            →  cargo test -- cache
 #  make test-python writer    →  pytest -k writer
@@ -95,6 +101,11 @@ help:
 	@printf "    %-$(HELP_W)s  Install Python extension (editable)\n" "make develop"
 	@printf "    %-$(HELP_W)s  Install strata CLI locally\n" "make install"
 	@printf "    %-$(HELP_W)s  Run CLI; e.g. make run serve\n" "make run [args]"
+	@printf "\n  $(CYAN)Feature Selection$(RESET) (for build/develop/python targets)\n"
+	@printf "    %-$(HELP_W)s  Default features (s3, zstd, signing)\n" "make develop FEATURES=default"
+	@printf "    %-$(HELP_W)s  All features (s3, zstd, encryption, signing)\n" "make develop FEATURES=full"
+	@printf "    %-$(HELP_W)s  Minimal (no default features)\n" "make develop FEATURES=minimal"
+	@printf "    %-$(HELP_W)s  Custom feature list\n" "make develop FEATURES=\"s3 signing\""
 	@printf "\n  $(CYAN)Test$(RESET)\n"
 	@printf "    %-$(HELP_W)s  All tests; optional filter (e.g. make test cache)\n" "make test [filter]"
 	@printf "    %-$(HELP_W)s  Rust tests only\n" "make test-rust [filter]"
@@ -140,12 +151,28 @@ rust:
 	$(CARGO) build --release --workspace
 
 python:
-	@printf "$(GREEN)Building Python wheel…$(RESET)\n"
+	@printf "$(GREEN)Building Python wheel (features: $(FEATURES))…$(RESET)\n"
+ifeq ($(FEATURES),default)
 	$(MATURIN) build --release --manifest-path $(LOADER_CRATE)/Cargo.toml
+else ifeq ($(FEATURES),minimal)
+	$(MATURIN) build --release --manifest-path $(LOADER_CRATE)/Cargo.toml --no-default-features
+else ifeq ($(FEATURES),full)
+	$(MATURIN) build --release --manifest-path $(LOADER_CRATE)/Cargo.toml --features full
+else
+	$(MATURIN) build --release --manifest-path $(LOADER_CRATE)/Cargo.toml --no-default-features --features "$(FEATURES)"
+endif
 
 develop:
-	@printf "$(GREEN)Installing Python extension (editable)…$(RESET)\n"
+	@printf "$(GREEN)Installing Python extension (editable, features: $(FEATURES))…$(RESET)\n"
+ifeq ($(FEATURES),default)
 	$(MATURIN) develop --release --manifest-path $(LOADER_CRATE)/Cargo.toml
+else ifeq ($(FEATURES),minimal)
+	$(MATURIN) develop --release --manifest-path $(LOADER_CRATE)/Cargo.toml --no-default-features
+else ifeq ($(FEATURES),full)
+	$(MATURIN) develop --release --manifest-path $(LOADER_CRATE)/Cargo.toml --features full
+else
+	$(MATURIN) develop --release --manifest-path $(LOADER_CRATE)/Cargo.toml --no-default-features --features "$(FEATURES)"
+endif
 
 install:
 	@printf "$(GREEN)Installing strata CLI…$(RESET)\n"

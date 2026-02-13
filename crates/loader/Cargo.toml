@@ -12,8 +12,8 @@ name = "strata_loader"
 crate-type = ["cdylib"]
 
 [dependencies]
-strata-core = { workspace = true, features = ["s3"] }
-strata-common = { workspace = true, features = ["signing"] }
+strata-core = { workspace = true }
+strata-common = { workspace = true }
 pyo3 = { version = "0.23", features = ["extension-module", "abi3-py38"] }
 pyo3-async-runtimes = { version = "0.23", features = ["tokio-runtime"] }
 tokio = { workspace = true, features = ["full"] }
@@ -22,3 +22,19 @@ sha2.workspace = true
 tempfile = "3.10"
 serde_json = "1.0"
 crc32fast = "1.3"
+
+[features]
+default = ["s3", "compression-zstd", "signing"]
+
+# Cloud storage backends
+s3 = ["strata-core/s3"]
+
+# Compression algorithms
+compression-zstd = ["strata-core/compression-zstd"]
+
+# Security features
+encryption = ["strata-core/encryption"]
+signing = ["strata-common/signing"]
+
+# All features (for users who want everything)
+full = ["s3", "compression-zstd", "encryption", "signing"]

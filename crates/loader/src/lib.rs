@@ -56,8 +56,11 @@ fn strata_loader(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_interface::ops::inspect, m)?)?;
     m.add_function(wrap_pyfunction!(py_interface::ops::analyze, m)?)?;
     m.add_function(wrap_pyfunction!(py_interface::ops::diff, m)?)?;
+    #[cfg(feature = "signing")]
     m.add_function(wrap_pyfunction!(py_interface::ops::keygen, m)?)?;
+    #[cfg(feature = "signing")]
     m.add_function(wrap_pyfunction!(py_interface::ops::sign_image, m)?)?;
+    #[cfg(feature = "signing")]
     m.add_function(wrap_pyfunction!(py_interface::ops::verify_image, m)?)?;
     m.add_function(wrap_pyfunction!(py_interface::ops::snapshot_vm, m)?)?;
 

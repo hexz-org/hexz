@@ -10,7 +10,7 @@ description = "CLI tool for managing Strata snapshots and datasets"
 
 [dependencies]
 strata-core = { workspace = true }
-strata-common = { workspace = true, features = [] }
+strata-common = { workspace = true }
 strata-fuse = { workspace = true, optional = true }
 strata-server = { workspace = true, optional = true }
 clap = { workspace = true }
@@ -127,16 +127,19 @@ harness = false
 path = "benches/micro/decompress_scaling.rs"
 
 [features]
-default = ["fuse", "server", "compression-zstd", "encryption", "diagnostics", "signing"]
+default = ["fuse", "server", "compression-zstd", "encryption", "diagnostics", "signing", "s3"]
+
+# Cloud storage
+s3 = ["strata-core/s3"]
 
 # Core functionalities
 fuse = ["dep:strata-fuse", "dep:daemonize", "dep:fuser"]
 server = ["dep:strata-server", "dep:daemonize"]
-encryption = []
+encryption = ["strata-core/encryption"]
 signing = ["strata-common/signing"]
 
 # Compression algorithms
-compression-zstd = []
+compression-zstd = ["strata-core/compression-zstd"]
 
 # Optional tools
 diagnostics = []

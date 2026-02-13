@@ -10,7 +10,7 @@ members = [
 ]
 
 [workspace.dependencies]
-strata-common = { path = "crates/common" }
+strata-common = { path = "crates/common", default-features = false }
 strata-core = { path = "crates/core" }
 strata-fuse = { path = "crates/fuse" }
 strata-server = { path = "crates/server" }
