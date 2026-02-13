@@ -237,7 +237,6 @@ See `make help` for all available commands.
 - `compression-zstd`: Zstandard compression support
 - `encryption`: AES-256-GCM encryption
 - `s3`: S3 storage backend
-- `async-http`: Async HTTP support (experimental)
 
 ## See Also
 

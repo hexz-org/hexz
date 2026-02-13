@@ -33,6 +33,7 @@ MANIFEST
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+crates/loader/.coverage
 
 # Virtual Environments
 .env

@@ -488,3 +488,267 @@ pub struct IndexPage {
     /// Block metadata entries for this page's range.
     pub blocks: Vec<BlockInfo>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_block_info_sparse_creation() {
+        let sparse = BlockInfo::sparse(4096);
+        assert_eq!(sparse.offset, 0);
+        assert_eq!(sparse.length, 0);
+        assert_eq!(sparse.logical_len, 4096);
+        assert_eq!(sparse.checksum, 0);
+    }
+
+    #[test]
+    fn test_block_info_sparse_various_sizes() {
+        for size in [128, 1024, 4096, 65536, 1048576] {
+            let sparse = BlockInfo::sparse(size);
+            assert_eq!(sparse.logical_len, size);
+            assert!(sparse.is_sparse());
+        }
+    }
+
+    #[test]
+    fn test_block_info_is_sparse_true() {
+        let sparse = BlockInfo::sparse(4096);
+        assert!(sparse.is_sparse());
+
+        let manual_sparse = BlockInfo {
+            offset: 0,
+            length: 0,
+            logical_len: 4096,
+            checksum: 0,
+        };
+        assert!(manual_sparse.is_sparse());
+    }
+
+    #[test]
+    fn test_block_info_is_sparse_false_normal_block() {
+        let normal = BlockInfo {
+            offset: 4096,
+            length: 2048,
+            logical_len: 4096,
+            checksum: 0x12345678,
+        };
+        assert!(!normal.is_sparse());
+    }
+
+    #[test]
+    fn test_block_info_is_sparse_false_parent_ref() {
+        let parent_ref = BlockInfo {
+            offset: u64::MAX,
+            length: 0,
+            logical_len: 4096,
+            checksum: 0,
+        };
+        assert!(!parent_ref.is_sparse());
+    }
+
+    #[test]
+    fn test_block_info_is_parent_ref_true() {
+        let parent_ref = BlockInfo {
+            offset: u64::MAX,
+            length: 0,
+            logical_len: 4096,
+            checksum: 0,
+        };
+        assert!(parent_ref.is_parent_ref());
+    }
+
+    #[test]
+    fn test_block_info_is_parent_ref_false() {
+        let normal = BlockInfo {
+            offset: 4096,
+            length: 2048,
+            logical_len: 4096,
+            checksum: 0x12345678,
+        };
+        assert!(!normal.is_parent_ref());
+
+        let sparse = BlockInfo::sparse(4096);
+        assert!(!sparse.is_parent_ref());
+    }
+
+    #[test]
+    fn test_block_info_default() {
+        let default = BlockInfo::default();
+        assert_eq!(default.offset, 0);
+        assert_eq!(default.length, 0);
+        assert_eq!(default.logical_len, 0);
+        assert_eq!(default.checksum, 0);
+        assert!(default.is_sparse());
+    }
+
+    #[test]
+    fn test_block_info_serialization() {
+        let block = BlockInfo {
+            offset: 4096,
+            length: 2048,
+            logical_len: 4096,
+            checksum: 0x12345678,
+        };
+
+        let bytes = bincode::serialize(&block).unwrap();
+        let deserialized: BlockInfo = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(deserialized.offset, block.offset);
+        assert_eq!(deserialized.length, block.length);
+        assert_eq!(deserialized.logical_len, block.logical_len);
+        assert_eq!(deserialized.checksum, block.checksum);
+    }
+
+    #[test]
+    fn test_page_entry_creation() {
+        let entry = PageEntry {
+            offset: 1048576,
+            length: 65536,
+            start_block: 0,
+            start_logical: 0,
+        };
+
+        assert_eq!(entry.offset, 1048576);
+        assert_eq!(entry.length, 65536);
+        assert_eq!(entry.start_block, 0);
+        assert_eq!(entry.start_logical, 0);
+    }
+
+    #[test]
+    fn test_page_entry_serialization() {
+        let entry = PageEntry {
+            offset: 1048576,
+            length: 65536,
+            start_block: 100,
+            start_logical: 409600,
+        };
+
+        let bytes = bincode::serialize(&entry).unwrap();
+        let deserialized: PageEntry = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(deserialized.offset, entry.offset);
+        assert_eq!(deserialized.length, entry.length);
+        assert_eq!(deserialized.start_block, entry.start_block);
+        assert_eq!(deserialized.start_logical, entry.start_logical);
+    }
+
+    #[test]
+    fn test_master_index_default() {
+        let master = MasterIndex::default();
+        assert!(master.disk_pages.is_empty());
+        assert!(master.memory_pages.is_empty());
+        assert_eq!(master.disk_size, 0);
+        assert_eq!(master.memory_size, 0);
+    }
+
+    #[test]
+    fn test_master_index_with_pages() {
+        let master = MasterIndex {
+            disk_pages: vec![
+                PageEntry {
+                    offset: 4096,
+                    length: 65536,
+                    start_block: 0,
+                    start_logical: 0,
+                },
+                PageEntry {
+                    offset: 69632,
+                    length: 65536,
+                    start_block: 4096,
+                    start_logical: 16777216,
+                },
+            ],
+            memory_pages: vec![],
+            disk_size: 1_000_000_000,
+            memory_size: 0,
+        };
+
+        assert_eq!(master.disk_pages.len(), 2);
+        assert_eq!(master.disk_size, 1_000_000_000);
+    }
+
+    #[test]
+    fn test_master_index_serialization() {
+        let master = MasterIndex {
+            disk_pages: vec![PageEntry {
+                offset: 4096,
+                length: 65536,
+                start_block: 0,
+                start_logical: 0,
+            }],
+            memory_pages: vec![],
+            disk_size: 1_000_000_000,
+            memory_size: 0,
+        };
+
+        let bytes = bincode::serialize(&master).unwrap();
+        let deserialized: MasterIndex = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(deserialized.disk_pages.len(), master.disk_pages.len());
+        assert_eq!(deserialized.disk_size, master.disk_size);
+        assert_eq!(deserialized.memory_size, master.memory_size);
+    }
+
+    #[test]
+    fn test_index_page_default() {
+        let page = IndexPage::default();
+        assert!(page.blocks.is_empty());
+    }
+
+    #[test]
+    fn test_index_page_with_blocks() {
+        let page = IndexPage {
+            blocks: vec![
+                BlockInfo {
+                    offset: 4096,
+                    length: 2048,
+                    logical_len: 4096,
+                    checksum: 0x12345678,
+                },
+                BlockInfo {
+                    offset: 6144,
+                    length: 1024,
+                    logical_len: 4096,
+                    checksum: 0x9ABCDEF0,
+                },
+            ],
+        };
+
+        assert_eq!(page.blocks.len(), 2);
+        assert_eq!(page.blocks[0].offset, 4096);
+        assert_eq!(page.blocks[1].offset, 6144);
+    }
+
+    #[test]
+    fn test_index_page_serialization() {
+        let page = IndexPage {
+            blocks: vec![
+                BlockInfo {
+                    offset: 4096,
+                    length: 2048,
+                    logical_len: 4096,
+                    checksum: 0x12345678,
+                },
+                BlockInfo {
+                    offset: 6144,
+                    length: 1024,
+                    logical_len: 4096,
+                    checksum: 0x9ABCDEF0,
+                },
+            ],
+        };
+
+        let bytes = bincode::serialize(&page).unwrap();
+        let deserialized: IndexPage = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(deserialized.blocks.len(), page.blocks.len());
+        assert_eq!(deserialized.blocks[0].offset, page.blocks[0].offset);
+        assert_eq!(deserialized.blocks[1].offset, page.blocks[1].offset);
+    }
+
+    #[test]
+    fn test_entries_per_page_constant() {
+        assert_eq!(ENTRIES_PER_PAGE, 4096);
+    }
+}

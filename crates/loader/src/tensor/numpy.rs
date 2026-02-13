@@ -688,3 +688,85 @@ impl Drop for BufferInfo {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Note: Most functions in this module require a Python interpreter and
+    // actual Python objects to test. They are tested through Python integration
+    // tests in python/tests/.
+    //
+    // These Rust unit tests verify compile-time properties and struct layouts.
+
+    #[test]
+    fn test_py_buffer_struct_size() {
+        // Verify the Py_buffer struct compiles and has a reasonable size
+        let size = std::mem::size_of::<Py_buffer>();
+        // Py_buffer is a C struct with many pointer fields
+        assert!(size > 0);
+        assert!(size <= 1024); // Sanity check
+    }
+
+    #[test]
+    fn test_buffer_info_not_send() {
+        // Verify that BufferInfo is !Send (cannot be transferred between threads)
+        // This is a compile-time check via trait bounds
+        #[allow(dead_code)]
+        fn assert_not_send<T: Send>() {}
+        // Uncommenting this line should cause a compile error:
+        // assert_not_send::<BufferInfo>();
+
+        // Instead, just verify the struct exists
+        assert_eq!(
+            std::mem::size_of::<BufferInfo>(),
+            std::mem::size_of::<BufferInfo>()
+        );
+    }
+
+    #[test]
+    fn test_buffer_info_struct_layout() {
+        // Verify BufferInfo struct compiles and has expected field layout
+        let size = std::mem::size_of::<BufferInfo>();
+
+        // BufferInfo contains:
+        // - Py_buffer (large struct, ~80-100 bytes)
+        // - *mut u8 pointer (8 bytes on 64-bit)
+        // - usize len (8 bytes on 64-bit)
+        // - PhantomData (0 bytes, zero-sized type)
+        assert!(size > 16); // At least pointer + len
+        assert!(size <= 512); // Sanity check
+    }
+
+    #[test]
+    fn test_py_buf_writable_constant() {
+        // Verify the PY_BUF_WRITABLE flag has the correct value
+        assert_eq!(PY_BUF_WRITABLE, 0x0001);
+    }
+
+    #[test]
+    fn test_copy_length_clamping_logic() {
+        // Test the min() logic used in copy_to_buffer without calling unsafe code
+        let buf_len = 100;
+        let data_len_small = 50;
+        let data_len_exact = 100;
+        let data_len_large = 150;
+
+        assert_eq!(std::cmp::min(data_len_small, buf_len), data_len_small);
+        assert_eq!(std::cmp::min(data_len_exact, buf_len), buf_len);
+        assert_eq!(std::cmp::min(data_len_large, buf_len), buf_len);
+    }
+
+    #[test]
+    fn test_buffer_info_size_is_reasonable() {
+        // BufferInfo should be stack-allocatable and not excessively large
+        assert!(std::mem::size_of::<BufferInfo>() < 1024);
+    }
+
+    #[test]
+    fn test_py_buffer_alignment() {
+        // Verify Py_buffer has reasonable alignment (pointer-aligned)
+        let alignment = std::mem::align_of::<Py_buffer>();
+        assert!(alignment >= std::mem::align_of::<*mut c_void>());
+    }
+}

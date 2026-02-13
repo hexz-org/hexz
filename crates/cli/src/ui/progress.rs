@@ -131,3 +131,66 @@ pub fn create_spinner(message: &str) -> ProgressBar {
     pb.set_message(message.to_string());
     pb
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_progress_bar_basic() {
+        let pb = create_progress_bar(1000);
+        assert_eq!(pb.length(), Some(1000));
+        assert_eq!(pb.position(), 0);
+    }
+
+    #[test]
+    fn test_create_progress_bar_zero_total() {
+        let pb = create_progress_bar(0);
+        assert_eq!(pb.length(), Some(0));
+    }
+
+    #[test]
+    fn test_create_progress_bar_large_total() {
+        let total = 10 * 1024 * 1024 * 1024u64; // 10 GB
+        let pb = create_progress_bar(total);
+        assert_eq!(pb.length(), Some(total));
+    }
+
+    #[test]
+    fn test_progress_bar_increment() {
+        let pb = create_progress_bar(100);
+        pb.inc(50);
+        assert_eq!(pb.position(), 50);
+        pb.inc(50);
+        assert_eq!(pb.position(), 100);
+    }
+
+    #[test]
+    fn test_progress_bar_finish() {
+        let pb = create_progress_bar(100);
+        pb.inc(100);
+        pb.finish_with_message("done");
+        assert!(pb.is_finished());
+    }
+
+    #[test]
+    fn test_create_spinner_basic() {
+        let sp = create_spinner("Loading...");
+        assert!(!sp.is_finished());
+    }
+
+    #[test]
+    fn test_spinner_finish() {
+        let sp = create_spinner("Working...");
+        sp.finish_with_message("Complete");
+        assert!(sp.is_finished());
+    }
+
+    #[test]
+    fn test_spinner_update_message() {
+        let sp = create_spinner("Step 1");
+        sp.set_message("Step 2");
+        sp.finish();
+        assert!(sp.is_finished());
+    }
+}

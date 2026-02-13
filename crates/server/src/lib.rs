@@ -1249,7 +1249,8 @@ fn handle_request(headers: HeaderMap, snap: &Arc<StrataFile>, stream: SnapshotSt
 /// - **Unbounded length**: The `Range` header is bounded by HTTP header size limits
 ///   (typically 8 KB, enforced by the HTTP server)
 /// - **No allocation attacks**: Uses only one small allocation for splitting
-fn parse_range(range: &str, size: u64) -> Result<(u64, u64), ()> {
+#[allow(clippy::result_unit_err)]
+pub fn parse_range(range: &str, size: u64) -> Result<(u64, u64), ()> {
     if !range.starts_with("bytes=") {
         return Err(());
     }

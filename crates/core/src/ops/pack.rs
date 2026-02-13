@@ -1164,3 +1164,244 @@ where
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn test_calculate_entropy_empty() {
+        assert_eq!(calculate_entropy(&[]), 0.0);
+    }
+
+    #[test]
+    fn test_calculate_entropy_uniform() {
+        // All same byte - lowest entropy
+        let data = vec![0x42; 1000];
+        let entropy = calculate_entropy(&data);
+        assert!(
+            entropy < 0.01,
+            "Entropy should be near 0.0 for uniform data"
+        );
+    }
+
+    #[test]
+    fn test_calculate_entropy_binary() {
+        // Two values - low entropy
+        let mut data = vec![0u8; 500];
+        data.extend(vec![1u8; 500]);
+        let entropy = calculate_entropy(&data);
+        assert!(
+            entropy > 0.9 && entropy < 1.1,
+            "Entropy should be ~1.0 for binary data"
+        );
+    }
+
+    #[test]
+    fn test_calculate_entropy_random() {
+        // All 256 values - high entropy
+        let data: Vec<u8> = (0..=255).cycle().take(256 * 4).collect();
+        let entropy = calculate_entropy(&data);
+        assert!(
+            entropy > 7.5,
+            "Entropy should be high for all byte values: got {}",
+            entropy
+        );
+    }
+
+    #[test]
+    fn test_calculate_entropy_single_byte() {
+        assert_eq!(calculate_entropy(&[42]), 0.0);
+    }
+
+    #[test]
+    fn test_calculate_entropy_two_different_bytes() {
+        let data = vec![0, 255];
+        let entropy = calculate_entropy(&data);
+        assert!(entropy > 0.9 && entropy < 1.1, "Entropy should be ~1.0");
+    }
+
+    #[test]
+    fn test_fixed_chunker_exact_blocks() {
+        let data = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let cursor = Cursor::new(data);
+        let chunker = FixedChunker::new(cursor, 4);
+
+        let chunks: Vec<_> = chunker.map(|r| r.unwrap()).collect();
+
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0], vec![1, 2, 3, 4]);
+        assert_eq!(chunks[1], vec![5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn test_fixed_chunker_partial_last_block() {
+        let data = vec![1, 2, 3, 4, 5];
+        let cursor = Cursor::new(data);
+        let chunker = FixedChunker::new(cursor, 3);
+
+        let chunks: Vec<_> = chunker.map(|r| r.unwrap()).collect();
+
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0], vec![1, 2, 3]);
+        assert_eq!(chunks[1], vec![4, 5]);
+    }
+
+    #[test]
+    fn test_fixed_chunker_empty_input() {
+        let data = vec![];
+        let cursor = Cursor::new(data);
+        let chunker = FixedChunker::new(cursor, 1024);
+
+        let chunks: Vec<_> = chunker.map(|r| r.unwrap()).collect();
+
+        assert_eq!(chunks.len(), 0);
+    }
+
+    #[test]
+    fn test_fixed_chunker_single_byte_blocks() {
+        let data = vec![1, 2, 3];
+        let cursor = Cursor::new(data);
+        let chunker = FixedChunker::new(cursor, 1);
+
+        let chunks: Vec<_> = chunker.map(|r| r.unwrap()).collect();
+
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0], vec![1]);
+        assert_eq!(chunks[1], vec![2]);
+        assert_eq!(chunks[2], vec![3]);
+    }
+
+    #[test]
+    fn test_fixed_chunker_large_block_size() {
+        let data = vec![1, 2, 3, 4, 5];
+        let cursor = Cursor::new(data.clone());
+        let chunker = FixedChunker::new(cursor, 10000);
+
+        let chunks: Vec<_> = chunker.map(|r| r.unwrap()).collect();
+
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], data);
+    }
+
+    #[test]
+    fn test_pack_config_default() {
+        let config = PackConfig::default();
+
+        assert_eq!(config.compression, "lz4");
+        assert!(!config.encrypt);
+        assert_eq!(config.password, None);
+        assert!(!config.train_dict);
+        assert_eq!(config.block_size, 65536);
+        assert!(!config.cdc_enabled);
+        assert_eq!(config.min_chunk, 16384);
+        assert_eq!(config.avg_chunk, 65536);
+        assert_eq!(config.max_chunk, 131072);
+    }
+
+    #[test]
+    fn test_pack_config_clone() {
+        let config1 = PackConfig {
+            disk: Some(PathBuf::from("/dev/sda")),
+            output: PathBuf::from("output.st"),
+            compression: "zstd".to_string(),
+            encrypt: true,
+            password: Some("secret".to_string()),
+            ..Default::default()
+        };
+
+        let config2 = config1.clone();
+
+        assert_eq!(config2.disk, config1.disk);
+        assert_eq!(config2.output, config1.output);
+        assert_eq!(config2.compression, config1.compression);
+        assert_eq!(config2.encrypt, config1.encrypt);
+        assert_eq!(config2.password, config1.password);
+    }
+
+    #[test]
+    fn test_pack_config_debug() {
+        let config = PackConfig::default();
+        let debug_str = format!("{:?}", config);
+
+        assert!(debug_str.contains("PackConfig"));
+        assert!(debug_str.contains("lz4"));
+    }
+
+    #[test]
+    fn test_entropy_threshold_filtering() {
+        // Test data with entropy below threshold (compressible)
+        let low_entropy_data = vec![0u8; 1024];
+        assert!(calculate_entropy(&low_entropy_data) < ENTROPY_THRESHOLD);
+
+        // Test data with entropy above threshold (random)
+        let high_entropy_data: Vec<u8> = (0..1024).map(|i| ((i * 7) % 256) as u8).collect();
+        let entropy = calculate_entropy(&high_entropy_data);
+        // This might not always be above threshold depending on the pattern,
+        // but we can still test that entropy calculation works
+        assert!((0.0..=8.0).contains(&entropy));
+    }
+
+    #[test]
+    fn test_entropy_calculation_properties() {
+        // Entropy should increase with more unique values
+        let data1 = vec![0u8; 100];
+        let data2 = [0u8, 1u8].repeat(50);
+        let mut data3 = Vec::new();
+        for i in 0..100 {
+            data3.push((i % 10) as u8);
+        }
+
+        let entropy1 = calculate_entropy(&data1);
+        let entropy2 = calculate_entropy(&data2);
+        let entropy3 = calculate_entropy(&data3);
+
+        assert!(
+            entropy1 < entropy2,
+            "More unique values should increase entropy"
+        );
+        assert!(
+            entropy2 < entropy3,
+            "Even more unique values should further increase entropy"
+        );
+    }
+
+    #[test]
+    fn test_fixed_chunker_with_different_sizes() {
+        let data = vec![0u8; 10000];
+
+        // Test with various chunk sizes
+        for chunk_size in [64, 256, 1024, 4096, 65536] {
+            let cursor = Cursor::new(data.clone());
+            let chunker = FixedChunker::new(cursor, chunk_size);
+
+            let chunks: Vec<_> = chunker.map(|r| r.unwrap()).collect();
+
+            // Verify total data matches
+            let total_len: usize = chunks.iter().map(|c| c.len()).sum();
+            assert_eq!(
+                total_len,
+                data.len(),
+                "Total chunked data should match original for chunk_size={}",
+                chunk_size
+            );
+
+            // Verify all except possibly last chunk have correct size
+            for (i, chunk) in chunks.iter().enumerate() {
+                if i < chunks.len() - 1 {
+                    assert_eq!(
+                        chunk.len(),
+                        chunk_size,
+                        "Non-final chunks should be exactly chunk_size"
+                    );
+                } else {
+                    assert!(
+                        chunk.len() <= chunk_size,
+                        "Final chunk should be <= chunk_size"
+                    );
+                }
+            }
+        }
+    }
+}

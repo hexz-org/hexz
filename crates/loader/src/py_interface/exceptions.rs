@@ -326,3 +326,7 @@ impl<E: std::fmt::Display> IntoStrataError for E {
         StrataError::new_err(format!("{}", self))
     }
 }
+
+// Note: Tests for this module require Python runtime and are covered by
+// the Python integration test suite (189 tests in crates/loader/tests/).
+// Rust unit tests for PyO3 code cannot run without linking to Python.

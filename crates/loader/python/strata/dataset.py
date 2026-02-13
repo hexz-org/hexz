@@ -546,7 +546,7 @@ class Dataset(TorchDataset):
 
     def __del__(self):
         """Cleanup resources."""
-        if self._prefetcher:
+        if hasattr(self, "_prefetcher") and self._prefetcher:
             self._prefetcher.shutdown()
         if hasattr(self, "_reader"):
             self._reader.close()

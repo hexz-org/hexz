@@ -842,3 +842,454 @@ pub fn create_zero_block(logical_len: u32) -> BlockInfo {
 pub fn is_zero_chunk(chunk: &[u8]) -> bool {
     chunk.iter().all(|&b| b == 0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::algo::compression::{Lz4Compressor, ZstdCompressor};
+    use crate::algo::encryption::AesGcmEncryptor;
+    use std::collections::HashMap;
+    use std::io::Cursor;
+
+    #[test]
+    fn test_is_zero_chunk_all_zeros() {
+        let chunk = vec![0u8; 1024];
+        assert!(is_zero_chunk(&chunk));
+    }
+
+    #[test]
+    fn test_is_zero_chunk_with_nonzero() {
+        let mut chunk = vec![0u8; 1024];
+        chunk[512] = 1; // Single non-zero byte
+        assert!(!is_zero_chunk(&chunk));
+    }
+
+    #[test]
+    fn test_is_zero_chunk_all_nonzero() {
+        let chunk = vec![0xFFu8; 1024];
+        assert!(!is_zero_chunk(&chunk));
+    }
+
+    #[test]
+    fn test_is_zero_chunk_empty() {
+        let chunk: Vec<u8> = vec![];
+        assert!(is_zero_chunk(&chunk)); // Vacuous truth
+    }
+
+    #[test]
+    fn test_is_zero_chunk_single_zero() {
+        let chunk = vec![0u8];
+        assert!(is_zero_chunk(&chunk));
+    }
+
+    #[test]
+    fn test_is_zero_chunk_single_nonzero() {
+        let chunk = vec![1u8];
+        assert!(!is_zero_chunk(&chunk));
+    }
+
+    #[test]
+    fn test_create_zero_block() {
+        let logical_len = 65536;
+        let info = create_zero_block(logical_len);
+
+        assert_eq!(info.offset, 0);
+        assert_eq!(info.length, 0);
+        assert_eq!(info.logical_len, logical_len);
+        assert_eq!(info.checksum, 0);
+    }
+
+    #[test]
+    fn test_create_zero_block_various_sizes() {
+        for size in [1, 16, 1024, 4096, 65536, 1048576] {
+            let info = create_zero_block(size);
+            assert_eq!(info.offset, 0);
+            assert_eq!(info.length, 0);
+            assert_eq!(info.logical_len, size);
+            assert_eq!(info.checksum, 0);
+        }
+    }
+
+    #[test]
+    fn test_write_block_basic_lz4() {
+        let mut output = Cursor::new(Vec::new());
+        let mut offset = 512u64; // Start after header
+        let chunk = vec![0xAAu8; 4096];
+        let compressor = Lz4Compressor::new();
+
+        let result = write_block(&mut output, &chunk, 0, &mut offset, None, &compressor, None);
+
+        assert!(result.is_ok());
+        let info = result.unwrap();
+
+        // Verify offset updated
+        assert!(offset > 512);
+
+        // Verify block info
+        assert_eq!(info.offset, 512);
+        assert!(info.length > 0); // Compressed data written
+        assert_eq!(info.logical_len, 4096);
+        assert!(info.checksum != 0);
+
+        // Verify data was written
+        let written = output.into_inner();
+        assert_eq!(written.len(), (offset - 512) as usize);
+    }
+
+    #[test]
+    fn test_write_block_basic_zstd() {
+        let mut output = Cursor::new(Vec::new());
+        let mut offset = 512u64;
+        let chunk = vec![0xAAu8; 4096];
+        let compressor = ZstdCompressor::new(3, None);
+
+        let result = write_block(&mut output, &chunk, 0, &mut offset, None, &compressor, None);
+
+        assert!(result.is_ok());
+        let info = result.unwrap();
+
+        assert_eq!(info.offset, 512);
+        assert!(info.length > 0);
+        assert_eq!(info.logical_len, 4096);
+    }
+
+    #[test]
+    fn test_write_block_incompressible_data() {
+        let mut output = Cursor::new(Vec::new());
+        let mut offset = 512u64;
+
+        // Random-ish data that doesn't compress well
+        let chunk: Vec<u8> = (0..4096).map(|i| ((i * 7 + 13) % 256) as u8).collect();
+        let compressor = Lz4Compressor::new();
+
+        let result = write_block(&mut output, &chunk, 0, &mut offset, None, &compressor, None);
+
+        assert!(result.is_ok());
+        let info = result.unwrap();
+
+        // Even "incompressible" data might compress slightly or expand
+        // Just verify it executed successfully
+        assert_eq!(info.logical_len, chunk.len() as u32);
+        assert!(info.length > 0);
+    }
+
+    #[test]
+    fn test_write_block_with_dedup_unique_blocks() {
+        let mut output = Cursor::new(Vec::new());
+        let mut offset = 512u64;
+        let mut dedup_map = HashMap::new();
+        let compressor = Lz4Compressor::new();
+
+        // Write first block
+        let chunk1 = vec![0xAAu8; 4096];
+        let info1 = write_block(
+            &mut output,
+            &chunk1,
+            0,
+            &mut offset,
+            Some(&mut dedup_map),
+            &compressor,
+            None,
+        )
+        .unwrap();
+
+        let offset_after_block1 = offset;
+
+        // Write second unique block
+        let chunk2 = vec![0xBBu8; 4096];
+        let info2 = write_block(
+            &mut output,
+            &chunk2,
+            1,
+            &mut offset,
+            Some(&mut dedup_map),
+            &compressor,
+            None,
+        )
+        .unwrap();
+
+        // Both blocks should be written
+        assert_eq!(info1.offset, 512);
+        assert_eq!(info2.offset, offset_after_block1);
+        assert!(offset > offset_after_block1);
+
+        // Dedup map should have 2 entries
+        assert_eq!(dedup_map.len(), 2);
+    }
+
+    #[test]
+    fn test_write_block_with_dedup_duplicate_blocks() {
+        let mut output = Cursor::new(Vec::new());
+        let mut offset = 512u64;
+        let mut dedup_map = HashMap::new();
+        let compressor = Lz4Compressor::new();
+
+        // Write first block
+        let chunk1 = vec![0xAAu8; 4096];
+        let info1 = write_block(
+            &mut output,
+            &chunk1,
+            0,
+            &mut offset,
+            Some(&mut dedup_map),
+            &compressor,
+            None,
+        )
+        .unwrap();
+
+        let offset_after_block1 = offset;
+
+        // Write duplicate block (same content)
+        let chunk2 = vec![0xAAu8; 4096];
+        let info2 = write_block(
+            &mut output,
+            &chunk2,
+            1,
+            &mut offset,
+            Some(&mut dedup_map),
+            &compressor,
+            None,
+        )
+        .unwrap();
+
+        // Second block should reuse first block's offset
+        assert_eq!(info1.offset, info2.offset);
+        assert_eq!(info1.length, info2.length);
+        assert_eq!(info1.checksum, info2.checksum);
+
+        // Offset should not advance (no write)
+        assert_eq!(offset, offset_after_block1);
+
+        // Dedup map should have 1 entry (deduplicated)
+        assert_eq!(dedup_map.len(), 1);
+    }
+
+    #[test]
+    fn test_write_block_with_encryption() {
+        let mut output = Cursor::new(Vec::new());
+        let mut offset = 512u64;
+        let chunk = vec![0xAAu8; 4096];
+        let compressor = Lz4Compressor::new();
+
+        // Create encryptor
+        let salt = [0u8; 32];
+        let encryptor = AesGcmEncryptor::new(b"test_password", &salt, 100000);
+
+        let result = write_block(
+            &mut output,
+            &chunk,
+            0,
+            &mut offset,
+            None,
+            &compressor,
+            Some(&encryptor),
+        );
+
+        assert!(result.is_ok());
+        let info = result.unwrap();
+
+        // Encrypted data should be larger than compressed (adds GCM tag)
+        assert!(info.length > 16); // At least tag overhead
+        assert_eq!(info.logical_len, 4096);
+    }
+
+    #[test]
+    fn test_write_block_encryption_disables_dedup() {
+        let mut output = Cursor::new(Vec::new());
+        let mut offset = 512u64;
+        let mut dedup_map = HashMap::new();
+        let compressor = Lz4Compressor::new();
+        let salt = [0u8; 32];
+        let encryptor = AesGcmEncryptor::new(b"test_password", &salt, 100000);
+
+        // Write first encrypted block
+        let chunk1 = vec![0xAAu8; 4096];
+        let info1 = write_block(
+            &mut output,
+            &chunk1,
+            0,
+            &mut offset,
+            Some(&mut dedup_map),
+            &compressor,
+            Some(&encryptor),
+        )
+        .unwrap();
+
+        let offset_after_block1 = offset;
+
+        // Write second encrypted block (same content, different nonce)
+        let chunk2 = vec![0xAAu8; 4096];
+        let info2 = write_block(
+            &mut output,
+            &chunk2,
+            1,
+            &mut offset,
+            Some(&mut dedup_map),
+            &compressor,
+            Some(&encryptor),
+        )
+        .unwrap();
+
+        // Both blocks should be written (no dedup with encryption)
+        assert_eq!(info1.offset, 512);
+        assert_eq!(info2.offset, offset_after_block1);
+        assert!(offset > offset_after_block1);
+
+        // Dedup map should be empty (encryption disables dedup)
+        assert_eq!(dedup_map.len(), 0);
+    }
+
+    #[test]
+    fn test_write_block_multiple_sequential() {
+        let mut output = Cursor::new(Vec::new());
+        let mut offset = 512u64;
+        let compressor = Lz4Compressor::new();
+
+        let mut expected_offset = 512u64;
+
+        // Write 10 blocks sequentially
+        for i in 0..10 {
+            let chunk = vec![i as u8; 4096];
+            let info =
+                write_block(&mut output, &chunk, i, &mut offset, None, &compressor, None).unwrap();
+
+            assert_eq!(info.offset, expected_offset);
+            expected_offset += info.length as u64;
+        }
+
+        assert_eq!(offset, expected_offset);
+    }
+
+    #[test]
+    fn test_write_block_preserves_logical_length() {
+        let mut output = Cursor::new(Vec::new());
+        let mut offset = 512u64;
+        let compressor = Lz4Compressor::new();
+
+        for size in [128, 1024, 4096, 65536] {
+            let chunk = vec![0xAAu8; size];
+            let info =
+                write_block(&mut output, &chunk, 0, &mut offset, None, &compressor, None).unwrap();
+
+            assert_eq!(info.logical_len, size as u32);
+        }
+    }
+
+    #[test]
+    fn test_write_block_checksum_differs() {
+        let mut output1 = Cursor::new(Vec::new());
+        let mut output2 = Cursor::new(Vec::new());
+        let mut offset1 = 512u64;
+        let mut offset2 = 512u64;
+        let compressor = Lz4Compressor::new();
+
+        let chunk1 = vec![0xAAu8; 4096];
+        let chunk2 = vec![0xBBu8; 4096];
+
+        let info1 = write_block(
+            &mut output1,
+            &chunk1,
+            0,
+            &mut offset1,
+            None,
+            &compressor,
+            None,
+        )
+        .unwrap();
+
+        let info2 = write_block(
+            &mut output2,
+            &chunk2,
+            0,
+            &mut offset2,
+            None,
+            &compressor,
+            None,
+        )
+        .unwrap();
+
+        // Different input data should produce different checksums
+        assert_ne!(info1.checksum, info2.checksum);
+    }
+
+    #[test]
+    fn test_write_block_empty_chunk() {
+        let mut output = Cursor::new(Vec::new());
+        let mut offset = 512u64;
+        let chunk: Vec<u8> = vec![];
+        let compressor = Lz4Compressor::new();
+
+        let result = write_block(&mut output, &chunk, 0, &mut offset, None, &compressor, None);
+
+        // Should handle empty chunk
+        assert!(result.is_ok());
+        let info = result.unwrap();
+        assert_eq!(info.logical_len, 0);
+    }
+
+    #[test]
+    fn test_write_block_large_block() {
+        let mut output = Cursor::new(Vec::new());
+        let mut offset = 512u64;
+        let chunk = vec![0xAAu8; 1024 * 1024]; // 1 MB
+        let compressor = Lz4Compressor::new();
+
+        let result = write_block(&mut output, &chunk, 0, &mut offset, None, &compressor, None);
+
+        assert!(result.is_ok());
+        let info = result.unwrap();
+        assert_eq!(info.logical_len, 1024 * 1024);
+        // Highly compressible data should compress well
+        assert!(info.length < info.logical_len);
+    }
+
+    #[test]
+    fn test_integration_zero_detection_and_write() {
+        let mut output = Cursor::new(Vec::new());
+        let mut offset = 512u64;
+        let compressor = Lz4Compressor::new();
+
+        let zero_chunk = vec![0u8; 4096];
+        let data_chunk = vec![0xAAu8; 4096];
+
+        // Process zero chunk
+        let zero_info = if is_zero_chunk(&zero_chunk) {
+            create_zero_block(zero_chunk.len() as u32)
+        } else {
+            write_block(
+                &mut output,
+                &zero_chunk,
+                0,
+                &mut offset,
+                None,
+                &compressor,
+                None,
+            )
+            .unwrap()
+        };
+
+        // Process data chunk
+        let data_info = if is_zero_chunk(&data_chunk) {
+            create_zero_block(data_chunk.len() as u32)
+        } else {
+            write_block(
+                &mut output,
+                &data_chunk,
+                1,
+                &mut offset,
+                None,
+                &compressor,
+                None,
+            )
+            .unwrap()
+        };
+
+        // Zero block should not be written
+        assert_eq!(zero_info.offset, 0);
+        assert_eq!(zero_info.length, 0);
+
+        // Data block should be written
+        assert_eq!(data_info.offset, 512);
+        assert!(data_info.length > 0);
+    }
+}

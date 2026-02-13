@@ -23,7 +23,19 @@ def s3_server():
     """
     Spawns a local Moto S3 server.
     """
-    if not shutil.which("moto_server"):
+    # Check for moto_server in venv first, then system PATH
+    # tests/ is in crates/loader/tests, venv is in repo root
+    test_dir = os.path.dirname(os.path.abspath(__file__))  # crates/loader/tests
+    loader_dir = os.path.dirname(test_dir)  # crates/loader
+    crates_dir = os.path.dirname(loader_dir)  # crates
+    repo_root = os.path.dirname(crates_dir)  # repo root
+    venv_moto = os.path.join(repo_root, ".venv", "bin", "moto_server")
+
+    if os.path.exists(venv_moto):
+        moto_cmd = venv_moto
+    elif shutil.which("moto_server"):
+        moto_cmd = "moto_server"
+    else:
         pytest.fail("moto_server not found. Please install: pip install 'moto[server]'")
 
     port = get_free_port()
@@ -31,7 +43,7 @@ def s3_server():
     endpoint_url = f"http://{host}:{port}"
 
     process = subprocess.Popen(
-        ["moto_server", "-p", str(port), "-H", host],
+        [moto_cmd, "-p", str(port), "-H", host],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -80,7 +92,7 @@ def s3_client(s3_server):
 
 def test_async_s3_read(s3_server, s3_client, tmp_path):
     """
-    Tests that the Rust AsyncS3Backend can read from a custom S3 endpoint.
+    Tests that the Rust S3Backend can read from a custom S3 endpoint.
     """
     bucket = "my-test-bucket"
     key = "snapshot.st"

@@ -19,7 +19,7 @@ BENCH_CMP_TMP   := _cmp
 MATURIN         ?= maturin
 CARGO           ?= cargo
 RUFF            := $(shell [ -f .venv/bin/ruff ] && echo .venv/bin/ruff || echo ruff)
-PYTHON          ?= $(shell [ -f .venv/bin/python ] && echo .venv/bin/python || echo python3)
+PYTHON          ?= $(shell [ -f .venv/bin/python3 ] && echo .venv/bin/python3 || ([ -f .venv/bin/python ] && echo .venv/bin/python || echo python3))
 MKDOCS          := $(shell [ -f .venv/bin/mkdocs ] && echo .venv/bin/mkdocs || echo mkdocs)
 
 # ── Pass-through args ─────────────────────────────────────────────────────────
@@ -77,7 +77,7 @@ endif
 
 # ── Phony ────────────────────────────────────────────────────────────────────
 .PHONY: help build rust python develop install run clean
-.PHONY: test test-rust test-python test-integration test-list
+.PHONY: test test-rust test-python test-integration test-list test-cov test-cov-rust test-cov-python
 .PHONY: lint fmt fmt-check clippy deny check
 .PHONY: bench bench-list bench-compare save-baseline archive-baseline restore-baseline compare-baseline fuzz
 .PHONY: docker-dev docker-bench docs docs-python setup setup-check ci
@@ -100,6 +100,9 @@ help:
 	@printf "    %-$(HELP_W)s  Rust tests only\n" "make test-rust [filter]"
 	@printf "    %-$(HELP_W)s  Python tests only (pytest -k)\n" "make test-python [filter]"
 	@printf "    %-$(HELP_W)s  List test categories for filtering\n" "make test-list"
+	@printf "    %-$(HELP_W)s  Coverage report (Rust + Python)\n" "make test-cov"
+	@printf "    %-$(HELP_W)s  Rust coverage only (cargo-llvm-cov)\n" "make test-cov-rust"
+	@printf "    %-$(HELP_W)s  Python coverage only (pytest-cov)\n" "make test-cov-python"
 	@printf "\n  $(CYAN)Quality$(RESET)\n"
 	@printf "    %-$(HELP_W)s  Format check + clippy\n" "make lint"
 	@printf "    %-$(HELP_W)s  Auto-format Rust + Python\n" "make fmt"
@@ -174,7 +177,7 @@ END { if (buf != "" && !skip) printf "%s", buf }'; \
 
 test-python:
 	@printf "$(GREEN)Running Python tests…$(RESET)\n"
-	cd $(LOADER_CRATE) && $(MATURIN) develop -E test,numpy && $(PYTHON) -m pytest tests/ -v $(if $(TEST_ARGS),-k "$(TEST_ARGS)",)
+	cd $(LOADER_CRATE) && $(MATURIN) develop -E test,numpy && ../../$(PYTHON) -m pytest tests/ -v $(if $(TEST_ARGS),-k "$(TEST_ARGS)",)
 
 test-integration:
 	@printf "$(GREEN)Running integration tests…$(RESET)\n"
@@ -186,6 +189,48 @@ test-list:
 	printf "$(GREEN)Rust test categories (use with make test <category>)…$(RESET)\n\n"; \
 	sed -n 's/: test$$//p' "$$TMP" | grep '::' | cut -d: -f1 | sort -u; \
 	rm -f "$$TMP"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Coverage
+# ═══════════════════════════════════════════════════════════════════════════════
+test-cov:
+	@printf "$(GREEN)Generating coverage reports…$(RESET)\n"
+	@printf "$(CYAN)[1/2] Running Rust tests (may take a moment)…$(RESET)\n"
+	@command -v cargo-llvm-cov >/dev/null 2>&1 || { \
+		printf "$(CYAN)Installing cargo-llvm-cov…$(RESET)\n"; \
+		$(CARGO) install cargo-llvm-cov; \
+	}
+	@$(CARGO) llvm-cov --workspace --ignore-filename-regex '(tests/|benches/|py_interface/|cmd/vm/boot\.rs|cmd/vm/install\.rs|cmd/vm/unmount\.rs|cmd/sys/serve\.rs|loader/src/lib\.rs|tensor/numpy\.rs)' --color=always 2>&1 | \
+		awk '/^Filename/,0' | grep -v "^info:\|^  -->\|^   Compiling\|^    Finished\|^     Running" || true
+	@printf "\n$(CYAN)[2/2] Running Python tests (may take a moment)…$(RESET)\n"
+	@cd $(LOADER_CRATE) && \
+		$(MATURIN) develop -q -E test,numpy >/dev/null 2>&1 && \
+		../../$(PYTHON) -m pytest tests/ --cov=python/strata --cov-report=term-missing --tb=no --color=yes -q -p no:warnings 2>&1 | \
+		sed '/^Requirement already satisfied/d; /^Collecting/d; /^Downloading/d; /^Installing/d; /^Successfully installed/d; /✏️/d; /^Ignoring/d; /^warnings summary/,/^-- Docs:/d' | \
+		awk 'BEGIN{in_cov=0} /^Name/ {in_cov=1} in_cov {print} /^TOTAL/ {in_cov=0; print ""; next} /passed|failed|error|skipped/ && !in_cov {print}'
+	@printf "\n$(GREEN)✓ Coverage complete$(RESET)\n"
+	@printf "$(CYAN)Note: PyO3 bindings (py_interface/) tested via Python integration tests$(RESET)\n"
+
+test-cov-rust:
+	@printf "$(GREEN)Generating Rust coverage report…$(RESET)\n"
+	@printf "$(CYAN)Running Rust tests (may take a moment)…$(RESET)\n"
+	@command -v cargo-llvm-cov >/dev/null 2>&1 || { \
+		printf "$(CYAN)Installing cargo-llvm-cov…$(RESET)\n"; \
+		$(CARGO) install cargo-llvm-cov; \
+	}
+	@$(CARGO) llvm-cov --workspace --ignore-filename-regex '(tests/|benches/|py_interface/|cmd/vm/boot\.rs|cmd/vm/install\.rs|cmd/vm/unmount\.rs|cmd/sys/serve\.rs|loader/src/lib\.rs|tensor/numpy\.rs)' --color=always 2>&1 | \
+		awk '/^Filename/,0' | grep -v "^info:\|^  -->\|^   Compiling\|^    Finished\|^     Running" || true
+
+test-cov-python:
+	@printf "$(GREEN)Generating Python coverage report…$(RESET)\n"
+	@printf "$(CYAN)Building Python extension (may take a moment)…$(RESET)\n"
+	@cd $(LOADER_CRATE) && \
+		$(MATURIN) develop -q -E test,numpy >/dev/null 2>&1
+	@printf "$(CYAN)Running Python tests (may take a moment)…$(RESET)\n"
+	@cd $(LOADER_CRATE) && \
+		../../$(PYTHON) -m pytest tests/ --cov=python/strata --cov-report=term-missing --tb=no --color=yes -q -p no:warnings 2>&1 | \
+		sed '/^Requirement already satisfied/d; /^Collecting/d; /^Downloading/d; /^Installing/d; /^Successfully installed/d; /✏️/d; /^Ignoring/d; /^warnings summary/,/^-- Docs:/d' | \
+		awk 'BEGIN{in_cov=0} /^Name/ {in_cov=1} in_cov {print} /^TOTAL/ {in_cov=0; print ""; next} /passed|failed|error|skipped/ && !in_cov {print}'
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Quality

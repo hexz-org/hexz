@@ -803,3 +803,352 @@ impl Default for HashIndex {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hash_index_new() {
+        let index = HashIndex::new();
+        assert_eq!(index.len(), 0);
+        assert!(index.is_empty());
+        assert_eq!(index.unique_content_count(), 0);
+    }
+
+    #[test]
+    fn test_hash_index_default() {
+        let index = HashIndex::default();
+        assert_eq!(index.len(), 0);
+        assert!(index.is_empty());
+    }
+
+    #[test]
+    fn test_hash_index_with_capacity() {
+        let index = HashIndex::with_capacity(1000);
+        assert_eq!(index.len(), 0);
+        assert!(index.is_empty());
+        // Capacity doesn't affect initial state, just allocation
+    }
+
+    #[test]
+    fn test_insert_and_lookup() {
+        let mut index = HashIndex::new();
+        let block = BlockInfo {
+            offset: 4096,
+            length: 2048,
+            logical_len: 4096,
+            checksum: 0x12345678,
+        };
+
+        index.insert(42, block);
+        assert_eq!(index.len(), 1);
+        assert!(!index.is_empty());
+
+        let found = index.lookup(42).unwrap();
+        assert_eq!(found.offset, 4096);
+        assert_eq!(found.length, 2048);
+        assert_eq!(found.logical_len, 4096);
+        assert_eq!(found.checksum, 0x12345678);
+    }
+
+    #[test]
+    fn test_lookup_missing() {
+        let index = HashIndex::new();
+        assert!(index.lookup(999).is_none());
+    }
+
+    #[test]
+    fn test_insert_multiple_blocks() {
+        let mut index = HashIndex::new();
+
+        for i in 0..100 {
+            let block = BlockInfo {
+                offset: 4096 * i,
+                length: 2048,
+                logical_len: 4096,
+                checksum: i as u32,
+            };
+            index.insert(i, block);
+        }
+
+        assert_eq!(index.len(), 100);
+
+        // Verify all blocks can be looked up
+        for i in 0..100 {
+            let found = index.lookup(i).unwrap();
+            assert_eq!(found.offset, 4096 * i);
+            assert_eq!(found.checksum, i as u32);
+        }
+    }
+
+    #[test]
+    fn test_insert_hash_and_lookup_by_hash() {
+        let mut index = HashIndex::new();
+        let hash = [0x42; 32];
+
+        index.insert_hash(hash, 100);
+        assert_eq!(index.unique_content_count(), 1);
+
+        let found_id = index.lookup_by_hash(&hash);
+        assert_eq!(found_id, Some(100));
+    }
+
+    #[test]
+    fn test_lookup_by_hash_missing() {
+        let index = HashIndex::new();
+        let hash = [0xFF; 32];
+        assert_eq!(index.lookup_by_hash(&hash), None);
+    }
+
+    #[test]
+    fn test_insert_hash_multiple() {
+        let mut index = HashIndex::new();
+
+        for i in 0..10 {
+            let mut hash = [0u8; 32];
+            hash[0] = i;
+            index.insert_hash(hash, i as u64);
+        }
+
+        assert_eq!(index.unique_content_count(), 10);
+
+        // Verify all hashes can be looked up
+        for i in 0..10 {
+            let mut hash = [0u8; 32];
+            hash[0] = i;
+            assert_eq!(index.lookup_by_hash(&hash), Some(i as u64));
+        }
+    }
+
+    #[test]
+    fn test_insert_hash_overwrite() {
+        let mut index = HashIndex::new();
+        let hash = [0x42; 32];
+
+        index.insert_hash(hash, 100);
+        assert_eq!(index.lookup_by_hash(&hash), Some(100));
+
+        // Overwrite with new block ID
+        index.insert_hash(hash, 200);
+        assert_eq!(index.lookup_by_hash(&hash), Some(200));
+
+        // Count should still be 1 (replaced, not added)
+        assert_eq!(index.unique_content_count(), 1);
+    }
+
+    #[test]
+    fn test_deduplication_workflow() {
+        let mut index = HashIndex::new();
+
+        // First block with unique content
+        let block1 = BlockInfo {
+            offset: 4096,
+            length: 2048,
+            logical_len: 4096,
+            checksum: 0x12345678,
+        };
+        let hash1 = [0x11; 32];
+
+        index.insert(0, block1);
+        index.insert_hash(hash1, 0);
+
+        // Second block with different content
+        let block2 = BlockInfo {
+            offset: 6144,
+            length: 1024,
+            logical_len: 4096,
+            checksum: 0x9ABCDEF0,
+        };
+        let hash2 = [0x22; 32];
+
+        index.insert(1, block2);
+        index.insert_hash(hash2, 1);
+
+        // Third block with same content as first (dedup)
+        // Don't insert physical block, just reference existing
+        assert_eq!(index.lookup_by_hash(&hash1), Some(0));
+
+        assert_eq!(index.len(), 2); // Only 2 physical blocks
+        assert_eq!(index.unique_content_count(), 2); // 2 unique hashes
+    }
+
+    #[test]
+    fn test_deduplication_ratio_no_dedup() {
+        let mut index = HashIndex::new();
+
+        // 10 blocks, all unique
+        for i in 0..10 {
+            index.insert(i, BlockInfo::default());
+            let mut hash = [0u8; 32];
+            hash[0] = i as u8;
+            index.insert_hash(hash, i);
+        }
+
+        assert_eq!(index.len(), 10);
+        assert_eq!(index.unique_content_count(), 10);
+        assert_eq!(index.deduplication_ratio(), 0.0);
+    }
+
+    #[test]
+    fn test_deduplication_ratio_50_percent() {
+        let mut index = HashIndex::new();
+
+        // 10 blocks, 5 unique hashes (50% dedup)
+        for i in 0..10 {
+            index.insert(i, BlockInfo::default());
+            let mut hash = [0u8; 32];
+            hash[0] = (i % 5) as u8; // Only 5 unique hashes
+            index.insert_hash(hash, i);
+        }
+
+        assert_eq!(index.len(), 10);
+        assert_eq!(index.unique_content_count(), 5);
+        let ratio = index.deduplication_ratio();
+        assert!((ratio - 50.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_deduplication_ratio_90_percent() {
+        let mut index = HashIndex::new();
+
+        // 100 blocks, 10 unique hashes (90% dedup)
+        for i in 0..100 {
+            index.insert(i, BlockInfo::default());
+            let mut hash = [0u8; 32];
+            hash[0] = (i % 10) as u8;
+            index.insert_hash(hash, i);
+        }
+
+        assert_eq!(index.len(), 100);
+        assert_eq!(index.unique_content_count(), 10);
+        let ratio = index.deduplication_ratio();
+        assert!((ratio - 90.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_deduplication_ratio_empty_index() {
+        let index = HashIndex::new();
+        assert_eq!(index.deduplication_ratio(), 0.0);
+    }
+
+    #[test]
+    fn test_len_and_is_empty() {
+        let mut index = HashIndex::new();
+        assert_eq!(index.len(), 0);
+        assert!(index.is_empty());
+
+        index.insert(0, BlockInfo::default());
+        assert_eq!(index.len(), 1);
+        assert!(!index.is_empty());
+
+        index.insert(1, BlockInfo::default());
+        assert_eq!(index.len(), 2);
+        assert!(!index.is_empty());
+    }
+
+    #[test]
+    fn test_unique_content_count() {
+        let mut index = HashIndex::new();
+        assert_eq!(index.unique_content_count(), 0);
+
+        index.insert_hash([0x01; 32], 0);
+        assert_eq!(index.unique_content_count(), 1);
+
+        index.insert_hash([0x02; 32], 1);
+        assert_eq!(index.unique_content_count(), 2);
+
+        // Overwrite existing hash
+        index.insert_hash([0x01; 32], 2);
+        assert_eq!(index.unique_content_count(), 2); // Still 2
+    }
+
+    #[test]
+    fn test_serialization() {
+        let mut index = HashIndex::new();
+
+        // Add some blocks
+        for i in 0..5 {
+            let block = BlockInfo {
+                offset: 4096 * i,
+                length: 2048,
+                logical_len: 4096,
+                checksum: i as u32,
+            };
+            index.insert(i, block);
+
+            let mut hash = [0u8; 32];
+            hash[0] = i as u8;
+            index.insert_hash(hash, i);
+        }
+
+        // Serialize
+        let bytes = bincode::serialize(&index).unwrap();
+
+        // Deserialize
+        let deserialized: HashIndex = bincode::deserialize(&bytes).unwrap();
+
+        // Verify
+        assert_eq!(deserialized.len(), index.len());
+        assert_eq!(
+            deserialized.unique_content_count(),
+            index.unique_content_count()
+        );
+
+        for i in 0..5 {
+            let original = index.lookup(i).unwrap();
+            let restored = deserialized.lookup(i).unwrap();
+            assert_eq!(restored.offset, original.offset);
+            assert_eq!(restored.checksum, original.checksum);
+        }
+    }
+
+    #[test]
+    fn test_insert_overwrites_existing() {
+        let mut index = HashIndex::new();
+
+        let block1 = BlockInfo {
+            offset: 4096,
+            length: 2048,
+            logical_len: 4096,
+            checksum: 0x12345678,
+        };
+        index.insert(42, block1);
+
+        let block2 = BlockInfo {
+            offset: 8192,
+            length: 1024,
+            logical_len: 4096,
+            checksum: 0x9ABCDEF0,
+        };
+        index.insert(42, block2); // Overwrite
+
+        assert_eq!(index.len(), 1); // Still just one entry
+
+        let found = index.lookup(42).unwrap();
+        assert_eq!(found.offset, 8192); // Updated value
+        assert_eq!(found.checksum, 0x9ABCDEF0);
+    }
+
+    #[test]
+    fn test_large_scale_insertion() {
+        let mut index = HashIndex::with_capacity(10000);
+
+        for i in 0..10000 {
+            let block = BlockInfo {
+                offset: 4096 * i,
+                length: 2048,
+                logical_len: 4096,
+                checksum: i as u32,
+            };
+            index.insert(i, block);
+        }
+
+        assert_eq!(index.len(), 10000);
+
+        // Spot check some blocks
+        assert_eq!(index.lookup(0).unwrap().offset, 0);
+        assert_eq!(index.lookup(5000).unwrap().offset, 4096 * 5000);
+        assert_eq!(index.lookup(9999).unwrap().offset, 4096 * 9999);
+    }
+}

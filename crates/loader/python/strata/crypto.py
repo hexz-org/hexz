@@ -21,7 +21,17 @@ def keygen(private_key: PathLike, public_key: PathLike) -> None:
         >>> crypto.keygen("snapshot.key", "snapshot.pub")
         >>> # Remember to set restrictive permissions on the private key
     """
-    strata_loader.keygen(str(private_key), str(public_key))
+    import shutil
+    import tempfile
+
+    # Create a temporary directory for key generation
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Generate keypair in temp directory
+        priv_path, pub_path = strata_loader.keygen(temp_dir)
+
+        # Move generated keys to desired locations
+        shutil.move(priv_path, str(private_key))
+        shutil.move(pub_path, str(public_key))
 
 
 def sign(snapshot: PathLike, private_key: PathLike) -> None:
@@ -60,12 +70,15 @@ def verify(
         ... else:
         ...     print("Signature verification failed!")
     """
-    if signature:
-        return strata_loader.verify_image(
-            str(snapshot), str(public_key), str(signature)
-        )
-    else:
-        return strata_loader.verify_image(str(snapshot), str(public_key))
+    try:
+        if signature:
+            strata_loader.verify_image(str(snapshot), str(public_key), str(signature))
+        else:
+            strata_loader.verify_image(str(snapshot), str(public_key))
+        # verify_image returns None on success, raises on failure
+        return True
+    except Exception:
+        return False
 
 
 __all__ = ["keygen", "sign", "verify"]

@@ -255,3 +255,8 @@ pub fn pack(
         pack_snapshot(config, None::<fn(u64, u64)>).map_err(|e| PyIOError::new_err(e.to_string()))
     })
 }
+
+// Note: Tests for this module require Python runtime (pyo3::Python<'_>) and are
+// thoroughly covered by the Python integration test suite (189 tests in
+// crates/loader/tests/). Rust unit tests for PyO3 code cannot run without
+// linking to Python.

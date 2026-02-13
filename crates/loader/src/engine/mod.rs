@@ -46,7 +46,7 @@
 //! | `/path/to/file`  | FileBackend     | Local disk access                     |
 //! | `http://...`     | HttpBackend     | Remote HTTP-accessible snapshots      |
 //! | `https://...`    | HttpBackend     | TLS-secured remote snapshots          |
-//! | `s3://bucket/key`| AsyncS3Backend  | AWS S3 or S3-compatible object stores |
+//! | `s3://bucket/key`| S3Backend       | AWS S3 or S3-compatible object stores |
 //!
 //! ## Security Considerations
 //!
@@ -387,7 +387,7 @@ pub struct OpenConfig {
 /// the following steps:
 ///
 /// 1. **Backend Selection**: Inspects the URI scheme in `config.path` to determine
-///    whether to use FileBackend (local), HttpBackend, or AsyncS3Backend.
+///    whether to use FileBackend (local), HttpBackend, or S3Backend.
 /// 2. **Connection Establishment**: Initializes the selected backend, performing any
 ///    necessary authentication (S3) or DNS resolution (HTTP).
 /// 3. **Header Validation**: Reads the snapshot header to extract compression type,
@@ -494,38 +494,37 @@ pub struct OpenConfig {
 /// features like prefetching and custom cache sizes. The alternative
 /// `StrataFile::new` would use default settings without prefetch support.
 pub fn open_snapshot(config: OpenConfig) -> Result<Arc<StrataFile>, OpenError> {
-    let backend: Arc<dyn StorageBackend> = if config.path.starts_with("http://")
-        || config.path.starts_with("https://")
-    {
-        Arc::new(
-            strata_core::store::http::HttpBackend::new(
-                config.path.clone(),
-                config.allow_restricted,
+    let backend: Arc<dyn StorageBackend> =
+        if config.path.starts_with("http://") || config.path.starts_with("https://") {
+            Arc::new(
+                strata_core::store::http::HttpBackend::new(
+                    config.path.clone(),
+                    config.allow_restricted,
+                )
+                .map_err(|e| OpenError::Io(e.to_string()))?,
             )
-            .map_err(|e| OpenError::Io(e.to_string()))?,
-        )
-    } else if config.path.starts_with("s3://") {
-        let remainder = &config.path[5..];
-        let parts: Vec<&str> = remainder.splitn(2, '/').collect();
-        if parts.len() != 2 {
-            return Err(OpenError::InvalidS3Uri(
-                "Expected s3://bucket/key".to_string(),
-            ));
-        }
-        let bucket = parts[0].to_string();
-        let key = parts[1].to_string();
-        let region = config.s3_region.unwrap_or_else(|| "us-east-1".to_string());
+        } else if config.path.starts_with("s3://") {
+            let remainder = &config.path[5..];
+            let parts: Vec<&str> = remainder.splitn(2, '/').collect();
+            if parts.len() != 2 {
+                return Err(OpenError::InvalidS3Uri(
+                    "Expected s3://bucket/key".to_string(),
+                ));
+            }
+            let bucket = parts[0].to_string();
+            let key = parts[1].to_string();
+            let region = config.s3_region.unwrap_or_else(|| "us-east-1".to_string());
 
-        Arc::new(
-            strata_core::store::s3::AsyncS3Backend::new(bucket, key, region, config.endpoint_url)
-                .map_err(|e| OpenError::Io(e.to_string()))?,
-        )
-    } else {
-        Arc::new(
-            strata_core::store::local::FileBackend::new(std::path::Path::new(&config.path))
-                .map_err(|e| OpenError::Io(e.to_string()))?,
-        )
-    };
+            Arc::new(
+                strata_core::store::s3::S3Backend::new(bucket, key, region, config.endpoint_url)
+                    .map_err(|e| OpenError::Io(e.to_string()))?,
+            )
+        } else {
+            Arc::new(
+                strata_core::store::local::FileBackend::new(std::path::Path::new(&config.path))
+                    .map_err(|e| OpenError::Io(e.to_string()))?,
+            )
+        };
 
     let header_bytes = backend
         .read_exact(0, HEADER_SIZE)
@@ -719,4 +718,401 @@ pub fn read_stream(
 ) -> Result<Vec<u8>, OpenError> {
     snap.read_at(stream, offset, length)
         .map_err(|e| OpenError::Io(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+    use strata_core::ops::pack::{PackConfig, pack_snapshot};
+    use tempfile::TempDir;
+
+    /// Helper to create a test disk image with specific pattern
+    fn create_test_disk(dir: &TempDir, name: &str, size: usize, pattern: u8) -> PathBuf {
+        let path = dir.path().join(name);
+        let data = vec![pattern; size];
+        fs::write(&path, data).unwrap();
+        path
+    }
+
+    /// Helper to create a test snapshot file
+    fn create_test_snapshot(
+        dir: &TempDir,
+        disk_size: usize,
+        pattern: u8,
+        compression: &str,
+    ) -> PathBuf {
+        let disk_path = create_test_disk(dir, "disk.img", disk_size, pattern);
+        let output_path = dir.path().join("test.st");
+
+        let config = PackConfig {
+            disk: Some(disk_path),
+            memory: None,
+            output: output_path.clone(),
+            compression: compression.to_string(),
+            encrypt: false,
+            password: None,
+            train_dict: false,
+            block_size: 4096,
+            cdc_enabled: false,
+            min_chunk: 4096,
+            avg_chunk: 8192,
+            max_chunk: 16384,
+        };
+
+        pack_snapshot(config, None::<fn(u64, u64)>).expect("Failed to pack snapshot");
+        output_path
+    }
+
+    #[test]
+    fn test_open_snapshot_local_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let snapshot_path = create_test_snapshot(&temp_dir, 8192, 0x42, "lz4");
+
+        let config = OpenConfig {
+            path: snapshot_path.to_str().unwrap().to_string(),
+            s3_region: None,
+            endpoint_url: None,
+            allow_restricted: false,
+            prefetch_count: 0,
+            cache_capacity_bytes: None,
+        };
+
+        let snap = open_snapshot(config).expect("Failed to open snapshot");
+        assert_eq!(stream_size(&snap, SnapshotStream::Disk), 8192);
+    }
+
+    #[test]
+    fn test_open_snapshot_with_cache() {
+        let temp_dir = TempDir::new().unwrap();
+        let snapshot_path = create_test_snapshot(&temp_dir, 16384, 0xAA, "lz4");
+
+        let config = OpenConfig {
+            path: snapshot_path.to_str().unwrap().to_string(),
+            s3_region: None,
+            endpoint_url: None,
+            allow_restricted: false,
+            prefetch_count: 4,
+            cache_capacity_bytes: Some(64 * 1024),
+        };
+
+        let snap = open_snapshot(config).expect("Failed to open snapshot");
+        assert_eq!(stream_size(&snap, SnapshotStream::Disk), 16384);
+    }
+
+    #[test]
+    fn test_open_snapshot_zstd_compression() {
+        let temp_dir = TempDir::new().unwrap();
+        let snapshot_path = create_test_snapshot(&temp_dir, 8192, 0xBB, "zstd");
+
+        let config = OpenConfig {
+            path: snapshot_path.to_str().unwrap().to_string(),
+            s3_region: None,
+            endpoint_url: None,
+            allow_restricted: false,
+            prefetch_count: 0,
+            cache_capacity_bytes: None,
+        };
+
+        let snap = open_snapshot(config).expect("Failed to open snapshot");
+        assert_eq!(stream_size(&snap, SnapshotStream::Disk), 8192);
+    }
+
+    #[test]
+    fn test_open_snapshot_nonexistent_file() {
+        let config = OpenConfig {
+            path: "/nonexistent/path/to/snapshot.st".to_string(),
+            s3_region: None,
+            endpoint_url: None,
+            allow_restricted: false,
+            prefetch_count: 0,
+            cache_capacity_bytes: None,
+        };
+
+        let result = open_snapshot(config);
+        assert!(result.is_err());
+        match result {
+            Err(OpenError::Io(_)) => {} // Expected
+            _ => panic!("Expected OpenError::Io"),
+        }
+    }
+
+    #[test]
+    fn test_open_snapshot_invalid_s3_uri() {
+        // Missing key
+        let config = OpenConfig {
+            path: "s3://bucket-only".to_string(),
+            s3_region: Some("us-east-1".to_string()),
+            endpoint_url: None,
+            allow_restricted: false,
+            prefetch_count: 0,
+            cache_capacity_bytes: None,
+        };
+
+        let result = open_snapshot(config);
+        assert!(result.is_err());
+        match result {
+            Err(OpenError::InvalidS3Uri(_)) => {} // Expected
+            _ => panic!("Expected OpenError::InvalidS3Uri"),
+        }
+    }
+
+    #[test]
+    fn test_stream_size() {
+        let temp_dir = TempDir::new().unwrap();
+        let snapshot_path = create_test_snapshot(&temp_dir, 12345, 0xCC, "lz4");
+
+        let config = OpenConfig {
+            path: snapshot_path.to_str().unwrap().to_string(),
+            s3_region: None,
+            endpoint_url: None,
+            allow_restricted: false,
+            prefetch_count: 0,
+            cache_capacity_bytes: None,
+        };
+
+        let snap = open_snapshot(config).unwrap();
+        let size = stream_size(&snap, SnapshotStream::Disk);
+        assert_eq!(size, 12345);
+
+        // Memory stream should be 0 (not present)
+        let mem_size = stream_size(&snap, SnapshotStream::Memory);
+        assert_eq!(mem_size, 0);
+    }
+
+    #[test]
+    fn test_read_stream_basic() {
+        let temp_dir = TempDir::new().unwrap();
+        let snapshot_path = create_test_snapshot(&temp_dir, 8192, 0xDD, "lz4");
+
+        let config = OpenConfig {
+            path: snapshot_path.to_str().unwrap().to_string(),
+            s3_region: None,
+            endpoint_url: None,
+            allow_restricted: false,
+            prefetch_count: 0,
+            cache_capacity_bytes: None,
+        };
+
+        let snap = open_snapshot(config).unwrap();
+
+        // Read first 1024 bytes
+        let data = read_stream(&snap, SnapshotStream::Disk, 0, 1024).unwrap();
+        assert_eq!(data.len(), 1024);
+        assert!(data.iter().all(|&b| b == 0xDD));
+    }
+
+    #[test]
+    fn test_read_stream_with_offset() {
+        let temp_dir = TempDir::new().unwrap();
+        let snapshot_path = create_test_snapshot(&temp_dir, 16384, 0xEE, "lz4");
+
+        let config = OpenConfig {
+            path: snapshot_path.to_str().unwrap().to_string(),
+            s3_region: None,
+            endpoint_url: None,
+            allow_restricted: false,
+            prefetch_count: 0,
+            cache_capacity_bytes: None,
+        };
+
+        let snap = open_snapshot(config).unwrap();
+
+        // Read from middle
+        let data = read_stream(&snap, SnapshotStream::Disk, 8192, 2048).unwrap();
+        assert_eq!(data.len(), 2048);
+        assert!(data.iter().all(|&b| b == 0xEE));
+    }
+
+    #[test]
+    fn test_read_stream_multiple_blocks() {
+        let temp_dir = TempDir::new().unwrap();
+        let snapshot_path = create_test_snapshot(&temp_dir, 20000, 0xFF, "lz4");
+
+        let config = OpenConfig {
+            path: snapshot_path.to_str().unwrap().to_string(),
+            s3_region: None,
+            endpoint_url: None,
+            allow_restricted: false,
+            prefetch_count: 0,
+            cache_capacity_bytes: None,
+        };
+
+        let snap = open_snapshot(config).unwrap();
+
+        // Read spanning multiple blocks (block_size is 4096)
+        let data = read_stream(&snap, SnapshotStream::Disk, 2000, 10000).unwrap();
+        assert_eq!(data.len(), 10000);
+        assert!(data.iter().all(|&b| b == 0xFF));
+    }
+
+    #[test]
+    fn test_read_stream_at_end() {
+        let temp_dir = TempDir::new().unwrap();
+        let snapshot_path = create_test_snapshot(&temp_dir, 8192, 0x11, "lz4");
+
+        let config = OpenConfig {
+            path: snapshot_path.to_str().unwrap().to_string(),
+            s3_region: None,
+            endpoint_url: None,
+            allow_restricted: false,
+            prefetch_count: 0,
+            cache_capacity_bytes: None,
+        };
+
+        let snap = open_snapshot(config).unwrap();
+
+        // Read last 100 bytes
+        let data = read_stream(&snap, SnapshotStream::Disk, 8092, 100).unwrap();
+        assert_eq!(data.len(), 100);
+        assert!(data.iter().all(|&b| b == 0x11));
+    }
+
+    #[test]
+    fn test_read_stream_with_prefetch() {
+        let temp_dir = TempDir::new().unwrap();
+        let snapshot_path = create_test_snapshot(&temp_dir, 32768, 0x22, "lz4");
+
+        let config = OpenConfig {
+            path: snapshot_path.to_str().unwrap().to_string(),
+            s3_region: None,
+            endpoint_url: None,
+            allow_restricted: false,
+            prefetch_count: 8,
+            cache_capacity_bytes: Some(128 * 1024),
+        };
+
+        let snap = open_snapshot(config).unwrap();
+
+        // Sequential reads should benefit from prefetching
+        for i in 0..8 {
+            let offset = i * 4096;
+            let data = read_stream(&snap, SnapshotStream::Disk, offset, 4096).unwrap();
+            assert_eq!(data.len(), 4096);
+            assert!(data.iter().all(|&b| b == 0x22));
+        }
+    }
+
+    #[test]
+    fn test_open_error_display() {
+        let err1 = OpenError::UnsupportedScheme("ftp://".to_string());
+        assert!(err1.to_string().contains("Unsupported scheme"));
+
+        let err2 = OpenError::Io("file not found".to_string());
+        assert!(err2.to_string().contains("I/O error"));
+
+        let err3 = OpenError::InvalidHeader("corrupt header".to_string());
+        assert!(err3.to_string().contains("Invalid header"));
+
+        let err4 = OpenError::InvalidS3Uri("s3://bucket".to_string());
+        assert!(err4.to_string().contains("Invalid S3 URI"));
+    }
+
+    #[test]
+    fn test_multiple_concurrent_reads() {
+        use std::thread;
+
+        let temp_dir = TempDir::new().unwrap();
+        let snapshot_path = create_test_snapshot(&temp_dir, 65536, 0x33, "lz4");
+
+        let config = OpenConfig {
+            path: snapshot_path.to_str().unwrap().to_string(),
+            s3_region: None,
+            endpoint_url: None,
+            allow_restricted: false,
+            prefetch_count: 4,
+            cache_capacity_bytes: Some(256 * 1024),
+        };
+
+        let snap = Arc::new(open_snapshot(config).unwrap());
+
+        // Spawn multiple threads reading concurrently
+        let handles: Vec<_> = (0..4)
+            .map(|i| {
+                let snap_clone = Arc::clone(&snap);
+                thread::spawn(move || {
+                    let offset = i * 16384;
+                    let data =
+                        read_stream(&snap_clone, SnapshotStream::Disk, offset, 4096).unwrap();
+                    assert_eq!(data.len(), 4096);
+                    assert!(data.iter().all(|&b| b == 0x33));
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            handle.join().expect("Thread panicked");
+        }
+    }
+
+    #[test]
+    fn test_read_stream_empty_length() {
+        let temp_dir = TempDir::new().unwrap();
+        let snapshot_path = create_test_snapshot(&temp_dir, 4096, 0x44, "lz4");
+
+        let config = OpenConfig {
+            path: snapshot_path.to_str().unwrap().to_string(),
+            s3_region: None,
+            endpoint_url: None,
+            allow_restricted: false,
+            prefetch_count: 0,
+            cache_capacity_bytes: None,
+        };
+
+        let snap = open_snapshot(config).unwrap();
+
+        // Read 0 bytes
+        let data = read_stream(&snap, SnapshotStream::Disk, 0, 0).unwrap();
+        assert_eq!(data.len(), 0);
+    }
+
+    #[test]
+    fn test_snapshot_with_memory_stream() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create both disk and memory images
+        let disk_path = create_test_disk(&temp_dir, "disk.img", 8192, 0x55);
+        let memory_path = create_test_disk(&temp_dir, "memory.dump", 4096, 0x66);
+        let output_path = temp_dir.path().join("snapshot_with_mem.st");
+
+        let config = PackConfig {
+            disk: Some(disk_path),
+            memory: Some(memory_path),
+            output: output_path.clone(),
+            compression: "lz4".to_string(),
+            encrypt: false,
+            password: None,
+            train_dict: false,
+            block_size: 4096,
+            cdc_enabled: false,
+            min_chunk: 4096,
+            avg_chunk: 8192,
+            max_chunk: 16384,
+        };
+
+        pack_snapshot(config, None::<fn(u64, u64)>).expect("Failed to pack snapshot");
+
+        // Open and verify both streams
+        let open_config = OpenConfig {
+            path: output_path.to_str().unwrap().to_string(),
+            s3_region: None,
+            endpoint_url: None,
+            allow_restricted: false,
+            prefetch_count: 0,
+            cache_capacity_bytes: None,
+        };
+
+        let snap = open_snapshot(open_config).unwrap();
+
+        // Verify disk stream
+        assert_eq!(stream_size(&snap, SnapshotStream::Disk), 8192);
+        let disk_data = read_stream(&snap, SnapshotStream::Disk, 0, 1024).unwrap();
+        assert!(disk_data.iter().all(|&b| b == 0x55));
+
+        // Verify memory stream
+        assert_eq!(stream_size(&snap, SnapshotStream::Memory), 4096);
+        let mem_data = read_stream(&snap, SnapshotStream::Memory, 0, 1024).unwrap();
+        assert!(mem_data.iter().all(|&b| b == 0x66));
+    }
 }

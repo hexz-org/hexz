@@ -931,3 +931,422 @@ impl Compressor for ZstdCompressor {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compress_decompress_basic() {
+        let compressor = ZstdCompressor::new(3, None);
+        let data = b"Hello, world! This is test data for compression.";
+
+        let compressed = compressor.compress(data).expect("Compression failed");
+        // Small data might not compress well due to header overhead, just verify it works
+        assert!(
+            !compressed.is_empty(),
+            "Compressed data should not be empty"
+        );
+
+        let decompressed = compressor
+            .decompress(&compressed)
+            .expect("Decompression failed");
+        assert_eq!(data.as_slice(), decompressed.as_slice());
+    }
+
+    #[test]
+    fn test_compress_empty_data() {
+        let compressor = ZstdCompressor::new(3, None);
+        let data = b"";
+
+        let compressed = compressor.compress(data).expect("Compression failed");
+        let decompressed = compressor
+            .decompress(&compressed)
+            .expect("Decompression failed");
+
+        assert_eq!(data.as_slice(), decompressed.as_slice());
+    }
+
+    #[test]
+    fn test_compress_small_data() {
+        let compressor = ZstdCompressor::new(3, None);
+        let data = b"x";
+
+        let compressed = compressor.compress(data).expect("Compression failed");
+        let decompressed = compressor
+            .decompress(&compressed)
+            .expect("Decompression failed");
+
+        assert_eq!(data.as_slice(), decompressed.as_slice());
+    }
+
+    #[test]
+    fn test_compress_large_data() {
+        let compressor = ZstdCompressor::new(3, None);
+        let data = vec![42u8; 1_000_000]; // 1 MB
+
+        let compressed = compressor.compress(&data).expect("Compression failed");
+        assert!(compressed.len() < data.len(), "Data should be compressed");
+
+        let decompressed = compressor
+            .decompress(&compressed)
+            .expect("Decompression failed");
+        assert_eq!(data, decompressed);
+    }
+
+    #[test]
+    fn test_compress_repeating_pattern() {
+        let compressor = ZstdCompressor::new(3, None);
+        let data = vec![0xAB; 10_000];
+
+        let compressed = compressor.compress(&data).expect("Compression failed");
+        assert!(
+            compressed.len() < data.len() / 10,
+            "Repeating pattern should compress well"
+        );
+
+        let decompressed = compressor
+            .decompress(&compressed)
+            .expect("Decompression failed");
+        assert_eq!(data, decompressed);
+    }
+
+    #[test]
+    fn test_different_compression_levels() {
+        let data = vec![42u8; 10_000];
+
+        for level in [1, 3, 5, 9] {
+            let compressor = ZstdCompressor::new(level, None);
+            let compressed = compressor
+                .compress(&data)
+                .unwrap_or_else(|_| panic!("Level {} failed", level));
+            let decompressed = compressor
+                .decompress(&compressed)
+                .unwrap_or_else(|_| panic!("Level {} decompress failed", level));
+            assert_eq!(data, decompressed, "Level {} roundtrip failed", level);
+        }
+    }
+
+    #[test]
+    fn test_compression_levels_ratio() {
+        let data = b"The quick brown fox jumps over the lazy dog. ".repeat(100);
+
+        let level1 = ZstdCompressor::new(1, None);
+        let level9 = ZstdCompressor::new(9, None);
+
+        let compressed1 = level1.compress(&data).unwrap();
+        let compressed9 = level9.compress(&data).unwrap();
+
+        // Higher level should produce smaller output (or equal for already compressed data)
+        assert!(compressed9.len() <= compressed1.len());
+    }
+
+    #[test]
+    fn test_dictionary_training() {
+        let samples: Vec<Vec<u8>> = (0..20)
+            .map(|i| vec![((i * 13) % 256) as u8; 1024])
+            .collect();
+
+        let dict = ZstdCompressor::train(&samples, 1024).expect("Training failed");
+        assert!(!dict.is_empty(), "Dictionary should not be empty");
+        assert!(dict.len() <= 1024, "Dictionary should not exceed max size");
+    }
+
+    #[test]
+    fn test_compression_with_dictionary() {
+        let samples: Vec<Vec<u8>> = (0..20)
+            .map(|_| b"Sample data with repeated patterns and structures".to_vec())
+            .collect();
+
+        let dict = ZstdCompressor::train(&samples, 2048).expect("Training failed");
+        let compressor = ZstdCompressor::new(3, Some(dict));
+
+        let data = b"Sample data with repeated patterns and structures";
+        let compressed = compressor
+            .compress(data)
+            .expect("Compression with dict failed");
+        let decompressed = compressor
+            .decompress(&compressed)
+            .expect("Decompression with dict failed");
+
+        assert_eq!(data.as_slice(), decompressed.as_slice());
+    }
+
+    #[test]
+    fn test_dictionary_improves_compression() {
+        let samples: Vec<Vec<u8>> = (0..20)
+            .map(|_| {
+                let mut data = Vec::with_capacity(1024);
+                data.extend_from_slice(b"HEADER:");
+                data.extend_from_slice(&vec![42u8; 1000]);
+                data.extend_from_slice(b"FOOTER");
+                data
+            })
+            .collect();
+
+        let dict = ZstdCompressor::train(&samples, 2048).expect("Training failed");
+
+        let without_dict = ZstdCompressor::new(3, None);
+        let with_dict = ZstdCompressor::new(3, Some(dict));
+
+        let test_data = {
+            let mut data = Vec::with_capacity(1024);
+            data.extend_from_slice(b"HEADER:");
+            data.extend_from_slice(&vec![42u8; 1000]);
+            data.extend_from_slice(b"FOOTER");
+            data
+        };
+
+        let compressed_no_dict = without_dict.compress(&test_data).unwrap();
+        let compressed_with_dict = with_dict.compress(&test_data).unwrap();
+
+        // Dictionary should improve compression for structured data
+        // (though improvement might be minimal for this simple test case)
+        assert!(compressed_with_dict.len() <= compressed_no_dict.len());
+    }
+
+    #[test]
+    fn test_decompress_into_buffer() {
+        let compressor = ZstdCompressor::new(3, None);
+        let data = vec![99u8; 1024];
+
+        let compressed = compressor.compress(&data).unwrap();
+
+        let mut output = vec![0u8; 1024];
+        let size = compressor
+            .decompress_into(&compressed, &mut output)
+            .expect("decompress_into failed");
+
+        assert_eq!(size, 1024);
+        assert_eq!(output, data);
+    }
+
+    #[test]
+    fn test_decompress_into_larger_buffer() {
+        let compressor = ZstdCompressor::new(3, None);
+        let data = vec![88u8; 512];
+
+        let compressed = compressor.compress(&data).unwrap();
+
+        let mut output = vec![0u8; 2048]; // Larger than needed
+        let size = compressor
+            .decompress_into(&compressed, &mut output)
+            .expect("decompress_into failed");
+
+        assert_eq!(size, 512);
+        assert_eq!(&output[..512], data.as_slice());
+    }
+
+    #[test]
+    fn test_decompress_into_with_dictionary() {
+        let samples: Vec<Vec<u8>> = (0..15).map(|_| vec![77u8; 512]).collect();
+
+        let dict = ZstdCompressor::train(&samples, 1024).unwrap();
+        let compressor = ZstdCompressor::new(3, Some(dict));
+
+        let data = vec![77u8; 512];
+        let compressed = compressor.compress(&data).unwrap();
+
+        let mut output = vec![0u8; 512];
+        let size = compressor
+            .decompress_into(&compressed, &mut output)
+            .expect("decompress_into with dict failed");
+
+        assert_eq!(size, 512);
+        assert_eq!(output, data);
+    }
+
+    #[test]
+    fn test_dictionary_mismatch() {
+        // Create samples that will actually benefit from dictionaries
+        let samples1: Vec<Vec<u8>> = (0..20)
+            .map(|_| b"PREFIX1:data:SUFFIX1".repeat(50))
+            .collect();
+        let samples2: Vec<Vec<u8>> = (0..20)
+            .map(|_| b"PREFIX2:data:SUFFIX2".repeat(50))
+            .collect();
+
+        let dict1 = ZstdCompressor::train(&samples1, 2048).unwrap();
+        let dict2 = ZstdCompressor::train(&samples2, 2048).unwrap();
+
+        let compressor1 = ZstdCompressor::new(3, Some(dict1));
+        let compressor2 = ZstdCompressor::new(3, Some(dict2));
+
+        let data = b"PREFIX1:data:SUFFIX1".repeat(50);
+        let compressed = compressor1.compress(&data).unwrap();
+
+        // Decompressing with wrong dictionary may fail or produce corrupted data
+        // Zstd behavior varies, so just verify we can detect a difference
+        let result = compressor2.decompress(&compressed);
+        // Either it fails, or the data is corrupted if it succeeds
+        if let Ok(decompressed) = result {
+            // If it succeeded, data might be corrupted (not guaranteed to fail)
+            let _ = decompressed; // Just verify no panic
+        }
+        // Test passes as long as no panic occurs
+    }
+
+    #[test]
+    fn test_no_dict_vs_dict_compatibility() {
+        // Use trained dictionary for better testing
+        let samples: Vec<Vec<u8>> = (0..20)
+            .map(|_| b"HEADER:payload:FOOTER".repeat(100))
+            .collect();
+        let dict = ZstdCompressor::train(&samples, 2048).unwrap();
+
+        let with_dict = ZstdCompressor::new(3, Some(dict));
+        let without_dict = ZstdCompressor::new(3, None);
+
+        let data = b"HEADER:payload:FOOTER".repeat(100);
+
+        // Compress with dictionary
+        let compressed_with_dict = with_dict.compress(&data).unwrap();
+
+        // Try to decompress with no dictionary
+        // Zstd behavior: may fail or succeed depending on implementation details
+        let _result = without_dict.decompress(&compressed_with_dict);
+
+        // Compress without dictionary
+        let compressed_no_dict = without_dict.compress(&data).unwrap();
+
+        // Try to decompress with dictionary
+        // Zstd is generally backward compatible - may work
+        let result = with_dict.decompress(&compressed_no_dict);
+        if let Ok(decompressed) = result {
+            // If it works, verify data integrity
+            assert_eq!(decompressed, data);
+        }
+    }
+
+    #[test]
+    fn test_compressor_debug_format() {
+        let compressor_no_dict = ZstdCompressor::new(5, None);
+        let debug_str = format!("{:?}", compressor_no_dict);
+
+        assert!(debug_str.contains("ZstdCompressor"));
+        assert!(debug_str.contains("level"));
+        assert!(debug_str.contains("5"));
+        assert!(debug_str.contains("has_dict"));
+        assert!(debug_str.contains("false"));
+    }
+
+    #[test]
+    fn test_compressor_debug_format_with_dict() {
+        let dict = vec![1u8; 512];
+        let compressor_with_dict = ZstdCompressor::new(3, Some(dict));
+        let debug_str = format!("{:?}", compressor_with_dict);
+
+        assert!(debug_str.contains("ZstdCompressor"));
+        assert!(debug_str.contains("level"));
+        assert!(debug_str.contains("3"));
+        assert!(debug_str.contains("has_dict"));
+        assert!(debug_str.contains("true"));
+    }
+
+    #[test]
+    fn test_train_with_empty_samples() {
+        let samples: Vec<Vec<u8>> = vec![];
+        let result = ZstdCompressor::train(&samples, 1024);
+
+        // Training with empty samples should fail
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_train_with_small_samples() {
+        let samples: Vec<Vec<u8>> = vec![vec![1u8; 10]];
+        let result = ZstdCompressor::train(&samples, 1024);
+
+        // Training with too little data might fail or produce poor dict
+        // Just verify it doesn't panic
+        let _ = result;
+    }
+
+    #[test]
+    fn test_multiple_compressions_same_compressor() {
+        let compressor = ZstdCompressor::new(3, None);
+
+        for i in 0..10 {
+            let data = vec![i as u8; 1000];
+            let compressed = compressor.compress(&data).unwrap();
+            let decompressed = compressor.decompress(&compressed).unwrap();
+            assert_eq!(data, decompressed);
+        }
+    }
+
+    #[test]
+    fn test_buffer_reuse_pattern() {
+        let compressor = ZstdCompressor::new(3, None);
+        let data = vec![55u8; 4096];
+        let compressed = compressor.compress(&data).unwrap();
+
+        let mut reusable_buffer = vec![0u8; 4096];
+
+        // Reuse buffer multiple times
+        for _ in 0..5 {
+            let size = compressor
+                .decompress_into(&compressed, &mut reusable_buffer)
+                .unwrap();
+            assert_eq!(size, 4096);
+            assert_eq!(reusable_buffer, data);
+        }
+    }
+
+    #[test]
+    fn test_various_data_patterns() {
+        let compressor = ZstdCompressor::new(3, None);
+
+        // All zeros
+        let zeros = vec![0u8; 1000];
+        let compressed = compressor.compress(&zeros).unwrap();
+        assert!(compressed.len() < 100, "Zeros should compress very well");
+        assert_eq!(compressor.decompress(&compressed).unwrap(), zeros);
+
+        // Alternating pattern
+        let alternating: Vec<u8> = (0..1000)
+            .map(|i| if i % 2 == 0 { 0xAA } else { 0x55 })
+            .collect();
+        let compressed = compressor.compress(&alternating).unwrap();
+        assert_eq!(compressor.decompress(&compressed).unwrap(), alternating);
+
+        // Sequential bytes
+        let sequential: Vec<u8> = (0..=255).cycle().take(1000).collect();
+        let compressed = compressor.compress(&sequential).unwrap();
+        assert_eq!(compressor.decompress(&compressed).unwrap(), sequential);
+    }
+
+    #[test]
+    fn test_compression_preserves_data_integrity() {
+        let compressor = ZstdCompressor::new(3, None);
+
+        // Test with various byte values
+        for byte_value in [0u8, 1, 127, 128, 255] {
+            let data = vec![byte_value; 1000];
+            let compressed = compressor.compress(&data).unwrap();
+            let decompressed = compressor.decompress(&compressed).unwrap();
+            assert_eq!(data, decompressed, "Failed for byte value {}", byte_value);
+        }
+    }
+
+    #[test]
+    fn test_high_compression_level() {
+        let compressor = ZstdCompressor::new(19, None);
+        let data = b"High compression level test data with some patterns ".repeat(50);
+
+        let compressed = compressor.compress(&data).unwrap();
+        let decompressed = compressor.decompress(&compressed).unwrap();
+
+        assert_eq!(data, decompressed);
+    }
+
+    #[test]
+    fn test_max_compression_level() {
+        let compressor = ZstdCompressor::new(22, None);
+        let data = vec![123u8; 5000];
+
+        let compressed = compressor.compress(&data).unwrap();
+        let decompressed = compressor.decompress(&compressed).unwrap();
+
+        assert_eq!(data, decompressed);
+    }
+}

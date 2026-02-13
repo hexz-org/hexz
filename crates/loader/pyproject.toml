@@ -20,7 +20,15 @@ dependencies = []
 [project.optional-dependencies]
 numpy = ["numpy>=1.20"]
 torch = ["torch>=2.0"]
-test = ["pytest>=7.0", "pytest-asyncio>=0.21"]
+test = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-benchmark>=4.0",
+    "hypothesis>=6.0",
+    "pytest-timeout>=2.0",
+    "pytest-mock>=3.0",
+    "moto[server]>=5.0"
+]
 
 [tool.maturin]
 python-source = "python"

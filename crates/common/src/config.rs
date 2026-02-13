@@ -109,3 +109,157 @@ impl Default for Config {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_profile_generic() {
+        let profile = BuildProfile::Generic;
+        assert_eq!(profile.block_size(), 65536);
+        assert_eq!(profile.compression_algo(), "lz4");
+        assert!(!profile.recommended_dict_training());
+    }
+
+    #[test]
+    fn test_build_profile_eda() {
+        let profile = BuildProfile::Eda;
+        assert_eq!(profile.block_size(), 16384);
+        assert_eq!(profile.compression_algo(), "zstd");
+        assert!(profile.recommended_dict_training());
+    }
+
+    #[test]
+    fn test_build_profile_embedded() {
+        let profile = BuildProfile::Embedded;
+        assert_eq!(profile.block_size(), 4096);
+        assert_eq!(profile.compression_algo(), "zstd");
+        assert!(profile.recommended_dict_training());
+    }
+
+    #[test]
+    fn test_build_profile_ml() {
+        let profile = BuildProfile::Ml;
+        assert_eq!(profile.block_size(), 1048576);
+        assert_eq!(profile.compression_algo(), "lz4");
+        assert!(!profile.recommended_dict_training());
+    }
+
+    #[test]
+    fn test_build_profile_equality() {
+        assert_eq!(BuildProfile::Generic, BuildProfile::Generic);
+        assert_eq!(BuildProfile::Eda, BuildProfile::Eda);
+        assert_ne!(BuildProfile::Generic, BuildProfile::Eda);
+        assert_ne!(BuildProfile::Embedded, BuildProfile::Ml);
+    }
+
+    #[test]
+    fn test_build_profile_copy() {
+        let profile1 = BuildProfile::Generic;
+        let profile2 = profile1; // Copy
+
+        assert_eq!(profile1, profile2);
+        assert_eq!(profile1.block_size(), profile2.block_size());
+    }
+
+    #[test]
+    fn test_build_profile_clone() {
+        let profile1 = BuildProfile::Eda;
+        let profile2 = profile1;
+
+        assert_eq!(profile1, profile2);
+    }
+
+    #[test]
+    fn test_build_profile_debug() {
+        let profile = BuildProfile::Ml;
+        let debug_str = format!("{:?}", profile);
+
+        assert!(debug_str.contains("Ml"));
+    }
+
+    #[test]
+    fn test_config_default() {
+        let config = Config::default();
+
+        assert_eq!(config.cache_size_bytes, DEFAULT_CACHE_SIZE);
+        assert_eq!(config.prefetch_count, DEFAULT_PREFETCH_COUNT);
+        assert_eq!(config.network_timeout_secs, DEFAULT_NETWORK_TIMEOUT);
+    }
+
+    #[test]
+    fn test_config_clone() {
+        let config1 = Config {
+            cache_size_bytes: 1024 * 1024 * 1024,
+            prefetch_count: 8,
+            network_timeout_secs: 60,
+        };
+
+        let config2 = config1.clone();
+
+        assert_eq!(config2.cache_size_bytes, 1024 * 1024 * 1024);
+        assert_eq!(config2.prefetch_count, 8);
+        assert_eq!(config2.network_timeout_secs, 60);
+    }
+
+    #[test]
+    fn test_config_debug() {
+        let config = Config::default();
+        let debug_str = format!("{:?}", config);
+
+        assert!(debug_str.contains("Config"));
+        assert!(debug_str.contains("cache_size_bytes"));
+        assert!(debug_str.contains("prefetch_count"));
+        assert!(debug_str.contains("network_timeout_secs"));
+    }
+
+    #[test]
+    fn test_config_custom_values() {
+        let config = Config {
+            cache_size_bytes: 2048,
+            prefetch_count: 16,
+            network_timeout_secs: 120,
+        };
+
+        assert_eq!(config.cache_size_bytes, 2048);
+        assert_eq!(config.prefetch_count, 16);
+        assert_eq!(config.network_timeout_secs, 120);
+    }
+
+    #[test]
+    fn test_build_profile_all_variants() {
+        // Ensure all variants can be constructed
+        let _ = BuildProfile::Generic;
+        let _ = BuildProfile::Eda;
+        let _ = BuildProfile::Embedded;
+        let _ = BuildProfile::Ml;
+    }
+
+    #[test]
+    fn test_build_profile_block_sizes_ordered() {
+        // Verify block sizes make sense
+        assert!(BuildProfile::Embedded.block_size() < BuildProfile::Eda.block_size());
+        assert!(BuildProfile::Eda.block_size() < BuildProfile::Generic.block_size());
+        assert!(BuildProfile::Generic.block_size() < BuildProfile::Ml.block_size());
+    }
+
+    #[test]
+    fn test_compression_algo_returns_valid_strings() {
+        assert_eq!(BuildProfile::Generic.compression_algo(), "lz4");
+        assert_eq!(BuildProfile::Eda.compression_algo(), "zstd");
+        assert_eq!(BuildProfile::Embedded.compression_algo(), "zstd");
+        assert_eq!(BuildProfile::Ml.compression_algo(), "lz4");
+    }
+
+    #[test]
+    fn test_dict_training_recommendations() {
+        // Generic and ML don't need dictionary training
+        assert!(!BuildProfile::Generic.recommended_dict_training());
+        assert!(!BuildProfile::Ml.recommended_dict_training());
+
+        // EDA and Embedded benefit from dictionary training
+        assert!(BuildProfile::Eda.recommended_dict_training());
+        assert!(BuildProfile::Embedded.recommended_dict_training());
+    }
+}

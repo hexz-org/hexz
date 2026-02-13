@@ -1078,3 +1078,190 @@ impl BTreeIndex {
         self.block_count += 1;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_btree_node_creation_leaf() {
+        let leaf = BTreeNode {
+            keys: vec![10, 20, 30],
+            values: vec![
+                BlockInfo {
+                    offset: 4096,
+                    length: 2048,
+                    logical_len: 4096,
+                    checksum: 0,
+                },
+                BlockInfo {
+                    offset: 6144,
+                    length: 2048,
+                    logical_len: 4096,
+                    checksum: 0,
+                },
+                BlockInfo {
+                    offset: 8192,
+                    length: 2048,
+                    logical_len: 4096,
+                    checksum: 0,
+                },
+            ],
+            children: vec![],
+        };
+
+        assert_eq!(leaf.keys.len(), 3);
+        assert_eq!(leaf.values.len(), 3);
+        assert!(leaf.children.is_empty());
+    }
+
+    #[test]
+    fn test_btree_node_creation_internal() {
+        let internal = BTreeNode {
+            keys: vec![50, 100],
+            values: vec![],
+            children: vec![1024, 2048, 3072],
+        };
+
+        assert_eq!(internal.keys.len(), 2);
+        assert!(internal.values.is_empty());
+        assert_eq!(internal.children.len(), 3);
+        assert_eq!(internal.keys.len() + 1, internal.children.len());
+    }
+
+    #[test]
+    fn test_btree_node_serialization() {
+        let node = BTreeNode {
+            keys: vec![10, 20, 30],
+            values: vec![
+                BlockInfo::default(),
+                BlockInfo::default(),
+                BlockInfo::default(),
+            ],
+            children: vec![],
+        };
+
+        let bytes = bincode::serialize(&node).unwrap();
+        let deserialized: BTreeNode = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(deserialized.keys, node.keys);
+        assert_eq!(deserialized.values.len(), node.values.len());
+    }
+
+    #[test]
+    fn test_btree_index_new() {
+        let index = BTreeIndex::new(256);
+        assert_eq!(index.order, 256);
+        assert_eq!(index.block_count, 0);
+        assert_eq!(index.root_offset, 0);
+    }
+
+    #[test]
+    fn test_btree_index_new_various_orders() {
+        for order in [16, 64, 256, 1024] {
+            let index = BTreeIndex::new(order);
+            assert_eq!(index.order, order);
+            assert_eq!(index.block_count, 0);
+        }
+    }
+
+    #[test]
+    fn test_btree_index_insert_updates_count() {
+        let mut index = BTreeIndex::new(256);
+        assert_eq!(index.block_count, 0);
+
+        index.insert(0, BlockInfo::default());
+        assert_eq!(index.block_count, 1);
+
+        index.insert(1, BlockInfo::default());
+        assert_eq!(index.block_count, 2);
+
+        index.insert(2, BlockInfo::default());
+        assert_eq!(index.block_count, 3);
+    }
+
+    #[test]
+    fn test_btree_index_insert_multiple() {
+        let mut index = BTreeIndex::new(256);
+
+        for i in 0..100 {
+            index.insert(
+                i,
+                BlockInfo {
+                    offset: 4096 * i,
+                    length: 2048,
+                    logical_len: 4096,
+                    checksum: i as u32,
+                },
+            );
+        }
+
+        assert_eq!(index.block_count, 100);
+    }
+
+    #[test]
+    fn test_btree_index_lookup_stub_returns_none() {
+        let mut index = BTreeIndex::new(256);
+
+        // Insert a block
+        index.insert(
+            42,
+            BlockInfo {
+                offset: 4096,
+                length: 2048,
+                logical_len: 4096,
+                checksum: 0x12345678,
+            },
+        );
+
+        // Lookup returns None (stub implementation)
+        assert!(index.lookup(42).is_none());
+    }
+
+    #[test]
+    fn test_btree_index_serialization() {
+        let mut index = BTreeIndex::new(256);
+
+        for i in 0..10 {
+            index.insert(i, BlockInfo::default());
+        }
+
+        let bytes = bincode::serialize(&index).unwrap();
+        let deserialized: BTreeIndex = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(deserialized.order, index.order);
+        assert_eq!(deserialized.block_count, index.block_count);
+        assert_eq!(deserialized.root_offset, index.root_offset);
+    }
+
+    #[test]
+    fn test_btree_index_initial_state() {
+        let index = BTreeIndex::new(256);
+        assert_eq!(index.root_offset, 0); // No root allocated
+        assert_eq!(index.block_count, 0);
+        assert_eq!(index.order, 256);
+    }
+
+    #[test]
+    fn test_btree_node_empty() {
+        let empty = BTreeNode {
+            keys: vec![],
+            values: vec![],
+            children: vec![],
+        };
+
+        assert!(empty.keys.is_empty());
+        assert!(empty.values.is_empty());
+        assert!(empty.children.is_empty());
+    }
+
+    #[test]
+    fn test_btree_index_order_bounds() {
+        // Test extreme orders
+        let small = BTreeIndex::new(3); // Minimum practical order
+        assert_eq!(small.order, 3);
+
+        let large = BTreeIndex::new(10000); // Very large order
+        assert_eq!(large.order, 10000);
+    }
+}

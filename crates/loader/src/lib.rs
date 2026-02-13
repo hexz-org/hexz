@@ -74,3 +74,47 @@ fn strata_loader(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    // Note: The strata_loader function is a PyO3 module initializer that requires
+    // a Python interpreter to test. The actual functionality is tested through
+    // Python integration tests in python/tests/.
+    //
+    // These Rust unit tests verify that the module structure is correct and that
+    // the code compiles properly.
+
+    #[test]
+    fn test_module_structure_compiles() {
+        // This test verifies that all the modules referenced in lib.rs compile correctly.
+        // If any module fails to resolve, this test will not compile.
+        use crate::engine;
+        use crate::tensor;
+        let _ = std::mem::size_of::<engine::iterator::SnapshotIterator>();
+        let _ = std::mem::size_of::<tensor::numpy::BufferInfo>();
+    }
+
+    #[test]
+    fn test_engine_module_exists() {
+        // Verify the engine module is accessible
+        use crate::engine;
+        // This will fail to compile if the module doesn't exist
+        let _ = std::mem::size_of::<engine::iterator::SnapshotIterator>();
+    }
+
+    #[test]
+    fn test_py_interface_module_exists() {
+        // Verify the py_interface module is accessible
+        use crate::py_interface;
+        // This will fail to compile if the module doesn't exist
+        let _ = std::mem::size_of::<py_interface::dataset::StrataReader>();
+    }
+
+    #[test]
+    fn test_tensor_module_exists() {
+        // Verify the tensor module is accessible
+        use crate::tensor;
+        // Module exists and can be referenced
+        let _ = std::mem::size_of::<tensor::numpy::BufferInfo>();
+    }
+}

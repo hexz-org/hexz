@@ -1201,3 +1201,371 @@ impl Encryptor for AesGcmEncryptor {
             .map_err(|e| StrataError::Encryption(e.to_string()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_basic_encrypt_decrypt() {
+        let encryptor = AesGcmEncryptor::new(b"test_password", b"salt_16_bytes___", 10_000);
+
+        let plaintext = b"Hello, World!";
+        let ciphertext = encryptor.encrypt(plaintext, 0).expect("Encryption failed");
+
+        // Ciphertext should be 16 bytes longer (auth tag)
+        assert_eq!(ciphertext.len(), plaintext.len() + 16);
+
+        // Decrypt should recover original plaintext
+        let decrypted = encryptor
+            .decrypt(&ciphertext, 0)
+            .expect("Decryption failed");
+        assert_eq!(decrypted.as_slice(), plaintext);
+    }
+
+    #[test]
+    fn test_wrong_password_fails() {
+        let enc1 = AesGcmEncryptor::new(b"password1", b"salt_16_bytes___", 10_000);
+        let enc2 = AesGcmEncryptor::new(b"password2", b"salt_16_bytes___", 10_000);
+
+        let ciphertext = enc1.encrypt(b"secret data", 0).expect("Encryption failed");
+
+        // Wrong password should fail authentication
+        assert!(enc2.decrypt(&ciphertext, 0).is_err());
+    }
+
+    #[test]
+    fn test_wrong_salt_fails() {
+        let enc1 = AesGcmEncryptor::new(b"password", b"salt1___16bytes_", 10_000);
+        let enc2 = AesGcmEncryptor::new(b"password", b"salt2___16bytes_", 10_000);
+
+        let ciphertext = enc1.encrypt(b"secret data", 0).expect("Encryption failed");
+
+        // Wrong salt should fail authentication
+        assert!(enc2.decrypt(&ciphertext, 0).is_err());
+    }
+
+    #[test]
+    fn test_wrong_iterations_fails() {
+        let enc1 = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+        let enc2 = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 20_000);
+
+        let ciphertext = enc1.encrypt(b"secret data", 0).expect("Encryption failed");
+
+        // Wrong iteration count should fail authentication
+        assert!(enc2.decrypt(&ciphertext, 0).is_err());
+    }
+
+    #[test]
+    fn test_wrong_block_index_fails() {
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+
+        let ciphertext = encryptor.encrypt(b"data", 42).expect("Encryption failed");
+
+        // Wrong block index should fail authentication (nonce mismatch)
+        assert!(encryptor.decrypt(&ciphertext, 99).is_err());
+    }
+
+    #[test]
+    fn test_corrupted_ciphertext_fails() {
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+
+        let mut ciphertext = encryptor
+            .encrypt(b"important data", 0)
+            .expect("Encryption failed");
+
+        // Corrupt a byte in the ciphertext
+        ciphertext[5] ^= 0xFF;
+
+        // Corruption should be detected
+        assert!(encryptor.decrypt(&ciphertext, 0).is_err());
+    }
+
+    #[test]
+    fn test_corrupted_tag_fails() {
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+
+        let mut ciphertext = encryptor
+            .encrypt(b"important data", 0)
+            .expect("Encryption failed");
+
+        // Corrupt a byte in the authentication tag (last 16 bytes)
+        let len = ciphertext.len();
+        ciphertext[len - 1] ^= 0xFF;
+
+        // Tag corruption should be detected
+        assert!(encryptor.decrypt(&ciphertext, 0).is_err());
+    }
+
+    #[test]
+    fn test_empty_data_encryption() {
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+
+        let ciphertext = encryptor.encrypt(b"", 0).expect("Encryption failed");
+
+        // Empty plaintext produces 16-byte ciphertext (only auth tag)
+        assert_eq!(ciphertext.len(), 16);
+
+        // Should decrypt back to empty
+        let decrypted = encryptor
+            .decrypt(&ciphertext, 0)
+            .expect("Decryption failed");
+        assert_eq!(decrypted.len(), 0);
+    }
+
+    #[test]
+    fn test_large_data_encryption() {
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+
+        // Encrypt 1MB of data
+        let large_data = vec![0xAB; 1024 * 1024];
+        let ciphertext = encryptor
+            .encrypt(&large_data, 0)
+            .expect("Encryption failed");
+
+        // Verify size
+        assert_eq!(ciphertext.len(), large_data.len() + 16);
+
+        // Decrypt and verify
+        let decrypted = encryptor
+            .decrypt(&ciphertext, 0)
+            .expect("Decryption failed");
+        assert_eq!(decrypted, large_data);
+    }
+
+    #[test]
+    fn test_different_block_indices_produce_different_ciphertexts() {
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+
+        let plaintext = b"Same plaintext for both blocks";
+
+        // Encrypt same plaintext with different indices
+        let ct1 = encryptor.encrypt(plaintext, 0).expect("Encryption failed");
+        let ct2 = encryptor.encrypt(plaintext, 1).expect("Encryption failed");
+
+        // Ciphertexts should be different (different nonces)
+        assert_ne!(ct1, ct2);
+
+        // But both should decrypt correctly with their respective indices
+        let pt1 = encryptor.decrypt(&ct1, 0).expect("Decryption failed");
+        let pt2 = encryptor.decrypt(&ct2, 1).expect("Decryption failed");
+
+        assert_eq!(pt1.as_slice(), plaintext);
+        assert_eq!(pt2.as_slice(), plaintext);
+    }
+
+    #[test]
+    fn test_multiple_blocks_encryption() {
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+
+        let blocks = [b"block0", b"block1", b"block2", b"block3"];
+        let mut ciphertexts = Vec::new();
+
+        // Encrypt all blocks
+        for (idx, block) in blocks.iter().enumerate() {
+            let ct = encryptor
+                .encrypt(*block, idx as u64)
+                .expect("Encryption failed");
+            ciphertexts.push(ct);
+        }
+
+        // Decrypt all blocks
+        for (idx, ct) in ciphertexts.iter().enumerate() {
+            let pt = encryptor
+                .decrypt(ct, idx as u64)
+                .expect("Decryption failed");
+            assert_eq!(pt.as_slice(), blocks[idx]);
+        }
+    }
+
+    #[test]
+    fn test_deterministic_encryption() {
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+
+        let plaintext = b"deterministic test";
+        let block_idx = 42;
+
+        // Encrypt the same data twice with same index
+        let ct1 = encryptor
+            .encrypt(plaintext, block_idx)
+            .expect("Encryption failed");
+        let ct2 = encryptor
+            .encrypt(plaintext, block_idx)
+            .expect("Encryption failed");
+
+        // Should produce identical ciphertexts (deterministic nonces)
+        assert_eq!(ct1, ct2);
+    }
+
+    #[test]
+    fn test_debug_does_not_leak_keys() {
+        let encryptor = AesGcmEncryptor::new(b"secret_password", b"salt_16_bytes___", 10_000);
+
+        let debug_str = format!("{:?}", encryptor);
+
+        // Debug output should not contain the password or key material
+        assert!(!debug_str.contains("secret_password"));
+        assert!(debug_str.contains("AesGcmEncryptor"));
+        assert!(debug_str.contains("Aes256Gcm"));
+    }
+
+    #[test]
+    fn test_thread_safe_concurrent_encryption() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let encryptor = Arc::new(AesGcmEncryptor::new(
+            b"password",
+            b"salt_16_bytes___",
+            10_000,
+        ));
+
+        let mut handles = Vec::new();
+
+        // Spawn multiple threads that encrypt concurrently
+        for i in 0..4 {
+            let enc = Arc::clone(&encryptor);
+            let handle = thread::spawn(move || {
+                let data = format!("Thread {} data", i).into_bytes();
+                enc.encrypt(&data, i as u64).unwrap()
+            });
+            handles.push(handle);
+        }
+
+        // Collect results
+        let ciphertexts: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+        // Verify all encryptions succeeded
+        assert_eq!(ciphertexts.len(), 4);
+
+        // Verify each can be decrypted
+        for (i, ct) in ciphertexts.iter().enumerate() {
+            let expected = format!("Thread {} data", i).into_bytes();
+            let decrypted = encryptor.decrypt(ct, i as u64).expect("Decryption failed");
+            assert_eq!(decrypted, expected);
+        }
+    }
+
+    #[test]
+    fn test_nonce_generation_is_unique_per_index() {
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+
+        let plaintext = b"same plaintext";
+
+        // Collect ciphertexts for different indices
+        let mut ciphertexts = Vec::new();
+        for i in 0..10 {
+            let ct = encryptor.encrypt(plaintext, i).expect("Encryption failed");
+            ciphertexts.push(ct);
+        }
+
+        // All ciphertexts should be different (different nonces)
+        for i in 0..ciphertexts.len() {
+            for j in (i + 1)..ciphertexts.len() {
+                assert_ne!(
+                    ciphertexts[i], ciphertexts[j],
+                    "Ciphertexts at indices {} and {} should be different",
+                    i, j
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_truncated_ciphertext_fails() {
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+
+        let ciphertext = encryptor.encrypt(b"data", 0).expect("Encryption failed");
+
+        // Truncate the ciphertext (remove part of tag)
+        let truncated = &ciphertext[..ciphertext.len() - 5];
+
+        // Should fail authentication
+        assert!(encryptor.decrypt(truncated, 0).is_err());
+    }
+
+    #[test]
+    fn test_encryption_with_different_passwords() {
+        let enc1 = AesGcmEncryptor::new(b"password1", b"salt_16_bytes___", 10_000);
+        let enc2 = AesGcmEncryptor::new(b"password2", b"salt_16_bytes___", 10_000);
+
+        let plaintext = b"test data";
+
+        // Encrypt same data with different passwords
+        let ct1 = enc1.encrypt(plaintext, 0).expect("Encryption failed");
+        let ct2 = enc2.encrypt(plaintext, 0).expect("Encryption failed");
+
+        // Ciphertexts should be different (different keys)
+        assert_ne!(ct1, ct2);
+
+        // Each can decrypt with its own key
+        assert_eq!(enc1.decrypt(&ct1, 0).unwrap().as_slice(), plaintext);
+        assert_eq!(enc2.decrypt(&ct2, 0).unwrap().as_slice(), plaintext);
+
+        // But not with the other key
+        assert!(enc1.decrypt(&ct2, 0).is_err());
+        assert!(enc2.decrypt(&ct1, 0).is_err());
+    }
+
+    #[test]
+    fn test_very_short_data() {
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+
+        // Single byte
+        let plaintext = b"X";
+        let ciphertext = encryptor.encrypt(plaintext, 0).expect("Encryption failed");
+
+        assert_eq!(ciphertext.len(), 17); // 1 byte + 16 byte tag
+
+        let decrypted = encryptor
+            .decrypt(&ciphertext, 0)
+            .expect("Decryption failed");
+        assert_eq!(decrypted.as_slice(), plaintext);
+    }
+
+    #[test]
+    fn test_high_block_indices() {
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+
+        // Test with maximum u64 value
+        let max_idx = u64::MAX;
+        let plaintext = b"data at max index";
+
+        let ciphertext = encryptor
+            .encrypt(plaintext, max_idx)
+            .expect("Encryption failed");
+        let decrypted = encryptor
+            .decrypt(&ciphertext, max_idx)
+            .expect("Decryption failed");
+
+        assert_eq!(decrypted.as_slice(), plaintext);
+    }
+
+    #[test]
+    fn test_encryption_does_not_modify_input() {
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+
+        let plaintext = b"original data";
+        let original = plaintext.to_vec();
+
+        let _ciphertext = encryptor.encrypt(plaintext, 0).expect("Encryption failed");
+
+        // Input should remain unchanged
+        assert_eq!(plaintext, original.as_slice());
+    }
+
+    #[test]
+    fn test_different_salts_produce_different_keys() {
+        let enc1 = AesGcmEncryptor::new(b"password", b"salt1___16bytes_", 10_000);
+        let enc2 = AesGcmEncryptor::new(b"password", b"salt2___16bytes_", 10_000);
+
+        let plaintext = b"test data";
+
+        // Encrypt same plaintext with same index but different salts
+        let ct1 = enc1.encrypt(plaintext, 0).expect("Encryption failed");
+        let ct2 = enc2.encrypt(plaintext, 0).expect("Encryption failed");
+
+        // Should produce different ciphertexts
+        assert_ne!(ct1, ct2);
+    }
+}

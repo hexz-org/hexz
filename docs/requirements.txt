@@ -8,3 +8,4 @@ sphinx>=7.0
 pytest
 mkdocs-material
 mkdocstrings[python]
+moto[server]

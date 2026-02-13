@@ -196,7 +196,7 @@ use strata_core::store::local::FileBackend;
 /// Returns an error if:
 /// - The numeric part cannot be parsed as `f64`
 /// - The suffix is not recognized (valid: k, kb, m, mb, g, gb, t, tb, or empty)
-fn parse_size(s: &str) -> Result<usize> {
+pub(crate) fn parse_size(s: &str) -> Result<usize> {
     let s = s.trim();
     let (num, suffix) = if let Some(idx) = s.find(|c: char| !c.is_numeric() && c != '.') {
         (&s[..idx], &s[idx..])
@@ -626,4 +626,69 @@ fn find_free_nbd_device() -> Result<String> {
         }
     }
     anyhow::bail!("No free /dev/nbd devices found. Try 'sudo modprobe nbd max_part=8'")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_size;
+
+    #[test]
+    fn test_parse_size_megabytes() {
+        assert_eq!(parse_size("256M").unwrap(), 268435456);
+    }
+
+    #[test]
+    fn test_parse_size_fractional_gigabytes() {
+        assert_eq!(parse_size("1.5G").unwrap(), 1610612736);
+    }
+
+    #[test]
+    fn test_parse_size_kilobytes_suffix() {
+        assert_eq!(parse_size("512KB").unwrap(), 524288);
+    }
+
+    #[test]
+    fn test_parse_size_plain_number() {
+        assert_eq!(parse_size("1024").unwrap(), 1024);
+    }
+
+    #[test]
+    fn test_parse_size_k_suffix() {
+        assert_eq!(parse_size("1K").unwrap(), 1024);
+    }
+
+    #[test]
+    fn test_parse_size_terabytes() {
+        assert_eq!(parse_size("1T").unwrap(), 1099511627776);
+    }
+
+    #[test]
+    fn test_parse_size_zero() {
+        assert_eq!(parse_size("0").unwrap(), 0);
+    }
+
+    #[test]
+    fn test_parse_size_invalid_suffix() {
+        assert!(parse_size("100X").is_err());
+    }
+
+    #[test]
+    fn test_parse_size_non_numeric() {
+        assert!(parse_size("abc").is_err());
+    }
+
+    #[test]
+    fn test_parse_size_mb_suffix() {
+        assert_eq!(parse_size("1MB").unwrap(), 1048576);
+    }
+
+    #[test]
+    fn test_parse_size_gb_suffix() {
+        assert_eq!(parse_size("2GB").unwrap(), 2147483648);
+    }
+
+    #[test]
+    fn test_parse_size_whitespace() {
+        assert_eq!(parse_size("  256M  ").unwrap(), 268435456);
+    }
 }

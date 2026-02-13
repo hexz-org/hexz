@@ -333,3 +333,162 @@ fn read_response(stream: &mut UnixStream) -> Result<Value> {
     }
     Ok(serde_json::json!({}))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::net::UnixStream;
+
+    /// Test send_command with a simple command (no arguments).
+    #[test]
+    fn test_send_command_no_args() {
+        let (mut client, mut server) = UnixStream::pair().unwrap();
+        send_command(&mut client, "stop", None).unwrap();
+
+        let mut buf = [0u8; 1024];
+        let n = server.read(&mut buf).unwrap();
+        let sent: serde_json::Value = serde_json::from_slice(&buf[..n]).unwrap();
+
+        assert_eq!(sent["execute"], "stop");
+        assert!(sent.get("arguments").is_none());
+    }
+
+    /// Test send_command with arguments.
+    #[test]
+    fn test_send_command_with_args() {
+        let (mut client, mut server) = UnixStream::pair().unwrap();
+        let args = serde_json::json!({ "uri": "exec:cat > /tmp/mem.bin" });
+        send_command(&mut client, "migrate", Some(args)).unwrap();
+
+        let mut buf = [0u8; 1024];
+        let n = server.read(&mut buf).unwrap();
+        let sent: serde_json::Value = serde_json::from_slice(&buf[..n]).unwrap();
+
+        assert_eq!(sent["execute"], "migrate");
+        assert_eq!(sent["arguments"]["uri"], "exec:cat > /tmp/mem.bin");
+    }
+
+    /// Test send_command with qmp_capabilities (initial handshake).
+    #[test]
+    fn test_send_command_qmp_capabilities() {
+        let (mut client, mut server) = UnixStream::pair().unwrap();
+        send_command(&mut client, "qmp_capabilities", None).unwrap();
+
+        let mut buf = [0u8; 1024];
+        let n = server.read(&mut buf).unwrap();
+        let sent: serde_json::Value = serde_json::from_slice(&buf[..n]).unwrap();
+
+        assert_eq!(sent["execute"], "qmp_capabilities");
+    }
+
+    /// Test send_command with cont (resume).
+    #[test]
+    fn test_send_command_cont() {
+        let (mut client, mut server) = UnixStream::pair().unwrap();
+        send_command(&mut client, "cont", None).unwrap();
+
+        let mut buf = [0u8; 1024];
+        let n = server.read(&mut buf).unwrap();
+        let sent: serde_json::Value = serde_json::from_slice(&buf[..n]).unwrap();
+
+        assert_eq!(sent["execute"], "cont");
+    }
+
+    /// Test read_response with a valid return response.
+    #[test]
+    fn test_read_response_with_return() {
+        let (mut client, mut server) = UnixStream::pair().unwrap();
+
+        // Write a QMP response from the "server" side
+        let response = "{\"return\": {}}\n";
+        server.write_all(response.as_bytes()).unwrap();
+        // Shut down write side so client read doesn't hang
+        server.shutdown(std::net::Shutdown::Write).unwrap();
+
+        let val = read_response(&mut client).unwrap();
+        assert!(val.get("return").is_some());
+    }
+
+    /// Test read_response with migration status response.
+    #[test]
+    fn test_read_response_migration_completed() {
+        let (mut client, mut server) = UnixStream::pair().unwrap();
+
+        let response = "{\"return\": {\"status\": \"completed\", \"total\": 4294967296}}\n";
+        server.write_all(response.as_bytes()).unwrap();
+        server.shutdown(std::net::Shutdown::Write).unwrap();
+
+        let val = read_response(&mut client).unwrap();
+        assert_eq!(val["return"]["status"], "completed");
+        assert_eq!(val["return"]["total"], 4294967296u64);
+    }
+
+    /// Test read_response with migration failed status.
+    #[test]
+    fn test_read_response_migration_failed() {
+        let (mut client, mut server) = UnixStream::pair().unwrap();
+
+        let response = "{\"return\": {\"status\": \"failed\"}}\n";
+        server.write_all(response.as_bytes()).unwrap();
+        server.shutdown(std::net::Shutdown::Write).unwrap();
+
+        let val = read_response(&mut client).unwrap();
+        assert_eq!(val["return"]["status"], "failed");
+    }
+
+    /// Test read_response with event (no "return" field) — should return empty.
+    #[test]
+    fn test_read_response_event_only() {
+        let (mut client, mut server) = UnixStream::pair().unwrap();
+
+        let response = "{\"event\": \"STOP\", \"data\": {}}\n";
+        server.write_all(response.as_bytes()).unwrap();
+        server.shutdown(std::net::Shutdown::Write).unwrap();
+
+        let val = read_response(&mut client).unwrap();
+        // No "return" field, should get empty object
+        assert!(val.get("return").is_none());
+        assert_eq!(val, serde_json::json!({}));
+    }
+
+    /// Test read_response with multiple lines — returns first with "return".
+    #[test]
+    fn test_read_response_multi_line() {
+        let (mut client, mut server) = UnixStream::pair().unwrap();
+
+        let response = "{\"event\": \"STOP\"}\n{\"return\": {\"status\": \"active\"}}\n";
+        server.write_all(response.as_bytes()).unwrap();
+        server.shutdown(std::net::Shutdown::Write).unwrap();
+
+        let val = read_response(&mut client).unwrap();
+        assert_eq!(val["return"]["status"], "active");
+    }
+
+    /// Test read_response with QMP greeting banner.
+    #[test]
+    fn test_read_response_qmp_greeting() {
+        let (mut client, mut server) = UnixStream::pair().unwrap();
+
+        // QMP greeting doesn't have "return"
+        let greeting =
+            "{\"QMP\": {\"version\": {\"qemu\": {\"micro\": 0, \"minor\": 2, \"major\": 8}}}}\n";
+        server.write_all(greeting.as_bytes()).unwrap();
+        server.shutdown(std::net::Shutdown::Write).unwrap();
+
+        let val = read_response(&mut client).unwrap();
+        assert_eq!(val, serde_json::json!({}));
+    }
+
+    /// Test send_command with query-migrate.
+    #[test]
+    fn test_send_command_query_migrate() {
+        let (mut client, mut server) = UnixStream::pair().unwrap();
+        send_command(&mut client, "query-migrate", None).unwrap();
+
+        let mut buf = [0u8; 1024];
+        let n = server.read(&mut buf).unwrap();
+        let sent: serde_json::Value = serde_json::from_slice(&buf[..n]).unwrap();
+
+        assert_eq!(sent["execute"], "query-migrate");
+    }
+}

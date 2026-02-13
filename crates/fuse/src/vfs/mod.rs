@@ -44,5 +44,6 @@ pub mod attr;
 pub mod inode;
 pub mod overlay;
 
+pub use attr::make_attr;
 pub use inode::{DirEntry, Inode, InodeMap, InodeType};
 pub use overlay::{BLOCK_SIZE, Overlay};

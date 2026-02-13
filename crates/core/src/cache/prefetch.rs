@@ -367,3 +367,195 @@ impl Prefetcher {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::thread;
+
+    #[test]
+    fn test_new_with_zero_window() {
+        let prefetcher = Prefetcher::new(0);
+        let targets = prefetcher.get_prefetch_targets(100);
+        assert!(targets.is_empty());
+    }
+
+    #[test]
+    fn test_new_with_small_window() {
+        let prefetcher = Prefetcher::new(4);
+        let targets = prefetcher.get_prefetch_targets(10);
+        assert_eq!(targets, vec![11, 12, 13, 14]);
+    }
+
+    #[test]
+    fn test_new_with_large_window() {
+        let prefetcher = Prefetcher::new(16);
+        let targets = prefetcher.get_prefetch_targets(100);
+        assert_eq!(targets.len(), 16);
+        assert_eq!(targets[0], 101);
+        assert_eq!(targets[15], 116);
+    }
+
+    #[test]
+    fn test_get_prefetch_targets_sequential() {
+        let prefetcher = Prefetcher::new(5);
+
+        let targets1 = prefetcher.get_prefetch_targets(42);
+        assert_eq!(targets1, vec![43, 44, 45, 46, 47]);
+
+        let targets2 = prefetcher.get_prefetch_targets(43);
+        assert_eq!(targets2, vec![44, 45, 46, 47, 48]);
+    }
+
+    #[test]
+    fn test_get_prefetch_targets_single_block() {
+        let prefetcher = Prefetcher::new(1);
+        let targets = prefetcher.get_prefetch_targets(999);
+        assert_eq!(targets, vec![1000]);
+    }
+
+    #[test]
+    fn test_get_prefetch_targets_from_zero() {
+        let prefetcher = Prefetcher::new(3);
+        let targets = prefetcher.get_prefetch_targets(0);
+        assert_eq!(targets, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_get_prefetch_targets_large_current_block() {
+        let prefetcher = Prefetcher::new(4);
+        let targets = prefetcher.get_prefetch_targets(u64::MAX - 10);
+
+        // Should handle overflow gracefully
+        assert_eq!(targets.len(), 4);
+    }
+
+    #[test]
+    fn test_get_prefetch_targets_consistency() {
+        let prefetcher = Prefetcher::new(8);
+
+        // Calling multiple times with same input should give same result
+        let targets1 = prefetcher.get_prefetch_targets(50);
+        let targets2 = prefetcher.get_prefetch_targets(50);
+
+        assert_eq!(targets1, targets2);
+    }
+
+    #[test]
+    fn test_window_size_32() {
+        let prefetcher = Prefetcher::new(32);
+        let targets = prefetcher.get_prefetch_targets(1000);
+
+        assert_eq!(targets.len(), 32);
+        assert_eq!(targets[0], 1001);
+        assert_eq!(targets[31], 1032);
+    }
+
+    #[test]
+    fn test_debug_format() {
+        let prefetcher = Prefetcher::new(8);
+        let debug_str = format!("{:?}", prefetcher);
+
+        assert!(debug_str.contains("Prefetcher"));
+        assert!(debug_str.contains("window_size"));
+    }
+
+    #[test]
+    fn test_thread_safety() {
+        let prefetcher = Arc::new(Prefetcher::new(4));
+        let mut handles = Vec::new();
+
+        // Spawn multiple threads that call get_prefetch_targets concurrently
+        for i in 0..4 {
+            let prefetcher_clone = Arc::clone(&prefetcher);
+            let handle = thread::spawn(move || {
+                let block_idx = i * 100;
+                let targets = prefetcher_clone.get_prefetch_targets(block_idx);
+
+                assert_eq!(targets.len(), 4);
+                assert_eq!(targets[0], block_idx + 1);
+                assert_eq!(targets[3], block_idx + 4);
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all threads
+        for handle in handles {
+            handle.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn test_multiple_prefetchers() {
+        let pref1 = Prefetcher::new(2);
+        let pref2 = Prefetcher::new(8);
+
+        let targets1 = pref1.get_prefetch_targets(10);
+        let targets2 = pref2.get_prefetch_targets(10);
+
+        assert_eq!(targets1.len(), 2);
+        assert_eq!(targets2.len(), 8);
+    }
+
+    #[test]
+    fn test_prefetch_targets_contiguous() {
+        let prefetcher = Prefetcher::new(10);
+        let targets = prefetcher.get_prefetch_targets(100);
+
+        // Verify targets are contiguous
+        for i in 0..targets.len() - 1 {
+            assert_eq!(targets[i] + 1, targets[i + 1]);
+        }
+    }
+
+    #[test]
+    fn test_very_large_window() {
+        let prefetcher = Prefetcher::new(256);
+        let targets = prefetcher.get_prefetch_targets(0);
+
+        assert_eq!(targets.len(), 256);
+        assert_eq!(targets[0], 1);
+        assert_eq!(targets[255], 256);
+    }
+
+    #[test]
+    fn test_edge_case_max_u32_window() {
+        // This tests that window size can be set to max u32
+        // (though this would be impractical in reality)
+        let prefetcher = Prefetcher::new(u32::MAX);
+
+        // Just verify it doesn't panic
+        let _ = prefetcher.get_prefetch_targets(0);
+    }
+
+    #[test]
+    fn test_window_size_stored_atomically() {
+        let prefetcher = Arc::new(Prefetcher::new(4));
+
+        // Access from multiple threads to verify atomic storage works
+        let p1 = Arc::clone(&prefetcher);
+        let p2 = Arc::clone(&prefetcher);
+
+        let h1 = thread::spawn(move || p1.get_prefetch_targets(0));
+
+        let h2 = thread::spawn(move || p2.get_prefetch_targets(100));
+
+        let t1 = h1.join().unwrap();
+        let t2 = h2.join().unwrap();
+
+        assert_eq!(t1.len(), 4);
+        assert_eq!(t2.len(), 4);
+    }
+
+    #[test]
+    fn test_different_starting_blocks() {
+        let prefetcher = Prefetcher::new(3);
+
+        // Test various starting points
+        for start in [0, 10, 100, 1000, 10000] {
+            let targets = prefetcher.get_prefetch_targets(start);
+            assert_eq!(targets, vec![start + 1, start + 2, start + 3]);
+        }
+    }
+}

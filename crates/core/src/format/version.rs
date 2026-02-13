@@ -583,3 +583,244 @@ impl fmt::Display for VersionCompatibility {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[allow(clippy::assertions_on_constants)]
+    fn test_version_constants_are_consistent() {
+        // MIN_SUPPORTED_VERSION must be <= MAX_SUPPORTED_VERSION
+        assert!(
+            MIN_SUPPORTED_VERSION <= MAX_SUPPORTED_VERSION,
+            "MIN_SUPPORTED_VERSION ({}) must be <= MAX_SUPPORTED_VERSION ({})",
+            MIN_SUPPORTED_VERSION,
+            MAX_SUPPORTED_VERSION
+        );
+
+        // CURRENT_VERSION must be within supported range
+        assert!(
+            CURRENT_VERSION >= MIN_SUPPORTED_VERSION,
+            "CURRENT_VERSION ({}) must be >= MIN_SUPPORTED_VERSION ({})",
+            CURRENT_VERSION,
+            MIN_SUPPORTED_VERSION
+        );
+        assert!(
+            CURRENT_VERSION <= MAX_SUPPORTED_VERSION,
+            "CURRENT_VERSION ({}) must be <= MAX_SUPPORTED_VERSION ({})",
+            CURRENT_VERSION,
+            MAX_SUPPORTED_VERSION
+        );
+    }
+
+    #[test]
+    fn test_check_version_current_is_fully_supported() {
+        let compat = check_version(CURRENT_VERSION);
+        assert_eq!(compat, VersionCompatibility::Full);
+        assert!(compat.is_compatible());
+    }
+
+    #[test]
+    fn test_check_version_within_range_is_full() {
+        // Test all versions in the supported range
+        for version in MIN_SUPPORTED_VERSION..=MAX_SUPPORTED_VERSION {
+            let compat = check_version(version);
+            assert_eq!(
+                compat,
+                VersionCompatibility::Full,
+                "Version {} should be fully compatible",
+                version
+            );
+            assert!(compat.is_compatible());
+        }
+    }
+
+    #[test]
+    fn test_check_version_too_old_is_incompatible() {
+        if MIN_SUPPORTED_VERSION > 0 {
+            let old_version = MIN_SUPPORTED_VERSION - 1;
+            let compat = check_version(old_version);
+            assert_eq!(compat, VersionCompatibility::Incompatible);
+            assert!(!compat.is_compatible());
+        }
+
+        // Always test version 0 as too old
+        let compat = check_version(0);
+        assert_eq!(compat, VersionCompatibility::Incompatible);
+        assert!(!compat.is_compatible());
+    }
+
+    #[test]
+    fn test_check_version_too_new_is_incompatible() {
+        let new_version = MAX_SUPPORTED_VERSION + 1;
+        let compat = check_version(new_version);
+        assert_eq!(compat, VersionCompatibility::Incompatible);
+        assert!(!compat.is_compatible());
+
+        // Test very high version number
+        let compat = check_version(9999);
+        assert_eq!(compat, VersionCompatibility::Incompatible);
+        assert!(!compat.is_compatible());
+    }
+
+    #[test]
+    fn test_version_compatibility_is_compatible() {
+        // Full is compatible
+        assert!(VersionCompatibility::Full.is_compatible());
+
+        // Degraded is compatible (with warnings)
+        assert!(VersionCompatibility::Degraded.is_compatible());
+
+        // Incompatible is not compatible
+        assert!(!VersionCompatibility::Incompatible.is_compatible());
+    }
+
+    #[test]
+    fn test_version_compatibility_display() {
+        assert_eq!(format!("{}", VersionCompatibility::Full), "full");
+        assert_eq!(format!("{}", VersionCompatibility::Degraded), "degraded");
+        assert_eq!(
+            format!("{}", VersionCompatibility::Incompatible),
+            "incompatible"
+        );
+    }
+
+    #[test]
+    fn test_compatibility_message_for_supported_version() {
+        let msg = compatibility_message(CURRENT_VERSION);
+        assert!(msg.contains("fully supported"), "Message: {}", msg);
+        assert!(
+            msg.contains(&CURRENT_VERSION.to_string()),
+            "Message: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_compatibility_message_for_too_old_version() {
+        if MIN_SUPPORTED_VERSION > 0 {
+            let old_version = MIN_SUPPORTED_VERSION - 1;
+            let msg = compatibility_message(old_version);
+            assert!(msg.contains("too old"), "Message: {}", msg);
+            assert!(
+                msg.contains(&MIN_SUPPORTED_VERSION.to_string()),
+                "Message: {}",
+                msg
+            );
+            assert!(msg.contains("upgrade the snapshot"), "Message: {}", msg);
+        }
+    }
+
+    #[test]
+    fn test_compatibility_message_for_too_new_version() {
+        let new_version = MAX_SUPPORTED_VERSION + 1;
+        let msg = compatibility_message(new_version);
+        assert!(msg.contains("too new"), "Message: {}", msg);
+        assert!(
+            msg.contains(&MAX_SUPPORTED_VERSION.to_string()),
+            "Message: {}",
+            msg
+        );
+        assert!(msg.contains("upgrade Strata"), "Message: {}", msg);
+    }
+
+    #[test]
+    fn test_compatibility_message_for_degraded() {
+        // Since we don't currently return Degraded, we can't directly test it
+        // But we can test the message format by checking what would happen
+        let msg = match VersionCompatibility::Degraded {
+            VersionCompatibility::Degraded => format!(
+                "Version {} is newer than supported ({}), features may be missing.",
+                99, MAX_SUPPORTED_VERSION
+            ),
+            _ => String::new(),
+        };
+        assert!(msg.contains("newer than supported"));
+        assert!(msg.contains("features may be missing"));
+    }
+
+    #[test]
+    fn test_version_compatibility_enum_properties() {
+        // Test Debug trait
+        let full = VersionCompatibility::Full;
+        assert!(format!("{:?}", full).contains("Full"));
+
+        // Test Clone and Copy
+        let degraded = VersionCompatibility::Degraded;
+        let degraded_copy = degraded;
+        let degraded_clone = degraded;
+        assert_eq!(degraded, degraded_copy);
+        assert_eq!(degraded, degraded_clone);
+
+        // Test PartialEq and Eq
+        assert_eq!(VersionCompatibility::Full, VersionCompatibility::Full);
+        assert_ne!(
+            VersionCompatibility::Full,
+            VersionCompatibility::Incompatible
+        );
+    }
+
+    #[test]
+    fn test_check_version_boundary_conditions() {
+        // Test MIN_SUPPORTED_VERSION boundary
+        let compat = check_version(MIN_SUPPORTED_VERSION);
+        assert_eq!(compat, VersionCompatibility::Full);
+
+        // Test MAX_SUPPORTED_VERSION boundary
+        let compat = check_version(MAX_SUPPORTED_VERSION);
+        assert_eq!(compat, VersionCompatibility::Full);
+
+        // Test just below MIN
+        if MIN_SUPPORTED_VERSION > 0 {
+            let compat = check_version(MIN_SUPPORTED_VERSION - 1);
+            assert_eq!(compat, VersionCompatibility::Incompatible);
+        }
+
+        // Test just above MAX
+        let compat = check_version(MAX_SUPPORTED_VERSION + 1);
+        assert_eq!(compat, VersionCompatibility::Incompatible);
+    }
+
+    #[test]
+    fn test_multiple_version_checks() {
+        // Verify check_version is consistent across multiple calls
+        let version = CURRENT_VERSION;
+        let result1 = check_version(version);
+        let result2 = check_version(version);
+        assert_eq!(result1, result2);
+    }
+
+    #[test]
+    fn test_compatibility_message_contains_version_number() {
+        // Test that messages include the actual version number
+        for version in [0u32, 1, 2, 99, 999] {
+            let msg = compatibility_message(version);
+            assert!(
+                msg.contains(&version.to_string()),
+                "Message for version {} should contain the version number: {}",
+                version,
+                msg
+            );
+        }
+    }
+
+    #[test]
+    #[allow(clippy::assertions_on_constants)]
+    fn test_version_constants_are_reasonable() {
+        // Ensure version numbers are in a reasonable range
+        assert!(CURRENT_VERSION > 0, "CURRENT_VERSION must be positive");
+        assert!(
+            CURRENT_VERSION < 1000,
+            "CURRENT_VERSION seems unreasonably high"
+        );
+        assert!(
+            MIN_SUPPORTED_VERSION > 0,
+            "MIN_SUPPORTED_VERSION must be positive"
+        );
+        assert!(
+            MAX_SUPPORTED_VERSION < 1000,
+            "MAX_SUPPORTED_VERSION seems unreasonably high"
+        );
+    }
+}

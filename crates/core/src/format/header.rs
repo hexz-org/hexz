@@ -142,3 +142,408 @@ impl Default for StrataHeader {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_strata_header_default() {
+        let header = StrataHeader::default();
+
+        assert_eq!(header.magic, *MAGIC_BYTES);
+        assert_eq!(header.version, FORMAT_VERSION);
+        assert_eq!(header.block_size, DEFAULT_BLOCK_SIZE);
+        assert_eq!(header.index_offset, 0);
+        assert!(header.parent_path.is_none());
+        assert!(header.dictionary_offset.is_none());
+        assert!(header.dictionary_length.is_none());
+        assert!(header.metadata_offset.is_none());
+        assert!(header.metadata_length.is_none());
+        assert!(header.signature_offset.is_none());
+        assert!(header.signature_length.is_none());
+        assert!(header.encryption.is_none());
+        assert_eq!(header.compression, CompressionType::Lz4);
+        assert!(!header.features.has_disk);
+        assert!(!header.features.has_memory);
+        assert!(!header.features.variable_blocks);
+    }
+
+    #[test]
+    fn test_strata_header_with_disk() {
+        let mut header = StrataHeader::default();
+        header.features.has_disk = true;
+        header.index_offset = 1048576;
+
+        assert!(header.features.has_disk);
+        assert_eq!(header.index_offset, 1048576);
+    }
+
+    #[test]
+    fn test_strata_header_with_memory() {
+        let mut header = StrataHeader::default();
+        header.features.has_memory = true;
+
+        assert!(header.features.has_memory);
+    }
+
+    #[test]
+    fn test_strata_header_with_both_streams() {
+        let mut header = StrataHeader::default();
+        header.features.has_disk = true;
+        header.features.has_memory = true;
+
+        assert!(header.features.has_disk);
+        assert!(header.features.has_memory);
+    }
+
+    #[test]
+    #[allow(clippy::field_reassign_with_default)]
+    fn test_strata_header_with_parent_path() {
+        let mut header = StrataHeader::default();
+        header.parent_path = Some("/path/to/parent.st".to_string());
+
+        assert_eq!(header.parent_path.as_deref(), Some("/path/to/parent.st"));
+    }
+
+    #[test]
+    #[allow(clippy::field_reassign_with_default)]
+    fn test_strata_header_with_dictionary() {
+        let mut header = StrataHeader::default();
+        header.dictionary_offset = Some(4096);
+        header.dictionary_length = Some(16384);
+
+        assert_eq!(header.dictionary_offset, Some(4096));
+        assert_eq!(header.dictionary_length, Some(16384));
+    }
+
+    #[test]
+    #[allow(clippy::field_reassign_with_default)]
+    fn test_strata_header_with_metadata() {
+        let mut header = StrataHeader::default();
+        header.metadata_offset = Some(20480);
+        header.metadata_length = Some(1024);
+
+        assert_eq!(header.metadata_offset, Some(20480));
+        assert_eq!(header.metadata_length, Some(1024));
+    }
+
+    #[test]
+    #[allow(clippy::field_reassign_with_default)]
+    fn test_strata_header_with_signature() {
+        let mut header = StrataHeader::default();
+        header.signature_offset = Some(24576);
+        header.signature_length = Some(256);
+
+        assert_eq!(header.signature_offset, Some(24576));
+        assert_eq!(header.signature_length, Some(256));
+    }
+
+    #[test]
+    #[allow(clippy::field_reassign_with_default)]
+    fn test_strata_header_with_encryption() {
+        let mut header = StrataHeader::default();
+        header.encryption = Some(KeyDerivationParams {
+            salt: [0x42; 16],
+            iterations: 100000,
+        });
+
+        assert!(header.encryption.is_some());
+        let params = header.encryption.unwrap();
+        assert_eq!(params.salt, [0x42; 16]);
+        assert_eq!(params.iterations, 100000);
+    }
+
+    #[test]
+    #[allow(clippy::field_reassign_with_default)]
+    fn test_strata_header_zstd_compression() {
+        let mut header = StrataHeader::default();
+        header.compression = CompressionType::Zstd;
+
+        assert_eq!(header.compression, CompressionType::Zstd);
+    }
+
+    #[test]
+    fn test_strata_header_variable_blocks() {
+        let mut header = StrataHeader::default();
+        header.features.variable_blocks = true;
+
+        assert!(header.features.variable_blocks);
+    }
+
+    #[test]
+    fn test_strata_header_serialization() {
+        let header = StrataHeader::default();
+
+        let bytes = bincode::serialize(&header).unwrap();
+        let deserialized: StrataHeader = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(deserialized, header);
+    }
+
+    #[test]
+    fn test_strata_header_serialization_with_all_fields() {
+        let header = StrataHeader {
+            magic: *MAGIC_BYTES,
+            version: FORMAT_VERSION,
+            block_size: 65536,
+            index_offset: 1048576,
+            parent_path: Some("/parent.st".to_string()),
+            dictionary_offset: Some(4096),
+            dictionary_length: Some(16384),
+            metadata_offset: Some(20480),
+            metadata_length: Some(1024),
+            signature_offset: Some(24576),
+            signature_length: Some(256),
+            encryption: Some(KeyDerivationParams {
+                salt: [0x42; 16],
+                iterations: 100000,
+            }),
+            compression: CompressionType::Zstd,
+            features: FeatureFlags {
+                has_disk: true,
+                has_memory: true,
+                variable_blocks: true,
+            },
+        };
+
+        let bytes = bincode::serialize(&header).unwrap();
+        let deserialized: StrataHeader = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(deserialized, header);
+        assert_eq!(deserialized.block_size, 65536);
+        assert_eq!(deserialized.parent_path.as_deref(), Some("/parent.st"));
+        assert!(deserialized.features.has_disk);
+        assert!(deserialized.features.has_memory);
+        assert!(deserialized.features.variable_blocks);
+    }
+
+    #[test]
+    fn test_strata_header_equality() {
+        let header1 = StrataHeader::default();
+        let header2 = StrataHeader::default();
+
+        assert_eq!(header1, header2);
+    }
+
+    #[test]
+    fn test_strata_header_inequality() {
+        let mut header1 = StrataHeader::default();
+        let mut header2 = StrataHeader::default();
+
+        header1.block_size = 4096;
+        header2.block_size = 65536;
+
+        assert_ne!(header1, header2);
+    }
+
+    #[test]
+    fn test_compression_type_lz4() {
+        let compression = CompressionType::Lz4;
+        assert_eq!(compression, CompressionType::Lz4);
+    }
+
+    #[test]
+    fn test_compression_type_zstd() {
+        let compression = CompressionType::Zstd;
+        assert_eq!(compression, CompressionType::Zstd);
+    }
+
+    #[test]
+    fn test_compression_type_equality() {
+        assert_eq!(CompressionType::Lz4, CompressionType::Lz4);
+        assert_eq!(CompressionType::Zstd, CompressionType::Zstd);
+        assert_ne!(CompressionType::Lz4, CompressionType::Zstd);
+    }
+
+    #[test]
+    fn test_compression_type_serialization() {
+        let lz4 = CompressionType::Lz4;
+        let bytes = bincode::serialize(&lz4).unwrap();
+        let deserialized: CompressionType = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(deserialized, CompressionType::Lz4);
+
+        let zstd = CompressionType::Zstd;
+        let bytes = bincode::serialize(&zstd).unwrap();
+        let deserialized: CompressionType = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(deserialized, CompressionType::Zstd);
+    }
+
+    #[test]
+    fn test_feature_flags_default() {
+        let flags = FeatureFlags::default();
+
+        assert!(!flags.has_disk);
+        assert!(!flags.has_memory);
+        assert!(!flags.variable_blocks);
+    }
+
+    #[test]
+    fn test_feature_flags_disk_only() {
+        let flags = FeatureFlags {
+            has_disk: true,
+            has_memory: false,
+            variable_blocks: false,
+        };
+
+        assert!(flags.has_disk);
+        assert!(!flags.has_memory);
+        assert!(!flags.variable_blocks);
+    }
+
+    #[test]
+    fn test_feature_flags_memory_only() {
+        let flags = FeatureFlags {
+            has_disk: false,
+            has_memory: true,
+            variable_blocks: false,
+        };
+
+        assert!(!flags.has_disk);
+        assert!(flags.has_memory);
+        assert!(!flags.variable_blocks);
+    }
+
+    #[test]
+    fn test_feature_flags_full_vm_snapshot() {
+        let flags = FeatureFlags {
+            has_disk: true,
+            has_memory: true,
+            variable_blocks: false,
+        };
+
+        assert!(flags.has_disk);
+        assert!(flags.has_memory);
+        assert!(!flags.variable_blocks);
+    }
+
+    #[test]
+    fn test_feature_flags_with_variable_blocks() {
+        let flags = FeatureFlags {
+            has_disk: true,
+            has_memory: false,
+            variable_blocks: true,
+        };
+
+        assert!(flags.has_disk);
+        assert!(!flags.has_memory);
+        assert!(flags.variable_blocks);
+    }
+
+    #[test]
+    fn test_feature_flags_all_enabled() {
+        let flags = FeatureFlags {
+            has_disk: true,
+            has_memory: true,
+            variable_blocks: true,
+        };
+
+        assert!(flags.has_disk);
+        assert!(flags.has_memory);
+        assert!(flags.variable_blocks);
+    }
+
+    #[test]
+    fn test_feature_flags_equality() {
+        let flags1 = FeatureFlags {
+            has_disk: true,
+            has_memory: false,
+            variable_blocks: false,
+        };
+
+        let flags2 = FeatureFlags {
+            has_disk: true,
+            has_memory: false,
+            variable_blocks: false,
+        };
+
+        assert_eq!(flags1, flags2);
+    }
+
+    #[test]
+    fn test_feature_flags_inequality() {
+        let flags1 = FeatureFlags {
+            has_disk: true,
+            has_memory: false,
+            variable_blocks: false,
+        };
+
+        let flags2 = FeatureFlags {
+            has_disk: false,
+            has_memory: true,
+            variable_blocks: false,
+        };
+
+        assert_ne!(flags1, flags2);
+    }
+
+    #[test]
+    fn test_feature_flags_serialization() {
+        let flags = FeatureFlags {
+            has_disk: true,
+            has_memory: true,
+            variable_blocks: false,
+        };
+
+        let bytes = bincode::serialize(&flags).unwrap();
+        let deserialized: FeatureFlags = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(deserialized, flags);
+    }
+
+    #[test]
+    #[allow(clippy::field_reassign_with_default)]
+    fn test_strata_header_custom_block_size() {
+        let mut header = StrataHeader::default();
+        header.block_size = 131072; // 128 KB
+
+        assert_eq!(header.block_size, 131072);
+    }
+
+    #[test]
+    #[allow(clippy::field_reassign_with_default)]
+    fn test_strata_header_large_index_offset() {
+        let mut header = StrataHeader::default();
+        header.index_offset = 1099511627776; // 1 TB
+
+        assert_eq!(header.index_offset, 1099511627776);
+    }
+
+    #[test]
+    fn test_strata_header_clone() {
+        let header1 = StrataHeader::default();
+        let header2 = header1.clone();
+
+        assert_eq!(header1, header2);
+    }
+
+    #[test]
+    fn test_feature_flags_clone() {
+        let flags1 = FeatureFlags {
+            has_disk: true,
+            has_memory: true,
+            variable_blocks: true,
+        };
+        let flags2 = flags1;
+
+        assert_eq!(flags1, flags2);
+    }
+
+    #[test]
+    fn test_compression_type_clone() {
+        let comp1 = CompressionType::Zstd;
+        let comp2 = comp1;
+
+        assert_eq!(comp1, comp2);
+    }
+
+    #[test]
+    fn test_strata_header_debug_format() {
+        let header = StrataHeader::default();
+        let debug_str = format!("{:?}", header);
+
+        assert!(debug_str.contains("StrataHeader"));
+        assert!(debug_str.contains("magic"));
+        assert!(debug_str.contains("version"));
+    }
+}

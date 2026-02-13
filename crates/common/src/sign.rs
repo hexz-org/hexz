@@ -1474,3 +1474,658 @@ pub fn compute_snapshot_digest(path: &Path) -> Result<[u8; 32]> {
         "Digest computation should be done in CLI/Core layer".into(),
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sha2::{Digest, Sha256};
+    use std::fs;
+    use std::io::Write;
+
+    #[test]
+    fn test_generate_keypair_creates_files() {
+        let temp_dir = std::env::temp_dir();
+        let private_key = temp_dir.join("test_private_1.key");
+        let public_key = temp_dir.join("test_public_1.pub");
+
+        // Clean up if files exist
+        let _ = fs::remove_file(&private_key);
+        let _ = fs::remove_file(&public_key);
+
+        // Generate keypair
+        generate_keypair(&private_key, &public_key).expect("Keypair generation failed");
+
+        // Verify files exist
+        assert!(private_key.exists(), "Private key file should exist");
+        assert!(public_key.exists(), "Public key file should exist");
+
+        // Verify file sizes
+        let priv_metadata =
+            fs::metadata(&private_key).expect("Failed to read private key metadata");
+        let pub_metadata = fs::metadata(&public_key).expect("Failed to read public key metadata");
+
+        assert_eq!(priv_metadata.len(), 32, "Private key should be 32 bytes");
+        assert_eq!(pub_metadata.len(), 32, "Public key should be 32 bytes");
+
+        // Clean up
+        fs::remove_file(&private_key).ok();
+        fs::remove_file(&public_key).ok();
+    }
+
+    #[test]
+    fn test_generate_keypair_produces_different_keys() {
+        let temp_dir = std::env::temp_dir();
+        let private_key1 = temp_dir.join("test_private_2.key");
+        let public_key1 = temp_dir.join("test_public_2.pub");
+        let private_key2 = temp_dir.join("test_private_3.key");
+        let public_key2 = temp_dir.join("test_public_3.pub");
+
+        // Clean up
+        let _ = fs::remove_file(&private_key1);
+        let _ = fs::remove_file(&public_key1);
+        let _ = fs::remove_file(&private_key2);
+        let _ = fs::remove_file(&public_key2);
+
+        // Generate two keypairs
+        generate_keypair(&private_key1, &public_key1).expect("First keypair generation failed");
+        generate_keypair(&private_key2, &public_key2).expect("Second keypair generation failed");
+
+        // Read keys
+        let priv1 = fs::read(&private_key1).expect("Failed to read private key 1");
+        let pub1 = fs::read(&public_key1).expect("Failed to read public key 1");
+        let priv2 = fs::read(&private_key2).expect("Failed to read private key 2");
+        let pub2 = fs::read(&public_key2).expect("Failed to read public key 2");
+
+        // Keys should be different
+        assert_ne!(priv1, priv2, "Private keys should be different");
+        assert_ne!(pub1, pub2, "Public keys should be different");
+
+        // Clean up
+        fs::remove_file(&private_key1).ok();
+        fs::remove_file(&public_key1).ok();
+        fs::remove_file(&private_key2).ok();
+        fs::remove_file(&public_key2).ok();
+    }
+
+    #[test]
+    fn test_generate_keypair_overwrites_existing_files() {
+        let temp_dir = std::env::temp_dir();
+        let private_key = temp_dir.join("test_private_4.key");
+        let public_key = temp_dir.join("test_public_4.pub");
+
+        // Create existing files with dummy content
+        fs::write(&private_key, b"old private key data")
+            .expect("Failed to write existing private key");
+        fs::write(&public_key, b"old public key data")
+            .expect("Failed to write existing public key");
+
+        // Generate keypair (should overwrite)
+        generate_keypair(&private_key, &public_key).expect("Keypair generation failed");
+
+        // Verify files were overwritten with correct size
+        let priv_data = fs::read(&private_key).expect("Failed to read private key");
+        let pub_data = fs::read(&public_key).expect("Failed to read public key");
+
+        assert_eq!(priv_data.len(), 32, "Private key should be 32 bytes");
+        assert_eq!(pub_data.len(), 32, "Public key should be 32 bytes");
+        assert_ne!(priv_data.as_slice(), b"old private key data");
+        assert_ne!(pub_data.as_slice(), b"old public key data");
+
+        // Clean up
+        fs::remove_file(&private_key).ok();
+        fs::remove_file(&public_key).ok();
+    }
+
+    #[test]
+    fn test_sign_and_verify_basic_workflow() {
+        let temp_dir = std::env::temp_dir();
+        let private_key = temp_dir.join("test_sign_private.key");
+        let public_key = temp_dir.join("test_sign_public.pub");
+
+        // Clean up
+        let _ = fs::remove_file(&private_key);
+        let _ = fs::remove_file(&public_key);
+
+        // Generate keypair
+        generate_keypair(&private_key, &public_key).expect("Keypair generation failed");
+
+        // Create a digest to sign
+        let data = b"Important snapshot data that needs authentication";
+        let digest = Sha256::digest(data);
+
+        // Sign the digest
+        let signature = sign_digest(&private_key, &digest).expect("Signing failed");
+
+        // Verify signature is 64 bytes
+        assert_eq!(signature.len(), 64, "Signature should be 64 bytes");
+
+        // Verify the signature
+        verify_digest(&public_key, &digest, &signature).expect("Verification failed");
+
+        // Clean up
+        fs::remove_file(&private_key).ok();
+        fs::remove_file(&public_key).ok();
+    }
+
+    #[test]
+    fn test_sign_digest_is_deterministic() {
+        let temp_dir = std::env::temp_dir();
+        let private_key = temp_dir.join("test_deterministic_private.key");
+        let public_key = temp_dir.join("test_deterministic_public.pub");
+
+        // Clean up
+        let _ = fs::remove_file(&private_key);
+        let _ = fs::remove_file(&public_key);
+
+        // Generate keypair
+        generate_keypair(&private_key, &public_key).expect("Keypair generation failed");
+
+        // Create a digest
+        let data = b"deterministic test data";
+        let digest = Sha256::digest(data);
+
+        // Sign the same digest multiple times
+        let sig1 = sign_digest(&private_key, &digest).expect("First signing failed");
+        let sig2 = sign_digest(&private_key, &digest).expect("Second signing failed");
+        let sig3 = sign_digest(&private_key, &digest).expect("Third signing failed");
+
+        // All signatures should be identical (Ed25519 is deterministic)
+        assert_eq!(sig1, sig2, "Signatures should be deterministic");
+        assert_eq!(sig2, sig3, "Signatures should be deterministic");
+
+        // Clean up
+        fs::remove_file(&private_key).ok();
+        fs::remove_file(&public_key).ok();
+    }
+
+    #[test]
+    fn test_verify_fails_with_modified_data() {
+        let temp_dir = std::env::temp_dir();
+        let private_key = temp_dir.join("test_tamper_private.key");
+        let public_key = temp_dir.join("test_tamper_public.pub");
+
+        // Clean up
+        let _ = fs::remove_file(&private_key);
+        let _ = fs::remove_file(&public_key);
+
+        // Generate keypair
+        generate_keypair(&private_key, &public_key).expect("Keypair generation failed");
+
+        // Sign original data
+        let original_data = b"original authentic data";
+        let original_digest = Sha256::digest(original_data);
+        let signature = sign_digest(&private_key, &original_digest).expect("Signing failed");
+
+        // Verify original data succeeds
+        verify_digest(&public_key, &original_digest, &signature)
+            .expect("Original verification should succeed");
+
+        // Try to verify with modified data
+        let tampered_data = b"tampered malicious data";
+        let tampered_digest = Sha256::digest(tampered_data);
+
+        let result = verify_digest(&public_key, &tampered_digest, &signature);
+        assert!(
+            result.is_err(),
+            "Verification should fail with tampered data"
+        );
+
+        // Clean up
+        fs::remove_file(&private_key).ok();
+        fs::remove_file(&public_key).ok();
+    }
+
+    #[test]
+    fn test_verify_fails_with_wrong_public_key() {
+        let temp_dir = std::env::temp_dir();
+        let private_key1 = temp_dir.join("test_wrongkey_private1.key");
+        let public_key1 = temp_dir.join("test_wrongkey_public1.pub");
+        let private_key2 = temp_dir.join("test_wrongkey_private2.key");
+        let public_key2 = temp_dir.join("test_wrongkey_public2.pub");
+
+        // Clean up
+        let _ = fs::remove_file(&private_key1);
+        let _ = fs::remove_file(&public_key1);
+        let _ = fs::remove_file(&private_key2);
+        let _ = fs::remove_file(&public_key2);
+
+        // Generate two different keypairs
+        generate_keypair(&private_key1, &public_key1).expect("First keypair generation failed");
+        generate_keypair(&private_key2, &public_key2).expect("Second keypair generation failed");
+
+        // Sign with keypair 1
+        let data = b"test data";
+        let digest = Sha256::digest(data);
+        let signature = sign_digest(&private_key1, &digest).expect("Signing failed");
+
+        // Verify with correct public key succeeds
+        verify_digest(&public_key1, &digest, &signature)
+            .expect("Correct key verification should succeed");
+
+        // Verify with wrong public key fails
+        let result = verify_digest(&public_key2, &digest, &signature);
+        assert!(
+            result.is_err(),
+            "Verification should fail with wrong public key"
+        );
+
+        // Clean up
+        fs::remove_file(&private_key1).ok();
+        fs::remove_file(&public_key1).ok();
+        fs::remove_file(&private_key2).ok();
+        fs::remove_file(&public_key2).ok();
+    }
+
+    #[test]
+    fn test_verify_fails_with_corrupted_signature() {
+        let temp_dir = std::env::temp_dir();
+        let private_key = temp_dir.join("test_corrupt_private.key");
+        let public_key = temp_dir.join("test_corrupt_public.pub");
+
+        // Clean up
+        let _ = fs::remove_file(&private_key);
+        let _ = fs::remove_file(&public_key);
+
+        // Generate keypair
+        generate_keypair(&private_key, &public_key).expect("Keypair generation failed");
+
+        // Sign data
+        let data = b"test data";
+        let digest = Sha256::digest(data);
+        let mut signature = sign_digest(&private_key, &digest).expect("Signing failed");
+
+        // Corrupt the signature by flipping some bits
+        signature[0] ^= 0xFF;
+        signature[32] ^= 0xFF;
+
+        // Verification should fail
+        let result = verify_digest(&public_key, &digest, &signature);
+        assert!(
+            result.is_err(),
+            "Verification should fail with corrupted signature"
+        );
+
+        // Clean up
+        fs::remove_file(&private_key).ok();
+        fs::remove_file(&public_key).ok();
+    }
+
+    #[test]
+    fn test_sign_digest_missing_key_file() {
+        let temp_dir = std::env::temp_dir();
+        let nonexistent_key = temp_dir.join("nonexistent_key_12345.key");
+
+        // Ensure file doesn't exist
+        let _ = fs::remove_file(&nonexistent_key);
+
+        // Attempt to sign with missing key
+        let digest = Sha256::digest(b"data");
+        let result = sign_digest(&nonexistent_key, &digest);
+
+        assert!(result.is_err(), "Signing should fail with missing key file");
+    }
+
+    #[test]
+    fn test_verify_digest_missing_key_file() {
+        let temp_dir = std::env::temp_dir();
+        let nonexistent_key = temp_dir.join("nonexistent_pubkey_12345.pub");
+
+        // Ensure file doesn't exist
+        let _ = fs::remove_file(&nonexistent_key);
+
+        // Attempt to verify with missing key
+        let digest = Sha256::digest(b"data");
+        let signature = [0u8; 64];
+        let result = verify_digest(&nonexistent_key, &digest, &signature);
+
+        assert!(
+            result.is_err(),
+            "Verification should fail with missing key file"
+        );
+    }
+
+    #[test]
+    fn test_sign_digest_wrong_size_key_file() {
+        let temp_dir = std::env::temp_dir();
+        let bad_key = temp_dir.join("test_bad_size.key");
+
+        // Create a key file with wrong size (16 bytes instead of 32)
+        fs::write(&bad_key, [0u8; 16]).expect("Failed to write bad key file");
+
+        // Attempt to sign
+        let digest = Sha256::digest(b"data");
+        let result = sign_digest(&bad_key, &digest);
+
+        assert!(
+            result.is_err(),
+            "Signing should fail with wrong-sized key file"
+        );
+
+        // Clean up
+        fs::remove_file(&bad_key).ok();
+    }
+
+    #[test]
+    fn test_verify_digest_wrong_size_key_file() {
+        let temp_dir = std::env::temp_dir();
+        let bad_key = temp_dir.join("test_bad_pubkey_size.pub");
+
+        // Create a public key file with wrong size
+        fs::write(&bad_key, [0u8; 16]).expect("Failed to write bad public key file");
+
+        // Attempt to verify
+        let digest = Sha256::digest(b"data");
+        let signature = [0u8; 64];
+        let result = verify_digest(&bad_key, &digest, &signature);
+
+        assert!(
+            result.is_err(),
+            "Verification should fail with wrong-sized key file"
+        );
+
+        // Clean up
+        fs::remove_file(&bad_key).ok();
+    }
+
+    #[test]
+    fn test_verify_digest_invalid_public_key_bytes() {
+        let temp_dir = std::env::temp_dir();
+        let invalid_key = temp_dir.join("test_invalid_pubkey.pub");
+
+        // Create a public key file with invalid bytes (all zeros is not a valid curve point)
+        fs::write(&invalid_key, [0u8; 32]).expect("Failed to write invalid public key");
+
+        // Attempt to verify
+        let digest = Sha256::digest(b"data");
+        let signature = [0u8; 64];
+        let result = verify_digest(&invalid_key, &digest, &signature);
+
+        assert!(
+            result.is_err(),
+            "Verification should fail with invalid public key encoding"
+        );
+
+        // Clean up
+        fs::remove_file(&invalid_key).ok();
+    }
+
+    #[test]
+    fn test_sign_different_digests_produces_different_signatures() {
+        let temp_dir = std::env::temp_dir();
+        let private_key = temp_dir.join("test_diff_sigs_private.key");
+        let public_key = temp_dir.join("test_diff_sigs_public.pub");
+
+        // Clean up
+        let _ = fs::remove_file(&private_key);
+        let _ = fs::remove_file(&public_key);
+
+        // Generate keypair
+        generate_keypair(&private_key, &public_key).expect("Keypair generation failed");
+
+        // Sign different data
+        let digest1 = Sha256::digest(b"data 1");
+        let digest2 = Sha256::digest(b"data 2");
+
+        let sig1 = sign_digest(&private_key, &digest1).expect("First signing failed");
+        let sig2 = sign_digest(&private_key, &digest2).expect("Second signing failed");
+
+        // Signatures should be different for different data
+        assert_ne!(
+            sig1, sig2,
+            "Signatures for different data should be different"
+        );
+
+        // Clean up
+        fs::remove_file(&private_key).ok();
+        fs::remove_file(&public_key).ok();
+    }
+
+    #[test]
+    fn test_sign_empty_digest() {
+        let temp_dir = std::env::temp_dir();
+        let private_key = temp_dir.join("test_empty_digest_private.key");
+        let public_key = temp_dir.join("test_empty_digest_public.pub");
+
+        // Clean up
+        let _ = fs::remove_file(&private_key);
+        let _ = fs::remove_file(&public_key);
+
+        // Generate keypair
+        generate_keypair(&private_key, &public_key).expect("Keypair generation failed");
+
+        // Sign empty digest
+        let empty_digest = Sha256::digest(b"");
+        let signature =
+            sign_digest(&private_key, &empty_digest).expect("Signing empty digest failed");
+
+        // Should be able to verify
+        verify_digest(&public_key, &empty_digest, &signature)
+            .expect("Verification of empty digest failed");
+
+        // Clean up
+        fs::remove_file(&private_key).ok();
+        fs::remove_file(&public_key).ok();
+    }
+
+    #[test]
+    fn test_sign_large_digest() {
+        let temp_dir = std::env::temp_dir();
+        let private_key = temp_dir.join("test_large_digest_private.key");
+        let public_key = temp_dir.join("test_large_digest_public.pub");
+
+        // Clean up
+        let _ = fs::remove_file(&private_key);
+        let _ = fs::remove_file(&public_key);
+
+        // Generate keypair
+        generate_keypair(&private_key, &public_key).expect("Keypair generation failed");
+
+        // Create a larger digest (SHA-512 is 64 bytes)
+        use sha2::Sha512;
+        let large_data = vec![0xAB; 1024 * 1024]; // 1MB of data
+        let large_digest = Sha512::digest(&large_data);
+
+        // Sign and verify
+        let signature =
+            sign_digest(&private_key, &large_digest).expect("Signing large digest failed");
+        verify_digest(&public_key, &large_digest, &signature)
+            .expect("Verification of large digest failed");
+
+        // Clean up
+        fs::remove_file(&private_key).ok();
+        fs::remove_file(&public_key).ok();
+    }
+
+    #[test]
+    fn test_compute_snapshot_digest_returns_error() {
+        let temp_dir = std::env::temp_dir();
+        let fake_snapshot = temp_dir.join("fake_snapshot.strata");
+
+        // Create a fake snapshot file with at least 4096 bytes
+        let mut file = File::create(&fake_snapshot).expect("Failed to create fake snapshot");
+        file.write_all(&vec![0u8; 4096])
+            .expect("Failed to write fake snapshot data");
+
+        // Attempt to compute digest (should always fail)
+        let result = compute_snapshot_digest(&fake_snapshot);
+
+        assert!(
+            result.is_err(),
+            "compute_snapshot_digest should always return an error"
+        );
+
+        // Verify error message
+        if let Err(crate::StrataError::Format(msg)) = result {
+            assert!(
+                msg.contains("CLI/Core layer"),
+                "Error message should mention CLI/Core layer"
+            );
+        } else {
+            panic!("Expected Format error");
+        }
+
+        // Clean up
+        fs::remove_file(&fake_snapshot).ok();
+    }
+
+    #[test]
+    fn test_compute_snapshot_digest_missing_file() {
+        let temp_dir = std::env::temp_dir();
+        let nonexistent_snapshot = temp_dir.join("nonexistent_snapshot_12345.strata");
+
+        // Ensure file doesn't exist
+        let _ = fs::remove_file(&nonexistent_snapshot);
+
+        // Attempt to compute digest
+        let result = compute_snapshot_digest(&nonexistent_snapshot);
+
+        // Should fail with I/O error (file not found)
+        assert!(result.is_err(), "Should fail with missing file");
+    }
+
+    #[test]
+    fn test_batch_verification() {
+        let temp_dir = std::env::temp_dir();
+        let private_key = temp_dir.join("test_batch_private.key");
+        let public_key = temp_dir.join("test_batch_public.pub");
+
+        // Clean up
+        let _ = fs::remove_file(&private_key);
+        let _ = fs::remove_file(&public_key);
+
+        // Generate keypair
+        generate_keypair(&private_key, &public_key).expect("Keypair generation failed");
+
+        // Sign multiple different data items
+        let data_items = vec![
+            b"snapshot 1 data".as_slice(),
+            b"snapshot 2 data".as_slice(),
+            b"snapshot 3 data".as_slice(),
+        ];
+
+        let mut signatures = Vec::new();
+        let mut digests = Vec::new();
+
+        for data in &data_items {
+            let digest = Sha256::digest(data);
+            let signature = sign_digest(&private_key, &digest).expect("Signing failed");
+            digests.push(digest);
+            signatures.push(signature);
+        }
+
+        // Verify all signatures
+        for (digest, signature) in digests.iter().zip(signatures.iter()) {
+            verify_digest(&public_key, digest, signature).expect("Batch verification failed");
+        }
+
+        // Clean up
+        fs::remove_file(&private_key).ok();
+        fs::remove_file(&public_key).ok();
+    }
+
+    #[test]
+    fn test_key_file_format_consistency() {
+        let temp_dir = std::env::temp_dir();
+        let private_key = temp_dir.join("test_format_private.key");
+        let public_key = temp_dir.join("test_format_public.pub");
+
+        // Clean up
+        let _ = fs::remove_file(&private_key);
+        let _ = fs::remove_file(&public_key);
+
+        // Generate keypair
+        generate_keypair(&private_key, &public_key).expect("Keypair generation failed");
+
+        // Read keys
+        let priv_bytes = fs::read(&private_key).expect("Failed to read private key");
+        let pub_bytes = fs::read(&public_key).expect("Failed to read public key");
+
+        // Verify format: keys should be raw 32-byte values
+        assert_eq!(
+            priv_bytes.len(),
+            32,
+            "Private key format should be 32 raw bytes"
+        );
+        assert_eq!(
+            pub_bytes.len(),
+            32,
+            "Public key format should be 32 raw bytes"
+        );
+
+        // Keys should not be all zeros
+        assert_ne!(
+            priv_bytes,
+            vec![0u8; 32],
+            "Private key should not be all zeros"
+        );
+        assert_ne!(
+            pub_bytes,
+            vec![0u8; 32],
+            "Public key should not be all zeros"
+        );
+
+        // Clean up
+        fs::remove_file(&private_key).ok();
+        fs::remove_file(&public_key).ok();
+    }
+
+    #[test]
+    fn test_signature_does_not_leak_private_key() {
+        let temp_dir = std::env::temp_dir();
+        let private_key = temp_dir.join("test_leak_private.key");
+        let public_key = temp_dir.join("test_leak_public.pub");
+
+        // Clean up
+        let _ = fs::remove_file(&private_key);
+        let _ = fs::remove_file(&public_key);
+
+        // Generate keypair
+        generate_keypair(&private_key, &public_key).expect("Keypair generation failed");
+
+        // Read private key
+        let priv_bytes = fs::read(&private_key).expect("Failed to read private key");
+
+        // Sign data
+        let digest = Sha256::digest(b"test data");
+        let signature = sign_digest(&private_key, &digest).expect("Signing failed");
+
+        // Signature should not contain the private key bytes
+        assert!(
+            !signature
+                .windows(32)
+                .any(|window| window == priv_bytes.as_slice()),
+            "Signature should not leak private key"
+        );
+
+        // Clean up
+        fs::remove_file(&private_key).ok();
+        fs::remove_file(&public_key).ok();
+    }
+
+    #[test]
+    fn test_zero_byte_digest_signing() {
+        let temp_dir = std::env::temp_dir();
+        let private_key = temp_dir.join("test_zero_digest_private.key");
+        let public_key = temp_dir.join("test_zero_digest_public.pub");
+
+        // Clean up
+        let _ = fs::remove_file(&private_key);
+        let _ = fs::remove_file(&public_key);
+
+        // Generate keypair
+        generate_keypair(&private_key, &public_key).expect("Keypair generation failed");
+
+        // Create an all-zero digest (edge case)
+        let zero_digest = [0u8; 32];
+
+        // Should be able to sign and verify
+        let signature =
+            sign_digest(&private_key, &zero_digest).expect("Signing zero digest failed");
+        verify_digest(&public_key, &zero_digest, &signature)
+            .expect("Verification of zero digest failed");
+
+        // Clean up
+        fs::remove_file(&private_key).ok();
+        fs::remove_file(&public_key).ok();
+    }
+}

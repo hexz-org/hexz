@@ -164,6 +164,128 @@ pub fn random_password() -> String {
         .collect()
 }
 
+/// Create a simple snapshot for testing using PackConfig
+pub fn create_simple_snapshot() -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn std::error::Error>>
+{
+    use std::fs;
+    use strata_core::ops::pack::{PackConfig, pack_snapshot};
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new()?;
+    let data = (0..1024 * 1024)
+        .map(|i| (i % 256) as u8)
+        .collect::<Vec<u8>>();
+    let disk_path = temp_dir.path().join("disk.img");
+    fs::write(&disk_path, &data)?;
+
+    let snap_path = temp_dir.path().join("snapshot.st");
+
+    let config = PackConfig {
+        disk: Some(disk_path),
+        memory: None,
+        output: snap_path.clone(),
+        compression: "lz4".to_string(),
+        encrypt: false,
+        password: None,
+        train_dict: false,
+        block_size: 65536,
+        cdc_enabled: false,
+        min_chunk: 16384,
+        avg_chunk: 65536,
+        max_chunk: 131072,
+    };
+
+    pack_snapshot(config, None::<fn(u64, u64)>)?;
+
+    // Persist the temp dir by leaking it (files needed for test lifetime)
+    let persisted = temp_dir.keep();
+    let final_snap = persisted.join("snapshot.st");
+
+    Ok((final_snap, data))
+}
+
+/// Create a snapshot with memory data using PackConfig
+pub fn create_snapshot_with_memory()
+-> Result<(std::path::PathBuf, Vec<u8>), Box<dyn std::error::Error>> {
+    use std::fs;
+    use strata_core::ops::pack::{PackConfig, pack_snapshot};
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new()?;
+    let disk_data = (0..512 * 1024)
+        .map(|i| (i % 256) as u8)
+        .collect::<Vec<u8>>();
+    let mem_data = vec![0xAA; 256 * 1024];
+
+    let disk_path = temp_dir.path().join("disk.img");
+    let mem_path = temp_dir.path().join("mem.img");
+    fs::write(&disk_path, &disk_data)?;
+    fs::write(&mem_path, &mem_data)?;
+
+    let snap_path = temp_dir.path().join("snapshot.st");
+
+    let config = PackConfig {
+        disk: Some(disk_path),
+        memory: Some(mem_path),
+        output: snap_path.clone(),
+        compression: "lz4".to_string(),
+        encrypt: false,
+        password: None,
+        train_dict: false,
+        block_size: 65536,
+        cdc_enabled: false,
+        min_chunk: 16384,
+        avg_chunk: 65536,
+        max_chunk: 131072,
+    };
+
+    pack_snapshot(config, None::<fn(u64, u64)>)?;
+
+    let persisted = temp_dir.keep();
+    let final_snap = persisted.join("snapshot.st");
+
+    Ok((final_snap, disk_data))
+}
+
+/// Create a multi-block snapshot for testing parallel decompression
+pub fn create_multi_block_snapshot()
+-> Result<(std::path::PathBuf, Vec<u8>), Box<dyn std::error::Error>> {
+    use std::fs;
+    use strata_core::ops::pack::{PackConfig, pack_snapshot};
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new()?;
+    let data = (0..512 * 1024)
+        .map(|i| (i % 256) as u8)
+        .collect::<Vec<u8>>();
+    let disk_path = temp_dir.path().join("disk.img");
+    fs::write(&disk_path, &data)?;
+
+    let snap_path = temp_dir.path().join("snapshot.st");
+
+    let config = PackConfig {
+        disk: Some(disk_path),
+        memory: None,
+        output: snap_path.clone(),
+        compression: "lz4".to_string(),
+        encrypt: false,
+        password: None,
+        train_dict: false,
+        block_size: 65536,
+        cdc_enabled: false,
+        min_chunk: 16384,
+        avg_chunk: 65536,
+        max_chunk: 131072,
+    };
+
+    pack_snapshot(config, None::<fn(u64, u64)>)?;
+
+    let persisted = temp_dir.keep();
+    let final_snap = persisted.join("snapshot.st");
+
+    Ok((final_snap, data))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

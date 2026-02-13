@@ -10,8 +10,6 @@ use std::net::TcpListener;
 use std::sync::Arc;
 use std::thread;
 use strata_core::store::StorageBackend;
-#[cfg(feature = "async-http")]
-use strata_core::store::http::AsyncHttpBackend;
 use strata_core::store::http::HttpBackend;
 
 /// Starts a minimal HTTP server that supports ranged reads over a fixed in-memory buffer.
@@ -144,17 +142,6 @@ fn bench_http_throughput(c: &mut Criterion) {
             let _ = backend.read_exact(0, chunk_size).unwrap();
         })
     });
-
-    #[cfg(feature = "async-http")]
-    {
-        group.bench_function("Async Read", |b| {
-            // Allow restricted IPs for benchmark
-            let backend = AsyncHttpBackend::new(url.clone(), true).unwrap();
-            b.iter(|| {
-                let _ = backend.read_exact(0, chunk_size).unwrap();
-            })
-        });
-    }
 
     group.finish();
 }

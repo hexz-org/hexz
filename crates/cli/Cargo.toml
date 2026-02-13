@@ -35,6 +35,8 @@ criterion = { version = "0.5", features = ["html_reports"] }
 rand = { workspace = true }
 rayon = "1.10"
 flate2 = "1.0"
+assert_cmd = "2.0"
+predicates = "3.0"
 
 [lib]
 name = "strata_cli"
@@ -72,7 +74,6 @@ path = "benches/macro/gzip_comparison.rs"
 name = "http_throughput"
 harness = false
 path = "benches/http_throughput.rs"
-required-features = ["strata-core/async-http"]
 
 # AI/ML-focused benchmarks
 [[bench]]
@@ -143,4 +144,3 @@ diagnostics = []
 # Advanced backends
 firecracker = []
 
-async-http = ["strata-core/async-http"]

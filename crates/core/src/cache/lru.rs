@@ -947,3 +947,269 @@ impl Default for BlockCache {
 pub fn default_page_cache_size() -> NonZeroUsize {
     NonZeroUsize::new(DEFAULT_PAGE_CACHE_CAPACITY).unwrap()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::stratafile::SnapshotStream;
+
+    #[test]
+    fn test_cache_with_zero_capacity() {
+        let cache = BlockCache::with_capacity(0);
+
+        // Insert should be no-op
+        cache.insert(SnapshotStream::Disk, 0, Bytes::from(vec![1, 2, 3]));
+
+        // Get should always return None
+        assert_eq!(cache.get(SnapshotStream::Disk, 0), None);
+    }
+
+    #[test]
+    fn test_basic_insert_and_get() {
+        let cache = BlockCache::with_capacity(10);
+
+        let data = Bytes::from(vec![0xDE, 0xAD, 0xBE, 0xEF]);
+        cache.insert(SnapshotStream::Disk, 42, data.clone());
+
+        let retrieved = cache.get(SnapshotStream::Disk, 42);
+        assert_eq!(retrieved, Some(data));
+    }
+
+    #[test]
+    fn test_cache_miss() {
+        let cache = BlockCache::with_capacity(10);
+
+        // Insert one block
+        cache.insert(SnapshotStream::Disk, 10, Bytes::from(vec![1, 2, 3]));
+
+        // Query different block
+        assert_eq!(cache.get(SnapshotStream::Disk, 99), None);
+    }
+
+    #[test]
+    fn test_stream_isolation() {
+        let cache = BlockCache::with_capacity(10);
+
+        let disk_data = Bytes::from(vec![1, 2, 3]);
+        let mem_data = Bytes::from(vec![4, 5, 6]);
+
+        // Same block index, different streams
+        cache.insert(SnapshotStream::Disk, 5, disk_data.clone());
+        cache.insert(SnapshotStream::Memory, 5, mem_data.clone());
+
+        // Verify no collision
+        assert_eq!(cache.get(SnapshotStream::Disk, 5), Some(disk_data));
+        assert_eq!(cache.get(SnapshotStream::Memory, 5), Some(mem_data));
+    }
+
+    #[test]
+    fn test_update_existing_entry() {
+        let cache = BlockCache::with_capacity(10);
+
+        let old_data = Bytes::from(vec![1, 2, 3]);
+        let new_data = Bytes::from(vec![4, 5, 6, 7]);
+
+        cache.insert(SnapshotStream::Disk, 0, old_data);
+        cache.insert(SnapshotStream::Disk, 0, new_data.clone());
+
+        assert_eq!(cache.get(SnapshotStream::Disk, 0), Some(new_data));
+    }
+
+    #[test]
+    fn test_lru_eviction_single_shard() {
+        // Use capacity <= 256 to force single shard for predictable LRU
+        let cache = BlockCache::with_capacity(2);
+
+        // Fill cache
+        cache.insert(SnapshotStream::Disk, 0, Bytes::from(vec![0]));
+        cache.insert(SnapshotStream::Disk, 1, Bytes::from(vec![1]));
+
+        // Access block 0 (makes block 1 the LRU)
+        let _ = cache.get(SnapshotStream::Disk, 0);
+
+        // Insert block 2 (should evict block 1)
+        cache.insert(SnapshotStream::Disk, 2, Bytes::from(vec![2]));
+
+        // Block 1 should be evicted
+        assert_eq!(cache.get(SnapshotStream::Disk, 1), None);
+
+        // Blocks 0 and 2 should remain
+        assert!(cache.get(SnapshotStream::Disk, 0).is_some());
+        assert!(cache.get(SnapshotStream::Disk, 2).is_some());
+    }
+
+    #[test]
+    fn test_multiple_blocks() {
+        let cache = BlockCache::with_capacity(100);
+
+        // Insert multiple blocks
+        for i in 0..50 {
+            let data = Bytes::from(vec![i as u8; 64]);
+            cache.insert(SnapshotStream::Disk, i, data);
+        }
+
+        // Verify all are cached
+        for i in 0..50 {
+            let retrieved = cache.get(SnapshotStream::Disk, i);
+            assert!(retrieved.is_some());
+            assert_eq!(retrieved.unwrap()[0], i as u8);
+        }
+    }
+
+    #[test]
+    fn test_large_capacity_uses_sharding() {
+        // Capacity > 256 should use multiple shards
+        let cache = BlockCache::with_capacity(1000);
+
+        // Verify cache is usable
+        cache.insert(SnapshotStream::Disk, 0, Bytes::from(vec![1, 2, 3]));
+        assert!(cache.get(SnapshotStream::Disk, 0).is_some());
+    }
+
+    #[test]
+    fn test_default_constructor() {
+        let cache = BlockCache::default();
+
+        // Should work like normal cache
+        cache.insert(SnapshotStream::Memory, 10, Bytes::from(vec![5, 6, 7]));
+        assert_eq!(
+            cache.get(SnapshotStream::Memory, 10),
+            Some(Bytes::from(vec![5, 6, 7]))
+        );
+    }
+
+    #[test]
+    fn test_default_page_cache_size() {
+        let size = default_page_cache_size();
+        assert_eq!(size.get(), 128);
+    }
+
+    #[test]
+    fn test_bytes_clone_is_cheap() {
+        let cache = BlockCache::with_capacity(10);
+
+        let data = Bytes::from(vec![0u8; 65536]); // 64 KiB
+        cache.insert(SnapshotStream::Disk, 0, data.clone());
+
+        // Multiple gets should all return the same data
+        let get1 = cache.get(SnapshotStream::Disk, 0).unwrap();
+        let get2 = cache.get(SnapshotStream::Disk, 0).unwrap();
+
+        // Bytes uses ref-counting, so these should point to same data
+        assert_eq!(get1.len(), 65536);
+        assert_eq!(get2.len(), 65536);
+    }
+
+    #[test]
+    fn test_empty_data() {
+        let cache = BlockCache::with_capacity(10);
+
+        let empty = Bytes::new();
+        cache.insert(SnapshotStream::Disk, 0, empty.clone());
+
+        assert_eq!(cache.get(SnapshotStream::Disk, 0), Some(empty));
+    }
+
+    #[test]
+    fn test_high_block_indices() {
+        let cache = BlockCache::with_capacity(10);
+
+        let max_block = u64::MAX;
+        let data = Bytes::from(vec![1, 2, 3]);
+
+        cache.insert(SnapshotStream::Memory, max_block, data.clone());
+        assert_eq!(cache.get(SnapshotStream::Memory, max_block), Some(data));
+    }
+
+    #[test]
+    fn test_concurrent_access() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let cache = Arc::new(BlockCache::with_capacity(100));
+        let mut handles = Vec::new();
+
+        // Spawn multiple threads that insert and read
+        for thread_id in 0..4 {
+            let cache_clone = Arc::clone(&cache);
+            let handle = thread::spawn(move || {
+                for i in 0..25 {
+                    let block_idx = thread_id * 25 + i;
+                    let data = Bytes::from(vec![thread_id as u8; 64]);
+
+                    cache_clone.insert(SnapshotStream::Disk, block_idx, data.clone());
+
+                    let retrieved = cache_clone.get(SnapshotStream::Disk, block_idx);
+                    assert_eq!(retrieved, Some(data));
+                }
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all threads
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // Verify all blocks are present
+        for thread_id in 0..4 {
+            for i in 0..25 {
+                let block_idx = thread_id * 25 + i;
+                let retrieved = cache.get(SnapshotStream::Disk, block_idx);
+                assert!(retrieved.is_some());
+            }
+        }
+    }
+
+    #[test]
+    fn test_capacity_edge_case_256() {
+        // Exactly at threshold - should use single shard
+        let cache = BlockCache::with_capacity(256);
+
+        cache.insert(SnapshotStream::Disk, 0, Bytes::from(vec![1]));
+        assert!(cache.get(SnapshotStream::Disk, 0).is_some());
+    }
+
+    #[test]
+    fn test_capacity_edge_case_257() {
+        // Just above threshold - should use multiple shards
+        let cache = BlockCache::with_capacity(257);
+
+        cache.insert(SnapshotStream::Disk, 0, Bytes::from(vec![1]));
+        assert!(cache.get(SnapshotStream::Disk, 0).is_some());
+    }
+
+    #[test]
+    fn test_very_small_capacity() {
+        let cache = BlockCache::with_capacity(1);
+
+        cache.insert(SnapshotStream::Disk, 0, Bytes::from(vec![1]));
+        cache.insert(SnapshotStream::Disk, 1, Bytes::from(vec![2]));
+
+        // Should have evicted block 0
+        assert_eq!(cache.get(SnapshotStream::Disk, 0), None);
+        assert!(cache.get(SnapshotStream::Disk, 1).is_some());
+    }
+
+    #[test]
+    fn test_different_data_sizes() {
+        let cache = BlockCache::with_capacity(10);
+
+        // Insert blocks of different sizes
+        cache.insert(SnapshotStream::Disk, 0, Bytes::from(vec![1]));
+        cache.insert(SnapshotStream::Disk, 1, Bytes::from(vec![2; 1024]));
+        cache.insert(SnapshotStream::Disk, 2, Bytes::from(vec![3; 65536]));
+
+        assert_eq!(cache.get(SnapshotStream::Disk, 0).unwrap().len(), 1);
+        assert_eq!(cache.get(SnapshotStream::Disk, 1).unwrap().len(), 1024);
+        assert_eq!(cache.get(SnapshotStream::Disk, 2).unwrap().len(), 65536);
+    }
+
+    #[test]
+    fn test_debug_format() {
+        let cache = BlockCache::with_capacity(10);
+        let debug_str = format!("{:?}", cache);
+
+        assert!(debug_str.contains("BlockCache"));
+    }
+}
