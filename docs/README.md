@@ -1,10 +1,10 @@
-# Strata Documentation
+# Hexz Documentation
 
-Welcome to the Strata documentation! This documentation follows the [Diátaxis framework](https://diataxis.fr/) for clear, effective technical documentation.
+Welcome to the Hexz documentation! This documentation follows the [Diátaxis framework](https://diataxis.fr/) for clear, effective technical documentation.
 
 ## Start Here
 
-**New to Strata?** Read [index.md](index.md) for comprehensive navigation.
+**New to Hexz?** Read [index.md](index.md) for comprehensive navigation.
 
 ## Quick Links by Role
 
@@ -60,7 +60,7 @@ make docs-python
 
 ```bash
 make docs-rust
-# Output: target/doc/strata/index.html
+# Output: target/doc/hexz/index.html
 ```
 
 ## Contributing to Documentation
@@ -104,10 +104,10 @@ Documentation contributions are welcome! Please:
 
 ## Questions?
 
-- Open an [issue](https://github.com/Alethic-Systems/strata/issues)
-- Start a [discussion](https://github.com/Alethic-Systems/strata/discussions)
+- Open an [issue](https://github.com/Alethic-Systems/hexz/issues)
+- Start a [discussion](https://github.com/Alethic-Systems/hexz/discussions)
 - See [CONTRIBUTING.md](project-docs/CONTRIBUTING.md)
 
 ## License
 
-Documentation is licensed under Apache 2.0, same as the Strata project.
+Documentation is licensed under Apache 2.0, same as the Hexz project.

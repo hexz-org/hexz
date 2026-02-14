@@ -74,15 +74,15 @@
 //!
 //! ```bash
 //! # 1. Analyze disk image
-//! strata analyze disk.img
+//! hexz analyze disk.img
 //! # Output: Recommends f=14 (16 KiB avg), m=1024 (1 KiB min)
 //!
 //! # 2. Pack with recommended parameters
-//! strata pack --disk disk.img --output snapshot.st --cdc \
+//! hexz pack --disk disk.img --output snapshot.st --cdc \
 //!   --min-chunk 1024 --avg-chunk 16384 --max-chunk 32768
 //!
 //! # 3. Verify compression ratio
-//! strata info snapshot.st
+//! hexz info snapshot.st
 //! # Output: Compression ratio should match DCAM prediction
 //! ```
 //!
@@ -94,12 +94,12 @@
 //! - **Total Time**: Typically 5-10 seconds for large disk images
 
 use anyhow::{Context, Result};
+use hexz_core::algo::dedup::cdc;
+use hexz_core::algo::dedup::dcam::{self, DedupeParams};
 use indicatif::HumanBytes;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
-use strata_core::algo::dedup::cdc;
-use strata_core::algo::dedup::dcam::{self, DedupeParams};
 
 /// Size of the sample read from disk for analysis (512 MiB).
 ///
@@ -174,7 +174,7 @@ const ANALYSIS_SAMPLE_SIZE: u64 = 512 * 1024 * 1024;
 ///
 /// ```no_run
 /// use std::path::PathBuf;
-/// use strata_cli::cmd::data::analyze;
+/// use hexz_cli::cmd::data::analyze;
 ///
 /// // Analyze a disk image
 /// analyze::run(PathBuf::from("vm-disk.img"))?;

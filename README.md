@@ -1,12 +1,12 @@
 
-# Strata: High-Performance Data Streaming Engine
+# Hexz: High-Performance Data Streaming Engine
 
-**Strata** is a Rust-based streaming engine designed to eliminate "GPU Starvation" in AI training. It allows PyTorch to stream massive datasets directly from compressed S3 storage into GPU memory, bypassing the Python GIL and OS page cache.
+**Hexz** is a Rust-based streaming engine designed to eliminate "GPU Starvation" in AI training. It allows PyTorch to stream massive datasets directly from compressed S3 storage into GPU memory, bypassing the Python GIL and OS page cache.
 
-At its core, Strata is a **seekable, deduplicated compression filesystem**.
+At its core, Hexz is a **seekable, deduplicated compression filesystem**.
 
 > **Why is there VM code in here?**
-> Strata’s engine is so low-latency that it was originally built to **boot entire operating systems** over the network in milliseconds. This has been adapted to load large datasets for machine learning.
+> Hexz’s engine is so low-latency that it was originally built to **boot entire operating systems** over the network in milliseconds. This has been adapted to load large datasets for machine learning.
 
 ## The Problem: The "Data Bottleneck"
 
@@ -16,11 +16,11 @@ Modern GPUs are too fast for standard data loaders.
 2. **Existing formats are rigid:** Tools like `WebDataset` require "sharding" data into thousands of tar files, breaking random shuffling.
 3. **Storage is expensive:** Redundant data (checkpoints, code, synthetic data) wastes PB of storage.
 
-## The Solution: Strata
+## The Solution: Hexz
 
-Strata introduces a **Seekable Compressed Archive**.
+Hexz introduces a **Seekable Compressed Archive**.
 
-* **Stream, Don't Shard:** Store your 10TB dataset as a single compressed stream. Strata can seek to *any* individual sample ID instantly without decompressing the whole block.
+* **Stream, Don't Shard:** Store your 10TB dataset as a single compressed stream. Hexz can seek to *any* individual sample ID instantly without decompressing the whole block.
 * **Native Deduplication:** Identical blocks are stored once. A dataset with 50% redundancy uses 50% less storage and bandwidth automatically.
 * **Rust-Powered Concurrency:** We bypass Python's slow `multiprocessing` by handling data pre-fetching in lightweight Rust threads.
 
@@ -28,16 +28,16 @@ Strata introduces a **Seekable Compressed Archive**.
 
 ## Quick Start: AI Training
 
-Strata acts as a drop-in replacement for standard PyTorch datasets.
+Hexz acts as a drop-in replacement for standard PyTorch datasets.
 
 ### 1. Installation
 
-**Note:** Strata is currently in development (pre-release). To try it out, build from source:
+**Note:** Hexz is currently in development (pre-release). To try it out, build from source:
 
 ```bash
 # Clone the repository
-git clone https://github.com/Alethic-Systems/strata.git
-cd strata
+git clone https://github.com/Alethic-Systems/hexz.git
+cd hexz
 
 # Build and install the Python loader
 make develop
@@ -47,14 +47,14 @@ make develop
 
 ```python
 import torch
-from strata import StrataLoader
+from hexz import Loader
 
 # Connect to your compressed dataset on S3
 # The index downloads in seconds; data streams on-demand.
-dataset = StrataLoader("s3://my-bucket/imagenet-21k.st")
+dataset = Loader("s3://my-bucket/imagenet-21k.hxz")
 
 # Create a standard PyTorch loader
-# Strata handles the pre-fetching and caching in Rust background threads
+# Hexz handles the pre-fetching and caching in Rust background threads
 loader = torch.utils.data.DataLoader(dataset, batch_size=64, num_workers=4)
 
 for batch in loader:
@@ -65,11 +65,11 @@ for batch in loader:
 
 ### 3. Pack Your Data
 
-Use the CLI to convert your raw folder into a high-performance Strata archive.
+Use the CLI to convert your raw folder into a high-performance Hexz archive.
 
 ```bash
 # Compresses, deduplicates, and indexes your dataset
-strata pack --input ./raw_images --output dataset.st --dedup
+hexz pack --input ./raw_images --output dataset.hxz --dedup
 
 ```
 
@@ -77,7 +77,7 @@ strata pack --input ./raw_images --output dataset.st --dedup
 
 ## System Capabilities
 
-Strata includes a full **Virtual Machine Manager** (`strata-cli` + `strata-fuse`). We maintain this to demonstrate the extreme low-latency capabilities of the file format.
+Hexz includes a full **Virtual Machine Manager** (`hexz-cli` + `hexz-fuse`). We maintain this to demonstrate the extreme low-latency capabilities of the file format.
 
 ### Instant VM Boot
 
@@ -85,7 +85,7 @@ Boot a VM directly from a compressed snapshot. The OS starts executing instructi
 
 ```bash
 # Boot an Ubuntu snapshot with 4GB RAM
-strata boot ubuntu-22.04.st --ram 4G
+hexz boot ubuntu-22.04.hxz --ram 4G
 
 ```
 
@@ -95,7 +95,7 @@ Capture the exact state (Disk + RAM) of a running VM to resume later—useful fo
 
 ```bash
 # Snapshot a running VM to a new file
-strata snapshot --socket /tmp/vm.sock --output checkpoint.st
+hexz snapshot --socket /tmp/vm.sock --output checkpoint.hxz
 
 ```
 
@@ -109,8 +109,8 @@ The project is organized as a high-performance Rust Workspace:
 | --- | --- |
 | **`crates/loader`** | **(Primary Product)** Python bindings via PyO3 for AI data streaming. |
 | **`crates/core`** | The brain. Handles the seekable file format, compression codecs, and deduplication logic. |
-| **`crates/cli`** | The `strata` command-line tool for packing datasets and managing VMs. |
-| **`crates/fuse`** | A FUSE adapter that mounts Strata archives as local filesystems (used for VMs). |
+| **`crates/cli`** | The `hexz` command-line tool for packing datasets and managing VMs. |
+| **`crates/fuse`** | A FUSE adapter that mounts Hexz archives as local filesystems (used for VMs). |
 | **`crates/server`** | High-throughput HTTP server for streaming data blocks. |
 
 ## Development
@@ -162,4 +162,4 @@ make build    # Rust workspace + Python wheel
 
 ---
 
-*Strata is an open-source project exploring the limits of seekable compression and zero-copy I/O.*
+*Hexz is an open-source project exploring the limits of seekable compression and zero-copy I/O.*

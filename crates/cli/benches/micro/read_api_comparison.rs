@@ -1,7 +1,7 @@
 //! Compares read API strategies: Vec return (copy) vs zeroed buffer vs uninit buffer.
 //!
 //! **When is parallel decompression used?**
-//! Only when a single read spans **2+ blocks** (see `PARALLEL_MIN_BLOCKS` in strata-core).
+//! Only when a single read spans **2+ blocks** (see `PARALLEL_MIN_BLOCKS` in hexz-core).
 //! All groups read the same total bytes per iteration (4 MiB) so times and throughput are comparable.
 //! - **ReadAPI_Comparison**: 64 × 64K reads (single-block each) → single-threaded path; compares alloc strategies.
 //! - **ReadAPI_SingleBlockReads**: 64 × 64K reads (same total 4 MiB, one block per call) → single-threaded.
@@ -12,14 +12,14 @@
 //!   cargo bench --bench read_api_comparison -- ReadAPI_MultiBlock
 
 use criterion::{Criterion, SamplingMode, Throughput, black_box, criterion_group, criterion_main};
+use hexz_cli::cmd::data::pack;
+use hexz_core::File;
+use hexz_core::algo::compression::lz4::Lz4Compressor;
+use hexz_core::api::file::SnapshotStream;
+use hexz_core::store::local::FileBackend;
 use std::io::Write;
 use std::mem::MaybeUninit;
 use std::sync::Arc;
-use strata_cli::cmd::data::pack;
-use strata_core::StrataFile;
-use strata_core::algo::compression::lz4::Lz4Compressor;
-use strata_core::api::stratafile::SnapshotStream;
-use strata_core::store::local::FileBackend;
 use tempfile::NamedTempFile;
 
 const BLOCK_SIZE: usize = 65536;
@@ -66,7 +66,7 @@ fn bench_read_api_comparison(c: &mut Criterion) {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snap = StrataFile::new(backend, compressor, None).unwrap();
+    let snap = File::new(backend, compressor, None).unwrap();
 
     // Warm cache over first 4 MiB
     for offset in (0..TOTAL_BYTES_PER_ITERATION).step_by(BLOCK_SIZE) {

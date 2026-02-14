@@ -1,4 +1,4 @@
-//! User interface utilities for the Strata CLI.
+//! User interface utilities for the Hexz CLI.
 //!
 //! This module provides consistent, reusable UI components for command-line
 //! interactions, including progress bars, spinners, and formatted output.

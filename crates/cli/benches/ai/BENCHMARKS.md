@@ -4,7 +4,7 @@ From the **repository root**, use the **Makefile** for the main benchmark entry 
 
 ## Overview
 
-The AI benchmark suite contains 6 comprehensive benchmark modules designed to validate Strata's performance for machine learning workloads. All benchmarks are production-ready and follow Criterion.rs best practices.
+The AI benchmark suite contains 6 comprehensive benchmark modules designed to validate Hexz's performance for machine learning workloads. All benchmarks are production-ready and follow Criterion.rs best practices.
 
 ## Running Benchmarks
 

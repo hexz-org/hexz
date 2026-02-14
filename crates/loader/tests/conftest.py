@@ -5,13 +5,13 @@ import tempfile
 import threading
 import http.server
 import socketserver
-import strata
+import hexz
 
 
 @pytest.fixture(scope="session")
 def test_dir():
     """Create a temporary directory for the test session."""
-    tmp_dir = tempfile.mkdtemp(prefix="strata_test_")
+    tmp_dir = tempfile.mkdtemp(prefix="hexz_test_")
     yield tmp_dir
     shutil.rmtree(tmp_dir)
 
@@ -29,8 +29,8 @@ def raw_data_path(test_dir):
 @pytest.fixture(scope="session")
 def base_snap_path(test_dir, raw_data_path):
     """Create a base snapshot."""
-    snap_path = os.path.join(test_dir, "test_base.st")
-    with strata.open(snap_path, mode="w", compression="lz4") as w:
+    snap_path = os.path.join(test_dir, "test_base.hxz")
+    with hexz.open(snap_path, mode="w", compression="lz4") as w:
         w.add(raw_data_path)
     return snap_path
 

@@ -1,8 +1,8 @@
-//! Boot a VM from a Strata snapshot with optional persistence.
+//! Boot a VM from a Hexz snapshot with optional persistence.
 //!
 //! This command implements the full VM boot workflow, combining FUSE mounting,
 //! overlay management, and hypervisor configuration to launch virtual machines
-//! directly from compressed Strata snapshots.
+//! directly from compressed Hexz snapshots.
 //!
 //! # Boot Process
 //!
@@ -21,15 +21,15 @@
 //!
 //! **Ephemeral** (no overlay):
 //! ```bash
-//! strata vm boot snapshot.st
+//! hexz vm boot snapshot.st
 //! # Changes lost on shutdown
 //! ```
 //!
 //! **Persistent** (with overlay):
 //! ```bash
-//! strata vm boot snapshot.st --persist overlay.bin
+//! hexz vm boot snapshot.st --persist overlay.bin
 //! # Writes saved to overlay.bin
-//! # Commit with: strata vm commit snapshot.st overlay.bin new-snapshot.st
+//! # Commit with: hexz vm commit snapshot.st overlay.bin new-snapshot.st
 //! ```
 //!
 //! # Performance Features
@@ -39,6 +39,9 @@
 //! - **Block Cache**: Reduces repeated decompression overhead
 
 use anyhow::{Context, Result};
+use hexz_common::constants::DEFAULT_ZSTD_LEVEL;
+use hexz_core::format::magic::HEADER_SIZE;
+use hexz_core::store::StorageBackend;
 use serde_json::Value;
 use std::fs;
 use std::io::{Read, Write};
@@ -49,9 +52,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
-use strata_common::constants::DEFAULT_ZSTD_LEVEL;
-use strata_core::format::magic::HEADER_SIZE;
-use strata_core::store::StorageBackend;
 
 /// Maximum retries while waiting for the FUSE mount to expose the disk file (50).
 ///
@@ -90,7 +90,7 @@ const QMP_POLL_SLEEP: Duration = Duration::from_millis(500);
 /// intervals may spin before the socket exists.
 const QMP_CONNECT_RETRY_SLEEP: Duration = Duration::from_millis(200);
 
-/// Boots a virtual machine from a Strata snapshot with optional persistence.
+/// Boots a virtual machine from a Hexz snapshot with optional persistence.
 ///
 /// **Architectural intent:** Mounts the snapshot via FUSE, configures an
 /// overlay for writable state, and then launches QEMU with appropriate
@@ -208,48 +208,46 @@ fn boot_qemu(
 
     let mount_handle = thread::spawn(move || -> Result<()> {
         let backend = Arc::new(
-            strata_core::store::local::file::FileBackend::new(std::path::Path::new(
-                &snap_path_clone,
-            ))
-            .context("Failed to open snapshot file")?,
+            hexz_core::store::local::file::FileBackend::new(std::path::Path::new(&snap_path_clone))
+                .context("Failed to open snapshot file")?,
         );
 
         let header_bytes = backend
             .read_exact(0, HEADER_SIZE)
             .context("Failed to read header")?;
-        let header: strata_core::format::header::StrataHeader =
+        let header: hexz_core::format::header::Header =
             bincode::deserialize(&header_bytes).context("Failed to deserialize header")?;
 
-        let compressor: Box<dyn strata_core::algo::compression::Compressor> =
-            match header.compression {
-                strata_core::format::header::CompressionType::Zstd => {
-                    let dict = if let (Some(off), Some(len)) =
-                        (header.dictionary_offset, header.dictionary_length)
-                    {
-                        Some(
-                            backend
-                                .read_exact(off, len as usize)
-                                .context("Failed to read dictionary")?
-                                .to_vec(),
-                        )
-                    } else {
-                        None
-                    };
-                    Box::new(strata_core::algo::compression::zstd::ZstdCompressor::new(
-                        DEFAULT_ZSTD_LEVEL,
-                        dict,
-                    ))
-                }
-                _ => Box::new(strata_core::algo::compression::lz4::Lz4Compressor::new()),
-            };
+        let compressor: Box<dyn hexz_core::algo::compression::Compressor> = match header.compression
+        {
+            hexz_core::format::header::CompressionType::Zstd => {
+                let dict = if let (Some(off), Some(len)) =
+                    (header.dictionary_offset, header.dictionary_length)
+                {
+                    Some(
+                        backend
+                            .read_exact(off, len as usize)
+                            .context("Failed to read dictionary")?
+                            .to_vec(),
+                    )
+                } else {
+                    None
+                };
+                Box::new(hexz_core::algo::compression::zstd::ZstdCompressor::new(
+                    DEFAULT_ZSTD_LEVEL,
+                    dict,
+                ))
+            }
+            _ => Box::new(hexz_core::algo::compression::lz4::Lz4Compressor::new()),
+        };
 
-        let snap = strata_core::StrataFile::new(backend, compressor, None)
-            .context("Failed to create StrataFile")?;
+        let snap =
+            hexz_core::File::new(backend, compressor, None).context("Failed to create File")?;
 
         mounted_clone.store(true, Ordering::Release);
 
         // Default to UID/GID 1000 for boot VM mount
-        strata_fuse::mount_fs(
+        hexz_fuse::mount_fs(
             snap,
             &mount_path_clone,
             Some(&overlay_path_clone),

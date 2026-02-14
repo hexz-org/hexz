@@ -1,6 +1,6 @@
-"""Filesystem mounting for Strata snapshots.
+"""Filesystem mounting for Hexz snapshots.
 
-Provides utilities for mounting Strata snapshots as FUSE filesystems,
+Provides utilities for mounting Hexz snapshots as FUSE filesystems,
 allowing direct file system access to snapshot contents.
 """
 
@@ -16,12 +16,12 @@ from .exceptions import MountError
 
 
 class _MountPoint:
-    """Internal context manager to mount a Strata snapshot.
+    """Internal context manager to mount a Hexz snapshot.
 
     Users should use the :func:`mount` function instead of instantiating this directly.
 
     Usage:
-        with strata.mount("my_snap.st") as mp:
+        with hexz.mount("my_snap.hxz") as mp:
             print(os.listdir(mp.path))
             # /tmp/tmp123/disk
             # /tmp/tmp123/memory
@@ -31,14 +31,14 @@ class _MountPoint:
         self,
         snapshot_path: str,
         mount_point: Optional[str] = None,
-        binary: str = "strata",
+        binary: str = "hexz",
     ):
         """Create a mount point.
 
         Args:
             snapshot_path: Path to .st file
             mount_point: Directory to mount at (creates temp if None)
-            binary: Path to strata CLI binary
+            binary: Path to hexz CLI binary
         """
         self.snapshot_path = os.path.abspath(snapshot_path)
         # If mount_point is provided, we resolve it to an absolute path.
@@ -54,7 +54,7 @@ class _MountPoint:
         return self.mount_point
 
     def _find_binary(self):
-        """Find the strata CLI binary."""
+        """Find the hexz CLI binary."""
         # Check if provided binary is in path
         if shutil.which(self.binary):
             return self.binary
@@ -62,7 +62,7 @@ class _MountPoint:
         # Check local target/release (for dev)
         curr = os.getcwd()
         while True:
-            local_bin = os.path.join(curr, "target", "release", "strata")
+            local_bin = os.path.join(curr, "target", "release", "hexz")
             if os.path.exists(local_bin):
                 return local_bin
 
@@ -86,7 +86,7 @@ class _MountPoint:
             if not os.path.exists(self.mount_point):
                 os.makedirs(self.mount_point)
 
-        # Start strata vm mount in background (CLI uses strata vm mount)
+        # Start hexz vm mount in background (CLI uses hexz vm mount)
         cmd = [self.binary_path, "vm", "mount", self.snapshot_path, self.mount_point]
 
         self._process = subprocess.Popen(
@@ -144,22 +144,22 @@ def mount(
     snapshot: PathLike,
     *,
     mount_point: Optional[PathLike] = None,
-    binary: str = "strata",
+    binary: str = "hexz",
 ) -> _MountPoint:
-    """Mount a Strata snapshot as a filesystem.
+    """Mount a Hexz snapshot as a filesystem.
 
     The snapshot is automatically unmounted when exiting the context manager.
 
     Args:
         snapshot: Path to .st file
         mount_point: Directory to mount at (creates temp if None)
-        binary: Path to strata CLI binary
+        binary: Path to hexz CLI binary
 
     Returns:
         Context manager that provides mount point access
 
     Example:
-        >>> with strata.mount("snapshot.st") as mp:
+        >>> with hexz.mount("snapshot.hxz") as mp:
         ...     files = os.listdir(mp.path)
         ...     print(files)
         ... # Automatically unmounted here

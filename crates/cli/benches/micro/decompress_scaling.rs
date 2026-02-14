@@ -1,7 +1,7 @@
 //! Parallel decompression pipeline scaling benchmark.
 //!
 //! This does **not** benchmark the underlying zstd/lz4 libraries; it measures
-//! whether **Strata's** decompression path scales when we run it in parallel:
+//! whether **Hexz's** decompression path scales when we run it in parallel:
 //! our block layout, our [`Compressor`] trait usage, Rayon dispatch, and any
 //! shared state (e.g. allocator) that could limit scaling. Pre-loads compressed
 //! blocks in memory (no I/O), runs decompression at a few representative thread
@@ -10,13 +10,13 @@
 //! parallel block decompression in the reader.
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use hexz_core::algo::compression::Compressor;
+use hexz_core::algo::compression::lz4::Lz4Compressor;
+use hexz_core::algo::compression::zstd::ZstdCompressor;
 use rayon::prelude::*;
 use std::sync::Arc;
-use strata_core::algo::compression::Compressor;
-use strata_core::algo::compression::lz4::Lz4Compressor;
-use strata_core::algo::compression::zstd::ZstdCompressor;
 
-/// Block size matching typical Strata snapshot blocks (64 KiB).
+/// Block size matching typical Hexz snapshot blocks (64 KiB).
 const BLOCK_SIZE: usize = 64 * 1024;
 /// Total decompressed size: 128 MiB to keep runs meaningful but not excessive.
 const TOTAL_DECOMPRESSED_BYTES: usize = 128 * 1024 * 1024;

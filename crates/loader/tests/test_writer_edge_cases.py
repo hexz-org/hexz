@@ -1,5 +1,5 @@
 """
-Tests for edge cases and error handling in strata.Writer.
+Tests for edge cases and error handling in hexz.Writer.
 
 This module tests the uncovered edge cases in writer.py:
 - Invalid packing mode
@@ -13,35 +13,35 @@ This module tests the uncovered edge cases in writer.py:
 import pytest
 import tempfile
 import numpy as np
-import strata
+import hexz
 
 
 def test_writer_invalid_packing_mode():
     """Test ValidationError on invalid packing mode."""
-    with tempfile.NamedTemporaryFile(suffix=".st") as tmp:
-        with pytest.raises(strata.ValidationError, match="Invalid packing mode"):
-            strata.Writer(tmp.name, packing="invalid_mode")
+    with tempfile.NamedTemporaryFile(suffix=".hxz") as tmp:
+        with pytest.raises(hexz.ValidationError, match="Invalid packing mode"):
+            hexz.Writer(tmp.name, packing="invalid_mode")
 
 
 def test_writer_encryption_warning():
     """Test warning when encryption is requested."""
-    with tempfile.NamedTemporaryFile(suffix=".st") as tmp:
+    with tempfile.NamedTemporaryFile(suffix=".hxz") as tmp:
         with pytest.warns(
             UserWarning, match="Encryption in Writer is not yet implemented"
         ):
-            writer = strata.Writer(tmp.name, encrypt=True, password="secret")
+            writer = hexz.Writer(tmp.name, encrypt=True, password="secret")
             writer.finalize()
 
 
 def test_writer_add_numpy_array():
     """Test add() method with numpy array dispatches to add_array()."""
-    with tempfile.NamedTemporaryFile(suffix=".st") as tmp:
+    with tempfile.NamedTemporaryFile(suffix=".hxz") as tmp:
         arr = np.arange(100, dtype=np.float32)
-        with strata.Writer(tmp.name) as w:
+        with hexz.Writer(tmp.name) as w:
             w.add(arr)  # Should dispatch to add_array()
 
         # Verify the array was written
-        reader = strata.Reader(tmp.name)
+        reader = hexz.Reader(tmp.name)
         data = reader.read(arr.nbytes)
         assert len(data) == arr.nbytes
 
@@ -54,12 +54,12 @@ def test_writer_add_file_memory_kind():
         input_path = input_file.name
 
     try:
-        with tempfile.NamedTemporaryFile(suffix=".st") as tmp:
-            with strata.Writer(tmp.name) as w:
+        with tempfile.NamedTemporaryFile(suffix=".hxz") as tmp:
+            with hexz.Writer(tmp.name) as w:
                 w.add_file(input_path, kind="memory")
 
             # Verify file was written
-            reader = strata.Reader(tmp.name)
+            reader = hexz.Reader(tmp.name)
             # Memory stream should have data
             assert reader.metadata.memory_size > 0
     finally:
@@ -70,8 +70,8 @@ def test_writer_add_file_memory_kind():
 
 def test_writer_tell_method():
     """Test tell() returns current byte position."""
-    with tempfile.NamedTemporaryFile(suffix=".st") as tmp:
-        with strata.Writer(tmp.name) as w:
+    with tempfile.NamedTemporaryFile(suffix=".hxz") as tmp:
+        with hexz.Writer(tmp.name) as w:
             # Initial position
             pos1 = w.tell()
             assert pos1 >= 0
@@ -86,8 +86,8 @@ def test_writer_tell_method():
 
 def test_writer_repr():
     """Test __repr__ output."""
-    with tempfile.NamedTemporaryFile(suffix=".st") as tmp:
-        writer = strata.Writer(tmp.name, compression="zstd", block_size=131072)
+    with tempfile.NamedTemporaryFile(suffix=".hxz") as tmp:
+        writer = hexz.Writer(tmp.name, compression="zstd", block_size=131072)
         repr_str = repr(writer)
 
         # Should contain key information
@@ -100,49 +100,49 @@ def test_writer_repr():
 
 def test_writer_add_method_with_bytes():
     """Test add() method with bytes."""
-    with tempfile.NamedTemporaryFile(suffix=".st") as tmp:
-        with strata.Writer(tmp.name) as w:
+    with tempfile.NamedTemporaryFile(suffix=".hxz") as tmp:
+        with hexz.Writer(tmp.name) as w:
             w.add(b"test bytes data")
 
-        reader = strata.Reader(tmp.name)
+        reader = hexz.Reader(tmp.name)
         data = reader.read(15)
         assert data == b"test bytes data"
 
 
 def test_writer_add_array_non_contiguous():
     """Test add_array() with non-contiguous arrays."""
-    with tempfile.NamedTemporaryFile(suffix=".st") as tmp:
+    with tempfile.NamedTemporaryFile(suffix=".hxz") as tmp:
         # Create a non-contiguous array (sliced)
         arr = np.arange(100, dtype=np.float32).reshape(10, 10)
         non_contiguous = arr[:, ::2]  # Skip every other column
         assert not non_contiguous.flags["C_CONTIGUOUS"]
 
-        with strata.Writer(tmp.name) as w:
+        with hexz.Writer(tmp.name) as w:
             # add_array should handle this by making it contiguous
             w.add_array(non_contiguous)
 
-        reader = strata.Reader(tmp.name)
+        reader = hexz.Reader(tmp.name)
         # Should have written the contiguous version
         assert reader.metadata.disk_size > 0
 
 
 def test_writer_add_metadata():
     """Test add_metadata() method."""
-    with tempfile.NamedTemporaryFile(suffix=".st") as tmp:
+    with tempfile.NamedTemporaryFile(suffix=".hxz") as tmp:
         metadata = {"key": "value", "number": 42}
-        with strata.Writer(tmp.name) as w:
+        with hexz.Writer(tmp.name) as w:
             w.add_metadata(metadata)
             w.add_bytes(b"some data")
 
         # Metadata should be stored
-        reader = strata.Reader(tmp.name)
+        reader = hexz.Reader(tmp.name)
         assert reader.metadata.disk_size > 0
 
 
 def test_writer_finalize_multiple_times():
     """Test that finalize() can be called multiple times safely."""
-    with tempfile.NamedTemporaryFile(suffix=".st") as tmp:
-        with strata.Writer(tmp.name) as w:
+    with tempfile.NamedTemporaryFile(suffix=".hxz") as tmp:
+        with hexz.Writer(tmp.name) as w:
             w.add_bytes(b"test")
             w.finalize()
             # Second finalize should be safe (idempotent)
@@ -151,8 +151,8 @@ def test_writer_finalize_multiple_times():
 
 def test_writer_add_bytes_error_handling():
     """Test add_bytes() error handling and cleanup."""
-    with tempfile.NamedTemporaryFile(suffix=".st") as tmp:
-        with strata.Writer(tmp.name) as w:
+    with tempfile.NamedTemporaryFile(suffix=".hxz") as tmp:
+        with hexz.Writer(tmp.name) as w:
             # Valid write
             w.add_bytes(b"test data")
 
@@ -163,9 +163,9 @@ def test_writer_add_bytes_error_handling():
 
 def test_writer_context_manager_cleanup():
     """Test that context manager properly cleans up on error."""
-    with tempfile.NamedTemporaryFile(suffix=".st") as tmp:
+    with tempfile.NamedTemporaryFile(suffix=".hxz") as tmp:
         try:
-            with strata.Writer(tmp.name) as w:
+            with hexz.Writer(tmp.name) as w:
                 w.add_bytes(b"data")
                 # Force an error
                 raise RuntimeError("Test error")

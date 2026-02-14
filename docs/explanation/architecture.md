@@ -1,20 +1,20 @@
-# Strata Data Flow and Architecture
+# Hexz Data Flow and Architecture
 
-This document details the internal architecture and data flow of the Strata project, illustrating how various components interact to provide high-performance seekable access to compressed data.
+This document details the internal architecture and data flow of the Hexz project, illustrating how various components interact to provide high-performance seekable access to compressed data.
 
 ## System Architecture
 
-Strata is built as a modular ecosystem. The user interacts through the CLI, Python API, or FUSE mount, all of which depend on the `strata-core` engine. This engine orchestrates low-level modules like storage backends, compression algorithms, and caching layers, while `strata-common` provides shared utilities.
+Hexz is built as a modular ecosystem. The user interacts through the CLI, Python API, or FUSE mount, all of which depend on the `hexz-core` engine. This engine orchestrates low-level modules like storage backends, compression algorithms, and caching layers, while `hexz-common` provides shared utilities.
 
 ```mermaid
 graph TD
     subgraph "User Interfaces"
-        CLI["CLI Tool<br/>(strata-cli)"]
-        Py["Python API<br/>(strata-loader)"]
-        Fuse["FUSE Mount<br/>(strata-fuse)"]
+        CLI["CLI Tool<br/>(hexz-cli)"]
+        Py["Python API<br/>(hexz-loader)"]
+        Fuse["FUSE Mount<br/>(hexz-fuse)"]
     end
 
-    subgraph "Core Engine (strata-core)"
+    subgraph "Core Engine (hexz-core)"
         API[API Layer]
         Ops[Operations]
         
@@ -26,7 +26,7 @@ graph TD
         end
     end
 
-    Common["strata-common<br/>(Config, Errors, Crypto)"]
+    Common["hexz-common<br/>(Config, Errors, Crypto)"]
 
     CLI -->|Calls| Ops
     Py -->|Wraps| API
@@ -46,18 +46,18 @@ graph TD
 
 ## File Format Structure
 
-The Strata (`.st`) file is a structured binary format designed for random access. It starts with a fixed-size header pointing to a Master Index. This index maps virtual offsets to Page Indices, which in turn contain metadata for individual compressed data blocks. This hierarchical lookup allows the engine to find any byte in the file with minimal I/O.
+The Hexz (`.st`) file is a structured binary format designed for random access. It starts with a fixed-size header pointing to a Master Index. This index maps virtual offsets to Page Indices, which in turn contain metadata for individual compressed data blocks. This hierarchical lookup allows the engine to find any byte in the file with minimal I/O.
 
 ```mermaid
 classDiagram
-    class StrataFile {
+    class File {
         +Header header
         +MasterIndex index
         +Metadata metadata
     }
 
     class Header {
-        +Magic "STRATA"
+        +Magic "HEXZ"
         +Version
         +BlockSize
         +IndexOffset
@@ -89,8 +89,8 @@ classDiagram
         +CompressedBytes
     }
 
-    StrataFile *-- Header : Defines entry point
-    StrataFile *-- MasterIndex : Maps logical space
+    File *-- Header : Defines entry point
+    File *-- MasterIndex : Maps logical space
     MasterIndex *-- PageEntry : Segments index
     PageEntry --> IndexPage : points to physical location
     IndexPage *-- BlockInfo : Maps blocks in page
@@ -244,11 +244,11 @@ flowchart TD
 
 ## Deduplication Logic
 
-Deduplication occurs during the write path and is transparent to the reader. By hashing compressed blocks and maintaining a mapping of hashes to file offsets, Strata ensures that identical content is only stored once. Multiple index entries can point to the same physical data block, significantly reducing storage requirements for redundant data like OS images or repetitive logs.
+Deduplication occurs during the write path and is transparent to the reader. By hashing compressed blocks and maintaining a mapping of hashes to file offsets, Hexz ensures that identical content is only stored once. Multiple index entries can point to the same physical data block, significantly reducing storage requirements for redundant data like OS images or repetitive logs.
 
 ```mermaid
 sequenceDiagram
-    participant Writer as Strata Writer
+    participant Writer as Hexz Writer
     participant DedupMap as Hash-to-Offset Map
     participant File as .st Storage
     participant Index as Index Builder
@@ -279,7 +279,7 @@ sequenceDiagram
 
 ## Chunking Strategy (Fixed vs. CDC)
 
-Strata supports both fixed-size chunking and Content-Defined Chunking (CDC). Fixed chunking splits data at regular intervals (e.g., every 64KB), while CDC uses a rolling hash to find "cut points" based on the data's content. CDC is superior for deduplication because small insertions shift boundaries in fixed chunking (breaking all subsequent blocks), whereas CDC resynchronizes, preserving matching blocks.
+Hexz supports both fixed-size chunking and Content-Defined Chunking (CDC). Fixed chunking splits data at regular intervals (e.g., every 64KB), while CDC uses a rolling hash to find "cut points" based on the data's content. CDC is superior for deduplication because small insertions shift boundaries in fixed chunking (breaking all subsequent blocks), whereas CDC resynchronizes, preserving matching blocks.
 
 ```mermaid
 graph TD
@@ -310,7 +310,7 @@ graph TD
 
 ## FUSE Overlay (Copy-On-Write)
 
-When a Strata archive is mounted with `--overlay`, it presents a writable filesystem. Since the `.st` file is immutable, writes are redirected to a temporary overlay file. A metadata map tracks which 4KB blocks have been modified. Read requests first check this map; if the block is modified, it is read from the overlay; otherwise, it is fetched from the base `.st` file.
+When a Hexz archive is mounted with `--overlay`, it presents a writable filesystem. Since the `.st` file is immutable, writes are redirected to a temporary overlay file. A metadata map tracks which 4KB blocks have been modified. Read requests first check this map; if the block is modified, it is read from the overlay; otherwise, it is fetched from the base `.st` file.
 
 ```mermaid
 flowchart TD

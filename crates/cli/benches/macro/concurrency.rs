@@ -5,13 +5,13 @@
 //! and compares performance across thread counts.
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use hexz_cli::cmd::data::pack;
+use hexz_core::File;
+use hexz_core::algo::compression::lz4::Lz4Compressor;
+use hexz_core::api::file::SnapshotStream;
+use hexz_core::store::local::FileBackend;
 use std::sync::Arc;
 use std::thread;
-use strata_cli::cmd::data::pack;
-use strata_core::StrataFile;
-use strata_core::algo::compression::lz4::Lz4Compressor;
-use strata_core::api::stratafile::SnapshotStream;
-use strata_core::store::local::FileBackend;
 use tempfile::NamedTempFile;
 
 /// Shared utilities for generating large, compressible input data for benchmarks.
@@ -27,7 +27,7 @@ use tempfile::NamedTempFile;
 #[path = "../common.rs"]
 mod common;
 
-/// Benchmarks concurrent read performance of a single `StrataFile` across multiple threads.
+/// Benchmarks concurrent read performance of a single `File` across multiple threads.
 ///
 /// **Architectural intent:** Exercises the snapshot reader under parallel access by
 /// spawning several threads that issue large disk reads against the same backing file,
@@ -70,7 +70,7 @@ fn bench_concurrent_reads(c: &mut Criterion) {
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
 
-    let snap = StrataFile::new(backend, compressor, None).unwrap();
+    let snap = File::new(backend, compressor, None).unwrap();
 
     let mut group = c.benchmark_group("concurrency_large");
 

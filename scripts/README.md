@@ -1,4 +1,4 @@
-# Strata Scripts
+# Hexz Scripts
 
 This directory contains utility scripts for development, testing, and VM management. **The central entry point for all development is the Makefile at the repo root** — run **`make help`** there for build, test, lint, and setup targets. The scripts below complement the Makefile.
 
@@ -14,9 +14,9 @@ make setup
 **`make setup`** installs Rust components, cargo tools, and a Python venv; run **`make setup-check`** first to see required system packages (rustup, pkg-config, libfuse, python) and install any that are missing.
 
 ### `run.sh`
-Helper script to build and run the Strata CLI in one step.
+Helper script to build and run the Hexz CLI in one step.
 - Automatically builds `release` binary if needed (quietly).
-- Passes all arguments to the `strata` binary.
+- Passes all arguments to the `hexz` binary.
 
 **Usage:**
 ```bash
@@ -29,7 +29,7 @@ Helper script to build and run the Strata CLI in one step.
 ### `run_minio.sh`
 Manages a local MinIO (S3-compatible) server for integration testing.
 - Starts a Docker container with MinIO.
-- Creates a default test bucket (`strata-test`).
+- Creates a default test bucket (`hexz-test`).
 - Exports environment variables for easy connection.
 
 **Usage:**
@@ -42,8 +42,8 @@ Manages a local MinIO (S3-compatible) server for integration testing.
 ## VM Management
 
 ### `vm_manager.py`
-A Python utility for automating Strata VM workflows.
-- **Install:** Downloads Ubuntu ISOs and runs `strata install`.
+A Python utility for automating Hexz VM workflows.
+- **Install:** Downloads Ubuntu ISOs and runs `hexz install`.
 - **Boot:** Boots the created VM snapshots with configurable RAM/Disk.
 - **Networking:** Handles QEMU user/tap networking flags.
 

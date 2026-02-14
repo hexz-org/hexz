@@ -3,7 +3,7 @@
 //! These tests focus on URL validation and basic error handling
 //! without requiring complex async mocking infrastructure.
 
-use strata_core::store::http::HttpBackend;
+use hexz_core::store::http::HttpBackend;
 
 #[test]
 fn test_http_backend_url_validation_localhost_blocked() {

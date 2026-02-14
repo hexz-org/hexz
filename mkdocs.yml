@@ -1,4 +1,4 @@
-site_name: Strata Documentation
+site_name: Hexz Documentation
 theme:
   name: material
   palette:
@@ -60,7 +60,7 @@ nav:
       - Boot VM from Snapshot: how-to/vm-management/boot-vm-from-snapshot.md
       - Commit Overlay Changes: how-to/vm-management/commit-overlay-changes.md
     - CLI Usage:
-      - Install Strata: how-to/cli-usage/install-strata.md
+      - Install Hexz: how-to/cli-usage/install-hexz.md
       - Pack Datasets: how-to/cli-usage/pack-datasets.md
       - Verify Signatures: how-to/cli-usage/verify-signatures.md
     - General:
@@ -69,7 +69,7 @@ nav:
       - Performance Tuning: how-to/performance-tuning.md
   - Explanation:
     - System Architecture: explanation/architecture.md
-    - Why Strata for ML: explanation/why-strata-for-ml.md
+    - Why Hexz for ML: explanation/why-hexz-for-ml.md
     - Deduplication Deep Dive: explanation/deduplication-deep-dive.md
     - Compression Strategy: explanation/compression-strategy.md
     - Content-Defined Chunking: explanation/content-defined-chunking.md
@@ -84,12 +84,12 @@ nav:
     - Configuration: reference/configuration.md
     - Version Compatibility: reference/version-compatibility.md
     - Rust API:
-      - strata-core: /rust/strata_core/index.html
-      - strata-loader: /rust/strata_loader/index.html
-      - strata-common: /rust/strata_common/index.html
-      - strata-cli: /rust/strata_cli/index.html
-      - strata-fuse: /rust/strata_fuse/index.html
-      - strata-server: /rust/strata_server/index.html
+      - hexz-core: /rust/hexz_core/index.html
+      - hexz-loader: /rust/hexz_loader/index.html
+      - hexz-common: /rust/hexz_common/index.html
+      - hexz-cli: /rust/hexz_cli/index.html
+      - hexz-fuse: /rust/hexz_fuse/index.html
+      - hexz-server: /rust/hexz_server/index.html
   - ADRs:
     - ADR-0001 Rust for Core Engine: adr/0001-rust-for-core-engine.md
     - ADR-0002 Block-Level Compression: adr/0002-block-level-compression.md

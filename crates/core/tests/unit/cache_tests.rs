@@ -3,10 +3,10 @@
 //! Tests verify cache hit/miss behavior, eviction policy, and thread safety.
 
 use bytes::Bytes;
+use hexz_core::SnapshotStream;
+use hexz_core::cache::lru::BlockCache;
 use std::sync::Arc;
 use std::thread;
-use strata_core::SnapshotStream;
-use strata_core::cache::lru::BlockCache;
 
 /// Test basic cache insertion and retrieval.
 #[test]

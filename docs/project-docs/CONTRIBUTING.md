@@ -1,8 +1,8 @@
-# Contributing to Strata
+# Contributing to Hexz
 
-Welcome to the Strata project.
+Welcome to the Hexz project.
 
-Strata is a high-performance system designed for two distinct use cases:
+Hexz is a high-performance system designed for two distinct use cases:
 1. AI Infrastructure: A streaming data loader for PyTorch.
 2. Systems Virtualization: A seekable FUSE filesystem for VM booting.
 
@@ -46,8 +46,8 @@ Run **`make setup-check`** from the repo root. It will list any missing system p
 
 1. Clone the repo and run the central setup from the repo root:
    ```bash
-   git clone https://github.com/willmccallion/strata.git
-   cd strata
+   git clone https://github.com/willmccallion/hexz.git
+   cd hexz
    make setup
    ```
    This installs Rust components (rustfmt, clippy), cargo tools (cargo-deny, maturin, etc.), and creates a Python venv with docs requirements. If anything is missing, run **`make setup-check`** first and install what it suggests.
@@ -62,15 +62,15 @@ Run **`make setup-check`** from the repo root. It will list any missing system p
 
 ## Project Architecture
 
-Strata is a Rust Cargo Workspace.
+Hexz is a Rust Cargo Workspace.
 
 | Directory | Crate Name | Description |
 | :--- | :--- | :--- |
-| crates/core | strata-core | File format, compression, and deduplication logic. Shared by all crates. |
-| crates/loader | strata-loader | PyO3 bindings for the AI data loader. Contains S3 streaming logic. |
-| crates/cli | strata-cli | The command-line tool for packing datasets and managing VMs. |
-| crates/fuse | strata-fuse | FUSE adapter for mounting Strata filesystems (VM support). |
-| crates/server | strata-server | HTTP server for streaming data. |
+| crates/core | hexz-core | File format, compression, and deduplication logic. Shared by all crates. |
+| crates/loader | hexz-loader | PyO3 bindings for the AI data loader. Contains S3 streaming logic. |
+| crates/cli | hexz-cli | The command-line tool for packing datasets and managing VMs. |
+| crates/fuse | hexz-fuse | FUSE adapter for mounting Hexz filesystems (VM support). |
+| crates/server | hexz-server | HTTP server for streaming data. |
 
 ---
 
@@ -82,7 +82,7 @@ From repo root:
 
 ```bash
 make rust
-./target/release/strata --help
+./target/release/hexz --help
 ```
 
 ### 2. Building the Python Library (AI Loader)
@@ -91,7 +91,7 @@ From repo root (Makefile handles venv and maturin):
 
 ```bash
 make develop
-python -c "import strata; print(strata.__version__)"
+python -c "import hexz; print(hexz.__version__)"
 ```
 
 ---
@@ -106,7 +106,7 @@ From repo root:
 make test-rust
 ```
 
-To run tests for a single crate only: `cargo test -p strata-core` (the Makefile does not define per-crate targets).
+To run tests for a single crate only: `cargo test -p hexz-core` (the Makefile does not define per-crate targets).
 
 ### Python Integration Tests (AI Loader)
 
@@ -152,7 +152,7 @@ Before submitting to dev:
 ## Getting Help
 
 - Check the [documentation](../index.md) for technical documentation
-- Look at existing examples in [examples/](https://github.com/willmccallion/strata/tree/main/examples)
+- Look at existing examples in [examples/](https://github.com/willmccallion/hexz/tree/main/examples)
 - Open an issue if you find a bug or have questions
 - Read the [ROADMAP.md](ROADMAP.md) to see planned features
 
@@ -179,7 +179,7 @@ Before submitting to dev:
 
 ## Detailed Crate Overview
 
-### strata-common
+### hexz-common
 
 **Purpose**: Shared types, errors, and utilities used across all crates.
 
@@ -192,7 +192,7 @@ Before submitting to dev:
 
 **Design Philosophy**: Keep this crate minimal—only truly shared code belongs here. Crate-specific logic stays in respective crates.
 
-### strata-core
+### hexz-core
 
 **Purpose**: Core snapshot engine with no UI dependencies. All business logic for reading/writing snapshots lives here.
 
@@ -244,7 +244,7 @@ core/
 │   ├── prefetch.rs  # Prefetch logic
 │   └── policy.rs    # Eviction policies
 └── api/             # Public API surface
-    └── stratafile.rs # StrataFile (main entry point)
+    └── file.rs # File (main entry point)
 ```
 
 **Key Design Decisions**:
@@ -257,7 +257,7 @@ core/
 
 4. **Block-Level Deduplication**: CDC (content-defined chunking) finds variable-sized chunks based on content, not fixed offsets. This enables deduplication across snapshots and incremental updates.
 
-### strata-fuse
+### hexz-fuse
 
 **Purpose**: FUSE filesystem interface for mounting snapshots.
 
@@ -287,7 +287,7 @@ fuse/
 - Special inodes: `1` = disk, `2` = memory, `3` = metadata
 - Supports `readdir`, `getattr`, `read`, `write` (via overlay)
 
-### strata-cli
+### hexz-cli
 
 **Purpose**: Command-line interface for all operations.
 
@@ -318,7 +318,7 @@ cli/
 
 **Command Flow**:
 ```
-User runs: strata data pack --disk x.img --output y.st
+User runs: hexz data pack --disk x.img --output y.st
     │
     ├─> main.rs parses args via Clap
     │
@@ -326,12 +326,12 @@ User runs: strata data pack --disk x.img --output y.st
     │
     ├─> pack::run() calls core::ops::pack::pack_snapshot()
     │
-    ├─> core creates StrataWriter, compresses blocks, writes index
+    ├─> core creates Writer, compresses blocks, writes index
     │
     └─> CLI shows progress bar, exits with result
 ```
 
-### strata-loader (Python)
+### hexz-loader (Python)
 
 **Purpose**: Python bindings for ML/AI workflows.
 
@@ -346,9 +346,9 @@ loader/
 │   │   └── shuffle.rs   # Index shuffling (Fisher-Yates)
 │   ├── py_interface/    # PyO3 bindings
 │   │   ├── mod.rs
-│   │   ├── dataset.rs   # StrataReader class
-│   │   ├── async_dataset.rs # AsyncStrataReader
-│   │   ├── builder.rs   # StrataBuilder (low-level)
+│   │   ├── dataset.rs   # Reader class
+│   │   ├── async_dataset.rs # AsyncReader
+│   │   ├── builder.rs   # Builder (low-level)
 │   │   ├── pack.rs      # pack() function
 │   │   ├── ops.rs       # inspect, analyze, etc.
 │   │   └── exceptions.rs # Error conversions
@@ -356,9 +356,9 @@ loader/
 │       ├── mod.rs
 │       └── numpy.rs     # Buffer protocol FFI
 └── python/
-    └── strata/
+    └── hexz/
         ├── __init__.py      # Package entry point
-        ├── _strata_core.pyi # Type stubs
+        ├── _hexz_core.pyi # Type stubs
         ├── io.rs            # High-level wrappers
         ├── builder.py       # Pythonic builder API
         ├── mount.py         # Mount helper

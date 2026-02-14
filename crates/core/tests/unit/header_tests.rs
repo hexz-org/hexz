@@ -1,6 +1,6 @@
 /// Unit tests for format header serialization
-use strata_core::format::header::Header;
-use strata_core::format::{CompressionType, FeatureFlags};
+use hexz_core::format::header::Header;
+use hexz_core::format::{CompressionType, FeatureFlags};
 use std::io::Cursor;
 
 #[test]

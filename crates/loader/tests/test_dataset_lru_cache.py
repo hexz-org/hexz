@@ -1,6 +1,6 @@
 """Tests for Dataset LRUCache functionality."""
 
-from strata.dataset import LRUCache
+from hexz.dataset import LRUCache
 
 
 def test_lru_cache_basic():

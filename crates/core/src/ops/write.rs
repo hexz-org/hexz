@@ -1,4 +1,4 @@
-//! Low-level write operations for Strata snapshots.
+//! Low-level write operations for Hexz snapshots.
 //!
 //! This module provides the foundational building blocks for writing compressed,
 //! encrypted, and deduplicated blocks to snapshot files. These functions implement
@@ -162,21 +162,21 @@
 //! - **Permission denied**: Writer lacks write permission (`EACCES`)
 //! - **Device error**: Hardware failure, I/O timeout (`EIO`)
 //!
-//! These surface as `StrataError::Io` wrapping the underlying `std::io::Error`.
+//! These surface as `Error::Io` wrapping the underlying `std::io::Error`.
 //!
 //! ### Compression Errors
 //!
 //! - **Compression failure**: Compressor returns error (rare, usually indicates bug)
 //! - **Incompressible data**: Not an error; stored with expansion
 //!
-//! These surface as `StrataError::Compression`.
+//! These surface as `Error::Compression`.
 //!
 //! ### Encryption Errors
 //!
 //! - **Cipher initialization failure**: Invalid state (should not occur in practice)
 //! - **Encryption failure**: Crypto operation fails (indicates library bug)
 //!
-//! These surface as `StrataError::Encryption`.
+//! These surface as `Error::Encryption`.
 //!
 //! ## Error Recovery
 //!
@@ -266,9 +266,9 @@
 //! - **Parallel writes**: Write multiple blocks concurrently (requires coordination)
 //! - **Write-ahead logging**: Enable atomic commits for crash safety
 
+use hexz_common::Result;
 use std::collections::HashMap;
 use std::io::Write;
-use strata_common::Result;
 
 use crate::algo::compression::Compressor;
 use crate::algo::encryption::Encryptor;
@@ -336,14 +336,14 @@ use crate::format::index::BlockInfo;
 ///   - `logical_len`: Original uncompressed size
 ///   - `checksum`: CRC32 of final data (compressed + encrypted)
 ///
-/// - `Err(StrataError::Io)`: I/O error during write
+/// - `Err(Error::Io)`: I/O error during write
 ///   - Disk full, permission denied, device error
 ///   - File state undefined (partial write may have occurred)
 ///
-/// - `Err(StrataError::Compression)`: Compression failed
+/// - `Err(Error::Compression)`: Compression failed
 ///   - Rare; usually indicates library bug or corrupted input
 ///
-/// - `Err(StrataError::Encryption)`: Encryption failed
+/// - `Err(Error::Encryption)`: Encryption failed
 ///   - Rare; usually indicates crypto library bug
 ///
 /// # Examples
@@ -351,12 +351,12 @@ use crate::format::index::BlockInfo;
 /// ## Basic Usage (No Encryption, No Dedup)
 ///
 /// ```no_run
-/// use strata_core::ops::write::write_block;
-/// use strata_core::algo::compression::Lz4Compressor;
+/// use hexz_core::ops::write::write_block;
+/// use hexz_core::algo::compression::Lz4Compressor;
 /// use std::fs::File;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let mut out = File::create("output.st")?;
+/// let mut out = File::create("output.hxz")?;
 /// let mut offset = 512u64; // After header
 /// let chunk = vec![0x42; 65536]; // 64 KiB of data
 /// let compressor = Lz4Compressor::new();
@@ -379,13 +379,13 @@ use crate::format::index::BlockInfo;
 /// ## With Deduplication
 ///
 /// ```no_run
-/// use strata_core::ops::write::write_block;
-/// use strata_core::algo::compression::Lz4Compressor;
+/// use hexz_core::ops::write::write_block;
+/// use hexz_core::algo::compression::Lz4Compressor;
 /// use std::collections::HashMap;
 /// use std::fs::File;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let mut out = File::create("output.st")?;
+/// let mut out = File::create("output.hxz")?;
 /// let mut offset = 512u64;
 /// let mut dedup_map: HashMap<[u8; 32], u64> = HashMap::new();
 /// let compressor = Lz4Compressor::new();
@@ -423,14 +423,14 @@ use crate::format::index::BlockInfo;
 /// ## With Encryption
 ///
 /// ```no_run
-/// use strata_core::ops::write::write_block;
-/// use strata_core::algo::compression::Lz4Compressor;
-/// use strata_core::algo::encryption::AesGcmEncryptor;
-/// use strata_common::crypto::KeyDerivationParams;
+/// use hexz_core::ops::write::write_block;
+/// use hexz_core::algo::compression::Lz4Compressor;
+/// use hexz_core::algo::encryption::AesGcmEncryptor;
+/// use hexz_common::crypto::KeyDerivationParams;
 /// use std::fs::File;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let mut out = File::create("output.st")?;
+/// let mut out = File::create("output.hxz")?;
 /// let mut offset = 512u64;
 /// let compressor = Lz4Compressor::new();
 ///
@@ -615,8 +615,8 @@ pub fn write_block<W: Write>(
 /// ## Detecting and Creating Zero Blocks
 ///
 /// ```
-/// use strata_core::ops::write::{is_zero_chunk, create_zero_block};
-/// use strata_core::format::index::BlockInfo;
+/// use hexz_core::ops::write::{is_zero_chunk, create_zero_block};
+/// use hexz_core::format::index::BlockInfo;
 ///
 /// let chunk = vec![0u8; 65536]; // 64 KiB of zeros
 ///
@@ -632,11 +632,11 @@ pub fn write_block<W: Write>(
 /// ## Usage in Packing Loop
 ///
 /// ```no_run
-/// # use strata_core::ops::write::{is_zero_chunk, create_zero_block, write_block};
-/// # use strata_core::algo::compression::Lz4Compressor;
+/// # use hexz_core::ops::write::{is_zero_chunk, create_zero_block, write_block};
+/// # use hexz_core::algo::compression::Lz4Compressor;
 /// # use std::fs::File;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// # let mut out = File::create("output.st")?;
+/// # let mut out = File::create("output.hxz")?;
 /// # let mut offset = 512u64;
 /// # let compressor = Lz4Compressor::new();
 /// # let chunks: Vec<Vec<u8>> = vec![];
@@ -741,7 +741,7 @@ pub fn create_zero_block(logical_len: u32) -> BlockInfo {
 /// ## Basic Usage
 ///
 /// ```
-/// use strata_core::ops::write::is_zero_chunk;
+/// use hexz_core::ops::write::is_zero_chunk;
 ///
 /// let zeros = vec![0u8; 65536];
 /// assert!(is_zero_chunk(&zeros));
@@ -756,12 +756,12 @@ pub fn create_zero_block(logical_len: u32) -> BlockInfo {
 /// ## Packing Loop Integration
 ///
 /// ```no_run
-/// # use strata_core::ops::write::{is_zero_chunk, create_zero_block, write_block};
-/// # use strata_core::algo::compression::Lz4Compressor;
-/// # use strata_core::format::index::BlockInfo;
+/// # use hexz_core::ops::write::{is_zero_chunk, create_zero_block, write_block};
+/// # use hexz_core::algo::compression::Lz4Compressor;
+/// # use hexz_core::format::index::BlockInfo;
 /// # use std::fs::File;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// # let mut out = File::create("output.st")?;
+/// # let mut out = File::create("output.hxz")?;
 /// # let mut offset = 512u64;
 /// # let compressor = Lz4Compressor::new();
 /// # let mut index_blocks = Vec::new();
@@ -783,7 +783,7 @@ pub fn create_zero_block(logical_len: u32) -> BlockInfo {
 /// ## Benchmarking Zero Detection
 ///
 /// ```
-/// use strata_core::ops::write::is_zero_chunk;
+/// use hexz_core::ops::write::is_zero_chunk;
 /// use std::time::Instant;
 ///
 /// let chunk = vec![0u8; 64 * 1024 * 1024]; // 64 MiB

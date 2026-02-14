@@ -10,30 +10,30 @@ use tempfile::TempDir;
 mod common;
 use common::TestEnv;
 
-/// Helper to create a strata CLI command
-fn strata() -> Command {
+/// Helper to create a hexz CLI command
+fn hexz() -> Command {
     #[allow(deprecated)]
     {
-        Command::cargo_bin("strata").expect("Failed to find strata binary")
+        Command::cargo_bin("hexz").expect("Failed to find hexz binary")
     }
 }
 
 #[test]
 fn test_cli_help() {
-    strata()
+    hexz()
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("strata"));
+        .stdout(predicate::str::contains("hexz"));
 }
 
 #[test]
 fn test_cli_version() {
-    strata()
+    hexz()
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("strata"));
+        .stdout(predicate::str::contains("hexz"));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -45,7 +45,7 @@ fn test_data_pack_basic() {
     let env = TestEnv::new();
     let input_file = env.create_test_file("test.bin", 1024 * 1024); // 1 MB
 
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg("--disk")
@@ -67,7 +67,7 @@ fn test_data_pack_with_compression_lz4() {
     let env = TestEnv::new();
     let input_file = env.create_pattern_file("test.txt", b"Hello World! ", 10000);
 
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg("--disk")
@@ -87,7 +87,7 @@ fn test_data_pack_with_compression_zstd() {
     let env = TestEnv::new();
     let input_file = env.create_pattern_file("test.txt", b"Compressible data ", 10000);
 
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg("--disk")
@@ -108,7 +108,7 @@ fn test_data_pack_with_cdc() {
     // Create file with repeating pattern (good for CDC)
     let input_file = env.create_pattern_file("dedup.bin", &[0xAB; 4096], 100);
 
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg("--disk")
@@ -126,7 +126,7 @@ fn test_data_pack_with_cdc() {
 fn test_data_pack_nonexistent_file() {
     let env = TestEnv::new();
 
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg("--disk")
@@ -143,7 +143,7 @@ fn test_data_info() {
     let input_file = env.create_test_file("test.bin", 10240);
 
     // First create a snapshot
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg("--disk")
@@ -154,7 +154,7 @@ fn test_data_info() {
         .success();
 
     // Then get info about it
-    strata()
+    hexz()
         .arg("data")
         .arg("info")
         .arg(&env.snapshot_path)
@@ -165,10 +165,10 @@ fn test_data_info() {
 
 #[test]
 fn test_data_info_nonexistent() {
-    strata()
+    hexz()
         .arg("data")
         .arg("info")
-        .arg("/nonexistent/snapshot.strata")
+        .arg("/nonexistent/snapshot.hexz")
         .assert()
         .failure();
 }
@@ -181,7 +181,7 @@ fn test_data_info_nonexistent() {
 fn test_sys_keygen() {
     let temp_dir = TempDir::new().unwrap();
 
-    strata()
+    hexz()
         .arg("sys")
         .arg("keygen")
         .arg("--output-dir")
@@ -200,7 +200,7 @@ fn test_sys_keygen() {
 
 #[test]
 fn test_sys_doctor() {
-    strata().arg("sys").arg("doctor").assert().success();
+    hexz().arg("sys").arg("doctor").assert().success();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -215,7 +215,7 @@ fn test_e2e_disk_and_memory_pack() {
     let memory_file = env.create_test_file("memory.dump", 4096);
 
     // Pack both disk and memory
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg("--disk")
@@ -233,7 +233,7 @@ fn test_e2e_disk_and_memory_pack() {
     assert!(snapshot_size > 0);
 
     // Get info about the snapshot
-    strata()
+    hexz()
         .arg("data")
         .arg("info")
         .arg(&env.snapshot_path)
@@ -246,11 +246,11 @@ fn test_e2e_compression_comparison() {
     let env = TestEnv::new();
     let input_file = env.create_pattern_file("compressible.txt", b"AAAABBBBCCCCDDDD", 1000);
 
-    let lz4_snap = env.temp_dir.path().join("lz4.st");
-    let zstd_snap = env.temp_dir.path().join("zstd.st");
+    let lz4_snap = env.temp_dir.path().join("lz4.hxz");
+    let zstd_snap = env.temp_dir.path().join("zstd.hxz");
 
     // Pack with LZ4
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg("--disk")
@@ -263,7 +263,7 @@ fn test_e2e_compression_comparison() {
         .success();
 
     // Pack with Zstd
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg("--disk")
@@ -292,7 +292,7 @@ fn test_e2e_pack_info_roundtrip() {
     let input_file = env.create_test_file("roundtrip.bin", 16384);
 
     // Pack
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg("--disk")
@@ -303,7 +303,7 @@ fn test_e2e_pack_info_roundtrip() {
         .success();
 
     // Info with JSON output
-    strata()
+    hexz()
         .arg("data")
         .arg("info")
         .arg(&env.snapshot_path)
@@ -319,7 +319,7 @@ fn test_e2e_silent_mode() {
     let input_file = env.create_test_file("silent.bin", 4096);
 
     // Pack with silent flag
-    let output = strata()
+    let output = hexz()
         .arg("data")
         .arg("pack")
         .arg("--disk")
@@ -344,7 +344,7 @@ fn test_e2e_custom_block_size() {
     let input_file = env.create_test_file("blocks.bin", 262144); // 256KB
 
     // Pack with custom block size (128KB)
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg("--disk")
@@ -371,7 +371,7 @@ fn test_data_pack_with_train_dict() {
         18000,
     );
 
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg("--disk")
@@ -389,14 +389,14 @@ fn test_data_pack_with_train_dict() {
 
 // Encryption test is ignored because it requires interactive password input via /dev/tty,
 // which is not available in non-interactive test environments (fails with ENXIO).
-// TODO: Add support for STRATA_PASSWORD env var to enable non-interactive encryption
+// TODO: Add support for HEXZ_PASSWORD env var to enable non-interactive encryption
 #[test]
 #[ignore = "requires interactive password input"]
 fn test_data_pack_with_encryption() {
     let env = TestEnv::new();
     let input_file = env.create_test_file("encrypted.bin", 8192);
 
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg("--disk")

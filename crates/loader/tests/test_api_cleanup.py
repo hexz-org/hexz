@@ -9,92 +9,92 @@ from pathlib import Path
 # Test that imports work correctly
 def test_imports():
     """Test that all new API functions are importable."""
-    import strata
+    import hexz
 
     # Core I/O
-    assert hasattr(strata, "open")
-    assert hasattr(strata, "version")
-    assert hasattr(strata, "Reader")
-    assert hasattr(strata, "AsyncReader")
-    assert hasattr(strata, "Writer")
+    assert hasattr(hexz, "open")
+    assert hasattr(hexz, "version")
+    assert hasattr(hexz, "Reader")
+    assert hasattr(hexz, "AsyncReader")
+    assert hasattr(hexz, "Writer")
 
     # ML
-    assert hasattr(strata, "Dataset")
-    assert hasattr(strata, "TFDataset")
+    assert hasattr(hexz, "Dataset")
+    assert hasattr(hexz, "TFDataset")
 
     # Arrays
-    assert hasattr(strata, "read_array")
-    assert hasattr(strata, "write_array")
-    assert hasattr(strata, "ArrayView")
+    assert hasattr(hexz, "read_array")
+    assert hasattr(hexz, "write_array")
+    assert hasattr(hexz, "ArrayView")
 
     # Build
-    assert hasattr(strata, "build")
-    assert hasattr(strata, "PROFILES")
+    assert hasattr(hexz, "build")
+    assert hasattr(hexz, "PROFILES")
 
     # Inspection
-    assert hasattr(strata, "inspect")
+    assert hasattr(hexz, "inspect")
 
     # Mount
-    assert hasattr(strata, "mount")
+    assert hasattr(hexz, "mount")
 
     # Verify
-    assert hasattr(strata, "verify")
+    assert hasattr(hexz, "verify")
 
     # Crypto submodule
-    assert hasattr(strata, "crypto")
-    assert hasattr(strata.crypto, "keygen")
-    assert hasattr(strata.crypto, "sign")
-    assert hasattr(strata.crypto, "verify")
+    assert hasattr(hexz, "crypto")
+    assert hasattr(hexz.crypto, "keygen")
+    assert hasattr(hexz.crypto, "sign")
+    assert hasattr(hexz.crypto, "verify")
 
     # Types
-    assert hasattr(strata, "Metadata")
-    assert hasattr(strata, "PathLike")
+    assert hasattr(hexz, "Metadata")
+    assert hasattr(hexz, "PathLike")
 
     # Version constants
-    assert hasattr(strata, "FORMAT_VERSION")
-    assert hasattr(strata, "MIN_SUPPORTED_VERSION")
-    assert hasattr(strata, "MAX_SUPPORTED_VERSION")
+    assert hasattr(hexz, "FORMAT_VERSION")
+    assert hasattr(hexz, "MIN_SUPPORTED_VERSION")
+    assert hasattr(hexz, "MAX_SUPPORTED_VERSION")
 
     # Exceptions
-    assert hasattr(strata, "StrataError")
-    assert hasattr(strata, "IOError")
+    assert hasattr(hexz, "Error")
+    assert hasattr(hexz, "IOError")
 
     print("✓ All imports successful")
 
 
 def test_metadata_consolidation():
     """Test that Metadata has the new consolidated methods."""
-    import strata
+    import hexz
 
     # Create a temporary snapshot for testing
     with tempfile.TemporaryDirectory() as tmpdir:
-        snap_path = Path(tmpdir) / "test.st"
+        snap_path = Path(tmpdir) / "test.hxz"
         data_file = Path(tmpdir) / "data.bin"
 
         # Create test data (1 MB)
         data_file.write_bytes(b"test data" * 100000)
 
         # Build snapshot
-        with strata.open(str(snap_path), mode="w") as writer:
+        with hexz.open(str(snap_path), mode="w") as writer:
             writer.add_file(str(data_file))
 
         # Test new Metadata API
-        meta = strata.inspect(str(snap_path))
+        meta = hexz.inspect(str(snap_path))
 
         # Test __str__ (should work without error)
         str_output = str(meta)
-        assert "Strata Snapshot" in str_output
+        assert "Hexz Snapshot" in str_output
         assert str(snap_path) in str_output
 
         # Test print() method
         meta.print()  # Should not raise
 
         # Test diff() classmethod
-        snap_path2 = Path(tmpdir) / "test2.st"
-        with strata.open(str(snap_path2), mode="w") as writer:
+        snap_path2 = Path(tmpdir) / "test2.hxz"
+        with hexz.open(str(snap_path2), mode="w") as writer:
             writer.add_file(str(data_file))
 
-        diff_result = strata.Metadata.diff(str(snap_path), str(snap_path2))
+        diff_result = hexz.Metadata.diff(str(snap_path), str(snap_path2))
         assert isinstance(diff_result, dict)
 
         print("✓ Metadata consolidation works")
@@ -102,21 +102,21 @@ def test_metadata_consolidation():
 
 def test_reader_analyze():
     """Test that Reader has analyze() method."""
-    import strata
+    import hexz
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        snap_path = Path(tmpdir) / "test.st"
+        snap_path = Path(tmpdir) / "test.hxz"
         data_file = Path(tmpdir) / "data.bin"
 
         # Create test data with some repetition for dedup
         data_file.write_bytes(b"A" * 50000 + b"B" * 50000)
 
         # Build snapshot
-        with strata.open(str(snap_path), mode="w") as writer:
+        with hexz.open(str(snap_path), mode="w") as writer:
             writer.add_file(str(data_file))
 
         # Test analyze() method
-        with strata.open(str(snap_path)) as reader:
+        with hexz.open(str(snap_path)) as reader:
             report = reader.analyze()
             assert hasattr(report, "dedup_ratio")
             assert hasattr(report, "savings_percent")
@@ -127,17 +127,17 @@ def test_reader_analyze():
 
 def test_writer_merge_overlay():
     """Test that Writer has merge_overlay() method."""
-    import strata
+    import hexz
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        base_path = Path(tmpdir) / "base.st"
+        base_path = Path(tmpdir) / "base.hxz"
         overlay_path = Path(tmpdir) / "overlay.img"
-        merged_path = Path(tmpdir) / "merged.st"
+        merged_path = Path(tmpdir) / "merged.hxz"
         data_file = Path(tmpdir) / "data.bin"
 
         # Create base snapshot
         data_file.write_bytes(b"base data" * 10000)
-        with strata.open(str(base_path), mode="w") as writer:
+        with hexz.open(str(base_path), mode="w") as writer:
             writer.add_file(str(data_file))
 
         # Create overlay (simulate modified blocks)
@@ -146,7 +146,7 @@ def test_writer_merge_overlay():
         meta_path.write_bytes(b"")  # Empty metadata file
 
         # Test merge_overlay() method
-        with strata.open(str(merged_path), mode="w") as writer:
+        with hexz.open(str(merged_path), mode="w") as writer:
             writer.merge_overlay(
                 base=str(base_path), overlay=str(overlay_path), thin=False
             )
@@ -157,30 +157,30 @@ def test_writer_merge_overlay():
 
 def test_removed_functions():
     """Test that old deprecated functions are no longer available."""
-    import strata
+    import hexz
 
     # These should NOT be in the API anymore
-    assert not hasattr(strata, "info")  # Use print(inspect(...)) or inspect().print()
-    assert not hasattr(strata, "analyze")  # Use reader.analyze()
-    assert not hasattr(strata, "diff")  # Use Metadata.diff()
-    assert not hasattr(strata, "merge_overlay")  # Use writer.merge_overlay()
-    assert not hasattr(strata, "unmount")  # Use mount() context manager
-    assert not hasattr(strata, "MountPoint")  # Internal class
-    assert not hasattr(strata, "pack")  # Use build() or Writer
-    assert not hasattr(strata, "snapshot_vm")  # CLI-only
-    assert not hasattr(strata, "keygen")  # Use crypto.keygen
-    assert not hasattr(strata, "sign_image")  # Use crypto.sign
-    assert not hasattr(strata, "verify_image")  # Use crypto.verify or verify()
+    assert not hasattr(hexz, "info")  # Use print(inspect(...)) or inspect().print()
+    assert not hasattr(hexz, "analyze")  # Use reader.analyze()
+    assert not hasattr(hexz, "diff")  # Use Metadata.diff()
+    assert not hasattr(hexz, "merge_overlay")  # Use writer.merge_overlay()
+    assert not hasattr(hexz, "unmount")  # Use mount() context manager
+    assert not hasattr(hexz, "MountPoint")  # Internal class
+    assert not hasattr(hexz, "pack")  # Use build() or Writer
+    assert not hasattr(hexz, "snapshot_vm")  # CLI-only
+    assert not hasattr(hexz, "keygen")  # Use crypto.keygen
+    assert not hasattr(hexz, "sign_image")  # Use crypto.sign
+    assert not hasattr(hexz, "verify_image")  # Use crypto.verify or verify()
 
     print("✓ Old functions properly removed")
 
 
 def test_performance_no_regression():
     """Test that API changes didn't introduce performance regressions."""
-    import strata
+    import hexz
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        snap_path = Path(tmpdir) / "perf.st"
+        snap_path = Path(tmpdir) / "perf.hxz"
         data_file = Path(tmpdir) / "data.bin"
 
         # Create 10 MB test file
@@ -189,13 +189,13 @@ def test_performance_no_regression():
 
         # Test write performance
         start = time.time()
-        with strata.open(str(snap_path), mode="w", compression="lz4") as writer:
+        with hexz.open(str(snap_path), mode="w", compression="lz4") as writer:
             writer.add_file(str(data_file))
         write_time = time.time() - start
 
         # Test read performance
         start = time.time()
-        with strata.open(str(snap_path)) as reader:
+        with hexz.open(str(snap_path)) as reader:
             data = reader.read()
         read_time = time.time() - start
 
@@ -211,10 +211,10 @@ def test_performance_no_regression():
 
 def test_api_count():
     """Verify that we have the expected number of public API items."""
-    import strata
+    import hexz
 
     # Count public exports (should be ~30)
-    public_items = [name for name in dir(strata) if not name.startswith("_")]
+    public_items = [name for name in dir(hexz) if not name.startswith("_")]
 
     # Expected core items from __all__
     expected_core = [
@@ -240,7 +240,7 @@ def test_api_count():
         "MIN_SUPPORTED_VERSION",
         "MAX_SUPPORTED_VERSION",
         # Exceptions
-        "StrataError",
+        "Error",
         "IOError",
         "NetworkError",
         "FormatError",
@@ -256,7 +256,7 @@ def test_api_count():
     for item in expected_core:
         assert item in public_items, f"Missing: {item}"
 
-    print(f"✓ API surface: {len(strata.__all__)} items in __all__")
+    print(f"✓ API surface: {len(hexz.__all__)} items in __all__")
     print(f"  Expected: {len(expected_core)} core items")
 
 

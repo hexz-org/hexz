@@ -1,22 +1,22 @@
-# strata-common
+# hexz-common
 
-Common utilities, configuration, and shared types for the Strata ecosystem.
+Common utilities, configuration, and shared types for the Hexz ecosystem.
 
 ## Overview
 
-`strata-common` centralizes configuration loading, error types, logging setup, and format constants that are shared across all Strata crates (core, CLI, FUSE, server, loader). This ensures a single source of truth for defaults, wire formats, and runtime parameters.
+`hexz-common` centralizes configuration loading, error types, logging setup, and format constants that are shared across all Hexz crates (core, CLI, FUSE, server, loader). This ensures a single source of truth for defaults, wire formats, and runtime parameters.
 
-This is an internal crate used by other Strata components—it's not typically used directly by end users.
+This is an internal crate used by other Hexz components—it's not typically used directly by end users.
 
 ## Architecture
 
 ```
-strata-common/
+hexz-common/
 ├── src/
 │   ├── lib.rs          # Public exports
 │   ├── config.rs       # Configuration loading and management
 │   ├── constants.rs    # Format constants (magic bytes, sizes, versions)
-│   ├── error.rs        # Shared error types (StrataError, Result)
+│   ├── error.rs        # Shared error types (Error, Result)
 │   ├── logging.rs      # Logging initialization (tracing)
 │   ├── crypto.rs       # Cryptographic utilities
 │   └── sign.rs         # Ed25519 signing (optional feature)
@@ -26,10 +26,10 @@ strata-common/
 
 ### Configuration (`config.rs`)
 
-Runtime parameter management for Strata tools:
+Runtime parameter management for Hexz tools:
 
 ```rust
-use strata_common::Config;
+use hexz_common::Config;
 
 // Load configuration (from env, files, defaults)
 let config = Config::load()?;
@@ -44,10 +44,10 @@ println!("Log level: {}", config.log_level);
 Format constants and wire format definitions:
 
 ```rust
-use strata_common::constants::*;
+use hexz_common::constants::*;
 
 // Magic bytes for format identification
-assert_eq!(MAGIC, b"STRATA\x00\x00");
+assert_eq!(MAGIC, b"HEXZ");
 
 // Header and block sizes
 println!("Header size: {} bytes", HEADER_SIZE);
@@ -64,11 +64,11 @@ These constants are used across all crates to ensure consistent on-disk layout.
 Shared error types using `thiserror`:
 
 ```rust
-use strata_common::{Result, StrataError};
+use hexz_common::{Result, Error};
 
 fn read_header() -> Result<Vec<u8>> {
-    // Returns Result<T> = std::result::Result<T, StrataError>
-    Err(StrataError::Io(std::io::Error::new(
+    // Returns Result<T> = std::result::Result<T, Error>
+    Err(Error::Io(std::io::Error::new(
         std::io::ErrorKind::NotFound,
         "File not found"
     )))
@@ -87,7 +87,7 @@ Common error variants:
 Unified logging setup using `tracing`:
 
 ```rust
-use strata_common::logging;
+use hexz_common::logging;
 
 fn main() {
     // Initialize logging with default settings
@@ -104,7 +104,7 @@ fn main() {
 Password-based key derivation parameters:
 
 ```rust
-use strata_common::crypto;
+use hexz_common::crypto;
 
 // Key derivation for encryption
 let salt = crypto::generate_salt();
@@ -116,7 +116,7 @@ let key = crypto::derive_key(password, &salt)?;
 Ed25519 signing for snapshot integrity (requires `signing` feature):
 
 ```rust
-use strata_common::sign::{Keypair, sign, verify};
+use hexz_common::sign::{Keypair, sign, verify};
 
 // Generate keypair
 let keypair = Keypair::generate();
@@ -133,12 +133,12 @@ verify(&keypair.public, b"snapshot data", &signature)?;
 ### Core Library
 
 ```rust
-use strata_common::{Result, StrataError};
-use strata_common::constants::*;
+use hexz_common::{Result, Error};
+use hexz_common::constants::*;
 
 fn validate_header(magic: &[u8]) -> Result<()> {
     if magic != MAGIC {
-        return Err(StrataError::Format(
+        return Err(Error::Format(
             "Invalid magic bytes".to_string()
         ));
     }
@@ -149,7 +149,7 @@ fn validate_header(magic: &[u8]) -> Result<()> {
 ### CLI Tool
 
 ```rust
-use strata_common::{Config, logging};
+use hexz_common::{Config, logging};
 
 fn main() -> anyhow::Result<()> {
     // Initialize logging
@@ -177,7 +177,7 @@ fn main() -> anyhow::Result<()> {
 Build with signing:
 
 ```bash
-cargo build -p strata-common --features signing
+cargo build -p hexz-common --features signing
 ```
 
 ## Development
@@ -186,13 +186,13 @@ From the repository root:
 
 ```bash
 # Build the common crate
-cargo build -p strata-common
+cargo build -p hexz-common
 
 # Run tests
-cargo test -p strata-common
+cargo test -p hexz-common
 
 # Build with all features
-cargo build -p strata-common --all-features
+cargo build -p hexz-common --all-features
 ```
 
 ## Constants Reference
@@ -201,7 +201,7 @@ Key constants defined in `constants.rs`:
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `MAGIC` | `b"STRATA\x00\x00"` | File format magic bytes |
+| `MAGIC` | `b"HEXZ"` | File format magic bytes |
 | `FORMAT_VERSION` | `1` | Current format version |
 | `HEADER_SIZE` | `512` | Header size in bytes |
 | `DEFAULT_BLOCK_SIZE` | `65536` | Default compression block size (64KB) |
@@ -212,6 +212,6 @@ These values affect on-disk format and must be coordinated across all crates.
 
 ## See Also
 
-- **[strata-core](../core/)** - Core engine (uses common types)
-- **[strata-cli](../cli/)** - CLI tool (uses config and logging)
+- **[hexz-core](../core/)** - Core engine (uses common types)
+- **[hexz-cli](../cli/)** - CLI tool (uses config and logging)
 - **[Project README](../../README.md)** - Main project overview

@@ -1,21 +1,21 @@
 //! Integration tests for encrypted snapshot packing and reading.
 //!
-//! These tests exercise the encryption code path in pack.rs and stratafile.rs.
+//! These tests exercise the encryption code path in pack.rs and file.rs.
 
 use super::common;
 use common::*;
 
+use hexz_core::algo::compression::lz4::Lz4Compressor;
+use hexz_core::algo::compression::zstd::ZstdCompressor;
+use hexz_core::algo::encryption::aes_gcm::AesGcmEncryptor;
+use hexz_core::format::header::Header;
+use hexz_core::format::magic::HEADER_SIZE;
+use hexz_core::ops::pack::{PackConfig, pack_snapshot};
+use hexz_core::store::local::FileBackend;
+use hexz_core::{File, SnapshotStream};
 use std::fs;
 use std::io::Write;
 use std::sync::Arc;
-use strata_core::algo::compression::lz4::Lz4Compressor;
-use strata_core::algo::compression::zstd::ZstdCompressor;
-use strata_core::algo::encryption::aes_gcm::AesGcmEncryptor;
-use strata_core::format::header::StrataHeader;
-use strata_core::format::magic::HEADER_SIZE;
-use strata_core::ops::pack::{PackConfig, pack_snapshot};
-use strata_core::store::local::FileBackend;
-use strata_core::{SnapshotStream, StrataFile};
 use tempfile::TempDir;
 
 /// Helper to create an encrypted snapshot and read it back.
@@ -28,7 +28,7 @@ fn create_encrypted_snapshot(
     let disk_path = temp_dir.path().join("disk.img");
     fs::write(&disk_path, data).unwrap();
 
-    let output_path = temp_dir.path().join("encrypted.st");
+    let output_path = temp_dir.path().join("encrypted.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -48,18 +48,16 @@ fn create_encrypted_snapshot(
 }
 
 /// Helper to open an encrypted snapshot.
-fn open_encrypted_snapshot(path: &std::path::Path, password: &str) -> Arc<StrataFile> {
+fn open_encrypted_snapshot(path: &std::path::Path, password: &str) -> Arc<File> {
     let backend = Arc::new(FileBackend::new(path).unwrap());
 
     // Read header to get encryption params
     let header_bytes = backend.read_exact(0, HEADER_SIZE).unwrap();
-    let header: StrataHeader = bincode::deserialize(&header_bytes).unwrap();
+    let header: Header = bincode::deserialize(&header_bytes).unwrap();
 
-    let compressor: Box<dyn strata_core::algo::compression::Compressor> = match header.compression {
-        strata_core::format::header::CompressionType::Lz4 => Box::new(Lz4Compressor::new()),
-        strata_core::format::header::CompressionType::Zstd => {
-            Box::new(ZstdCompressor::new(3, None))
-        }
+    let compressor: Box<dyn hexz_core::algo::compression::Compressor> = match header.compression {
+        hexz_core::format::header::CompressionType::Lz4 => Box::new(Lz4Compressor::new()),
+        hexz_core::format::header::CompressionType::Zstd => Box::new(ZstdCompressor::new(3, None)),
     };
 
     let encryptor = header.encryption.as_ref().map(|params| {
@@ -67,13 +65,13 @@ fn open_encrypted_snapshot(path: &std::path::Path, password: &str) -> Arc<Strata
             password.as_bytes(),
             &params.salt,
             params.iterations,
-        )) as Box<dyn strata_core::algo::encryption::Encryptor>
+        )) as Box<dyn hexz_core::algo::encryption::Encryptor>
     });
 
-    StrataFile::new(backend, compressor, encryptor).unwrap()
+    File::new(backend, compressor, encryptor).unwrap()
 }
 
-use strata_core::store::StorageBackend;
+use hexz_core::store::StorageBackend;
 
 /// Test basic encrypted pack and read with LZ4.
 #[test]
@@ -121,18 +119,18 @@ fn test_encrypted_wrong_password_fails() {
     // Opening with wrong password should fail during read (decryption error)
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
     let header_bytes = backend.read_exact(0, HEADER_SIZE).unwrap();
-    let header: StrataHeader = bincode::deserialize(&header_bytes).unwrap();
+    let header: Header = bincode::deserialize(&header_bytes).unwrap();
 
     let encryptor = header.encryption.as_ref().map(|params| {
         Box::new(AesGcmEncryptor::new(
             wrong_password.as_bytes(),
             &params.salt,
             params.iterations,
-        )) as Box<dyn strata_core::algo::encryption::Encryptor>
+        )) as Box<dyn hexz_core::algo::encryption::Encryptor>
     });
 
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, encryptor).unwrap();
+    let snapshot = File::new(backend, compressor, encryptor).unwrap();
 
     // Reading should fail because decryption with wrong key produces garbage
     let result = snapshot.read_at(SnapshotStream::Disk, 0, 4096);
@@ -152,7 +150,7 @@ fn test_encrypted_varied_data() {
     }
     drop(file);
 
-    let output_path = temp_dir.path().join("encrypted.st");
+    let output_path = temp_dir.path().join("encrypted.hxz");
     let password = "varied_data_pw";
 
     let config = PackConfig {
@@ -196,7 +194,7 @@ fn test_encrypted_dual_stream() {
     fs::write(&disk_path, vec![0xDD; 256 * 1024]).unwrap();
     fs::write(&mem_path, vec![0xCC; 128 * 1024]).unwrap();
 
-    let output_path = temp_dir.path().join("encrypted.st");
+    let output_path = temp_dir.path().join("encrypted.hxz");
     let password = "dual_stream_pw";
 
     let config = PackConfig {
@@ -233,7 +231,7 @@ fn test_encrypted_pack_no_password_fails() {
     let disk_path = temp_dir.path().join("disk.img");
     fs::write(&disk_path, vec![0u8; 65536]).unwrap();
 
-    let output_path = temp_dir.path().join("no_pw.st");
+    let output_path = temp_dir.path().join("no_pw.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),

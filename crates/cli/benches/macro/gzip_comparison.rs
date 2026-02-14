@@ -1,26 +1,26 @@
-//! Gzip vs. Strata compression comparison benchmarks.
+//! Gzip vs. Hexz compression comparison benchmarks.
 //!
 //! Compares compression ratio and encode/decode throughput of gzip against
-//! Strata (LZ4) on the same input data. Uses shared helpers to build
+//! Hexz (LZ4) on the same input data. Uses shared helpers to build
 //! large, compressible input files for both formats.
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use flate2::Compression;
 use flate2::write::GzEncoder;
-use std::fs::File;
+use hexz_cli::cmd::data::pack;
+use hexz_core::File;
+use hexz_core::algo::compression::lz4::Lz4Compressor;
+use hexz_core::api::file::SnapshotStream;
+use hexz_core::store::local::FileBackend;
+use std::fs::File as FsFile;
 use std::io::Read;
 use std::sync::Arc;
-use strata_cli::cmd::data::pack;
-use strata_core::StrataFile;
-use strata_core::algo::compression::lz4::Lz4Compressor;
-use strata_core::api::stratafile::SnapshotStream;
-use strata_core::store::local::FileBackend;
 use tempfile::NamedTempFile;
 
 /// Shared helpers for constructing large input files used across macro benchmarks.
 ///
 /// **Architectural intent:** Provides a single, reusable source of compressible
-/// test data so that gzip and Strata comparisons run over identical byte sequences.
+/// test data so that gzip and Hexz comparisons run over identical byte sequences.
 ///
 /// **Constraints:** Included via a relative path to `../common.rs`; directory layout
 /// changes must preserve this relationship or update the attribute accordingly.
@@ -30,9 +30,9 @@ use tempfile::NamedTempFile;
 #[path = "../common.rs"]
 mod common;
 
-/// In-memory description of the artifacts produced for gzip vs Strata comparison.
+/// In-memory description of the artifacts produced for gzip vs Hexz comparison.
 ///
-/// **Architectural intent:** Holds references to the generated input, Strata snapshot,
+/// **Architectural intent:** Holds references to the generated input, Hexz snapshot,
 /// and gzip-compressed file so that benchmarks can seamlessly switch between them
 /// without re-running costly setup work.
 ///
@@ -50,16 +50,16 @@ struct BenchSetup {
     file_size: usize,
 }
 
-/// Builds Strata and gzip artifacts for a given input size to support head-to-head benchmarks.
+/// Builds Hexz and gzip artifacts for a given input size to support head-to-head benchmarks.
 ///
 /// **Architectural intent:** Generates a single large input file, encodes it once into
-/// a Strata snapshot and once into a gzip stream, and returns handles so benchmarks can
+/// a Hexz snapshot and once into a gzip stream, and returns handles so benchmarks can
 /// probe the relative performance characteristics of each format.
 ///
 /// **Constraints:** The function assumes that the `create` command and gzip encoder
 /// succeed; failures result in panics via `unwrap()`. The compression level for gzip
 /// is fixed to the default and may not correspond to the same effective compression
-/// ratio as the Strata configuration.
+/// ratio as the Hexz configuration.
 ///
 /// **Side effects:** Performs substantial sequential reads and writes during initial
 /// encoding, and creates two temporary files whose lifetimes are tied to the returned
@@ -87,9 +87,9 @@ fn setup_comparison(size: usize) -> BenchSetup {
     )
     .unwrap();
 
-    let mut input_reader = File::open(input_file.path()).unwrap();
+    let mut input_reader = FsFile::open(input_file.path()).unwrap();
     let mut gz_encoder = GzEncoder::new(
-        File::create(gzip_file.path()).unwrap(),
+        FsFile::create(gzip_file.path()).unwrap(),
         Compression::default(),
     );
     std::io::copy(&mut input_reader, &mut gz_encoder).unwrap();
@@ -103,7 +103,7 @@ fn setup_comparison(size: usize) -> BenchSetup {
     }
 }
 
-/// Benchmarks the cost of reading the last page of data from Strata vs gzip.
+/// Benchmarks the cost of reading the last page of data from Hexz vs gzip.
 ///
 /// **Architectural intent:** Models a page-fault scenario where only the tail of a
 /// large disk image is accessed, comparing how efficiently each format can service a
@@ -126,11 +126,11 @@ fn bench_page_fault(c: &mut Criterion) {
     let offset = (size - 4096) as u64;
     let page_size = 4096;
 
-    group.bench_function("strata_read_last_page", |b| {
+    group.bench_function("hexz_read_last_page", |b| {
         b.iter(|| {
             let backend = Arc::new(FileBackend::new(setup.snap.path()).unwrap());
             let compressor = Box::new(Lz4Compressor::new());
-            let snap = StrataFile::new(backend, compressor, None).unwrap();
+            let snap = File::new(backend, compressor, None).unwrap();
 
             let _ = snap
                 .read_at(SnapshotStream::Disk, offset, page_size)
@@ -140,7 +140,7 @@ fn bench_page_fault(c: &mut Criterion) {
 
     group.bench_function("gzip_read_last_page", |b| {
         b.iter(|| {
-            let file = File::open(setup.gzip.path()).unwrap();
+            let file = FsFile::open(setup.gzip.path()).unwrap();
             let mut decoder = flate2::read::GzDecoder::new(file);
 
             let mut sink = std::io::sink();

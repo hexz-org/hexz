@@ -1,6 +1,6 @@
-//! Implementation of the `strata bench` command.
+//! Implementation of the `hexz bench` command.
 //!
-//! Runs read throughput benchmarks against a Strata snapshot to measure decompression
+//! Runs read throughput benchmarks against a Hexz snapshot to measure decompression
 //! and I/O performance. This helps validate storage backend configuration and identify
 //! bottlenecks in snapshot access patterns.
 //!
@@ -35,20 +35,20 @@
 //! - Average throughput (MB/s)
 
 use anyhow::Result;
+use hexz_common::constants::DEFAULT_ZSTD_LEVEL;
+use hexz_core::File;
+use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
+use hexz_core::api::file::SnapshotStream;
+use hexz_core::format::header::CompressionType;
+use hexz_core::format::magic::HEADER_SIZE;
+use hexz_core::store::StorageBackend;
+use hexz_core::store::local::FileBackend;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
-use strata_common::constants::DEFAULT_ZSTD_LEVEL;
-use strata_core::StrataFile;
-use strata_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
-use strata_core::api::stratafile::SnapshotStream;
-use strata_core::format::header::CompressionType;
-use strata_core::format::magic::HEADER_SIZE;
-use strata_core::store::StorageBackend;
-use strata_core::store::local::FileBackend;
 
-/// Execute the benchmark command on a Strata snapshot.
+/// Execute the benchmark command on a Hexz snapshot.
 ///
 /// This function runs a sequential read benchmark to measure snapshot read performance.
 /// It opens the snapshot, configures the appropriate decompressor, and reads the entire
@@ -84,7 +84,7 @@ use strata_core::store::local::FileBackend;
 /// # Example Output
 ///
 /// ```text
-/// Benchmarking snapshot: "vm-snapshot.st"
+/// Benchmarking snapshot: "vm-snapshot.hxz"
 /// Image Size: 10.0 GB
 ///
 /// Running Sequential Read Test (1 pass)...
@@ -104,7 +104,7 @@ pub fn run(
     let backend = Arc::new(FileBackend::new(&snap_path)?);
 
     let header_bytes = backend.read_exact(0, HEADER_SIZE)?;
-    let header: strata_core::format::header::StrataHeader = bincode::deserialize(&header_bytes)?;
+    let header: hexz_core::format::header::Header = bincode::deserialize(&header_bytes)?;
 
     let dictionary = if let (Some(offset), Some(length)) =
         (header.dictionary_offset, header.dictionary_length)
@@ -119,7 +119,7 @@ pub fn run(
         CompressionType::Zstd => Box::new(ZstdCompressor::new(DEFAULT_ZSTD_LEVEL, dictionary)),
     };
 
-    let snap = StrataFile::new(backend, compressor, None)?;
+    let snap = File::new(backend, compressor, None)?;
     let disk_size = snap.size(SnapshotStream::Disk);
 
     println!("Image Size: {}", HumanBytes(disk_size));

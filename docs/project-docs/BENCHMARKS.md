@@ -1,4 +1,4 @@
-# Strata Performance Benchmarks
+# Hexz Performance Benchmarks
 
 This document provides performance metrics, comparisons with other storage formats, and methodology for reproducing benchmarks. **All build and benchmark commands are run from the repository root** using the **Makefile** (e.g. **`make bench`**, **`make rust`**). Run **`make help`** for the full list of targets.
 
@@ -79,15 +79,15 @@ Random access to 4KB chunks from 100GB dataset:
 ```
 Format              Latency (P50)    Throughput    Notes
 ------------------------------------------------------------------------
-Strata (LZ4)        14 µs            2.1 GB/s      Direct block access
-Strata (ZSTD)       28 µs            1.1 GB/s      Slower decompression
+Hexz (LZ4)        14 µs            2.1 GB/s      Direct block access
+Hexz (ZSTD)       28 µs            1.1 GB/s      Slower decompression
 tar.gz              12 ms            N/A           Must decompress from start
 zip (stored)        450 µs           800 MB/s      Index lookup overhead
 HDF5                125 µs           1.5 GB/s      Metadata overhead
 Raw disk            8 µs             3.2 GB/s      Baseline (no compression)
 ```
 
-**Conclusion**: Strata is 800x faster than tar.gz, 9x faster than zip, and only 1.75x slower than raw disk.
+**Conclusion**: Hexz is 800x faster than tar.gz, 9x faster than zip, and only 1.75x slower than raw disk.
 
 ---
 
@@ -115,14 +115,14 @@ Training ResNet50 on ImageNet (100GB dataset, S3 streaming):
 ```
 Configuration               Throughput   GPU Util   Bottleneck
 ------------------------------------------------------------------------
-Strata (LZ4, 4 workers)     850 img/s    92%        GPU (good!)
-Strata (ZSTD, 4 workers)    620 img/s    78%        CPU decompress
+Hexz (LZ4, 4 workers)     850 img/s    92%        GPU (good!)
+Hexz (ZSTD, 4 workers)    620 img/s    78%        CPU decompress
 tar.gz (extracted)          780 img/s    88%        Disk I/O
 WebDataset (S3)             420 img/s    54%        Network latency
 Raw images (local)          920 img/s    95%        Baseline
 ```
 
-**Conclusion**: Strata achieves 92% of raw performance while streaming from S3 with compression.
+**Conclusion**: Hexz achieves 92% of raw performance while streaming from S3 with compression.
 
 ---
 
@@ -133,7 +133,7 @@ Raw images (local)          920 img/s    95%        Baseline
 Tested on various datasets with CDC enabled:
 
 ```
-Dataset                     Size (Raw)   Size (Strata)   Dedup Savings   Total Ratio
+Dataset                     Size (Raw)   Size (Hexz)   Dedup Savings   Total Ratio
 ----------------------------------------------------------------------------------------
 ImageNet-21K (JPEG)         1.2 TB       580 GB          12%             2.07x
 LLaMA checkpoints           420 GB       180 GB          45%             2.33x
@@ -168,7 +168,7 @@ File-level hashing      1.35x         5%         Duplicate file detection
 
 ### S3 Performance
 
-Training from `s3://bucket/dataset.st` with varying configurations:
+Training from `s3://bucket/dataset.hxz` with varying configurations:
 
 ```
 Block Size   Prefetch   Region      Throughput   Latency (P50)   Cost (GB)
@@ -217,7 +217,7 @@ Training (epoch)    85%        64 MB          Batch locality
 **Tuning**:
 - Increase cache for random-heavy workloads
 - Decrease cache for sequential-only access
-- Monitor with `strata sys bench --cache-analysis`
+- Monitor with `hexz sys bench --cache-analysis`
 
 ### Zero-Copy Overhead
 
@@ -240,7 +240,7 @@ Memory mapping          0             4 MB           -25% (shared)
 ### Compression Ratio by Dataset Type
 
 ```
-Dataset Type            Raw Size   Strata (LZ4)   Strata (ZSTD)   Savings
+Dataset Type            Raw Size   Hexz (LZ4)   Hexz (ZSTD)   Savings
 --------------------------------------------------------------------------------
 Text (logs, code)       100 GB     28 GB          18 GB           82%
 Images (PNG)            100 GB     45 GB          32 GB           68%
@@ -271,13 +271,13 @@ Network          1 Gbps           10 Gbps          For S3 streaming
 
 ### CPU Utilization
 
-Strata vs. alternatives during training (4 DataLoader workers):
+Hexz vs. alternatives during training (4 DataLoader workers):
 
 ```
 System                  CPU Usage   GPU Util   Bottleneck
 ------------------------------------------------------------------------
-Strata (LZ4)            35%         92%        GPU (ideal)
-Strata (ZSTD)           65%         78%        CPU decompress
+Hexz (LZ4)            35%         92%        GPU (ideal)
+Hexz (ZSTD)           65%         78%        CPU decompress
 PIL (JPEG decode)       52%         85%        Python overhead
 OpenCV (video)          78%         68%        Decode + Python
 HDF5                    28%         81%        File I/O wait
@@ -290,20 +290,20 @@ HDF5                    28%         81%        File I/O wait
 ### Environment Setup
 
 ```bash
-# Build Strata CLI (from repo root)
+# Build Hexz CLI (from repo root)
 make rust
 
 # Create test dataset (10GB)
 dd if=/dev/urandom of=test-data.img bs=1M count=10240
 
 # Pack with different settings
-./target/release/strata data pack \
+./target/release/hexz data pack \
   --disk test-data.img \
   --output test-lz4.st \
   --compression lz4 \
   --block-size 65536
 
-./target/release/strata data pack \
+./target/release/hexz data pack \
   --disk test-data.img \
   --output test-zstd.st \
   --compression zstd \
@@ -317,7 +317,7 @@ dd if=/dev/urandom of=test-data.img bs=1M count=10240
 make bench
 
 # System benchmarks
-./target/release/strata sys bench
+./target/release/hexz sys bench
 
 # Custom benchmark script
 python3 scripts/benchmark.py --dataset test-lz4.st --iterations 1000
@@ -327,12 +327,12 @@ python3 scripts/benchmark.py --dataset test-lz4.st --iterations 1000
 
 ```python
 import time
-import strata
+import hexz
 import numpy as np
 
 def benchmark_random_access(path, num_reads=10000, read_size=4096):
     """Benchmark random access latency"""
-    reader = strata.open(path)
+    reader = hexz.open(path)
     size = reader.size
 
     latencies = []
@@ -353,7 +353,7 @@ def benchmark_random_access(path, num_reads=10000, read_size=4096):
 
 def benchmark_throughput(path, read_size=1024*1024):
     """Benchmark sequential throughput"""
-    reader = strata.open(path)
+    reader = hexz.open(path)
     size = reader.size
 
     buffer = np.zeros(read_size, dtype=np.uint8)
@@ -373,8 +373,8 @@ def benchmark_throughput(path, read_size=1024*1024):
     print(f"Sequential Throughput: {throughput:.2f} GB/s")
 
 # Run benchmarks
-benchmark_random_access("test-lz4.st")
-benchmark_throughput("test-lz4.st")
+benchmark_random_access("test-lz4.hxz")
+benchmark_throughput("test-lz4.hxz")
 ```
 
 ---
@@ -418,49 +418,49 @@ Real-world datasets:
 ### vs. tar/gzip
 
 ```
-Metric              Strata (LZ4)   tar.gz        Advantage
+Metric              Hexz (LZ4)   tar.gz        Advantage
 ------------------------------------------------------------------------
 Compression ratio   2.3x           2.8x          tar.gz +21%
-Random access       14 µs          12 ms         Strata 857x faster
-Sequential read     2.1 GB/s       450 MB/s      Strata 4.7x faster
-Parallel reads      Yes            No            Strata only
-S3 streaming        Native         Must extract  Strata only
+Random access       14 µs          12 ms         Hexz 857x faster
+Sequential read     2.1 GB/s       450 MB/s      Hexz 4.7x faster
+Parallel reads      Yes            No            Hexz only
+S3 streaming        Native         Must extract  Hexz only
 ```
 
 ### vs. HDF5
 
 ```
-Metric              Strata (LZ4)   HDF5          Advantage
+Metric              Hexz (LZ4)   HDF5          Advantage
 ------------------------------------------------------------------------
-Compression ratio   2.3x           2.1x          Strata +9%
-Random access       14 µs          125 µs        Strata 9x faster
-Sequential read     2.1 GB/s       1.5 GB/s      Strata 1.4x faster
-S3 streaming        Native         Poor          Strata much better
-Python overhead     Low (Rust)     Medium (C)    Strata faster
+Compression ratio   2.3x           2.1x          Hexz +9%
+Random access       14 µs          125 µs        Hexz 9x faster
+Sequential read     2.1 GB/s       1.5 GB/s      Hexz 1.4x faster
+S3 streaming        Native         Poor          Hexz much better
+Python overhead     Low (Rust)     Medium (C)    Hexz faster
 ```
 
 ### vs. WebDataset (tar-based)
 
 ```
-Metric                  Strata         WebDataset    Advantage
+Metric                  Hexz         WebDataset    Advantage
 ------------------------------------------------------------------------
-Random shuffling        Native         Requires sharding  Strata simpler
-S3 bandwidth            1.2 GB/s       0.4 GB/s      Strata 3x faster
-Setup complexity        Single file    1000s of shards   Strata easier
-Compression             Per-block      Per-shard     Strata more flexible
-Deduplication           Built-in       None          Strata only
+Random shuffling        Native         Requires sharding  Hexz simpler
+S3 bandwidth            1.2 GB/s       0.4 GB/s      Hexz 3x faster
+Setup complexity        Single file    1000s of shards   Hexz easier
+Compression             Per-block      Per-shard     Hexz more flexible
+Deduplication           Built-in       None          Hexz only
 ```
 
 ### vs. Raw Files on S3
 
 ```
-Metric              Strata (LZ4)   Raw S3        Notes
+Metric              Hexz (LZ4)   Raw S3        Notes
 ------------------------------------------------------------------------
-Storage cost        $0.023/GB      $0.053/GB     Strata 57% cheaper
+Storage cost        $0.023/GB      $0.053/GB     Hexz 57% cheaper
 Bandwidth cost      $0.09/GB       $0.09/GB      Same (but less data)
 Access latency      18 ms          15 ms         Comparable
-Throughput          890 MB/s       920 MB/s      Strata 97% of raw
-Deduplication       Yes            No            Strata saves 20-40%
+Throughput          890 MB/s       920 MB/s      Hexz 97% of raw
+Deduplication       Yes            No            Hexz saves 20-40%
 ```
 
 ---
@@ -490,20 +490,20 @@ S3 streaming            890 MB/s  1.2 GB/s  1.35x faster
 
 ## Conclusion
 
-Strata delivers **near-raw performance** with **2-4x compression** and **native deduplication**. It's optimized for:
+Hexz delivers **near-raw performance** with **2-4x compression** and **native deduplication**. It's optimized for:
 
 **AI/ML Training**: 92% GPU utilization with S3 streaming
 **Random Access**: 857x faster than tar.gz
 **Storage Efficiency**: 57% cheaper than raw S3
 **Developer Experience**: Single file, no sharding, no extraction
 
-For most AI workloads, **Strata + LZ4 + 64KB blocks** is the optimal configuration.
+For most AI workloads, **Hexz + LZ4 + 64KB blocks** is the optimal configuration.
 
 ---
 
 **Last Updated**: 2026-02-08
-**Strata Version**: 0.1.0-alpha
-**Benchmark Suite**: `make bench` + `strata sys bench`
+**Hexz Version**: 0.1.0-alpha
+**Benchmark Suite**: `make bench` + `hexz sys bench`
 
 ---
 
@@ -520,7 +520,7 @@ Measured on real-world datasets:
 | Images (JPEG)    | 1.01x     | 1.02x      | 2800 MB/s | 950 MB/s   |
 | Binary (random)  | 1.0x      | 1.0x       | 2900 MB/s | 1100 MB/s  |
 
-**Takeaway**: Incompressible data (already compressed images, random data) still benefits from Strata's random access and streaming capabilities.
+**Takeaway**: Incompressible data (already compressed images, random data) still benefits from Hexz's random access and streaming capabilities.
 
 ### Block Size Impact (Detailed)
 
@@ -549,7 +549,7 @@ Tested on 10GB OS image:
 
 **Memory Usage Estimate**:
 ```
-Base: ~5 MB (StrataFile struct, metadata)
+Base: ~5 MB (File struct, metadata)
 L1 Cache: ~128 MB (default)
 Page Cache: ~1 MB per 1000 pages
 Total: < 150 MB for typical use

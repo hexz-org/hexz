@@ -1,14 +1,14 @@
 [package]
-name = "strata-core"
+name = "hexz-core"
 version = "0.1.0-alpha"
 edition = "2024"
 authors = ["Will McCallion"]
 license = "Apache-2.0"
-repository = "https://github.com/willmccallion/strata"
+repository = "https://github.com/willmccallion/hexz"
 description = "Core engine for high-performance data streaming and compression"
 
 [dependencies]
-strata-common.workspace = true
+hexz-common.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

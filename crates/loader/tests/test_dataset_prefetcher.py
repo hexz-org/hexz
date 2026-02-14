@@ -2,14 +2,14 @@
 
 import pytest
 import time
-import strata
-from strata.dataset import Prefetcher
+import hexz
+from hexz.dataset import Prefetcher
 
 
 @pytest.fixture
 def test_snapshot(tmp_path):
     """Create a test snapshot with sequential data."""
-    snap_path = tmp_path / "test.st"
+    snap_path = tmp_path / "test.hxz"
 
     # Create a file with sequential 1KB blocks
     data_file = tmp_path / "data.bin"
@@ -20,7 +20,7 @@ def test_snapshot(tmp_path):
             f.write(block)
 
     # Pack it
-    with strata.open(str(snap_path), mode="w") as writer:
+    with hexz.open(str(snap_path), mode="w") as writer:
         writer.add(str(data_file))
 
     return str(snap_path)
@@ -28,7 +28,7 @@ def test_snapshot(tmp_path):
 
 def test_prefetcher_basic(test_snapshot):
     """Test basic prefetcher initialization and shutdown."""
-    reader = strata.open(test_snapshot)
+    reader = hexz.open(test_snapshot)
 
     prefetcher = Prefetcher(
         reader=reader,
@@ -49,7 +49,7 @@ def test_prefetcher_basic(test_snapshot):
 
 def test_prefetcher_hint_and_get(test_snapshot):
     """Test hinting and retrieving prefetched items."""
-    reader = strata.open(test_snapshot)
+    reader = hexz.open(test_snapshot)
 
     prefetcher = Prefetcher(
         reader=reader,
@@ -75,7 +75,7 @@ def test_prefetcher_hint_and_get(test_snapshot):
 
 def test_prefetcher_duplicate_hint(test_snapshot):
     """Test that duplicate hints don't create duplicate jobs."""
-    reader = strata.open(test_snapshot)
+    reader = hexz.open(test_snapshot)
 
     prefetcher = Prefetcher(
         reader=reader,
@@ -105,7 +105,7 @@ def test_prefetcher_duplicate_hint(test_snapshot):
 
 def test_prefetcher_miss(test_snapshot):
     """Test getting an item that wasn't prefetched."""
-    reader = strata.open(test_snapshot)
+    reader = hexz.open(test_snapshot)
 
     prefetcher = Prefetcher(
         reader=reader,
@@ -144,7 +144,7 @@ def test_prefetcher_with_index(test_snapshot, tmp_path):
             offset, size = struct.unpack("<QQ", chunk)
             index.append((offset, size))
 
-    reader = strata.open(test_snapshot)
+    reader = hexz.open(test_snapshot)
 
     prefetcher = Prefetcher(
         reader=reader,
@@ -167,7 +167,7 @@ def test_prefetcher_with_index(test_snapshot, tmp_path):
 
 def test_prefetcher_inactive_after_shutdown(test_snapshot):
     """Test that hints are ignored after shutdown."""
-    reader = strata.open(test_snapshot)
+    reader = hexz.open(test_snapshot)
 
     prefetcher = Prefetcher(
         reader=reader,
@@ -188,7 +188,7 @@ def test_prefetcher_inactive_after_shutdown(test_snapshot):
 
 def test_prefetcher_concurrent_access(test_snapshot):
     """Test concurrent access to prefetcher."""
-    reader = strata.open(test_snapshot)
+    reader = hexz.open(test_snapshot)
 
     prefetcher = Prefetcher(
         reader=reader,
@@ -219,7 +219,7 @@ def test_prefetcher_concurrent_access(test_snapshot):
 
 def test_prefetcher_no_item_size_or_index_error(test_snapshot):
     """Test that error is raised if neither item_size nor index is provided."""
-    reader = strata.open(test_snapshot)
+    reader = hexz.open(test_snapshot)
 
     prefetcher = Prefetcher(
         reader=reader,
@@ -242,7 +242,7 @@ def test_prefetcher_no_item_size_or_index_error(test_snapshot):
 
 def test_prefetcher_pending_future_done(test_snapshot):
     """Test getting an item while its future is still pending."""
-    reader = strata.open(test_snapshot)
+    reader = hexz.open(test_snapshot)
 
     prefetcher = Prefetcher(
         reader=reader,
@@ -274,7 +274,7 @@ def test_prefetcher_pending_future_done(test_snapshot):
 
 def test_prefetcher_multiple_workers(test_snapshot):
     """Test prefetcher with multiple worker threads."""
-    reader = strata.open(test_snapshot)
+    reader = hexz.open(test_snapshot)
 
     # Use 4 workers to prefetch in parallel
     prefetcher = Prefetcher(

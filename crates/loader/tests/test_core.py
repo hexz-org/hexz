@@ -1,10 +1,10 @@
-import strata
+import hexz
 import pickle
 
 
 def test_analyze(base_snap_path):
     # Use reader.analyze() on snapshot instead of top-level analyze()
-    with strata.open(base_snap_path) as reader:
+    with hexz.open(base_snap_path) as reader:
         report = reader.analyze()
         assert hasattr(report, "unique_bytes")
         assert hasattr(report, "predicted_ratio")
@@ -13,14 +13,14 @@ def test_analyze(base_snap_path):
 
 
 def test_inspect(base_snap_path):
-    meta = strata.inspect(base_snap_path)
+    meta = hexz.inspect(base_snap_path)
     assert meta.version == 1
     assert meta.compression is not None
     assert meta.disk_size == 1024 * 1024
 
 
 def test_read_random_access(base_snap_path, raw_data_path):
-    reader = strata.open(base_snap_path)
+    reader = hexz.open(base_snap_path)
 
     # Read raw data to compare
     with open(raw_data_path, "rb") as f:
@@ -32,7 +32,7 @@ def test_read_random_access(base_snap_path, raw_data_path):
 
 
 def test_file_interface(base_snap_path, raw_data_path):
-    reader = strata.open(base_snap_path)
+    reader = hexz.open(base_snap_path)
     with open(raw_data_path, "rb") as f:
         raw_data = f.read()
 
@@ -56,7 +56,7 @@ def test_file_interface(base_snap_path, raw_data_path):
 
 def test_read_buffer(base_snap_path, raw_data_path):
     """read(buffer=...) fills buffer zero-copy and returns bytes read."""
-    reader = strata.open(base_snap_path)
+    reader = hexz.open(base_snap_path)
     with open(raw_data_path, "rb") as f:
         raw_data = f.read()
     buf = bytearray(10)
@@ -73,7 +73,7 @@ def test_read_buffer(base_snap_path, raw_data_path):
 
 def test_read_into_buffer(base_snap_path, raw_data_path):
     """read(buffer=buf, offset=...) fills buffer and returns bytes read; matches read(size, offset=)."""
-    reader = strata.open(base_snap_path)
+    reader = hexz.open(base_snap_path)
     with open(raw_data_path, "rb") as f:
         raw_data = f.read()
 
@@ -98,7 +98,7 @@ def test_read_into_buffer(base_snap_path, raw_data_path):
 
 
 def test_pickle(base_snap_path):
-    reader = strata.open(base_snap_path)
+    reader = hexz.open(base_snap_path)
     reader.seek(1234)
 
     dumped = pickle.dumps(reader)

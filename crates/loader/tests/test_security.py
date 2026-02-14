@@ -1,30 +1,30 @@
 import pytest
-from strata import open, AsyncReader
+from hexz import open, AsyncReader
 
 # List of URLs that must be blocked by the SSRF protection
 RESTRICTED_URLS = [
     # Loopback
-    "http://127.0.0.1/snapshot.st",
-    "http://[::1]/snapshot.st",
-    "http://localhost/snapshot.st",
+    "http://127.0.0.1/snapshot.hxz",
+    "http://[::1]/snapshot.hxz",
+    "http://localhost/snapshot.hxz",
     # Cloud Metadata (AWS/GCP/Azure)
     "http://169.254.169.254/latest/meta-data",
     # Private Networks
-    "http://10.0.0.1/snapshot.st",
-    "http://192.168.1.1/snapshot.st",
-    "http://172.16.0.1/snapshot.st",
+    "http://10.0.0.1/snapshot.hxz",
+    "http://192.168.1.1/snapshot.hxz",
+    "http://172.16.0.1/snapshot.hxz",
     # IPv6 Unique Local
-    "http://[fc00::1]/snapshot.st",
+    "http://[fc00::1]/snapshot.hxz",
 ]
 
 
 @pytest.mark.parametrize("url", RESTRICTED_URLS)
 def test_ssrf_sync_blocked(url):
     """
-    Verify that the synchronous StrataReader rejects internal/private IPs.
+    Verify that the synchronous Reader rejects internal/private IPs.
     """
     with pytest.raises(OSError) as excinfo:
-        # This calls StrataReader(url) internally in Rust
+        # This calls Reader(url) internally in Rust
         open(url)
 
     error_msg = str(excinfo.value)
@@ -54,7 +54,7 @@ def test_ssrf_public_allowed():
     but the error MUST NOT be the SSRF denial message.
     """
     # example.com resolves to a public IP (e.g., 93.184.216.34)
-    url = "http://example.com/snapshot.st"
+    url = "http://example.com/snapshot.hxz"
 
     try:
         open(url)

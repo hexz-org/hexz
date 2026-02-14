@@ -10,10 +10,10 @@ members = [
 ]
 
 [workspace.dependencies]
-strata-common = { path = "crates/common", default-features = false }
-strata-core = { path = "crates/core" }
-strata-fuse = { path = "crates/fuse" }
-strata-server = { path = "crates/server" }
+hexz-common = { path = "crates/common", default-features = false }
+hexz-core = { path = "crates/core" }
+hexz-fuse = { path = "crates/fuse" }
+hexz-server = { path = "crates/server" }
 
 anyhow = "1.0"
 thiserror = "1.0"

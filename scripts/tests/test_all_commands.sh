@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test all Strata CLI commands and flags.
+# Test all Hexz CLI commands and flags.
 # Run from repo root: ./scripts/tests/test_all_commands.sh
 
 set -e
@@ -9,8 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/common.sh"
 
 PROJECT_ROOT="$(get_project_root)"
-BIN="${BIN:-$PROJECT_ROOT/target/release/strata}"
-TMP="${TMP:-/tmp/strata-test}"
+BIN="${BIN:-$PROJECT_ROOT/target/release/hexz}"
+TMP="${TMP:-/tmp/hexz-test}"
 
 # Ensure binary exists
 ensure_build "$BIN"
@@ -29,10 +29,10 @@ cd "$PROJECT_ROOT"
 
 # Create a small test image and snapshot to use for most tests (no dependency on vm/ or data/)
 dd if=/dev/zero of="$TMP/small.raw" bs=1M count=1 2>/dev/null
-$BIN data pack --disk "$TMP/small.raw" --output "$TMP/base.st"
-SNAP_BASE="$TMP/base.st"
+$BIN data pack --disk "$TMP/small.raw" --output "$TMP/base.hxz"
+SNAP_BASE="$TMP/base.hxz"
 
-info "=== Strata full command + flag test ==="
+info "=== Hexz full command + flag test ==="
 info "BIN=$BIN"
 info "TMP=$TMP"
 info "Snapshot: $SNAP_BASE"
@@ -48,14 +48,14 @@ $BIN data info "$SNAP_BASE"
 # --- Build ---
 for profile in generic eda embedded ml; do
     info "[build] profile=$profile"
-    $BIN data build --source "$TMP/small.raw" --output "$TMP/out-$profile.st" --profile "$profile"
+    $BIN data build --source "$TMP/small.raw" --output "$TMP/out-$profile.hxz" --profile "$profile"
 done
 
 # --- Create (data pack) ---
 info "[create] compression=lz4 block_size=65536"
-$BIN data pack --disk "$TMP/small.raw" --output "$TMP/create-lz4.st" --compression lz4 --block-size 65536
+$BIN data pack --disk "$TMP/small.raw" --output "$TMP/create-lz4.hxz" --compression lz4 --block-size 65536
 info "[create] compression=zstd block_size=32768"
-$BIN data pack --disk "$TMP/small.raw" --output "$TMP/create-zstd.st" --compression zstd --block-size 32768
+$BIN data pack --disk "$TMP/small.raw" --output "$TMP/create-zstd.hxz" --compression zstd --block-size 32768
 
 # --- Keygen ---
 mkdir -p "$TMP/keys"
@@ -63,11 +63,11 @@ info "[keygen] Generating keys..."
 $BIN sys keygen --output-dir "$TMP/keys"
 
 # --- Sign / Verify ---
-cp "$SNAP_BASE" "$TMP/signed.st"
+cp "$SNAP_BASE" "$TMP/signed.hxz"
 info "[sign] Signing snapshot..."
-$BIN sys sign --key "$TMP/keys/private.key" "$TMP/signed.st"
+$BIN sys sign --key "$TMP/keys/private.key" "$TMP/signed.hxz"
 info "[verify] Verifying snapshot..."
-$BIN sys verify --key "$TMP/keys/public.key" "$TMP/signed.st"
+$BIN sys verify --key "$TMP/keys/public.key" "$TMP/signed.hxz"
 
 # --- Bench ---
 info "[bench] Standard benchmark..."
@@ -94,7 +94,7 @@ OVERLAY="$TMP/overlay"
 info "[mount] Mounting with overlay (RW)..."
 $BIN vm mount "$SNAP_BASE" "$MNT" --overlay "$OVERLAY" --rw -d
 sleep 2
-touch "$MNT/.strata-rw-test" 2>/dev/null || true
+touch "$MNT/.hexz-rw-test" 2>/dev/null || true
 $BIN vm unmount "$MNT"
 
 # --- Diff ---
@@ -103,10 +103,10 @@ $BIN data diff "$OVERLAY" --blocks --files
 
 # --- Commit ---
 info "[commit] Committing changes..."
-$BIN vm commit "$SNAP_BASE" "$OVERLAY" "$TMP/committed.st" \
+$BIN vm commit "$SNAP_BASE" "$OVERLAY" "$TMP/committed.hxz" \
   --compression zstd --block-size 65536 --keep-overlay --flatten \
   --message "test commit"
-$BIN data info "$TMP/committed.st"
+$BIN data info "$TMP/committed.hxz"
 
 # --- Serve ---
 info "[serve] Testing HTTP server..."

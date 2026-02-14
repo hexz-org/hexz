@@ -10,11 +10,11 @@ use tempfile::TempDir;
 mod common;
 use common::TestEnv;
 
-/// Helper to create a strata CLI command
-fn strata() -> Command {
+/// Helper to create a hexz CLI command
+fn hexz() -> Command {
     #[allow(deprecated)]
     {
-        Command::cargo_bin("strata").expect("Failed to find strata binary")
+        Command::cargo_bin("hexz").expect("Failed to find hexz binary")
     }
 }
 
@@ -28,7 +28,7 @@ fn test_data_analyze_small_file() {
     // File smaller than 512 MiB - should analyze entire file
     let input_file = env.create_pattern_file("small.bin", &[0xAB; 1024], 1000);
 
-    strata()
+    hexz()
         .arg("data")
         .arg("analyze")
         .arg(&input_file)
@@ -39,7 +39,7 @@ fn test_data_analyze_small_file() {
 
 #[test]
 fn test_data_analyze_nonexistent_file() {
-    strata()
+    hexz()
         .arg("data")
         .arg("analyze")
         .arg("/nonexistent/file.bin")
@@ -53,7 +53,7 @@ fn test_data_analyze_compressible_data() {
     // Highly compressible pattern - should yield good dedup ratio
     let input_file = env.create_pattern_file("compressible.bin", b"AAAAAAAAAA", 100000);
 
-    strata()
+    hexz()
         .arg("data")
         .arg("analyze")
         .arg(&input_file)
@@ -71,7 +71,7 @@ fn test_data_build_generic_profile() {
     let env = TestEnv::new();
     let input_file = env.create_test_file("build_test.bin", 1024 * 1024);
 
-    strata()
+    hexz()
         .arg("data")
         .arg("build")
         .arg("--source")
@@ -91,7 +91,7 @@ fn test_data_build_eda_profile() {
     let env = TestEnv::new();
     let input_file = env.create_test_file("eda.bin", 2 * 1024 * 1024);
 
-    strata()
+    hexz()
         .arg("data")
         .arg("build")
         .arg("--source")
@@ -111,7 +111,7 @@ fn test_data_build_embedded_profile() {
     let env = TestEnv::new();
     let input_file = env.create_test_file("embedded.bin", 512 * 1024);
 
-    strata()
+    hexz()
         .arg("data")
         .arg("build")
         .arg("--source")
@@ -131,7 +131,7 @@ fn test_data_build_ml_profile() {
     let env = TestEnv::new();
     let input_file = env.create_test_file("ml.bin", 3 * 1024 * 1024);
 
-    strata()
+    hexz()
         .arg("data")
         .arg("build")
         .arg("--source")
@@ -152,7 +152,7 @@ fn test_data_build_unknown_profile() {
     let input_file = env.create_test_file("test.bin", 1024 * 1024);
 
     // Unknown profile should fallback to generic with warning
-    strata()
+    hexz()
         .arg("data")
         .arg("build")
         .arg("--source")
@@ -172,7 +172,7 @@ fn test_data_build_with_cdc() {
     let env = TestEnv::new();
     let input_file = env.create_pattern_file("cdc_test.bin", &[0xAB; 4096], 100);
 
-    strata()
+    hexz()
         .arg("data")
         .arg("build")
         .arg("--source")
@@ -192,7 +192,7 @@ fn test_data_build_with_cdc() {
 fn test_data_build_missing_source() {
     let env = TestEnv::new();
 
-    strata()
+    hexz()
         .arg("data")
         .arg("build")
         .arg("--source")
@@ -226,7 +226,7 @@ fn test_data_diff_with_metadata() {
     metadata.extend_from_slice(&100u64.to_le_bytes());
     fs::write(&meta_path, metadata).unwrap();
 
-    strata()
+    hexz()
         .arg("data")
         .arg("diff")
         .arg(&overlay_path)
@@ -251,7 +251,7 @@ fn test_data_diff_with_blocks_flag() {
     }
     fs::write(&meta_path, metadata).unwrap();
 
-    strata()
+    hexz()
         .arg("data")
         .arg("diff")
         .arg(&overlay_path)
@@ -269,7 +269,7 @@ fn test_data_diff_no_metadata() {
     fs::write(&overlay_path, vec![0u8; 4096]).unwrap();
     // No .meta file created
 
-    strata()
+    hexz()
         .arg("data")
         .arg("diff")
         .arg(&overlay_path)
@@ -280,7 +280,7 @@ fn test_data_diff_no_metadata() {
 
 #[test]
 fn test_data_diff_nonexistent_overlay() {
-    strata()
+    hexz()
         .arg("data")
         .arg("diff")
         .arg("/nonexistent/overlay.overlay")
@@ -305,7 +305,7 @@ fn test_data_diff_with_files_flag() {
     metadata.extend_from_slice(&100u64.to_le_bytes());
     fs::write(&meta_path, metadata).unwrap();
 
-    strata()
+    hexz()
         .arg("data")
         .arg("diff")
         .arg(&overlay_path)
@@ -333,7 +333,7 @@ fn test_data_diff_blocks_and_files_flags() {
     }
     fs::write(&meta_path, metadata).unwrap();
 
-    strata()
+    hexz()
         .arg("data")
         .arg("diff")
         .arg(&overlay_path)
@@ -357,7 +357,7 @@ fn test_data_diff_empty_metadata() {
     fs::write(&overlay_path, vec![0u8; 4096]).unwrap();
     fs::write(&meta_path, Vec::<u8>::new()).unwrap(); // Empty metadata
 
-    strata()
+    hexz()
         .arg("data")
         .arg("diff")
         .arg(&overlay_path)
@@ -376,7 +376,7 @@ fn test_sys_bench_valid_snapshot() {
     let input_file = env.create_test_file("bench.bin", 10 * 1024 * 1024); // 10 MB
 
     // First create a snapshot
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg("--disk")
@@ -387,7 +387,7 @@ fn test_sys_bench_valid_snapshot() {
         .success();
 
     // Now benchmark it
-    strata()
+    hexz()
         .arg("sys")
         .arg("bench")
         .arg(&env.snapshot_path)
@@ -398,10 +398,10 @@ fn test_sys_bench_valid_snapshot() {
 
 #[test]
 fn test_sys_bench_nonexistent_snapshot() {
-    strata()
+    hexz()
         .arg("sys")
         .arg("bench")
-        .arg("/nonexistent/snapshot.st")
+        .arg("/nonexistent/snapshot.hxz")
         .assert()
         .failure();
 }
@@ -416,7 +416,7 @@ fn test_sys_sign_and_verify_roundtrip() {
     let input_file = env.create_test_file("sign_test.bin", 1024 * 1024);
 
     // Create a snapshot
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg("--disk")
@@ -430,7 +430,7 @@ fn test_sys_sign_and_verify_roundtrip() {
     let key_dir = env.temp_dir.path().join("keys");
     fs::create_dir(&key_dir).unwrap();
 
-    strata()
+    hexz()
         .arg("sys")
         .arg("keygen")
         .arg("--output-dir")
@@ -449,7 +449,7 @@ fn test_sys_sign_and_verify_roundtrip() {
     let public_key = key_dir.join("public.key");
 
     // Sign the snapshot
-    strata()
+    hexz()
         .arg("sys")
         .arg("sign")
         .arg("--key")
@@ -459,7 +459,7 @@ fn test_sys_sign_and_verify_roundtrip() {
         .success();
 
     // Verify the signature
-    strata()
+    hexz()
         .arg("sys")
         .arg("verify")
         .arg("--key")
@@ -476,7 +476,7 @@ fn test_sys_verify_unsigned_snapshot() {
     let input_file = env.create_test_file("unsigned.bin", 512 * 1024);
 
     // Create an unsigned snapshot
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg("--disk")
@@ -489,7 +489,7 @@ fn test_sys_verify_unsigned_snapshot() {
     // Generate keys
     let key_dir = env.temp_dir.path().join("keys");
     fs::create_dir(&key_dir).unwrap();
-    strata()
+    hexz()
         .arg("sys")
         .arg("keygen")
         .arg("--output-dir")
@@ -500,7 +500,7 @@ fn test_sys_verify_unsigned_snapshot() {
     let public_key = key_dir.join("public.key");
 
     // Try to verify unsigned snapshot - should fail
-    strata()
+    hexz()
         .arg("sys")
         .arg("verify")
         .arg("--key")
@@ -516,12 +516,12 @@ fn test_sys_sign_nonexistent_snapshot() {
     let key_path = temp_dir.path().join("key.priv");
     fs::write(&key_path, vec![0u8; 32]).unwrap();
 
-    strata()
+    hexz()
         .arg("sys")
         .arg("sign")
         .arg("--key")
         .arg(&key_path)
-        .arg("/nonexistent/snapshot.st")
+        .arg("/nonexistent/snapshot.hxz")
         .assert()
         .failure();
 }

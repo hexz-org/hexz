@@ -6,11 +6,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../../scripts/lib/common.sh"
 
 PROJECT_ROOT="$(get_project_root)"
-BIN="${BIN:-$PROJECT_ROOT/target/release/strata}"
+BIN="${BIN:-$PROJECT_ROOT/target/release/hexz}"
 
 WORK_DIR="vm_test_work"
 IMAGE_RAW="${WORK_DIR}/disk.raw"
-IMAGE_SNAP="${WORK_DIR}/disk.st"
+IMAGE_SNAP="${WORK_DIR}/disk.hxz"
 MOUNT_DIR="${WORK_DIR}/mnt"
 
 # Prerequisites
@@ -59,7 +59,7 @@ SNAP_MB=$(echo "scale=2; $SNAP_SIZE / 1024 / 1024" | bc)
 
 info "Compression Ratio"
 info "Raw: ${RAW_MB} MB"
-info "Strata: ${SNAP_MB} MB"
+info "Hexz: ${SNAP_MB} MB"
 info "Reduction: ${COMPRESSION_RATIO}% (${IO_SAVED} MB saved)"
 echo ""
 
@@ -97,7 +97,7 @@ unmount_snapfs $FUSE_PID
 
 DIFF1=$(echo "$SNAP_DURATION - $RAW_DURATION" | bc)
 info "Raw: ${RAW_DURATION}s"
-info "Strata: ${SNAP_DURATION}s"
+info "Hexz: ${SNAP_DURATION}s"
 # ... (Leaving rest of stats logic unchanged but using info/ok could be nice, keeping echo for now for simplicity of diff)
 if (( $(echo "$DIFF1 > 0" | bc -l) )); then
     OVERHEAD=$(echo "scale=1; ($DIFF1 / $RAW_DURATION) * 100" | bc)
@@ -172,7 +172,7 @@ unmount_snapfs $FUSE_PID
 
 DIFF2=$(echo "$SNAP_PARTIAL_DURATION - $RAW_PARTIAL_DURATION" | bc)
 info "Raw: ${RAW_PARTIAL_DURATION}s"
-info "Strata: ${SNAP_PARTIAL_DURATION}s"
+info "Hexz: ${SNAP_PARTIAL_DURATION}s"
 if (( $(echo "$DIFF2 > 0" | bc -l) )); then
     OVERHEAD=$(echo "scale=1; ($DIFF2 / $RAW_PARTIAL_DURATION) * 100" | bc)
     warn "Overhead: +${DIFF2}s (+${OVERHEAD}%)"
@@ -249,7 +249,7 @@ unmount_snapfs $FUSE_PID
 
 DIFF3=$(echo "$SNAP_RANDOM_DURATION - $RAW_RANDOM_DURATION" | bc)
 info "Raw: ${RAW_RANDOM_DURATION}s"
-info "Strata: ${SNAP_RANDOM_DURATION}s"
+info "Hexz: ${SNAP_RANDOM_DURATION}s"
 if (( $(echo "$DIFF3 > 0" | bc -l) )); then
     OVERHEAD=$(echo "scale=1; ($DIFF3 / $RAW_RANDOM_DURATION) * 100" | bc)
     warn "Overhead: +${DIFF3}s (+${OVERHEAD}%)"
@@ -260,8 +260,8 @@ else
 fi
 echo ""
 
-# --- Test 4: Gzip vs Strata ---
-info "Test 4: Gzip vs Strata (Reading 10MB from middle)"
+# --- Test 4: Gzip vs Hexz ---
+info "Test 4: Gzip vs Hexz (Reading 10MB from middle)"
 GZIP_FILE="${WORK_DIR}/disk.raw.gz"
 if [[ ! -f "${GZIP_FILE}" ]]; then
     gzip -c "${IMAGE_RAW}" > "${GZIP_FILE}"
@@ -283,7 +283,7 @@ unmount_snapfs $FUSE_PID
 
 DIFF4=$(echo "$SNAP_GZIP_DURATION - $GZIP_DURATION" | bc)
 info "Gzip (${GZIP_MB} MB, decompresses 0-110MB): ${GZIP_DURATION}s"
-info "Strata (${SNAP_MB} MB, reads only blocks 100-110): ${SNAP_GZIP_DURATION}s"
+info "Hexz (${SNAP_MB} MB, reads only blocks 100-110): ${SNAP_GZIP_DURATION}s"
 if (( $(echo "$DIFF4 > 0" | bc -l) )); then
     OVERHEAD=$(echo "scale=1; ($DIFF4 / $GZIP_DURATION) * 100" | bc)
     warn "Overhead: +${DIFF4}s (+${OVERHEAD}%)"
@@ -297,7 +297,7 @@ echo ""
 # --- Test 5: Sparse Access ---
 info "Test 5: Sparse Access (10 scattered 64KB reads)"
 SPARSE_RAW="${WORK_DIR}/sparse.raw"
-SPARSE_SNAP="${WORK_DIR}/sparse.st"
+SPARSE_SNAP="${WORK_DIR}/sparse.hxz"
 if [[ ! -f "${SPARSE_RAW}" ]]; then
     dd if=/dev/urandom of="${SPARSE_RAW}" bs=1M count=500 status=none
 fi
@@ -334,7 +334,7 @@ unmount_snapfs $FUSE_PID
 
 DIFF5=$(echo "$SNAP_SPARSE_DURATION - $GZIP_SPARSE_DURATION" | bc)
 info "Gzip (${SPARSE_GZIP_MB} MB, decompresses 500MB each read): ${GZIP_SPARSE_DURATION}s"
-info "Strata (${SPARSE_SNAP_MB} MB, reads only 10 blocks): ${SNAP_SPARSE_DURATION}s"
+info "Hexz (${SPARSE_SNAP_MB} MB, reads only 10 blocks): ${SNAP_SPARSE_DURATION}s"
 if (( $(echo "$DIFF5 > 0" | bc -l) )); then
     OVERHEAD=$(echo "scale=1; ($DIFF5 / $GZIP_SPARSE_DURATION) * 100" | bc)
     warn "Overhead: +${DIFF5}s (+${OVERHEAD}%)"
@@ -346,9 +346,9 @@ fi
 echo ""
 
 ok "Summary"
-echo "Test 1 (Sequential): Raw ${RAW_DURATION}s, Strata ${SNAP_DURATION}s"
-echo "Test 2 (Partial): Raw ${RAW_PARTIAL_DURATION}s, Strata ${SNAP_PARTIAL_DURATION}s"
-echo "Test 3 (Random): Raw ${RAW_RANDOM_DURATION}s, Strata ${SNAP_RANDOM_DURATION}s"
-echo "Test 4 (vs Gzip): Gzip ${GZIP_DURATION}s, Strata ${SNAP_GZIP_DURATION}s"
-echo "Test 5 (Sparse): Gzip ${GZIP_SPARSE_DURATION}s, Strata ${SNAP_SPARSE_DURATION}s"
-echo "Test 5 Compression: Raw ${SPARSE_RAW_MB} MB, Strata ${SPARSE_SNAP_MB} MB, Gzip ${SPARSE_GZIP_MB} MB"
+echo "Test 1 (Sequential): Raw ${RAW_DURATION}s, Hexz ${SNAP_DURATION}s"
+echo "Test 2 (Partial): Raw ${RAW_PARTIAL_DURATION}s, Hexz ${SNAP_PARTIAL_DURATION}s"
+echo "Test 3 (Random): Raw ${RAW_RANDOM_DURATION}s, Hexz ${SNAP_RANDOM_DURATION}s"
+echo "Test 4 (vs Gzip): Gzip ${GZIP_DURATION}s, Hexz ${SNAP_GZIP_DURATION}s"
+echo "Test 5 (Sparse): Gzip ${GZIP_SPARSE_DURATION}s, Hexz ${SNAP_SPARSE_DURATION}s"
+echo "Test 5 Compression: Raw ${SPARSE_RAW_MB} MB, Hexz ${SPARSE_SNAP_MB} MB, Gzip ${SPARSE_GZIP_MB} MB"

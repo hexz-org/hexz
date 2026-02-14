@@ -1,7 +1,7 @@
-"""NumPy array integration for Strata.
+"""NumPy array integration for Hexz.
 
 This module provides utilities for reading and writing NumPy arrays
-to/from Strata snapshots with zero-copy support where possible.
+to/from Hexz snapshots with zero-copy support where possible.
 """
 
 from typing import Optional, Union
@@ -39,7 +39,7 @@ def read_array(
     order: str = "C",
     copy: bool = True,
 ) -> "np.ndarray":
-    """Read NumPy array from strata file.
+    """Read NumPy array from hexz file.
 
     Args:
         source: Path to .st file or Reader instance
@@ -53,8 +53,8 @@ def read_array(
         NumPy array
 
     Example:
-        >>> array = strata.read_array(
-        ...     "data.st",
+        >>> array = hexz.read_array(
+        ...     "data.hxz",
         ...     offset=0,
         ...     shape=(1000, 784),
         ...     dtype='float32'
@@ -119,7 +119,7 @@ def write_array(
     offset: int = 0,
     compression: str = "lz4",
 ) -> int:
-    """Write NumPy array to strata file.
+    """Write NumPy array to hexz file.
 
     Args:
         dest: Path to .st file or Writer instance
@@ -133,7 +133,7 @@ def write_array(
     Example:
         >>> import numpy as np
         >>> data = np.random.rand(1000, 784).astype('float32')
-        >>> strata.write_array("output.st", data)
+        >>> hexz.write_array("output.hxz", data)
     """
     _check_numpy()
 
@@ -166,14 +166,14 @@ def write_array(
 
 
 class ArrayView:
-    """NumPy memmap-like interface for strata files.
+    """NumPy memmap-like interface for hexz files.
 
-    Provides random access to array data stored in a Strata snapshot
+    Provides random access to array data stored in a Hexz snapshot
     without loading the entire array into memory.
 
     Example:
-        >>> view = strata.ArrayView(
-        ...     "data.st",
+        >>> view = hexz.ArrayView(
+        ...     "data.hxz",
         ...     shape=(10000, 784),
         ...     dtype='float32'
         ... )
@@ -190,7 +190,7 @@ class ArrayView:
         dtype: Union[str, "np.dtype"] = "float32",
         offset: int = 0,
     ):
-        """Create an array view into a Strata file.
+        """Create an array view into a Hexz file.
 
         Args:
             path: Path to .st file

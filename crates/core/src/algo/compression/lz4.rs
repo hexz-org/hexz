@@ -2,7 +2,7 @@
 //!
 //! This module provides a high-speed compression implementation optimized for scenarios
 //! where decompression throughput and CPU efficiency are more critical than achieving
-//! maximum compression ratios. LZ4 is the default compression algorithm in Strata for
+//! maximum compression ratios. LZ4 is the default compression algorithm in Hexz for
 //! workloads requiring interactive read performance, such as virtual machine disk images,
 //! database snapshots, and container filesystems.
 //!
@@ -144,10 +144,10 @@
 //! ## Basic Compression Round-Trip
 //!
 //! ```
-//! use strata_core::algo::compression::{Compressor, lz4::Lz4Compressor};
+//! use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor};
 //!
 //! let compressor = Lz4Compressor::new();
-//! let data = b"Strata snapshot data with some repeated patterns...";
+//! let data = b"Hexz snapshot data with some repeated patterns...";
 //!
 //! let compressed = compressor.compress(data).unwrap();
 //! println!("Original: {} bytes, Compressed: {} bytes ({:.1}x ratio)",
@@ -164,7 +164,7 @@
 //! use `decompress_into` to avoid allocating a new buffer on every call:
 //!
 //! ```
-//! use strata_core::algo::compression::{Compressor, lz4::Lz4Compressor};
+//! use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor};
 //!
 //! let compressor = Lz4Compressor::new();
 //! let data = vec![42u8; 65536]; // 64 KB block
@@ -186,7 +186,7 @@
 //! LZ4 excels at compressing data with repeated patterns:
 //!
 //! ```
-//! use strata_core::algo::compression::{Compressor, lz4::Lz4Compressor};
+//! use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor};
 //!
 //! let compressor = Lz4Compressor::new();
 //!
@@ -207,7 +207,7 @@
 //! LZ4 gracefully handles random or pre-compressed data with minimal overhead:
 //!
 //! ```
-//! use strata_core::algo::compression::{Compressor, lz4::Lz4Compressor};
+//! use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor};
 //!
 //! let compressor = Lz4Compressor::new();
 //!
@@ -220,9 +220,9 @@
 //! // Output: "Incompressible data overhead: 1.2%" (LZ4 adds minimal framing)
 //! ```
 //!
-//! # Architectural Integration in Strata
+//! # Architectural Integration in Hexz
 //!
-//! In Strata's layered architecture:
+//! In Hexz's layered architecture:
 //!
 //! - **Pack operations**: Compresses each block before writing to the snapshot file
 //! - **Unpack operations**: Decompresses blocks on read, using `decompress_into` for
@@ -236,7 +236,7 @@
 //! # Error Handling
 //!
 //! All compression functions return `Result<T>` and map underlying `lz4_flex` errors to
-//! `StrataError::Compression`. Common error conditions:
+//! `Error::Compression`. Common error conditions:
 //!
 //! - **Decompression failure**: Corrupted or truncated compressed data
 //! - **Buffer too small**: `decompress_into` output buffer smaller than uncompressed size
@@ -256,7 +256,7 @@
 //!   (though at this complexity, Zstd may be more appropriate)
 
 use crate::algo::compression::Compressor;
-use strata_common::{Result, StrataError};
+use hexz_common::{Error, Result};
 
 #[derive(Debug, Default)]
 /// LZ4-based block compressor optimized for low-latency decompression.
@@ -268,7 +268,7 @@ use strata_common::{Result, StrataError};
 ///
 /// # Architectural Intent
 ///
-/// Designed for Strata's snapshot blocks where read performance is prioritized over
+/// Designed for Hexz's snapshot blocks where read performance is prioritized over
 /// storage efficiency. LZ4's asymmetric performance profile (fast compression, even
 /// faster decompression) aligns perfectly with write-once, read-many workloads.
 ///
@@ -299,7 +299,7 @@ use strata_common::{Result, StrataError};
 /// # Examples
 ///
 /// ```
-/// use strata_core::algo::compression::{Compressor, lz4::Lz4Compressor};
+/// use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor};
 ///
 /// // Zero-cost construction
 /// let compressor = Lz4Compressor::new();
@@ -324,7 +324,7 @@ impl Lz4Compressor {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::algo::compression::lz4::Lz4Compressor;
+    /// use hexz_core::algo::compression::lz4::Lz4Compressor;
     ///
     /// let compressor = Lz4Compressor::new();
     /// assert_eq!(std::mem::size_of_val(&compressor), 0);
@@ -363,7 +363,7 @@ impl Compressor for Lz4Compressor {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::algo::compression::{Compressor, lz4::Lz4Compressor};
+    /// use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor};
     ///
     /// let compressor = Lz4Compressor::new();
     /// let data = vec![0u8; 10000]; // Highly compressible (all zeros)
@@ -400,7 +400,7 @@ impl Compressor for Lz4Compressor {
     ///
     /// # Errors
     ///
-    /// Returns `StrataError::Compression` if:
+    /// Returns `Error::Compression` if:
     /// - Input is shorter than 4 bytes (missing size header)
     /// - Compressed data is truncated or corrupted
     /// - LZ4 payload contains invalid backreferences or match lengths
@@ -409,10 +409,10 @@ impl Compressor for Lz4Compressor {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::algo::compression::{Compressor, lz4::Lz4Compressor};
+    /// use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor};
     ///
     /// let compressor = Lz4Compressor::new();
-    /// let original = b"Strata snapshot block data";
+    /// let original = b"Hexz snapshot block data";
     /// let compressed = compressor.compress(original).unwrap();
     ///
     /// let decompressed = compressor.decompress(&compressed).unwrap();
@@ -422,7 +422,7 @@ impl Compressor for Lz4Compressor {
     /// ## Error Handling Example
     ///
     /// ```
-    /// use strata_core::algo::compression::{Compressor, lz4::Lz4Compressor};
+    /// use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor};
     ///
     /// let compressor = Lz4Compressor::new();
     ///
@@ -442,8 +442,7 @@ impl Compressor for Lz4Compressor {
     /// - **Throughput**: ~3000 MB/s on modern CPUs (single-threaded)
     /// - **Memory usage**: Exact uncompressed size (read from header) + ~64 KB dictionary window
     fn decompress(&self, data: &[u8]) -> Result<Vec<u8>> {
-        lz4_flex::decompress_size_prepended(data)
-            .map_err(|e| StrataError::Compression(e.to_string()))
+        lz4_flex::decompress_size_prepended(data).map_err(|e| Error::Compression(e.to_string()))
     }
 
     /// Decompresses a size-prefixed LZ4 payload into an existing buffer.
@@ -464,7 +463,7 @@ impl Compressor for Lz4Compressor {
     ///
     /// # Errors
     ///
-    /// Returns `StrataError::Compression` if:
+    /// Returns `Error::Compression` if:
     /// - Input is shorter than 4 bytes (missing size header)
     /// - Output buffer `out` is too small to hold the decompressed data
     /// - Compressed data is truncated or corrupted
@@ -475,7 +474,7 @@ impl Compressor for Lz4Compressor {
     /// ## Buffer Reuse Pattern (Zero Allocations)
     ///
     /// ```
-    /// use strata_core::algo::compression::{Compressor, lz4::Lz4Compressor};
+    /// use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor};
     ///
     /// let compressor = Lz4Compressor::new();
     /// let data = vec![42u8; 65536]; // 64 KB block
@@ -494,7 +493,7 @@ impl Compressor for Lz4Compressor {
     /// ## Buffer Size Validation
     ///
     /// ```
-    /// use strata_core::algo::compression::{Compressor, lz4::Lz4Compressor};
+    /// use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor};
     ///
     /// let compressor = Lz4Compressor::new();
     /// let data = vec![0u8; 1000];
@@ -521,13 +520,12 @@ impl Compressor for Lz4Compressor {
     /// - **Throughput**: ~3000 MB/s on modern CPUs (single-threaded)
     /// - **Memory usage**: Zero additional allocations beyond caller's `out` buffer
     ///
-    /// This is the fastest decompression path in Strata, used by the block cache to
+    /// This is the fastest decompression path in Hexz, used by the block cache to
     /// decompress directly into cache-allocated buffers.
     fn decompress_into(&self, data: &[u8], out: &mut [u8]) -> Result<usize> {
         if data.len() < 4 {
-            return Err(StrataError::Compression("Data too short".into()));
+            return Err(Error::Compression("Data too short".into()));
         }
-        lz4_flex::decompress_into(&data[4..], out)
-            .map_err(|e| StrataError::Compression(e.to_string()))
+        lz4_flex::decompress_into(&data[4..], out).map_err(|e| Error::Compression(e.to_string()))
     }
 }

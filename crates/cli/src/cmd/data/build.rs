@@ -1,6 +1,6 @@
 //! Build archive from source with profile-based optimization.
 //!
-//! This command provides a high-level interface for creating Strata snapshots
+//! This command provides a high-level interface for creating Hexz snapshots
 //! with domain-specific optimizations. Unlike the low-level `pack` command,
 //! `build` uses predefined profiles that automatically select compression
 //! algorithms, block sizes, and dictionary training settings optimized for
@@ -71,21 +71,21 @@
 //!
 //! ```bash
 //! # Build generic snapshot from disk image
-//! strata build --source disk.img --output snapshot.st
+//! hexz build --source disk.img --output snapshot.st
 //!
 //! # Build EDA workstation with optimal compression
-//! strata build --source eda-vm.img --output eda.st --profile eda
+//! hexz build --source eda-vm.img --output eda.st --profile eda
 //!
 //! # Build ML environment with encryption
-//! strata build --source ml.img --output ml.st --profile ml --encrypt
+//! hexz build --source ml.img --output ml.st --profile ml --encrypt
 //!
 //! # Build with content-defined chunking for deduplication
-//! strata build --source app.img --output app.st --cdc
+//! hexz build --source app.img --output app.st --cdc
 //! ```
 
 use anyhow::Result;
+use hexz_common::config::BuildProfile;
 use std::path::PathBuf;
-use strata_common::config::BuildProfile;
 
 /// Executes the build command to create a snapshot using profile-based settings.
 ///
@@ -134,13 +134,13 @@ use strata_common::config::BuildProfile;
 ///
 /// ```no_run
 /// use std::path::PathBuf;
-/// use strata_cli::cmd::data::build;
+/// use hexz_cli::cmd::data::build;
 ///
 /// // Build generic snapshot without encryption
 /// build::run(
 ///     PathBuf::from("disk.img"),
 ///     None,
-///     PathBuf::from("snapshot.st"),
+///     PathBuf::from("snapshot.hxz"),
 ///     Some("generic".to_string()),
 ///     false,  // no encryption
 ///     false,  // no CDC
@@ -150,7 +150,7 @@ use strata_common::config::BuildProfile;
 /// build::run(
 ///     PathBuf::from("ml-vm.img"),
 ///     None,
-///     PathBuf::from("ml.st"),
+///     PathBuf::from("ml.hxz"),
 ///     Some("ml".to_string()),
 ///     true,   // encrypt
 ///     true,   // enable CDC

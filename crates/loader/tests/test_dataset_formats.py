@@ -1,7 +1,7 @@
 """Tests for Dataset output format handling."""
 
 import pytest
-import strata
+import hexz
 
 # Check if optional dependencies are available
 try:
@@ -22,7 +22,7 @@ except ImportError:
 @pytest.fixture
 def test_snapshot(tmp_path):
     """Create a test snapshot with known data."""
-    snap_path = tmp_path / "test.st"
+    snap_path = tmp_path / "test.hxz"
     data_file = tmp_path / "data.bin"
 
     # Create 10 items of 100 bytes each with known pattern
@@ -33,7 +33,7 @@ def test_snapshot(tmp_path):
             f.write(item)
 
     # Pack it
-    with strata.open(str(snap_path), mode="w") as writer:
+    with hexz.open(str(snap_path), mode="w") as writer:
         writer.add(str(data_file))
 
     return str(snap_path)
@@ -42,7 +42,7 @@ def test_snapshot(tmp_path):
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_output_format_tensor(test_snapshot):
     """Test tensor output format."""
-    dataset = strata.Dataset(test_snapshot, item_size=100, output_format="tensor")
+    dataset = hexz.Dataset(test_snapshot, item_size=100, output_format="tensor")
 
     item = dataset[3]
 
@@ -56,7 +56,7 @@ def test_output_format_tensor(test_snapshot):
 @pytest.mark.skipif(not HAS_TORCH or not HAS_NUMPY, reason="Libraries not installed")
 def test_output_format_numpy(test_snapshot):
     """Test numpy output format."""
-    dataset = strata.Dataset(test_snapshot, item_size=100, output_format="numpy")
+    dataset = hexz.Dataset(test_snapshot, item_size=100, output_format="numpy")
 
     item = dataset[5]
 
@@ -70,7 +70,7 @@ def test_output_format_numpy(test_snapshot):
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_output_format_bytes(test_snapshot):
     """Test bytes output format."""
-    dataset = strata.Dataset(test_snapshot, item_size=100, output_format="bytes")
+    dataset = hexz.Dataset(test_snapshot, item_size=100, output_format="bytes")
 
     item = dataset[7]
 
@@ -84,7 +84,7 @@ def test_output_format_bytes(test_snapshot):
 def test_invalid_output_format(test_snapshot):
     """Test that invalid output format raises error."""
     # Create dataset with valid format first
-    dataset = strata.Dataset(test_snapshot, item_size=100, output_format="bytes")
+    dataset = hexz.Dataset(test_snapshot, item_size=100, output_format="bytes")
 
     # Manually change to invalid format to test _decode_item error path
     dataset._output_format = "invalid"
@@ -96,7 +96,7 @@ def test_invalid_output_format(test_snapshot):
 @pytest.mark.skipif(not HAS_TORCH or not HAS_NUMPY, reason="Libraries not installed")
 def test_numpy_zero_copy_true(test_snapshot):
     """Test numpy format with zero_copy=True (returns view)."""
-    dataset = strata.Dataset(
+    dataset = hexz.Dataset(
         test_snapshot, item_size=100, output_format="numpy", zero_copy=True
     )
 
@@ -111,7 +111,7 @@ def test_numpy_zero_copy_true(test_snapshot):
 @pytest.mark.skipif(not HAS_TORCH or not HAS_NUMPY, reason="Libraries not installed")
 def test_numpy_zero_copy_false(test_snapshot):
     """Test numpy format with zero_copy=False (makes copy)."""
-    dataset = strata.Dataset(
+    dataset = hexz.Dataset(
         test_snapshot, item_size=100, output_format="numpy", zero_copy=False
     )
 
@@ -127,7 +127,7 @@ def test_numpy_zero_copy_false(test_snapshot):
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_tensor_format_from_bytearray(test_snapshot):
     """Test that tensor format uses bytearray correctly."""
-    dataset = strata.Dataset(test_snapshot, item_size=100, output_format="tensor")
+    dataset = hexz.Dataset(test_snapshot, item_size=100, output_format="tensor")
 
     item = dataset[2]
 
@@ -144,7 +144,7 @@ def test_format_with_transform(test_snapshot):
         return x * 2
 
     # Test with tensor format
-    dataset = strata.Dataset(
+    dataset = hexz.Dataset(
         test_snapshot,
         item_size=100,
         output_format="tensor",
@@ -165,7 +165,7 @@ def test_format_with_target_transform(test_snapshot):
         return x + 1
 
     # Create dataset with target_transform
-    dataset = strata.Dataset(
+    dataset = hexz.Dataset(
         test_snapshot,
         item_size=100,
         output_format="bytes",
@@ -181,7 +181,7 @@ def test_format_with_target_transform(test_snapshot):
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_bytes_format_no_transform(test_snapshot):
     """Test bytes format returns raw bytes without modification."""
-    dataset = strata.Dataset(test_snapshot, item_size=100, output_format="bytes")
+    dataset = hexz.Dataset(test_snapshot, item_size=100, output_format="bytes")
 
     item = dataset[9]
 
@@ -194,7 +194,7 @@ def test_bytes_format_no_transform(test_snapshot):
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_format_consistency_across_access(test_snapshot):
     """Test that format is consistent across multiple accesses."""
-    dataset = strata.Dataset(test_snapshot, item_size=100, output_format="tensor")
+    dataset = hexz.Dataset(test_snapshot, item_size=100, output_format="tensor")
 
     item1 = dataset[4]
     item2 = dataset[4]

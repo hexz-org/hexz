@@ -1,10 +1,10 @@
 # Compression Algorithms
 
-Comparison of compression algorithms supported by Strata.
+Comparison of compression algorithms supported by Hexz.
 
 ## Supported Algorithms
 
-Strata supports two compression algorithms optimized for different use cases.
+Hexz supports two compression algorithms optimized for different use cases.
 
 ## LZ4
 
@@ -31,12 +31,12 @@ Strata supports two compression algorithms optimized for different use cases.
 
 ```bash
 # CLI
-strata data pack --disk data/ --output out.st --compression lz4
+hexz data pack --disk data/ --output out.st --compression lz4
 ```
 
 ```python
 # Python
-strata.open("out.st", mode="w", compression="lz4")
+hexz.open("out.hxz", mode="w", compression="lz4")
 ```
 
 ## Zstandard (Zstd)
@@ -74,7 +74,7 @@ strata.open("out.st", mode="w", compression="lz4")
 
 ```bash
 # CLI with compression level
-strata data pack \
+hexz data pack \
   --disk data/ \
   --output out.st \
   --compression zstd \
@@ -83,7 +83,7 @@ strata data pack \
 
 ```python
 # Python with compression level
-strata.open("out.st", mode="w", compression="zstd", compression_level=9)
+hexz.open("out.hxz", mode="w", compression="zstd", compression_level=9)
 ```
 
 ## Comparison
@@ -165,7 +165,7 @@ To change compression algorithm on existing snapshot:
 
 ```bash
 # Repack with different compression
-strata data pack \
+hexz data pack \
   --disk original.st \
   --output recompressed.st \
   --compression lz4

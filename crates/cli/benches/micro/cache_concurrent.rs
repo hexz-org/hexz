@@ -23,15 +23,15 @@
 use criterion::{
     BenchmarkId, Criterion, SamplingMode, Throughput, black_box, criterion_group, criterion_main,
 };
+use hexz_cli::cmd::data::pack;
+use hexz_core::File;
+use hexz_core::algo::compression::lz4::Lz4Compressor;
+use hexz_core::api::file::SnapshotStream;
+use hexz_core::store::local::FileBackend;
 use std::io::Write;
 use std::mem::MaybeUninit;
 use std::sync::Arc;
 use std::thread;
-use strata_cli::cmd::data::pack;
-use strata_core::StrataFile;
-use strata_core::algo::compression::lz4::Lz4Compressor;
-use strata_core::api::stratafile::SnapshotStream;
-use strata_core::store::local::FileBackend;
 use tempfile::NamedTempFile;
 
 const BLOCK_SIZE: usize = 65536;
@@ -42,7 +42,7 @@ const READS_PER_THREAD_HIT: usize = 128;
 /// Single read size (one block).
 const READ_SIZE: usize = BLOCK_SIZE;
 
-/// Builds a Strata snapshot for cache benchmarks (deterministic, compressible data).
+/// Builds a Hexz snapshot for cache benchmarks (deterministic, compressible data).
 fn setup_snapshot(size_mb: usize) -> (NamedTempFile, NamedTempFile) {
     let size = size_mb * 1024 * 1024;
     let mut input_file = NamedTempFile::new().unwrap();
@@ -86,7 +86,7 @@ fn bench_concurrent_read_hit(c: &mut Criterion) {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snap = StrataFile::new(backend, compressor, None).unwrap();
+    let snap = File::new(backend, compressor, None).unwrap();
 
     // Warm cache: read working set so all subsequent reads hit L1 and page cache.
     for offset in (0..WORKING_SET_BYTES).step_by(READ_SIZE) {
@@ -156,7 +156,7 @@ fn bench_concurrent_read_miss(c: &mut Criterion) {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snap = StrataFile::new(backend, compressor, None).unwrap();
+    let snap = File::new(backend, compressor, None).unwrap();
 
     let stream_size = snap.size(SnapshotStream::Disk);
     // Stride so each thread hits different blocks and ideally different index pages.

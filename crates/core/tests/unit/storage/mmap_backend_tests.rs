@@ -3,7 +3,7 @@
 use super::common;
 use common::*;
 
-use strata_core::store::{StorageBackend, local::mmap::MmapBackend};
+use hexz_core::store::{StorageBackend, local::mmap::MmapBackend};
 
 // Basic operations tests
 

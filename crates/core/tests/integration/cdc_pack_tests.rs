@@ -5,13 +5,13 @@
 use super::common;
 use common::*;
 
+use hexz_core::algo::compression::lz4::Lz4Compressor;
+use hexz_core::algo::compression::zstd::ZstdCompressor;
+use hexz_core::ops::pack::{PackConfig, pack_snapshot};
+use hexz_core::store::local::FileBackend;
+use hexz_core::{File, SnapshotStream};
 use std::fs;
 use std::sync::Arc;
-use strata_core::algo::compression::lz4::Lz4Compressor;
-use strata_core::algo::compression::zstd::ZstdCompressor;
-use strata_core::ops::pack::{PackConfig, pack_snapshot};
-use strata_core::store::local::FileBackend;
-use strata_core::{SnapshotStream, StrataFile};
 use tempfile::TempDir;
 
 /// Test CDC packing with LZ4 compression.
@@ -28,7 +28,7 @@ fn test_cdc_pack_lz4() {
     }
     fs::write(&disk_path, &data).unwrap();
 
-    let output_path = temp_dir.path().join("cdc.st");
+    let output_path = temp_dir.path().join("cdc.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -49,7 +49,7 @@ fn test_cdc_pack_lz4() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     assert_eq!(snapshot.size(SnapshotStream::Disk) as usize, data.len());
 
@@ -69,7 +69,7 @@ fn test_cdc_pack_zstd() {
     let data: Vec<u8> = (0..512 * 1024).map(|i| (i % 256) as u8).collect();
     fs::write(&disk_path, &data).unwrap();
 
-    let output_path = temp_dir.path().join("cdc_zstd.st");
+    let output_path = temp_dir.path().join("cdc_zstd.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -90,7 +90,7 @@ fn test_cdc_pack_zstd() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(ZstdCompressor::new(3, None));
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     let read_data = snapshot
         .read_at(SnapshotStream::Disk, 0, data.len())
@@ -107,7 +107,7 @@ fn test_cdc_encrypted() {
     let data = vec![0xAA; 256 * 1024];
     fs::write(&disk_path, &data).unwrap();
 
-    let output_path = temp_dir.path().join("cdc_enc.st");
+    let output_path = temp_dir.path().join("cdc_enc.hxz");
     let password = "cdc_encrypt_pw";
 
     let config = PackConfig {
@@ -129,24 +129,24 @@ fn test_cdc_encrypted() {
 
     // Read back with encryption
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
-    use strata_core::algo::encryption::aes_gcm::AesGcmEncryptor;
-    use strata_core::format::header::StrataHeader;
-    use strata_core::format::magic::HEADER_SIZE;
-    use strata_core::store::StorageBackend;
+    use hexz_core::algo::encryption::aes_gcm::AesGcmEncryptor;
+    use hexz_core::format::header::Header;
+    use hexz_core::format::magic::HEADER_SIZE;
+    use hexz_core::store::StorageBackend;
 
     let header_bytes = backend.read_exact(0, HEADER_SIZE).unwrap();
-    let header: StrataHeader = bincode::deserialize(&header_bytes).unwrap();
+    let header: Header = bincode::deserialize(&header_bytes).unwrap();
 
     let encryptor = header.encryption.as_ref().map(|params| {
         Box::new(AesGcmEncryptor::new(
             password.as_bytes(),
             &params.salt,
             params.iterations,
-        )) as Box<dyn strata_core::algo::encryption::Encryptor>
+        )) as Box<dyn hexz_core::algo::encryption::Encryptor>
     });
 
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, encryptor).unwrap();
+    let snapshot = File::new(backend, compressor, encryptor).unwrap();
 
     let read_data = snapshot.read_at(SnapshotStream::Disk, 0, 4096).unwrap();
     assert!(read_data.iter().all(|&b| b == 0xAA));
@@ -161,7 +161,7 @@ fn test_cdc_small_chunks() {
     let data = create_random_data(256 * 1024);
     fs::write(&disk_path, &data).unwrap();
 
-    let output_path = temp_dir.path().join("cdc_small.st");
+    let output_path = temp_dir.path().join("cdc_small.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -182,7 +182,7 @@ fn test_cdc_small_chunks() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     let read_data = snapshot
         .read_at(SnapshotStream::Disk, 0, data.len())
@@ -204,7 +204,7 @@ fn test_cdc_deduplication() {
     }
     fs::write(&disk_path, &data).unwrap();
 
-    let output_path = temp_dir.path().join("cdc_dedup.st");
+    let output_path = temp_dir.path().join("cdc_dedup.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path.clone()),
@@ -236,7 +236,7 @@ fn test_cdc_deduplication() {
     // Verify data integrity
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     let read_data = snapshot
         .read_at(SnapshotStream::Disk, 0, data.len())
@@ -256,7 +256,7 @@ fn test_cdc_dual_stream() {
     fs::write(&disk_path, &disk_data).unwrap();
     fs::write(&mem_path, &mem_data).unwrap();
 
-    let output_path = temp_dir.path().join("cdc_dual.st");
+    let output_path = temp_dir.path().join("cdc_dual.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -277,7 +277,7 @@ fn test_cdc_dual_stream() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     assert_eq!(snapshot.size(SnapshotStream::Disk), 256 * 1024);
     assert_eq!(snapshot.size(SnapshotStream::Memory), 128 * 1024);
@@ -298,7 +298,7 @@ fn test_pack_with_progress_callback() {
     let disk_path = temp_dir.path().join("disk.img");
     fs::write(&disk_path, vec![0u8; 256 * 1024]).unwrap();
 
-    let output_path = temp_dir.path().join("progress.st");
+    let output_path = temp_dir.path().join("progress.hxz");
     let last_progress = Arc::new(AtomicU64::new(0));
     let callback_count = Arc::new(AtomicU64::new(0));
 

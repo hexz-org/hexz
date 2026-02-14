@@ -1,7 +1,7 @@
-//! FUSE adapter for mounting Strata snapshots as filesystems.
+//! FUSE adapter for mounting Hexz snapshots as filesystems.
 //!
 //! This crate provides a FUSE (Filesystem in Userspace) implementation that
-//! mounts Strata snapshots as block device files, enabling standard tools to
+//! mounts Hexz snapshots as block device files, enabling standard tools to
 //! interact with compressed archives as if they were regular files.
 //!
 //! # Overview
@@ -24,18 +24,18 @@
 //! # Usage
 //!
 //! ```no_run
-//! use strata_fuse::mount_fs;
-//! use strata_core::StrataFile;
-//! use strata_core::store::local::FileBackend;
-//! use strata_core::algo::compression::lz4::Lz4Compressor;
+//! use hexz_fuse::mount_fs;
+//! use hexz_core::File;
+//! use hexz_core::store::local::FileBackend;
+//! use hexz_core::algo::compression::lz4::Lz4Compressor;
 //! use std::sync::Arc;
 //! use std::path::Path;
 //!
 //! # fn main() -> anyhow::Result<()> {
 //! // Open snapshot
-//! let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+//! let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
 //! let compressor = Box::new(Lz4Compressor::new());
-//! let snap = StrataFile::new(backend, compressor, None)?;
+//! let snap = File::new(backend, compressor, None)?;
 //!
 //! // Mount with overlay
 //! mount_fs(snap, Path::new("/mnt/snapshot"), Some(Path::new("overlay.bin")), 1000, 1000)?;
@@ -48,7 +48,7 @@
 //! When mounted with an overlay:
 //! - Reads: Overlay deltas override base snapshot
 //! - Writes: Stored in overlay file, base remains immutable
-//! - Commit: Use `strata vm commit` to merge overlay into new snapshot
+//! - Commit: Use `hexz vm commit` to merge overlay into new snapshot
 //!
 //! # Performance
 //!
@@ -62,17 +62,28 @@
 //! - User must have permission to mount filesystems
 
 /// Virtual filesystem abstractions (inodes, attributes, overlay).
+///
+/// - [`vfs::inode`]: Inode numbering, directory entries, inode metadata
+/// - [`vfs::attr`]: File attribute construction (size, mode, timestamps)
+/// - [`vfs::overlay`]: Copy-on-write overlay for writable mounts
+///
+/// Format details: See [`vfs::overlay::Overlay`]
 pub mod vfs;
 
 /// FUSE filesystem implementation.
+///
+/// - [`fuse::lookup`]: Inode lookup, directory listing, attribute queries
+/// - [`fuse::read`]: Read operations on disk/memory files
+///
+/// The [`fuse::Hexz`] filesystem struct is `!Send` due to FUSE constraints but
 pub mod fuse;
 
 use fuser::MountOption;
+use hexz_core::File;
 use std::path::Path;
 use std::sync::Arc;
-use strata_core::StrataFile;
 
-/// Mounts a Strata snapshot at a given path using the `fuser` library.
+/// Mounts a Hexz snapshot at a given path using the `fuser` library.
 ///
 /// **Architectural intent:** Creates a read-mostly filesystem view over a
 /// snapshot and optional overlay so tools can interact with it via standard
@@ -86,7 +97,7 @@ use strata_core::StrataFile;
 /// and holds open file descriptors for the snapshot and overlay for the
 /// lifetime of the mount.
 pub fn mount_fs(
-    snap: Arc<StrataFile>,
+    snap: Arc<File>,
     mountpoint: &Path,
     overlay_path: Option<&Path>,
     uid: u32,
@@ -94,11 +105,11 @@ pub fn mount_fs(
 ) -> anyhow::Result<()> {
     let options = vec![
         MountOption::RW,
-        MountOption::FSName("strata".to_string()),
+        MountOption::FSName("hexz".to_string()),
         MountOption::DefaultPermissions,
     ];
 
-    let fs = fuse::Strata::new(snap, overlay_path, uid, gid)?;
+    let fs = fuse::Hexz::new(snap, overlay_path, uid, gid)?;
     fuser::mount2(fs, mountpoint, &options)?;
     Ok(())
 }

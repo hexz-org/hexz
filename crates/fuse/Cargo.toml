@@ -1,15 +1,15 @@
 [package]
-name = "strata-fuse"
+name = "hexz-fuse"
 version = "0.1.0-alpha"
 edition = "2024"
 authors = ["Will McCallion"]
 license = "Apache-2.0"
-repository = "https://github.com/willmccallion/strata"
-description = "FUSE filesystem adapter for Strata snapshots"
+repository = "https://github.com/willmccallion/hexz"
+description = "FUSE filesystem adapter for Hexz snapshots"
 
 [dependencies]
-strata-core.workspace = true
-strata-common.workspace = true
+hexz-core.workspace = true
+hexz-common.workspace = true
 anyhow.workspace = true
 fuser = "0.14"
 libc = "0.2"

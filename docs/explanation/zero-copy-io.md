@@ -1,6 +1,6 @@
 # Zero-Copy I/O Architecture
 
-How Strata achieves zero-copy data transfer to NumPy and PyTorch.
+How Hexz achieves zero-copy data transfer to NumPy and PyTorch.
 
 ## The Problem: Memory Copies
 
@@ -20,7 +20,7 @@ For ML training loading gigabytes per second, copies become the bottleneck.
 
 ## Zero-Copy Approach
 
-Strata minimizes copies using:
+Hexz minimizes copies using:
 
 1. **Memory mapping** (local files)
 2. **Buffer protocol** (Python to NumPy)
@@ -28,7 +28,7 @@ Strata minimizes copies using:
 
 ### Memory Mapping (mmap)
 
-For local files, Strata uses memory-mapped I/O:
+For local files, Hexz uses memory-mapped I/O:
 
 ```
 File on disk ← Mapped to virtual memory ← Read directly
@@ -54,7 +54,7 @@ reader.read(buffer=buffer)  # Write directly into buffer
 
 **What happens**:
 1. NumPy allocates memory
-2. Strata gets pointer to NumPy memory
+2. Hexz gets pointer to NumPy memory
 3. Rust reads/decompresses directly into NumPy memory
 4. No intermediate Python bytes object
 
@@ -64,7 +64,7 @@ reader.read(buffer=buffer)  # Write directly into buffer
 
 Python's Global Interpreter Lock (GIL) prevents parallelism.
 
-Strata releases GIL during I/O:
+Hexz releases GIL during I/O:
 
 ```rust
 fn read_range(&self, py: Python, offset: u64, length: usize) -> PyResult<Vec<u8>> {
@@ -169,7 +169,7 @@ Some operations require aligned memory. NumPy/PyTorch handle this, but custom bu
 
 ### Buffer Lifetime
 
-Zero-copy requires buffer to outlive the read operation. Strata doesn't hold references, so this is user's responsibility.
+Zero-copy requires buffer to outlive the read operation. Hexz doesn't hold references, so this is user's responsibility.
 
 ## Best Practices
 

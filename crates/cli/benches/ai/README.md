@@ -1,12 +1,12 @@
-# Strata AI/ML Benchmarks
+# Hexz AI/ML Benchmarks
 
-Comprehensive benchmark suite for validating Strata's performance on AI and machine learning workloads. These benchmarks simulate realistic ML training scenarios including PyTorch DataLoader and TensorFlow tf.data patterns.
+Comprehensive benchmark suite for validating Hexz's performance on AI and machine learning workloads. These benchmarks simulate realistic ML training scenarios including PyTorch DataLoader and TensorFlow tf.data patterns.
 
 **From the repo root**, the central entry point is the **Makefile**: **`make bench`** runs the main Criterion benchmarks. The sections below document the **AI-specific** benchmark harness and give the exact **`cargo bench`** invocations for fine-grained control (e.g. a single bench, filters, baselines). Run all commands from the **repository root**.
 
 ## Overview
 
-Strata is designed as a high-performance data loading backend for ML training pipelines. These benchmarks validate that design by measuring:
+Hexz is designed as a high-performance data loading backend for ML training pipelines. These benchmarks validate that design by measuring:
 
 - **Data loading throughput** under various access patterns
 - **Multi-worker scalability** for parallel data loading
@@ -263,7 +263,7 @@ cargo flamegraph --bench ai_dataloader
 
 ## Architecture Notes
 
-These benchmarks are designed to stress-test Strata's core abstractions:
+These benchmarks are designed to stress-test Hexz's core abstractions:
 
 - **StorageBackend**: Tests local, HTTP, and S3 backends under ML access patterns
 - **Cache Layer**: Validates LRU cache effectiveness for multi-epoch training
@@ -271,7 +271,7 @@ These benchmarks are designed to stress-test Strata's core abstractions:
 - **Compression**: Measures decompression overhead vs. I/O reduction
 - **Concurrency**: Validates thread-safe access with minimal contention
 
-The goal is to ensure Strata can **match or exceed** native PyTorch/TensorFlow
+The goal is to ensure Hexz can **match or exceed** native PyTorch/TensorFlow
 data loading performance while providing additional benefits:
 - **Compression**: Reduce storage and network costs
 - **Deduplication**: Share data across training runs

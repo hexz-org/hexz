@@ -4,7 +4,7 @@ use crate::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompres
 use crate::algo::encryption::Encryptor;
 use crate::cache::lru::BlockCache;
 use crate::cache::prefetch::Prefetcher;
-use crate::format::header::{CompressionType, StrataHeader};
+use crate::format::header::{CompressionType, Header};
 use crate::format::index::{BlockInfo, IndexPage, MasterIndex, PageEntry};
 use crate::format::magic::{HEADER_SIZE, MAGIC_BYTES};
 use crate::format::version::{VersionCompatibility, check_version, compatibility_message};
@@ -19,25 +19,25 @@ use std::path::Path;
 use std::ptr;
 use std::sync::{Arc, Mutex};
 
+use hexz_common::constants::{BLOCK_OFFSET_PARENT, DEFAULT_BLOCK_SIZE, DEFAULT_ZSTD_LEVEL};
+use hexz_common::{Error, Result};
 use rayon::prelude::*;
-use strata_common::constants::{BLOCK_OFFSET_PARENT, DEFAULT_BLOCK_SIZE, DEFAULT_ZSTD_LEVEL};
-use strata_common::{Result, StrataError};
 
 /// Shared zero block for the default block size to avoid allocating when returning zero blocks.
 static ZEROS_64K: [u8; DEFAULT_BLOCK_SIZE as usize] = [0u8; DEFAULT_BLOCK_SIZE as usize];
 
 /// Logical stream identifier for dual-stream snapshots.
 ///
-/// Strata snapshots can store two independent data streams:
+/// Hexz snapshots can store two independent data streams:
 /// - **Disk**: Persistent storage (disk image, filesystem data)
 /// - **Memory**: Volatile state (RAM contents, process memory)
 ///
 /// # Example
 ///
 /// ```no_run
-/// use strata_core::{StrataFile, SnapshotStream};
+/// use hexz_core::{File, SnapshotStream};
 /// # use std::sync::Arc;
-/// # fn example(snapshot: Arc<StrataFile>) -> Result<(), Box<dyn std::error::Error>> {
+/// # fn example(snapshot: Arc<File>) -> Result<(), Box<dyn std::error::Error>> {
 /// // Read 4KB from disk stream
 /// let disk_data = snapshot.read_at(SnapshotStream::Disk, 0, 4096)?;
 ///
@@ -55,9 +55,9 @@ pub enum SnapshotStream {
     Memory = 1,
 }
 
-/// Read-only interface for accessing Strata snapshot data.
+/// Read-only interface for accessing Hexz snapshot data.
 ///
-/// `StrataFile` is the primary API for reading compressed, block-indexed snapshots.
+/// `File` is the primary API for reading compressed, block-indexed snapshots.
 /// It handles:
 /// - Block-level decompression with LRU caching
 /// - Optional AES-256-GCM decryption
@@ -67,7 +67,7 @@ pub enum SnapshotStream {
 ///
 /// # Thread Safety
 ///
-/// `StrataFile` is `Send + Sync` and can be safely shared across threads via `Arc`.
+/// `File` is `Send + Sync` and can be safely shared across threads via `Arc`.
 /// Internal caches use `Mutex` for synchronization.
 ///
 /// # Performance
@@ -82,15 +82,15 @@ pub enum SnapshotStream {
 /// ## Basic Usage
 ///
 /// ```no_run
-/// use strata_core::{StrataFile, SnapshotStream};
-/// use strata_core::store::local::FileBackend;
-/// use strata_core::algo::compression::lz4::Lz4Compressor;
+/// use hexz_core::{File, SnapshotStream};
+/// use hexz_core::store::local::FileBackend;
+/// use hexz_core::algo::compression::lz4::Lz4Compressor;
 /// use std::sync::Arc;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+/// let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
 /// let compressor = Box::new(Lz4Compressor::new());
-/// let snapshot = StrataFile::new(backend, compressor, None)?;
+/// let snapshot = File::new(backend, compressor, None)?;
 ///
 /// // Read 4KB at offset 1MB
 /// let data = snapshot.read_at(SnapshotStream::Disk, 1024 * 1024, 4096)?;
@@ -102,15 +102,15 @@ pub enum SnapshotStream {
 /// ## Thin Snapshots (with parent)
 ///
 /// ```no_run
-/// use strata_core::StrataFile;
-/// use strata_core::store::local::FileBackend;
-/// use strata_core::algo::compression::lz4::Lz4Compressor;
+/// use hexz_core::File;
+/// use hexz_core::store::local::FileBackend;
+/// use hexz_core::algo::compression::lz4::Lz4Compressor;
 /// use std::sync::Arc;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// // Open base snapshot
-/// let base_backend = Arc::new(FileBackend::new("base.st".as_ref())?);
-/// let base = StrataFile::new(
+/// let base_backend = Arc::new(FileBackend::new("base.hxz".as_ref())?);
+/// let base = File::new(
 ///     base_backend,
 ///     Box::new(Lz4Compressor::new()),
 ///     None
@@ -118,21 +118,21 @@ pub enum SnapshotStream {
 ///
 /// // The thin snapshot will automatically load its parent based on
 /// // the parent_path field in the header
-/// let thin_backend = Arc::new(FileBackend::new("incremental.st".as_ref())?);
-/// let thin = StrataFile::new(
+/// let thin_backend = Arc::new(FileBackend::new("incremental.hxz".as_ref())?);
+/// let thin = File::new(
 ///     thin_backend,
 ///     Box::new(Lz4Compressor::new()),
 ///     None
 /// )?;
 ///
 /// // Reads automatically fall back to base for unchanged blocks
-/// let data = thin.read_at(strata_core::SnapshotStream::Disk, 0, 4096)?;
+/// let data = thin.read_at(hexz_core::SnapshotStream::Disk, 0, 4096)?;
 /// # Ok(())
 /// # }
 /// ```
-pub struct StrataFile {
+pub struct File {
     /// Snapshot metadata (sizes, compression, encryption settings)
-    pub header: StrataHeader,
+    pub header: Header,
 
     /// Master index containing top-level page entries
     master: MasterIndex,
@@ -148,7 +148,7 @@ pub struct StrataFile {
 
     /// Optional parent snapshot for thin (incremental) snapshots.
     /// When a block's offset is BLOCK_OFFSET_PARENT, data is fetched from parent.
-    parent: Option<Arc<StrataFile>>,
+    parent: Option<Arc<File>>,
 
     /// LRU cache for decompressed blocks (per-stream, per-block-index)
     cache_l1: BlockCache,
@@ -160,10 +160,10 @@ pub struct StrataFile {
     prefetcher: Option<Prefetcher>,
 }
 
-impl StrataFile {
-    /// Opens a Strata snapshot with default cache settings.
+impl File {
+    /// Opens a Hexz snapshot with default cache settings.
     ///
-    /// This is the primary constructor for `StrataFile`. It:
+    /// This is the primary constructor for `File`. It:
     /// 1. Reads and validates the snapshot header (magic bytes, version)
     /// 2. Deserializes the master index
     /// 3. Recursively loads parent snapshots (for thin snapshots)
@@ -177,22 +177,22 @@ impl StrataFile {
     ///
     /// # Returns
     ///
-    /// - `Ok(StrataFile)` on success
-    /// - `Err(StrataError::Format)` if magic bytes or version are invalid
-    /// - `Err(StrataError::Io)` if storage backend fails
+    /// - `Ok(File)` on success
+    /// - `Err(Error::Format)` if magic bytes or version are invalid
+    /// - `Err(Error::Io)` if storage backend fails
     ///
     /// # Examples
     ///
     /// ```no_run
-    /// use strata_core::{StrataFile, SnapshotStream};
-    /// use strata_core::store::local::FileBackend;
-    /// use strata_core::algo::compression::lz4::Lz4Compressor;
+    /// use hexz_core::{File, SnapshotStream};
+    /// use hexz_core::store::local::FileBackend;
+    /// use hexz_core::algo::compression::lz4::Lz4Compressor;
     /// use std::sync::Arc;
     ///
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+    /// let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
     /// let compressor = Box::new(Lz4Compressor::new());
-    /// let snapshot = StrataFile::new(backend, compressor, None)?;
+    /// let snapshot = File::new(backend, compressor, None)?;
     ///
     /// println!("Disk size: {} bytes", snapshot.size(SnapshotStream::Disk));
     /// # Ok(())
@@ -206,7 +206,7 @@ impl StrataFile {
         Self::with_cache(backend, compressor, encryptor, None, None)
     }
 
-    /// Opens a Strata snapshot with custom cache capacity and prefetching.
+    /// Opens a Hexz snapshot with custom cache capacity and prefetching.
     ///
     /// Identical to [`new`](Self::new) but allows specifying cache size and prefetch window.
     ///
@@ -236,17 +236,17 @@ impl StrataFile {
     /// # Examples
     ///
     /// ```no_run
-    /// use strata_core::StrataFile;
-    /// use strata_core::store::local::FileBackend;
-    /// use strata_core::algo::compression::lz4::Lz4Compressor;
+    /// use hexz_core::File;
+    /// use hexz_core::store::local::FileBackend;
+    /// use hexz_core::algo::compression::lz4::Lz4Compressor;
     /// use std::sync::Arc;
     ///
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+    /// let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
     /// let compressor = Box::new(Lz4Compressor::new());
     ///
     /// // Allocate 256MB for cache, prefetch 4 blocks ahead
-    /// let snapshot = StrataFile::with_cache(
+    /// let snapshot = File::with_cache(
     ///     backend,
     ///     compressor,
     ///     None,
@@ -264,10 +264,10 @@ impl StrataFile {
         prefetch_window_size: Option<u32>,
     ) -> Result<Arc<Self>> {
         let header_bytes = backend.read_exact(0, HEADER_SIZE)?;
-        let header: StrataHeader = bincode::deserialize(&header_bytes)?;
+        let header: Header = bincode::deserialize(&header_bytes)?;
 
         if &header.magic != MAGIC_BYTES {
-            return Err(StrataError::Format("Invalid magic bytes".into()));
+            return Err(Error::Format("Invalid magic bytes".into()));
         }
 
         // Check version compatibility
@@ -282,7 +282,7 @@ impl StrataFile {
             }
             VersionCompatibility::Incompatible => {
                 // Too old or too new, reject
-                return Err(StrataError::Format(compatibility_message(header.version)));
+                return Err(Error::Format(compatibility_message(header.version)));
             }
         }
 
@@ -302,7 +302,7 @@ impl StrataFile {
 
             // For simplicity, we re-read the parent header to get its compression settings
             let p_header_bytes = p_backend.read_exact(0, HEADER_SIZE)?;
-            let p_header: StrataHeader = bincode::deserialize(&p_header_bytes)?;
+            let p_header: Header = bincode::deserialize(&p_header_bytes)?;
 
             let p_compressor: Box<dyn Compressor> = match p_header.compression {
                 CompressionType::Lz4 => Box::new(Lz4Compressor::new()),
@@ -319,7 +319,7 @@ impl StrataFile {
             };
 
             // TODO: Handle parent encryption if needed. Assuming unencrypted parent for v1 thin snap example.
-            Some(StrataFile::new(p_backend, p_compressor, None)?)
+            Some(File::new(p_backend, p_compressor, None)?)
         } else {
             None
         };
@@ -361,9 +361,9 @@ impl StrataFile {
     /// # Examples
     ///
     /// ```no_run
-    /// use strata_core::{StrataFile, SnapshotStream};
+    /// use hexz_core::{File, SnapshotStream};
     /// # use std::sync::Arc;
-    /// # fn example(snapshot: Arc<StrataFile>) {
+    /// # fn example(snapshot: Arc<File>) {
     /// let disk_bytes = snapshot.size(SnapshotStream::Disk);
     /// let mem_bytes = snapshot.size(SnapshotStream::Memory);
     ///
@@ -403,10 +403,10 @@ impl StrataFile {
     ///
     /// # Errors
     ///
-    /// - `StrataError::Io` if backend read fails (e.g. truncated file)
-    /// - `StrataError::Corruption(block_idx)` if block checksum does not match
-    /// - `StrataError::Decompression` if block decompression fails
-    /// - `StrataError::Decryption` if block decryption fails
+    /// - `Error::Io` if backend read fails (e.g. truncated file)
+    /// - `Error::Corruption(block_idx)` if block checksum does not match
+    /// - `Error::Decompression` if block decompression fails
+    /// - `Error::Decryption` if block decryption fails
     ///
     /// # Performance
     ///
@@ -419,9 +419,9 @@ impl StrataFile {
     /// # Examples
     ///
     /// ```no_run
-    /// use strata_core::{StrataFile, SnapshotStream};
+    /// use hexz_core::{File, SnapshotStream};
     /// # use std::sync::Arc;
-    /// # fn example(snapshot: Arc<StrataFile>) -> Result<(), Box<dyn std::error::Error>> {
+    /// # fn example(snapshot: Arc<File>) -> Result<(), Box<dyn std::error::Error>> {
     /// // Read first 512 bytes of disk stream
     /// let boot_sector = snapshot.read_at(SnapshotStream::Disk, 0, 512)?;
     ///
@@ -653,7 +653,7 @@ impl StrataFile {
                 .collect();
 
             // Phase 2: Parallel decompress and copy
-            let err: Mutex<Option<StrataError>> = Mutex::new(None);
+            let err: Mutex<Option<Error>> = Mutex::new(None);
             local_work
                 .par_iter()
                 .zip(raw_blocks)
@@ -882,7 +882,7 @@ impl StrataFile {
         if info.checksum != 0 {
             let computed = crc32_hash(&raw);
             if computed != info.checksum {
-                return Err(StrataError::Corruption(block_idx));
+                return Err(Error::Corruption(block_idx));
             }
         }
 

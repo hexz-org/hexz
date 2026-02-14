@@ -1,4 +1,4 @@
-//! Integration tests for strata-core
+//! Integration tests for hexz-core
 //!
 //! This module includes all integration tests.
 
@@ -21,5 +21,5 @@ mod cdc_pack_tests;
 #[path = "integration/thin_snapshot_tests.rs"]
 mod thin_snapshot_tests;
 
-#[path = "integration/stratafile_coverage_tests.rs"]
-mod stratafile_coverage_tests;
+#[path = "integration/file_coverage_tests.rs"]
+mod file_coverage_tests;

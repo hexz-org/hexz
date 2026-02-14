@@ -1,12 +1,12 @@
-//! Unit tests for StrataFile API to improve coverage from 70% to 80%+.
+//! Unit tests for File API to improve coverage from 70% to 80%+.
 //!
 //! Tests focus on edge cases, error handling, and less-common code paths.
 
+use hexz_core::algo::compression::lz4::Lz4Compressor;
+use hexz_core::store::local::file::FileBackend;
+use hexz_core::{File, SnapshotStream};
 use std::io::Write;
 use std::sync::Arc;
-use strata_core::algo::compression::lz4::Lz4Compressor;
-use strata_core::store::local::file::FileBackend;
-use strata_core::{SnapshotStream, StrataFile};
 use tempfile::NamedTempFile;
 
 use crate::common::*;
@@ -18,7 +18,7 @@ fn test_read_at_edge_cases() -> Result<(), Box<dyn std::error::Error>> {
 
     let backend = Arc::new(FileBackend::new(&snap_path)?);
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None)?;
+    let snapshot = File::new(backend, compressor, None)?;
 
     // Test reading at offset 0
     let data = snapshot.read_at(SnapshotStream::Disk, 0, 100)?;
@@ -48,7 +48,7 @@ fn test_read_at_into_buffer_handling() -> Result<(), Box<dyn std::error::Error>>
 
     let backend = Arc::new(FileBackend::new(&snap_path)?);
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None)?;
+    let snapshot = File::new(backend, compressor, None)?;
 
     // Test normal read into buffer
     let mut buffer = vec![0xFF; 100];
@@ -82,7 +82,7 @@ fn test_memory_stream_access() -> Result<(), Box<dyn std::error::Error>> {
 
     let backend = Arc::new(FileBackend::new(&snap_path)?);
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None)?;
+    let snapshot = File::new(backend, compressor, None)?;
 
     let mem_size = snapshot.size(SnapshotStream::Memory);
     assert!(mem_size > 0, "Memory stream should have data");
@@ -107,7 +107,7 @@ fn test_custom_cache_capacity() -> Result<(), Box<dyn std::error::Error>> {
     let compressor = Box::new(Lz4Compressor::new());
 
     // Test with small cache
-    let snapshot = StrataFile::with_cache(
+    let snapshot = File::with_cache(
         backend.clone(),
         compressor,
         None,
@@ -120,7 +120,7 @@ fn test_custom_cache_capacity() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test with large cache
     let compressor2 = Box::new(Lz4Compressor::new());
-    let snapshot2 = StrataFile::with_cache(
+    let snapshot2 = File::with_cache(
         backend,
         compressor2,
         None,
@@ -143,7 +143,7 @@ fn test_prefetch_configuration() -> Result<(), Box<dyn std::error::Error>> {
     let compressor = Box::new(Lz4Compressor::new());
 
     // Test with prefetching enabled
-    let snapshot = StrataFile::with_cache(
+    let snapshot = File::with_cache(
         backend,
         compressor,
         None,
@@ -168,7 +168,7 @@ fn test_sparse_region_handling() -> Result<(), Box<dyn std::error::Error>> {
 
     let backend = Arc::new(FileBackend::new(&snap_path)?);
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None)?;
+    let snapshot = File::new(backend, compressor, None)?;
 
     // If the snapshot has no pages (empty), reads should return zeros
     // This tests the empty pages handling in read_at_into_uninit
@@ -189,7 +189,7 @@ fn test_size_queries() -> Result<(), Box<dyn std::error::Error>> {
 
     let backend = Arc::new(FileBackend::new(&snap_path)?);
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None)?;
+    let snapshot = File::new(backend, compressor, None)?;
 
     let disk_size = snapshot.size(SnapshotStream::Disk);
     assert_eq!(disk_size as usize, original_data.len());
@@ -209,7 +209,7 @@ fn test_parallel_decompression_path() -> Result<(), Box<dyn std::error::Error>> 
 
     let backend = Arc::new(FileBackend::new(&snap_path)?);
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None)?;
+    let snapshot = File::new(backend, compressor, None)?;
 
     // Read across multiple blocks (should trigger parallel path)
     let data = snapshot.read_at(SnapshotStream::Disk, 0, 128 * 1024)?;
@@ -225,7 +225,7 @@ fn test_uncompressed_read() -> Result<(), Box<dyn std::error::Error>> {
 
     let backend = Arc::new(FileBackend::new(&snap_path)?);
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None)?;
+    let snapshot = File::new(backend, compressor, None)?;
 
     // Read entire file
     let size = snapshot.size(SnapshotStream::Disk);
@@ -250,7 +250,7 @@ fn test_invalid_magic_bytes_error() -> Result<(), Box<dyn std::error::Error>> {
     let backend = Arc::new(FileBackend::new(temp_file.path())?);
     let compressor = Box::new(Lz4Compressor::new());
 
-    let result = StrataFile::new(backend, compressor, None);
+    let result = File::new(backend, compressor, None);
     assert!(result.is_err(), "Should fail with invalid magic bytes");
 
     Ok(())
@@ -263,7 +263,7 @@ fn test_misaligned_reads() -> Result<(), Box<dyn std::error::Error>> {
 
     let backend = Arc::new(FileBackend::new(&snap_path)?);
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None)?;
+    let snapshot = File::new(backend, compressor, None)?;
 
     // Read at odd offsets with odd lengths
     let data = snapshot.read_at(SnapshotStream::Disk, 13, 47)?;
@@ -284,7 +284,7 @@ fn test_read_at_into_uninit_bytes() -> Result<(), Box<dyn std::error::Error>> {
 
     let backend = Arc::new(FileBackend::new(&snap_path)?);
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None)?;
+    let snapshot = File::new(backend, compressor, None)?;
 
     let mut buffer = vec![0xFF; 100];
     snapshot.read_at_into_uninit_bytes(SnapshotStream::Disk, 0, &mut buffer)?;
@@ -301,7 +301,7 @@ fn test_cache_behavior() -> Result<(), Box<dyn std::error::Error>> {
 
     let backend = Arc::new(FileBackend::new(&snap_path)?);
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None)?;
+    let snapshot = File::new(backend, compressor, None)?;
 
     // First read (cache miss)
     let data1 = snapshot.read_at(SnapshotStream::Disk, 0, 100)?;
@@ -321,7 +321,7 @@ fn test_zero_length_read() -> Result<(), Box<dyn std::error::Error>> {
 
     let backend = Arc::new(FileBackend::new(&snap_path)?);
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None)?;
+    let snapshot = File::new(backend, compressor, None)?;
 
     let data = snapshot.read_at(SnapshotStream::Disk, 0, 0)?;
     assert_eq!(data.len(), 0);

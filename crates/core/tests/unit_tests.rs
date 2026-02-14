@@ -1,4 +1,4 @@
-//! Unit tests for strata-core
+//! Unit tests for hexz-core
 //!
 //! This module includes all unit tests organized by functionality.
 
@@ -36,8 +36,8 @@ mod http_backend_simple_tests;
 #[path = "unit/dedup/cdc_tests.rs"]
 mod cdc_tests;
 
-#[path = "unit/stratafile_tests.rs"]
-mod stratafile_tests;
+#[path = "unit/file_tests.rs"]
+mod file_tests;
 
 #[path = "unit/http_mock_tests.rs"]
 mod http_mock_tests;

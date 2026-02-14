@@ -3,9 +3,9 @@
 use super::common;
 use common::*;
 
+use hexz_core::algo::dedup::cdc::{StreamChunker, analyze_stream};
+use hexz_core::algo::dedup::dcam::DedupeParams;
 use std::io::Cursor;
-use strata_core::algo::dedup::cdc::{StreamChunker, analyze_stream};
-use strata_core::algo::dedup::dcam::DedupeParams;
 
 // Basic chunking tests
 

@@ -3,7 +3,7 @@
 //! # Overview
 //!
 //! This module provides a B-tree-based indexing structure optimized for range queries,
-//! sequential scans, and spatial locality in block lookups. While the current Strata
+//! sequential scans, and spatial locality in block lookups. While the current Hexz
 //! implementation uses a two-level page-based index (master index + index pages), this
 //! B-tree index offers an alternative strategy that may be beneficial for specific
 //! access patterns and workloads.
@@ -306,8 +306,8 @@
 //!
 //! ```
 //! use std::sync::RwLock;
-//! use strata_core::format::index::btree::BTreeIndex;
-//! use strata_core::format::index::BlockInfo;
+//! use hexz_core::format::index::btree::BTreeIndex;
+//! use hexz_core::format::index::BlockInfo;
 //!
 //! let index = RwLock::new(BTreeIndex::new(256));
 //!
@@ -434,7 +434,7 @@
 //!
 //! ```
 //! use lru::LruCache;
-//! use strata_core::format::index::btree::{BTreeIndex, BTreeNode};
+//! use hexz_core::format::index::btree::{BTreeIndex, BTreeNode};
 //!
 //! struct CachedBTree {
 //!     index: BTreeIndex,
@@ -459,7 +459,7 @@
 //! ## Creating a B-tree Index
 //!
 //! ```rust
-//! use strata_core::format::index::btree::BTreeIndex;
+//! use hexz_core::format::index::btree::BTreeIndex;
 //!
 //! // Create index with order 256 (recommended default)
 //! let index = BTreeIndex::new(256);
@@ -470,8 +470,8 @@
 //! ## Inserting Blocks
 //!
 //! ```rust
-//! use strata_core::format::index::btree::BTreeIndex;
-//! use strata_core::format::index::BlockInfo;
+//! use hexz_core::format::index::btree::BTreeIndex;
+//! use hexz_core::format::index::BlockInfo;
 //!
 //! let mut index = BTreeIndex::new(256);
 //!
@@ -501,8 +501,8 @@
 //! ## Looking Up Blocks
 //!
 //! ```rust
-//! # use strata_core::format::index::btree::BTreeIndex;
-//! # use strata_core::format::index::BlockInfo;
+//! # use hexz_core::format::index::btree::BTreeIndex;
+//! # use hexz_core::format::index::BlockInfo;
 //! # let mut index = BTreeIndex::new(256);
 //! # index.insert(42, BlockInfo { offset: 4096, length: 2048, logical_len: 4096, checksum: 0 });
 //! // Lookup by block ID
@@ -519,7 +519,7 @@
 //! // This demonstrates the intended API for range queries
 //! // (not yet implemented in stub)
 //!
-//! use strata_core::format::index::btree::BTreeIndex;
+//! use hexz_core::format::index::btree::BTreeIndex;
 //!
 //! let index = BTreeIndex::new(256);
 //! // ... populate index ...
@@ -535,7 +535,7 @@
 //! ## Choosing Order Based on Workload
 //!
 //! ```rust
-//! use strata_core::format::index::btree::BTreeIndex;
+//! use hexz_core::format::index::btree::BTreeIndex;
 //!
 //! // Small dataset, memory-constrained
 //! let small_index = BTreeIndex::new(64);
@@ -553,7 +553,7 @@
 //!
 //! This module provides the data structures and API design for a B-tree index,
 //! but the core algorithms (search, insert with splitting, delete with merging)
-//! are not yet implemented. The current Strata implementation uses a two-level
+//! are not yet implemented. The current Hexz implementation uses a two-level
 //! page-based index which is more space-efficient for the typical workload.
 //!
 //! **Future Work**:
@@ -613,8 +613,8 @@ use super::BlockInfo;
 /// # Examples
 ///
 /// ```
-/// use strata_core::format::index::btree::BTreeNode;
-/// use strata_core::format::index::BlockInfo;
+/// use hexz_core::format::index::btree::BTreeNode;
+/// use hexz_core::format::index::BlockInfo;
 ///
 /// // Create a leaf node with 3 entries
 /// let leaf = BTreeNode {
@@ -737,8 +737,8 @@ pub struct BTreeNode {
 /// ## Basic Usage
 ///
 /// ```
-/// use strata_core::format::index::btree::BTreeIndex;
-/// use strata_core::format::index::BlockInfo;
+/// use hexz_core::format::index::btree::BTreeIndex;
+/// use hexz_core::format::index::BlockInfo;
 ///
 /// // Create a new index with order 256
 /// let mut index = BTreeIndex::new(256);
@@ -766,7 +766,7 @@ pub struct BTreeNode {
 /// ## Serialization
 ///
 /// ```
-/// use strata_core::format::index::btree::BTreeIndex;
+/// use hexz_core::format::index::btree::BTreeIndex;
 ///
 /// let index = BTreeIndex::new(256);
 ///
@@ -782,7 +782,7 @@ pub struct BTreeNode {
 /// ## Choosing Order Based on Use Case
 ///
 /// ```
-/// use strata_core::format::index::btree::BTreeIndex;
+/// use hexz_core::format::index::btree::BTreeIndex;
 ///
 /// // Small dataset or testing
 /// let test_index = BTreeIndex::new(16);
@@ -867,7 +867,7 @@ impl BTreeIndex {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::format::index::btree::BTreeIndex;
+    /// use hexz_core::format::index::btree::BTreeIndex;
     ///
     /// // Create index with default order
     /// let index = BTreeIndex::new(256);
@@ -928,8 +928,8 @@ impl BTreeIndex {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::format::index::btree::BTreeIndex;
-    /// use strata_core::format::index::BlockInfo;
+    /// use hexz_core::format::index::btree::BTreeIndex;
+    /// use hexz_core::format::index::BlockInfo;
     ///
     /// let mut index = BTreeIndex::new(256);
     ///
@@ -1020,8 +1020,8 @@ impl BTreeIndex {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::format::index::btree::BTreeIndex;
-    /// use strata_core::format::index::BlockInfo;
+    /// use hexz_core::format::index::btree::BTreeIndex;
+    /// use hexz_core::format::index::BlockInfo;
     ///
     /// let mut index = BTreeIndex::new(256);
     ///

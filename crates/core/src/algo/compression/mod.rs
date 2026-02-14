@@ -4,8 +4,8 @@
 //! The format layer uses this trait to encode and decode blocks without
 //! depending on concrete algorithms.
 
+use hexz_common::Result;
 use std::fmt::Debug;
-use strata_common::Result;
 
 /// Pluggable interface for block-oriented compressors.
 ///
@@ -32,7 +32,7 @@ pub trait Compressor: Send + Sync + Debug {
     /// block bytes or failing if corruption or format errors are detected.
     ///
     /// **Constraints:** The input must have been produced by a compatible
-    /// encoder; malformed data must surface as a `StrataError::Compression`.
+    /// encoder; malformed data must surface as a `Error::Compression`.
     fn decompress(&self, data: &[u8]) -> Result<Vec<u8>>;
 
     /// Decompresses an encoded block into a caller-provided buffer.

@@ -88,14 +88,14 @@
 //!
 //! ```bash
 //! # Create live snapshot of running VM
-//! strata vm snap \
+//! hexz vm snap \
 //!   --socket /tmp/vm.qmp \
 //!   --overlay vm-state.overlay \
 //!   --base vm-base.st \
 //!   --output vm-checkpoint.st
 //!
 //! # Resume from snapshot later
-//! strata vm boot vm-checkpoint.st --ram 4G
+//! hexz vm boot vm-checkpoint.st --ram 4G
 //! ```
 
 use anyhow::{Context, Result};
@@ -138,7 +138,7 @@ const DEFAULT_COMMIT_BLOCK_SIZE: u32 = 65536;
 ///
 /// * `socket_path` - Path to the QMP Unix socket (created with `--qmp-socket`)
 /// * `overlay_path` - Path to the overlay file containing modified disk blocks
-/// * `base_strata_path` - Path to the base snapshot the VM was booted from
+/// * `base_hexz_path` - Path to the base snapshot the VM was booted from
 /// * `output_path` - Path for the output snapshot file
 ///
 /// # QMP Command Sequence
@@ -174,21 +174,21 @@ const DEFAULT_COMMIT_BLOCK_SIZE: u32 = 65536;
 ///
 /// ```no_run
 /// use std::path::PathBuf;
-/// use strata_cli::cmd::vm::snap;
+/// use hexz_cli::cmd::vm::snap;
 ///
 /// // Create live snapshot of running VM
 /// snap::run(
 ///     PathBuf::from("/tmp/vm.qmp"),
 ///     PathBuf::from("vm-state.overlay"),
-///     PathBuf::from("vm-base.st"),
-///     PathBuf::from("vm-checkpoint.st"),
+///     PathBuf::from("vm-base.hxz"),
+///     PathBuf::from("vm-checkpoint.hxz"),
 /// )?;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 pub fn run(
     socket_path: PathBuf,
     overlay_path: PathBuf,
-    base_strata_path: PathBuf,
+    base_hexz_path: PathBuf,
     output_path: PathBuf,
 ) -> Result<()> {
     println!("Connecting to VM at {:?}", socket_path);
@@ -236,7 +236,7 @@ pub fn run(
     println!("Creating snapshot...");
 
     let commit_result = commit::run(
-        base_strata_path,
+        base_hexz_path,
         overlay_path,
         Some(mem_dump.path().to_path_buf()),
         output_path,

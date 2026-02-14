@@ -1,23 +1,23 @@
-"""Custom exception hierarchy for Strata.
+"""Custom exception hierarchy for Hexz.
 
-This module defines all exceptions that can be raised by the Strata library,
+This module defines all exceptions that can be raised by the Hexz library,
 providing clear error types for different failure modes.
 """
 
 from typing import Optional
 
 
-class StrataError(Exception):
-    """Base exception for all Strata-related errors.
+class Error(Exception):
+    """Base exception for all Hexz-related errors.
 
-    All custom exceptions in the Strata library inherit from this base class,
-    making it easy to catch all Strata-specific errors with a single except clause.
+    All custom exceptions in the Hexz library inherit from this base class,
+    making it easy to catch all Hexz-specific errors with a single except clause.
     """
 
     pass
 
 
-class IOError(StrataError, OSError):
+class IOError(Error, OSError):
     """I/O operation failed.
 
     Raised when reading from or writing to storage fails. This includes:
@@ -25,7 +25,7 @@ class IOError(StrataError, OSError):
     - Network errors (HTTP, S3)
     - Device errors
 
-    Inherits from both StrataError and OSError for compatibility with
+    Inherits from both Error and OSError for compatibility with
     standard Python error handling.
     """
 
@@ -45,7 +45,7 @@ class NetworkError(IOError):
     pass
 
 
-class MountError(StrataError):
+class MountError(Error):
     """Filesystem mounting/unmounting error.
 
     Raised when FUSE or NBD mounting operations fail:
@@ -58,7 +58,7 @@ class MountError(StrataError):
     pass
 
 
-class CompressionError(StrataError):
+class CompressionError(Error):
     """Compression or decompression error.
 
     Raised when compression operations fail:
@@ -70,7 +70,7 @@ class CompressionError(StrataError):
     pass
 
 
-class ValidationError(StrataError):
+class ValidationError(Error):
     """Data validation error.
 
     Raised when data fails validation checks:
@@ -83,10 +83,10 @@ class ValidationError(StrataError):
     pass
 
 
-class FormatError(StrataError):
+class FormatError(Error):
     """Invalid file format.
 
-    Raised when a file doesn't match the expected Strata format:
+    Raised when a file doesn't match the expected Hexz format:
     - Wrong magic bytes
     - Unsupported version
     - Corrupted header
@@ -96,7 +96,7 @@ class FormatError(StrataError):
     pass
 
 
-class EncryptionError(StrataError):
+class EncryptionError(Error):
     """Encryption or decryption error.
 
     Raised when cryptographic operations fail:
@@ -109,7 +109,7 @@ class EncryptionError(StrataError):
     pass
 
 
-class SignatureError(StrataError):
+class SignatureError(Error):
     """Signature verification error.
 
     Raised when signature operations fail:
@@ -122,7 +122,7 @@ class SignatureError(StrataError):
     pass
 
 
-class CacheError(StrataError):
+class CacheError(Error):
     """Cache operation error.
 
     Raised when cache operations fail:

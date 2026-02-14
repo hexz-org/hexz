@@ -1,17 +1,17 @@
-"""Comprehensive tests for strata.crypto module to improve coverage."""
+"""Comprehensive tests for hexz.crypto module to improve coverage."""
 
 import pytest
 import os
 import tempfile
 import shutil
-import strata
-from strata import crypto
+import hexz
+from hexz import crypto
 
 
 @pytest.fixture
 def temp_dir():
     """Create temporary directory for test files."""
-    d = tempfile.mkdtemp(prefix="strata_crypto_test_")
+    d = tempfile.mkdtemp(prefix="hexz_crypto_test_")
     yield d
     shutil.rmtree(d, ignore_errors=True)
 
@@ -20,13 +20,13 @@ def temp_dir():
 def sample_snapshot(temp_dir):
     """Create a sample snapshot for signing/verification tests."""
     data_path = os.path.join(temp_dir, "data.bin")
-    snap_path = os.path.join(temp_dir, "test.st")
+    snap_path = os.path.join(temp_dir, "test.hxz")
 
     # Create 64KB of test data
     with open(data_path, "wb") as f:
         f.write(b"test data" * 1000)
 
-    with strata.open(snap_path, mode="w", compression="lz4") as w:
+    with hexz.open(snap_path, mode="w", compression="lz4") as w:
         w.add(data_path)
 
     return snap_path
@@ -71,7 +71,7 @@ def test_sign_snapshot(sample_snapshot, temp_dir):
     crypto.keygen(private_key, public_key)
 
     # Verify snapshot starts unsigned
-    meta_before = strata.inspect(sample_snapshot)
+    meta_before = hexz.inspect(sample_snapshot)
     assert not meta_before.signed, "Snapshot should start unsigned"
 
     # Sign the snapshot
@@ -224,7 +224,7 @@ def test_sign_nonexistent_snapshot_raises_error(temp_dir):
     public_key = os.path.join(temp_dir, "err.pub")
     crypto.keygen(private_key, public_key)
 
-    nonexistent = os.path.join(temp_dir, "does_not_exist.st")
+    nonexistent = os.path.join(temp_dir, "does_not_exist.hxz")
 
     with pytest.raises(Exception):  # Could be IOError, RuntimeError, etc.
         crypto.sign(nonexistent, private_key)
@@ -236,7 +236,7 @@ def test_verify_nonexistent_snapshot_returns_false(temp_dir):
     public_key = os.path.join(temp_dir, "err2.pub")
     crypto.keygen(private_key, public_key)
 
-    nonexistent = os.path.join(temp_dir, "does_not_exist.st")
+    nonexistent = os.path.join(temp_dir, "does_not_exist.hxz")
 
     result = crypto.verify(nonexistent, public_key)
     assert result is False, "Nonexistent snapshot should fail verification"

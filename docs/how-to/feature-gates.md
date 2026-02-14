@@ -1,12 +1,12 @@
 # Feature Gates and Modular Builds
 
-Strata is designed with modularity in mind, allowing you to install only the features you need. This reduces binary size, minimizes dependencies, and improves security by reducing attack surface.
+Hexz is designed with modularity in mind, allowing you to install only the features you need. This reduces binary size, minimizes dependencies, and improves security by reducing attack surface.
 
 ## Available Features
 
 ### Rust Crate Features
 
-#### strata-core
+#### hexz-core
 
 | Feature | Default | Description | Dependencies |
 |---------|---------|-------------|--------------|
@@ -16,20 +16,20 @@ Strata is designed with modularity in mind, allowing you to install only the fea
 
 **Note**: LZ4 compression is always available (no feature flag needed).
 
-#### strata-common
+#### hexz-common
 
 | Feature | Default | Description | Dependencies |
 |---------|---------|-------------|--------------|
 | `signing` | ❌ | Ed25519 cryptographic signing | ed25519-dalek, sha2 |
 
-#### strata-loader (Python bindings)
+#### hexz-loader (Python bindings)
 
 | Feature | Default | Description | Dependencies |
 |---------|---------|-------------|--------------|
-| `s3` | ✅ | S3 storage backend | strata-core/s3 |
-| `compression-zstd` | ✅ | Zstandard compression | strata-core/compression-zstd |
-| `encryption` | ❌ | AES-GCM encryption | strata-core/encryption |
-| `signing` | ✅ | Ed25519 signing | strata-common/signing |
+| `s3` | ✅ | S3 storage backend | hexz-core/s3 |
+| `compression-zstd` | ✅ | Zstandard compression | hexz-core/compression-zstd |
+| `encryption` | ❌ | AES-GCM encryption | hexz-core/encryption |
+| `signing` | ✅ | Ed25519 signing | hexz-common/signing |
 | `full` | ❌ | All features enabled | All of the above |
 
 ### Python Package Extras
@@ -86,32 +86,32 @@ maturin build --release --no-default-features --features "s3 signing"
 
 ```bash
 # Build loader with defaults
-cargo build -p strata-loader --release
+cargo build -p hexz-loader --release
 
 # Build with all features
-cargo build -p strata-loader --release --features full
+cargo build -p hexz-loader --release --features full
 
 # Build minimal
-cargo build -p strata-loader --release --no-default-features
+cargo build -p hexz-loader --release --no-default-features
 
 # Build CLI with custom features
-cargo build -p strata --release --no-default-features --features "s3 compression-zstd"
+cargo build -p hexz --release --no-default-features --features "s3 compression-zstd"
 ```
 
 ## Python Installation
 
 ```bash
 # Minimal (core features only, ~5MB)
-pip install strata
+pip install hexz
 
 # With PyTorch support
-pip install strata[torch]
+pip install hexz[torch]
 
 # With all ML frameworks
-pip install strata[full]
+pip install hexz[full]
 
 # Development installation
-pip install strata[dev]
+pip install hexz[dev]
 ```
 
 ## Binary Size Comparison
@@ -128,14 +128,14 @@ Binary sizes for the Python loader (release build, stripped):
 
 ## Why Use Feature Gates?
 
-While Rust feature gates provide minimal binary size savings in strata-loader, they offer other important benefits:
+While Rust feature gates provide minimal binary size savings in hexz-loader, they offer other important benefits:
 
 ### 1. Python Dependency Management ⭐ (Primary Benefit)
 The `[torch]`, `[tensorflow]`, and `[numpy]` extras are **essential**. These packages are hundreds of MB each:
 ```bash
-pip install strata              # 0 Python dependencies
-pip install strata[torch]       # Adds ~700MB of PyTorch
-pip install strata[ml]          # Adds ~1GB (PyTorch + NumPy)
+pip install hexz              # 0 Python dependencies
+pip install hexz[torch]       # Adds ~700MB of PyTorch
+pip install hexz[ml]          # Adds ~1GB (PyTorch + NumPy)
 ```
 
 ### 2. Dependency Tree Clarity
@@ -187,25 +187,25 @@ jobs:
       - name: Build with ${{ matrix.features }}
         run: |
           if [ "${{ matrix.features }}" = "default" ]; then
-            cargo build -p strata-loader --release
+            cargo build -p hexz-loader --release
           elif [ "${{ matrix.features }}" = "minimal" ]; then
-            cargo build -p strata-loader --release --no-default-features
+            cargo build -p hexz-loader --release --no-default-features
           elif [ "${{ matrix.features }}" = "full" ]; then
-            cargo build -p strata-loader --release --features full
+            cargo build -p hexz-loader --release --features full
           else
-            cargo build -p strata-loader --release --no-default-features --features "${{ matrix.features }}"
+            cargo build -p hexz-loader --release --no-default-features --features "${{ matrix.features }}"
           fi
 
       - name: Run tests
         run: |
           if [ "${{ matrix.features }}" = "default" ]; then
-            cargo test -p strata-loader
+            cargo test -p hexz-loader
           elif [ "${{ matrix.features }}" = "minimal" ]; then
-            cargo test -p strata-loader --no-default-features
+            cargo test -p hexz-loader --no-default-features
           elif [ "${{ matrix.features }}" = "full" ]; then
-            cargo test -p strata-loader --features full
+            cargo test -p hexz-loader --features full
           else
-            cargo test -p strata-loader --no-default-features --features "${{ matrix.features }}"
+            cargo test -p hexz-loader --no-default-features --features "${{ matrix.features }}"
           fi
 
   test-python-extras:
@@ -226,7 +226,7 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install strata${{ matrix.extra }}
+      - name: Install hexz${{ matrix.extra }}
         run: |
           pip install -e .${{ matrix.extra }}
 
@@ -244,16 +244,16 @@ jobs:
       - name: Build and check sizes
         run: |
           # Minimal
-          cargo build -p strata-loader --release --no-default-features
-          MINIMAL_SIZE=$(stat -f%z target/release/libstrata_loader.so 2>/dev/null || stat -c%s target/release/libstrata_loader.so)
+          cargo build -p hexz-loader --release --no-default-features
+          MINIMAL_SIZE=$(stat -f%z target/release/libhexz_loader.so 2>/dev/null || stat -c%s target/release/libhexz_loader.so)
 
           # Default
-          cargo build -p strata-loader --release
-          DEFAULT_SIZE=$(stat -f%z target/release/libstrata_loader.so 2>/dev/null || stat -c%s target/release/libstrata_loader.so)
+          cargo build -p hexz-loader --release
+          DEFAULT_SIZE=$(stat -f%z target/release/libhexz_loader.so 2>/dev/null || stat -c%s target/release/libhexz_loader.so)
 
           # Full
-          cargo build -p strata-loader --release --features full
-          FULL_SIZE=$(stat -f%z target/release/libstrata_loader.so 2>/dev/null || stat -c%s target/release/libstrata_loader.so)
+          cargo build -p hexz-loader --release --features full
+          FULL_SIZE=$(stat -f%z target/release/libhexz_loader.so 2>/dev/null || stat -c%s target/release/libhexz_loader.so)
 
           echo "Binary sizes:"
           echo "  Minimal: $(($MINIMAL_SIZE / 1024 / 1024))MB"
@@ -305,12 +305,12 @@ pip install -e .[dev]
 Python code can detect available features at runtime:
 
 ```python
-import strata
+import hexz
 
 # Check if crypto signing is available
-if hasattr(strata, 'crypto') and strata.crypto is not None:
+if hasattr(hexz, 'crypto') and hexz.crypto is not None:
     try:
-        strata.crypto.keygen('/tmp/test.key', '/tmp/test.pub')
+        hexz.crypto.keygen('/tmp/test.key', '/tmp/test.pub')
         print("Crypto signing available")
     except AttributeError:
         print("Crypto signing not compiled in")
@@ -318,10 +318,10 @@ else:
     print("Crypto module not available")
 
 # Check if Dataset is available (requires torch/numpy)
-if hasattr(strata, 'Dataset'):
+if hasattr(hexz, 'Dataset'):
     print("Dataset class available")
 else:
-    print("Dataset requires: pip install strata[torch]")
+    print("Dataset requires: pip install hexz[torch]")
 ```
 
 ## Best Practices

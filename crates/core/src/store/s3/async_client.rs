@@ -19,7 +19,7 @@
 //! This module is only available when the `s3` feature is enabled:
 //! ```toml
 //! [dependencies]
-//! strata-core = { version = "*", features = ["s3"] }
+//! hexz-core = { version = "*", features = ["s3"] }
 //! ```
 //!
 //! # Custom Endpoints (S3-Compatible Storage)
@@ -46,13 +46,13 @@
 //! ```no_run
 //! # #[cfg(feature = "s3")]
 //! # {
-//! use strata_core::store::s3::S3Backend;
-//! use strata_core::store::StorageBackend;
+//! use hexz_core::store::s3::S3Backend;
+//! use hexz_core::store::StorageBackend;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let backend = S3Backend::new(
 //!     "my-snapshots".to_string(),
-//!     "prod/snapshot-001.st".to_string(),
+//!     "prod/snapshot-001.hxz".to_string(),
 //!     "us-east-1".to_string(),
 //!     None // Use AWS endpoint
 //! )?;
@@ -69,19 +69,19 @@ use crate::store::StorageBackend;
 #[cfg(feature = "s3")]
 use bytes::Bytes;
 #[cfg(feature = "s3")]
+use hexz_common::{Error, Result};
+#[cfg(feature = "s3")]
 use s3::bucket::Bucket;
 #[cfg(feature = "s3")]
 use s3::creds::Credentials;
 #[cfg(feature = "s3")]
 use s3::region::Region;
 #[cfg(feature = "s3")]
-use std::io::{Error, ErrorKind};
+use std::io::{Error as IoError, ErrorKind};
 #[cfg(feature = "s3")]
 use std::str::FromStr;
 #[cfg(feature = "s3")]
 use std::sync::Arc;
-#[cfg(feature = "s3")]
-use strata_common::{Result, StrataError};
 #[cfg(feature = "s3")]
 use tokio::runtime::Runtime;
 
@@ -96,14 +96,14 @@ use tokio::runtime::Runtime;
 /// ```no_run
 /// # #[cfg(feature = "s3")]
 /// # {
-/// use strata_core::store::s3::S3Backend;
-/// use strata_core::store::StorageBackend;
+/// use hexz_core::store::s3::S3Backend;
+/// use hexz_core::store::StorageBackend;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// // AWS S3
 /// let backend = S3Backend::new(
 ///     "my-snapshots".to_string(),
-///     "snapshot.st".to_string(),
+///     "snapshot.hxz".to_string(),
 ///     "us-east-1".to_string(),
 ///     None
 /// )?;
@@ -138,7 +138,7 @@ impl S3Backend {
     /// # Parameters
     ///
     /// - `bucket_name`: The S3 bucket name (e.g., `"my-snapshots"`)
-    /// - `key`: The object key within the bucket (e.g., `"prod/snapshot-001.st"`)
+    /// - `key`: The object key within the bucket (e.g., `"prod/snapshot-001.hxz"`)
     /// - `region_name`: AWS region or arbitrary name for custom endpoints (e.g., `"us-east-1"`)
     /// - `endpoint`: Optional custom endpoint URL for S3-compatible storage
     ///   (e.g., `Some("https://minio.example.com:9000".to_string())`)
@@ -148,7 +148,7 @@ impl S3Backend {
         region_name: String,
         endpoint: Option<String>,
     ) -> Result<Self> {
-        let runtime = Runtime::new().map_err(StrataError::Io)?;
+        let runtime = Runtime::new().map_err(Error::Io)?;
 
         let region = if let Some(ep) = endpoint {
             Region::Custom {
@@ -157,7 +157,7 @@ impl S3Backend {
             }
         } else {
             Region::from_str(&region_name).map_err(|e| {
-                StrataError::Io(Error::new(
+                Error::Io(IoError::new(
                     ErrorKind::InvalidInput,
                     format!("Invalid region: {}", e),
                 ))
@@ -165,34 +165,37 @@ impl S3Backend {
         };
 
         let credentials = Credentials::default().map_err(|e| {
-            StrataError::Io(Error::new(
+            Error::Io(IoError::new(
                 ErrorKind::PermissionDenied,
                 format!("Missing credentials: {}", e),
             ))
         })?;
 
         let bucket = Bucket::new(&bucket_name, region, credentials)
-            .map_err(|e| StrataError::Io(Error::other(format!("Bucket error: {}", e))))?
+            .map_err(|e| Error::Io(IoError::other(format!("Bucket error: {}", e))))?
             .with_path_style();
 
         // Perform HEAD request to get size and validate access
         let (head, code) = runtime
             .block_on(async { bucket.head_object(&key).await })
-            .map_err(|e| StrataError::Io(Error::other(format!("S3 Head error: {}", e))))?;
+            .map_err(|e| Error::Io(IoError::other(format!("S3 Head error: {}", e))))?;
 
         if code != 200 {
-            return Err(StrataError::Io(Error::new(
+            return Err(Error::Io(IoError::new(
                 ErrorKind::NotFound,
                 format!("S3 object not found or error: {}", code),
             )));
         }
 
         let len = head.content_length.ok_or_else(|| {
-            StrataError::Io(Error::new(ErrorKind::InvalidData, "Missing Content-Length"))
+            Error::Io(IoError::new(
+                ErrorKind::InvalidData,
+                "Missing Content-Length",
+            ))
         })?;
 
         if len < 0 {
-            return Err(StrataError::Io(Error::new(
+            return Err(Error::Io(IoError::new(
                 ErrorKind::InvalidData,
                 "Negative Content-Length",
             )));
@@ -217,11 +220,11 @@ impl StorageBackend for S3Backend {
                 .bucket
                 .get_object_range(&self.key, offset, Some(end))
                 .await
-                .map_err(|e| StrataError::Io(Error::other(format!("S3 Read error: {}", e))))?;
+                .map_err(|e| Error::Io(IoError::other(format!("S3 Read error: {}", e))))?;
 
             let code = response_data.status_code();
             if code != 200 && code != 206 {
-                return Err(StrataError::Io(Error::other(format!(
+                return Err(Error::Io(IoError::other(format!(
                     "S3 error code: {}",
                     code
                 ))));
@@ -230,7 +233,7 @@ impl StorageBackend for S3Backend {
             let data = response_data.as_slice();
 
             if data.len() != len {
-                return Err(StrataError::Io(Error::new(
+                return Err(Error::Io(IoError::new(
                     ErrorKind::UnexpectedEof,
                     format!("Expected {} bytes, got {}", len, data.len()),
                 )));

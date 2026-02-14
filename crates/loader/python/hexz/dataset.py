@@ -1,6 +1,6 @@
 """ML dataset integration for PyTorch and TensorFlow.
 
-This module provides high-performance dataset classes backed by Strata snapshots,
+This module provides high-performance dataset classes backed by Hexz snapshots,
 with features like smart caching, prefetching, and shuffling.
 """
 
@@ -246,7 +246,7 @@ class Prefetcher:
 
 
 class Dataset(TorchDataset):
-    """High-performance PyTorch dataset backed by Strata.
+    """High-performance PyTorch dataset backed by Hexz.
 
     Features:
     - Smart LRU caching with configurable size
@@ -281,7 +281,7 @@ class Dataset(TorchDataset):
         s3_region: Optional[str] = None,
         endpoint_url: Optional[str] = None,
     ):
-        """Create a Strata-backed dataset.
+        """Create a Hexz-backed dataset.
 
         Args:
             path: Path to .st file (local or s3://)
@@ -303,22 +303,22 @@ class Dataset(TorchDataset):
 
         Example:
             >>> # Simple fixed-size items
-            >>> dataset = strata.Dataset(
-            ...     "imagenet.st",
+            >>> dataset = hexz.Dataset(
+            ...     "imagenet.hxz",
             ...     item_size=150528,  # 224*224*3
             ...     transform=transforms.ToTensor(),
             ... )
             ...
             >>> # Variable-length with index
-            >>> dataset = strata.Dataset(
-            ...     "text.st",
+            >>> dataset = hexz.Dataset(
+            ...     "text.hxz",
             ...     index_file="text.idx",
             ...     output_format="bytes",
             ... )
             ...
             >>> # S3 with caching
-            >>> dataset = strata.Dataset(
-            ...     "s3://bucket/data.st",
+            >>> dataset = hexz.Dataset(
+            ...     "s3://bucket/data.hxz",
             ...     item_size=1024,
             ...     cache_size_mb=2048,
             ...     s3_region="us-west-2",
@@ -553,7 +553,7 @@ class Dataset(TorchDataset):
 
 
 class TFDataset:
-    """TensorFlow tf.data.Dataset wrapper for Strata.
+    """TensorFlow tf.data.Dataset wrapper for Hexz.
 
     .. warning::
         This class is not yet implemented. Initializing it will raise

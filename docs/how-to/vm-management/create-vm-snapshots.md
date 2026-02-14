@@ -1,10 +1,10 @@
 # Create VM Snapshots
 
-**Goal**: Capture the state of a running or stopped VM as a Strata snapshot.
+**Goal**: Capture the state of a running or stopped VM as a Hexz snapshot.
 
 ## Prerequisites
 
-- Strata CLI installed
+- Hexz CLI installed
 - QEMU and KVM configured
 - Source VM disk image or running VM
 
@@ -13,7 +13,7 @@
 ### From Raw Disk Image
 
 ```bash
-strata data pack \
+hexz data pack \
   --disk /path/to/vm-disk.img \
   --output vm-snapshot.st \
   --compression zstd \
@@ -27,7 +27,7 @@ Convert QCOW2 to raw first:
 ```bash
 qemu-img convert -f qcow2 -O raw vm-disk.qcow2 vm-disk.raw
 
-strata data pack \
+hexz data pack \
   --disk vm-disk.raw \
   --output vm-snapshot.st \
   --compression zstd
@@ -39,13 +39,13 @@ Capture only changes since last snapshot:
 
 ```bash
 # Create base snapshot
-strata data pack \
+hexz data pack \
   --disk base-vm.img \
   --output vm-base.st \
   --cdc
 
 # Later, create incremental snapshot
-strata data pack \
+hexz data pack \
   --disk updated-vm.img \
   --output vm-v2.st \
   --parent vm-base.st \
@@ -62,12 +62,12 @@ Boot VM with overlay to capture changes:
 
 ```bash
 # Boot with overlay
-strata vm boot base-vm.st --overlay changes.img
+hexz vm boot base-vm.st --overlay changes.img
 
 # ... use VM ...
 
 # Shutdown VM, then commit changes
-strata vm commit \
+hexz vm commit \
   --base base-vm.st \
   --overlay changes.img \
   --output updated-vm.st
@@ -75,7 +75,7 @@ strata vm commit \
 
 ### Method 2: QEMU Monitor
 
-For VMs not booted via Strata:
+For VMs not booted via Hexz:
 
 ```bash
 # In QEMU monitor
@@ -85,7 +85,7 @@ For VMs not booted via Strata:
 
 # Convert saved snapshot
 qemu-img convert -f qcow2 -O raw vm-disk.qcow2 vm-disk.raw
-strata data pack --disk vm-disk.raw --output vm-snapshot.st
+hexz data pack --disk vm-disk.raw --output vm-snapshot.st
 ```
 
 ## Snapshot with Deduplication
@@ -93,7 +93,7 @@ strata data pack --disk vm-disk.raw --output vm-snapshot.st
 Enable content-defined chunking for better deduplication:
 
 ```bash
-strata data pack \
+hexz data pack \
   --disk vm-disk.img \
   --output vm.st \
   --compression zstd \
@@ -108,7 +108,7 @@ For VMs with distinct regions (OS, data, swap):
 
 ```bash
 # Pack with block size tuned for VM workload
-strata data pack \
+hexz data pack \
   --disk vm-disk.img \
   --output vm.st \
   --block-size 4096  # 4KB for VM (matches page size)
@@ -121,11 +121,11 @@ After creating snapshot, verify integrity:
 
 ```bash
 # Check snapshot info
-strata data info vm-snapshot.st
+hexz data info vm-snapshot.st
 
 # Test mount
 mkdir /tmp/test-mount
-strata vm mount vm-snapshot.st /tmp/test-mount --readonly
+hexz vm mount vm-snapshot.st /tmp/test-mount --readonly
 
 # Verify files
 ls -la /tmp/test-mount/
@@ -145,20 +145,20 @@ ls -lh *.st
 ### Compare Snapshots
 
 ```bash
-strata data diff vm-v1.st vm-v2.st
+hexz data diff vm-v1.st vm-v2.st
 ```
 
 ### Sign Snapshot
 
 ```bash
 # Generate key (once)
-strata sys keygen --output-dir ./keys
+hexz sys keygen --output-dir ./keys
 
 # Sign snapshot
-strata sys sign --key ./keys/private.key vm-snapshot.st
+hexz sys sign --key ./keys/private.key vm-snapshot.st
 
 # Verify
-strata sys verify --key ./keys/public.key vm-snapshot.st
+hexz sys verify --key ./keys/public.key vm-snapshot.st
 ```
 
 ## Best Practices
@@ -167,37 +167,37 @@ strata sys verify --key ./keys/public.key vm-snapshot.st
 2. **Enable CDC**: Always use `--cdc` for better deduplication across versions
 3. **Sign snapshots**: Use signing for production snapshots to verify integrity
 4. **Test snapshots**: Always test boot snapshot before distributing
-5. **Version naming**: Use semantic versioning (vm-ubuntu-v1.0.st, vm-ubuntu-v1.1.st)
+5. **Version naming**: Use semantic versioning (vm-ubuntu-v1.0.st, vm-ubuntu-v1.1.hxz)
 
 ## Example Workflow: Development VM Lifecycle
 
 ```bash
 # 1. Install base OS
-strata vm install \
+hexz vm install \
   --iso ubuntu-22.04.iso \
   --output ubuntu-base.st \
   --disk-size 40G \
   --vnc
 
 # 2. Boot and customize
-strata vm boot ubuntu-base.st --overlay dev-setup.img
+hexz vm boot ubuntu-base.st --overlay dev-setup.img
 # Install tools, configure system, then shutdown
 
 # 3. Commit changes
-strata vm commit \
+hexz vm commit \
   --base ubuntu-base.st \
   --overlay dev-setup.img \
   --output ubuntu-dev-v1.0.st \
   --cdc
 
 # 4. Use for development
-strata vm boot ubuntu-dev-v1.0.st --snapshot  # Changes discarded on exit
+hexz vm boot ubuntu-dev-v1.0.st --snapshot  # Changes discarded on exit
 
 # 5. Create updated version
-strata vm boot ubuntu-dev-v1.0.st --overlay updates.img
+hexz vm boot ubuntu-dev-v1.0.st --overlay updates.img
 # Make updates, then shutdown
 
-strata vm commit \
+hexz vm commit \
   --base ubuntu-dev-v1.0.st \
   --overlay updates.img \
   --output ubuntu-dev-v1.1.st \

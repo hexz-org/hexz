@@ -1,8 +1,8 @@
 """Tests for cache_size parameter functionality."""
 
 import pytest
-import strata
-from strata.reader import _parse_cache_size
+import hexz
+from hexz.reader import _parse_cache_size
 
 
 def test_parse_cache_size_bytes():
@@ -69,7 +69,7 @@ def test_parse_cache_size_invalid():
 def test_reader_with_cache_size(base_snap_path):
     """Test that Reader accepts cache_size parameter."""
     # Should not raise an error
-    reader = strata.Reader(base_snap_path, cache_size="512M")
+    reader = hexz.Reader(base_snap_path, cache_size="512M")
     assert reader is not None
 
     # Read some data to verify it works
@@ -84,24 +84,24 @@ def test_reader_with_different_cache_sizes(base_snap_path, raw_data_path):
         raw_data = f.read()
 
     # Test with small cache
-    reader_small = strata.Reader(base_snap_path, cache_size="64K")
+    reader_small = hexz.Reader(base_snap_path, cache_size="64K")
     data_small = reader_small.read(4096)
     assert data_small == raw_data[:4096]
 
     # Test with large cache
-    reader_large = strata.Reader(base_snap_path, cache_size="10M")
+    reader_large = hexz.Reader(base_snap_path, cache_size="10M")
     data_large = reader_large.read(4096)
     assert data_large == raw_data[:4096]
 
     # Test with no cache_size (default)
-    reader_default = strata.Reader(base_snap_path)
+    reader_default = hexz.Reader(base_snap_path)
     data_default = reader_default.read(4096)
     assert data_default == raw_data[:4096]
 
 
 def test_open_with_cache_size(base_snap_path):
-    """Test that strata.open() accepts cache_size via Reader."""
-    with strata.open(base_snap_path) as reader:
+    """Test that hexz.open() accepts cache_size via Reader."""
+    with hexz.open(base_snap_path) as reader:
         # Default cache size
         data = reader.read(1024)
         assert len(data) == 1024

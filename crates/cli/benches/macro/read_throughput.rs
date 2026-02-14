@@ -1,16 +1,16 @@
-//! Sequential read throughput benchmarks for Strata snapshots.
+//! Sequential read throughput benchmarks for Hexz snapshots.
 //!
 //! Measures read throughput when reading a snapshot sequentially (disk or
 //! memory stream) with varying block sizes and file sizes. Uses shared
 //! helpers to build large input and snapshot files.
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use hexz_cli::cmd::data::pack;
+use hexz_core::File;
+use hexz_core::algo::compression::lz4::Lz4Compressor;
+use hexz_core::api::file::SnapshotStream;
+use hexz_core::store::local::FileBackend;
 use std::sync::Arc;
-use strata_cli::cmd::data::pack;
-use strata_core::StrataFile;
-use strata_core::algo::compression::lz4::Lz4Compressor;
-use strata_core::api::stratafile::SnapshotStream;
-use strata_core::store::local::FileBackend;
 use tempfile::NamedTempFile;
 
 /// Shared utilities for generating and writing large benchmark input files.
@@ -27,7 +27,7 @@ use tempfile::NamedTempFile;
 #[path = "../common.rs"]
 mod common;
 
-/// Constructs an input file and corresponding Strata snapshot for a given size.
+/// Constructs an input file and corresponding Hexz snapshot for a given size.
 ///
 /// **Architectural intent:** Provides a reusable fixture for throughput benchmarks by
 /// invoking the CLI snapshot creation path with only a disk stream, no memory image,
@@ -68,7 +68,7 @@ fn setup_benchmark(size: usize) -> (NamedTempFile, NamedTempFile) {
 ///
 /// **Architectural intent:** Measures how read performance scales with total snapshot
 /// size by constructing multiple `.st` files and timing sequential reads over the
-/// disk stream using the standard `StrataFile` interface.
+/// disk stream using the standard `File` interface.
 ///
 /// **Constraints:** The benchmark currently exercises only two sizes (100 MiB and
 /// 500 MiB) and uses LZ4 compression with a single-threaded reader; it does not model
@@ -93,7 +93,7 @@ fn bench_throughput(c: &mut Criterion) {
             b.iter(|| {
                 let backend = Arc::new(FileBackend::new(&output_path).unwrap());
                 let compressor = Box::new(Lz4Compressor::new());
-                let snap = StrataFile::new(backend, compressor, None).unwrap();
+                let snap = File::new(backend, compressor, None).unwrap();
                 let _ = snap.read_at(SnapshotStream::Disk, 0, s).unwrap();
             })
         });

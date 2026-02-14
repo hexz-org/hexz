@@ -1,7 +1,7 @@
-//! FUSE filesystem implementation for Strata snapshots.
+//! FUSE filesystem implementation for Hexz snapshots.
 //!
 //! This module implements the [`fuser::Filesystem`] trait, translating POSIX
-//! filesystem operations into reads/writes on Strata snapshots and overlays.
+//! filesystem operations into reads/writes on Hexz snapshots and overlays.
 //!
 //! # Architecture
 //!
@@ -37,14 +37,14 @@
 //!         │
 //!    ┌────┴────┐
 //!    ↓         ↓
-//! Overlay  StrataFile
+//! Overlay  File
 //! (if set) (base snapshot)
 //! ```
 //!
 //! # Thread Safety
 //!
-//! The [`Strata`] filesystem struct is `!Send` due to FUSE constraints but
-//! uses `Arc<StrataFile>` internally, allowing the snapshot to be shared
+//! The [`Hexz`] filesystem struct is `!Send` due to FUSE constraints but
+//! uses `Arc<File>` internally, allowing the snapshot to be shared
 //! across threads outside the FUSE context.
 
 mod lookup;
@@ -53,10 +53,10 @@ mod write;
 
 use crate::vfs::{InodeMap, InodeType, Overlay};
 use fuser::{FileAttr, Filesystem};
+use hexz_core::File;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use strata_core::StrataFile;
 
 /// Attribute and entry cache TTL reported to the FUSE kernel module (1 second).
 ///
@@ -72,22 +72,22 @@ const TTL: Duration = Duration::from_secs(1);
 /// when overlay length exceeds the base snapshot.
 const FUSE_BLOCK_SIZE: u64 = 512;
 
-/// FUSE filesystem adapter for Strata snapshots.
+/// FUSE filesystem adapter for Hexz snapshots.
 ///
-/// **Architectural intent:** Combines a `StrataFile`, inode layout, and overlay
+/// **Architectural intent:** Combines a `File`, inode layout, and overlay
 /// state into a single object that satisfies the `Filesystem` trait.
 ///
 /// **Constraints:** The overlay path, if present, is stored for the lifetime
 /// of the mount to allow metadata persistence on drop.
-pub struct Strata {
-    pub(crate) snap: Arc<StrataFile>,
+pub struct Hexz {
+    pub(crate) snap: Arc<File>,
     pub(crate) inodes: InodeMap,
     pub(crate) overlay: Option<Overlay>,
     pub(crate) overlay_path: Option<std::path::PathBuf>,
 }
 
-impl Strata {
-    /// Constructs a FUSE filesystem from a `StrataFile` and optional overlay.
+impl Hexz {
+    /// Constructs a FUSE filesystem from a `File` and optional overlay.
     ///
     /// **Architectural intent:** Encapsulates the logic for opening the
     /// overlay file and building the inode map so that `mount_fs` remains a
@@ -100,7 +100,7 @@ impl Strata {
     /// **Side effects:** Opens the overlay file on disk (if configured) and
     /// clones the snapshot handle, incrementing its reference count.
     pub fn new(
-        snap: Arc<StrataFile>,
+        snap: Arc<File>,
         overlay_path: Option<&Path>,
         uid: u32,
         gid: u32,
@@ -145,7 +145,7 @@ impl Strata {
     }
 }
 
-impl Drop for Strata {
+impl Drop for Hexz {
     /// Persists overlay metadata when the filesystem is dropped.
     ///
     /// **Architectural intent:** Ensures that the set of modified blocks is
@@ -164,7 +164,7 @@ impl Drop for Strata {
     }
 }
 
-impl Filesystem for Strata {
+impl Filesystem for Hexz {
     fn lookup(
         &mut self,
         req: &fuser::Request,

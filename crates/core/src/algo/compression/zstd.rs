@@ -1,7 +1,7 @@
 //! Zstandard (zstd) compression with dictionary training support.
 //!
 //! This module provides a high-performance implementation of the Zstandard compression
-//! algorithm for Strata's block-oriented storage system. Zstandard offers significantly
+//! algorithm for Hexz's block-oriented storage system. Zstandard offers significantly
 //! better compression ratios than LZ4 while maintaining reasonable decompression speeds,
 //! making it ideal for snapshot storage where disk space efficiency is prioritized over
 //! raw throughput.
@@ -73,7 +73,7 @@
 //! - **Decompression**: ~1x dictionary size per decoder instance (~110 KB)
 //! - **Process lifetime**: Dictionaries are leaked to obtain `'static` lifetime
 //!
-//! In Strata, dictionary bytes are typically 110 KB (zstd's recommended maximum), resulting
+//! In Hexz, dictionary bytes are typically 110 KB (zstd's recommended maximum), resulting
 //! in ~450 KB of permanent memory overhead per compressor instance.
 //!
 //! # Compression Level Selection
@@ -156,7 +156,7 @@
 //!   One-time cost amortized over millions of blocks
 //! ```
 //!
-//! Compared to LZ4 (Strata's fast compression option):
+//! Compared to LZ4 (Hexz's fast compression option):
 //! - **Compression ratio**: Zstd-3 is ~1.8x better than LZ4
 //! - **Compression speed**: LZ4 is ~6x faster (~2000 MB/s)
 //! - **Decompression speed**: LZ4 is ~3x faster (~3000 MB/s)
@@ -168,7 +168,7 @@
 //! ## Basic Compression (No Dictionary)
 //!
 //! ```
-//! use strata_core::algo::compression::{Compressor, zstd::ZstdCompressor};
+//! use hexz_core::algo::compression::{Compressor, zstd::ZstdCompressor};
 //!
 //! // Create compressor at default level (3)
 //! let compressor = ZstdCompressor::new(3, None);
@@ -184,7 +184,7 @@
 //! ## Dictionary Training Workflow
 //!
 //! ```no_run
-//! use strata_core::algo::compression::{Compressor, zstd::ZstdCompressor};
+//! use hexz_core::algo::compression::{Compressor, zstd::ZstdCompressor};
 //! use std::fs::File;
 //! use std::io::Read;
 //!
@@ -219,7 +219,7 @@
 //! ## High Compression for Archives
 //!
 //! ```
-//! use strata_core::algo::compression::{Compressor, zstd::ZstdCompressor};
+//! use hexz_core::algo::compression::{Compressor, zstd::ZstdCompressor};
 //!
 //! // Use level 19 for maximum compression (slow)
 //! let compressor = ZstdCompressor::new(19, None);
@@ -237,7 +237,7 @@
 //! ## Buffer Reuse for Hot Paths
 //!
 //! ```
-//! use strata_core::algo::compression::{Compressor, zstd::ZstdCompressor};
+//! use hexz_core::algo::compression::{Compressor, zstd::ZstdCompressor};
 //!
 //! let compressor = ZstdCompressor::new(3, None);
 //! let data = vec![42u8; 65536];
@@ -259,18 +259,18 @@
 //!
 //! # Architectural Integration
 //!
-//! In Strata's architecture:
+//! In Hexz's architecture:
 //! - **Format layer**: Stores compression type in snapshot header
 //! - **Pack operations**: Optionally trains dictionaries during snapshot creation
 //! - **Read operations**: Instantiates compressor with stored dictionary
 //! - **CLI**: Provides `--compression=zstd` flag and `--train-dict` option
 //!
 //! The same dictionary bytes must be available for both compression and decompression,
-//! so Strata embeds trained dictionaries in the snapshot file header.
+//! so Hexz embeds trained dictionaries in the snapshot file header.
 
 use crate::algo::compression::Compressor;
+use hexz_common::{Error, Result};
 use std::io::{Cursor, Read, Write};
-use strata_common::{Result, StrataError};
 use zstd::dict::{DecoderDictionary, EncoderDictionary};
 
 /// Zstandard compressor with optional pre-trained dictionary.
@@ -288,7 +288,7 @@ use zstd::dict::{DecoderDictionary, EncoderDictionary};
 /// 4. Multiple compressor instances can share the same dictionary bytes
 ///
 /// This design trades memory (leaked dictionary) for simplicity and safety. In typical
-/// Strata usage, one compressor instance exists per snapshot file, so the overhead is
+/// Hexz usage, one compressor instance exists per snapshot file, so the overhead is
 /// ~450 KB per open snapshot (110 KB dict × ~4x internal structures).
 ///
 /// # Thread Safety
@@ -308,7 +308,7 @@ use zstd::dict::{DecoderDictionary, EncoderDictionary};
 /// # Examples
 ///
 /// ```
-/// use strata_core::algo::compression::{Compressor, zstd::ZstdCompressor};
+/// use hexz_core::algo::compression::{Compressor, zstd::ZstdCompressor};
 ///
 /// // Create compressor without dictionary
 /// let compressor = ZstdCompressor::new(3, None);
@@ -338,7 +338,7 @@ impl std::fmt::Debug for ZstdCompressor {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::algo::compression::zstd::ZstdCompressor;
+    /// use hexz_core::algo::compression::zstd::ZstdCompressor;
     ///
     /// let compressor = ZstdCompressor::new(5, None);
     /// println!("{:?}", compressor);
@@ -389,7 +389,7 @@ impl ZstdCompressor {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::algo::compression::zstd::ZstdCompressor;
+    /// use hexz_core::algo::compression::zstd::ZstdCompressor;
     ///
     /// // Fast compression, no dictionary
     /// let fast = ZstdCompressor::new(1, None);
@@ -463,7 +463,7 @@ impl ZstdCompressor {
     ///
     /// # Errors
     ///
-    /// Returns `StrataError::Compression` if:
+    /// Returns `Error::Compression` if:
     /// - Samples are empty or too small (less than ~1 KB total)
     /// - `max_size` is invalid (0 or excessively large)
     /// - Internal zstd training algorithm fails (corrupted samples, out of memory)
@@ -496,7 +496,7 @@ impl ZstdCompressor {
     /// ## Basic Training
     ///
     /// ```no_run
-    /// use strata_core::algo::compression::zstd::ZstdCompressor;
+    /// use hexz_core::algo::compression::zstd::ZstdCompressor;
     ///
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// // Collect 20 representative 64 KB blocks
@@ -517,7 +517,7 @@ impl ZstdCompressor {
     /// ## Training from File Samples
     ///
     /// ```no_run
-    /// use strata_core::algo::compression::zstd::ZstdCompressor;
+    /// use hexz_core::algo::compression::zstd::ZstdCompressor;
     /// use std::fs::File;
     /// use std::io::Read;
     ///
@@ -547,7 +547,7 @@ impl ZstdCompressor {
     /// ## Validating Dictionary Quality
     ///
     /// ```no_run
-    /// use strata_core::algo::compression::{Compressor, zstd::ZstdCompressor};
+    /// use hexz_core::algo::compression::{Compressor, zstd::ZstdCompressor};
     ///
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let samples: Vec<Vec<u8>> = vec![vec![42u8; 32768]; 30];
@@ -592,7 +592,7 @@ impl ZstdCompressor {
     /// 110 KB dict), peak memory is ~12 MB.
     pub fn train(samples: &[Vec<u8>], max_size: usize) -> Result<Vec<u8>> {
         zstd::dict::from_samples(samples, max_size)
-            .map_err(|e| StrataError::Compression(format!("Failed to train dict: {}", e)))
+            .map_err(|e| Error::Compression(format!("Failed to train dict: {}", e)))
     }
 
     /// Reads decompressed bytes from a zstd decoder into the provided buffer.
@@ -614,7 +614,7 @@ impl ZstdCompressor {
     ///
     /// # Errors
     ///
-    /// Returns `StrataError::Compression` if the underlying `Read` operation fails due to:
+    /// Returns `Error::Compression` if the underlying `Read` operation fails due to:
     /// - Corrupted compressed data
     /// - I/O errors reading from the source
     /// - Decompression algorithm errors
@@ -632,7 +632,7 @@ impl ZstdCompressor {
         while total < out.len() {
             let n = reader
                 .read(&mut out[total..])
-                .map_err(|e| StrataError::Compression(e.to_string()))?;
+                .map_err(|e| Error::Compression(e.to_string()))?;
             if n == 0 {
                 break;
             }
@@ -652,7 +652,7 @@ impl Compressor for ZstdCompressor {
     /// # Parameters
     ///
     /// * `data` - The uncompressed input data to compress. Can be any size from 0 bytes
-    ///   to multiple gigabytes, though blocks of 64 KB to 1 MB are typical in Strata.
+    ///   to multiple gigabytes, though blocks of 64 KB to 1 MB are typical in Hexz.
     ///
     /// # Returns
     ///
@@ -663,7 +663,7 @@ impl Compressor for ZstdCompressor {
     ///
     /// # Errors
     ///
-    /// Returns `StrataError::Compression` if:
+    /// Returns `Error::Compression` if:
     /// - Internal zstd encoder initialization fails (rare, typically OOM)
     /// - Compression process fails (extremely rare with valid input)
     ///
@@ -688,7 +688,7 @@ impl Compressor for ZstdCompressor {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::algo::compression::{Compressor, zstd::ZstdCompressor};
+    /// use hexz_core::algo::compression::{Compressor, zstd::ZstdCompressor};
     ///
     /// let compressor = ZstdCompressor::new(3, None);
     /// let data = b"Hello, world! Compression test data.";
@@ -709,17 +709,17 @@ impl Compressor for ZstdCompressor {
                 Vec::with_capacity(data.len()),
                 dict,
             )
-            .map_err(|e| StrataError::Compression(e.to_string()))?;
+            .map_err(|e| Error::Compression(e.to_string()))?;
 
             encoder
                 .write_all(data)
-                .map_err(|e| StrataError::Compression(e.to_string()))?;
+                .map_err(|e| Error::Compression(e.to_string()))?;
             encoder
                 .finish()
-                .map_err(|e| StrataError::Compression(e.to_string()))
+                .map_err(|e| Error::Compression(e.to_string()))
         } else {
             zstd::stream::encode_all(Cursor::new(data), self.level)
-                .map_err(|e| StrataError::Compression(e.to_string()))
+                .map_err(|e| Error::Compression(e.to_string()))
         }
     }
 
@@ -742,7 +742,7 @@ impl Compressor for ZstdCompressor {
     ///
     /// # Errors
     ///
-    /// Returns `StrataError::Compression` if:
+    /// Returns `Error::Compression` if:
     /// - `data` is not valid zstd-compressed data (corrupted or wrong format)
     /// - `data` was compressed with a dictionary, but this compressor has no dictionary
     /// - `data` was compressed without a dictionary, but this compressor has a dictionary
@@ -781,7 +781,7 @@ impl Compressor for ZstdCompressor {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::algo::compression::{Compressor, zstd::ZstdCompressor};
+    /// use hexz_core::algo::compression::{Compressor, zstd::ZstdCompressor};
     ///
     /// let compressor = ZstdCompressor::new(3, None);
     /// let original = b"Test data for compression";
@@ -800,16 +800,16 @@ impl Compressor for ZstdCompressor {
         if let Some(dict) = &self.decoder_dict {
             let mut decoder =
                 zstd::stream::read::Decoder::with_prepared_dictionary(Cursor::new(data), dict)
-                    .map_err(|e| StrataError::Compression(e.to_string()))?;
+                    .map_err(|e| Error::Compression(e.to_string()))?;
 
             let mut out = Vec::with_capacity(data.len() * 2);
             decoder
                 .read_to_end(&mut out)
-                .map_err(|e| StrataError::Compression(e.to_string()))?;
+                .map_err(|e| Error::Compression(e.to_string()))?;
             Ok(out)
         } else {
             zstd::stream::decode_all(Cursor::new(data))
-                .map_err(|e| StrataError::Compression(e.to_string()))
+                .map_err(|e| Error::Compression(e.to_string()))
         }
     }
 
@@ -834,7 +834,7 @@ impl Compressor for ZstdCompressor {
     ///
     /// # Errors
     ///
-    /// Returns `StrataError::Compression` if:
+    /// Returns `Error::Compression` if:
     /// - `data` is not valid zstd-compressed data
     /// - Dictionary mismatch (same rules as `decompress()`)
     /// - `out` is too small to hold the decompressed data (buffer overflow protection)
@@ -848,7 +848,7 @@ impl Compressor for ZstdCompressor {
     ///
     /// To determine the required size:
     /// - If you compressed the data, you know the original size
-    /// - If reading from Strata snapshots, the block size is in the index
+    /// - If reading from Hexz snapshots, the block size is in the index
     /// - The zstd frame header contains the content size (can be parsed)
     ///
     /// # Performance
@@ -862,7 +862,7 @@ impl Compressor for ZstdCompressor {
     ///
     /// Recommended usage pattern for hot paths:
     /// ```
-    /// use strata_core::algo::compression::{Compressor, zstd::ZstdCompressor};
+    /// use hexz_core::algo::compression::{Compressor, zstd::ZstdCompressor};
     ///
     /// let compressor = ZstdCompressor::new(3, None);
     /// let original = vec![42u8; 65536]; // 64 KB data
@@ -881,7 +881,7 @@ impl Compressor for ZstdCompressor {
     /// ## Basic Usage
     ///
     /// ```
-    /// use strata_core::algo::compression::{Compressor, zstd::ZstdCompressor};
+    /// use hexz_core::algo::compression::{Compressor, zstd::ZstdCompressor};
     ///
     /// let compressor = ZstdCompressor::new(3, None);
     /// let original = vec![42u8; 1024];
@@ -899,7 +899,7 @@ impl Compressor for ZstdCompressor {
     /// ## Buffer Too Small
     ///
     /// ```no_run
-    /// use strata_core::algo::compression::{Compressor, zstd::ZstdCompressor};
+    /// use hexz_core::algo::compression::{Compressor, zstd::ZstdCompressor};
     ///
     /// let compressor = ZstdCompressor::new(3, None);
     /// let original = vec![42u8; 1024];
@@ -920,12 +920,12 @@ impl Compressor for ZstdCompressor {
         if let Some(dict) = &self.decoder_dict {
             let mut decoder =
                 zstd::stream::read::Decoder::with_prepared_dictionary(Cursor::new(data), dict)
-                    .map_err(|e| StrataError::Compression(e.to_string()))?;
+                    .map_err(|e| Error::Compression(e.to_string()))?;
 
             Self::read_into_buf(&mut decoder, out)
         } else {
             let mut decoder = zstd::stream::read::Decoder::new(Cursor::new(data))
-                .map_err(|e| StrataError::Compression(e.to_string()))?;
+                .map_err(|e| Error::Compression(e.to_string()))?;
 
             Self::read_into_buf(&mut decoder, out)
         }

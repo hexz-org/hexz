@@ -1,15 +1,15 @@
 """
-Demonstrate advanced build options with Strata.
+Demonstrate advanced build options with Hexz.
 """
 
-import strata
+import hexz
 from pathlib import Path
 
 
 def advanced_build_demo(source_dir: str):
     print(f"Building advanced snapshot from {source_dir}...")
 
-    output_file = "advanced.st"
+    output_file = "advanced.hxz"
 
     # Custom profile:
     # Use 'tight' packing but override block size for sequential read optimization
@@ -32,7 +32,7 @@ def advanced_build_demo(source_dir: str):
     # However, we can override block_size and packing mode.
 
     try:
-        meta = strata.build(
+        meta = hexz.build(
             source_dir,
             output_file,
             profile="archival",
@@ -52,7 +52,7 @@ def advanced_build_demo(source_dir: str):
 
     # Inspect detailed metadata
     print("\nDetailed Inspection:")
-    info = strata.inspect(output_file)
+    info = hexz.inspect(output_file)
     print(f"Version: {info.version}")
     print(f"Compression: {info.compression}")
     print(f"Is Compatible: {info.is_compatible}")

@@ -50,12 +50,12 @@
 //! # Examples
 //!
 //! ```no_run
-//! use strata_core::store::local::{FileBackend, MmapBackend};
-//! use strata_core::store::StorageBackend;
+//! use hexz_core::store::local::{FileBackend, MmapBackend};
+//! use hexz_core::store::StorageBackend;
 //! use std::path::Path;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let path = Path::new("/data/snapshot.st");
+//! let path = Path::new("/data/snapshot.hxz");
 //!
 //! // Traditional file I/O
 //! let file_backend = FileBackend::new(path)?;

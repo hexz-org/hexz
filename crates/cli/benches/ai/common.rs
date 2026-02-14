@@ -3,27 +3,27 @@
 //! Provides helper functions for creating synthetic datasets that can be
 //! used across all AI benchmark modules for consistency.
 
+use hexz_cli::cmd::data::pack;
+use hexz_core::File;
+use hexz_core::algo::compression::lz4::Lz4Compressor;
+use hexz_core::store::local::FileBackend;
 use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
-use strata_cli::cmd::data::pack;
-use strata_core::StrataFile;
-use strata_core::algo::compression::lz4::Lz4Compressor;
-use strata_core::store::local::FileBackend;
 use tempfile::NamedTempFile;
 
 /// Creates a synthetic dataset with deterministic, compressible data.
 ///
-/// Generates a Strata snapshot file containing `num_samples` samples,
+/// Generates a Hexz snapshot file containing `num_samples` samples,
 /// each of size `sample_size` bytes. The data is deterministic (based
 /// on sample index) for reproducibility across benchmark runs.
 ///
-/// Returns a tuple of (input_file, output_file, Arc<StrataFile>) where the
+/// Returns a tuple of (input_file, output_file, Arc<File>) where the
 /// files must be kept alive for the duration of the benchmark.
 pub fn create_dataset(
     num_samples: usize,
     sample_size: usize,
-) -> (NamedTempFile, NamedTempFile, Arc<StrataFile>) {
+) -> (NamedTempFile, NamedTempFile, Arc<File>) {
     let input = NamedTempFile::new().unwrap();
     let output = NamedTempFile::new().unwrap();
 
@@ -33,7 +33,7 @@ pub fn create_dataset(
         input.as_file().write_all(&sample).unwrap();
     }
 
-    // Build Strata snapshot with LZ4 compression
+    // Build Hexz snapshot with LZ4 compression
     pack::run(
         Some(input.path().to_path_buf()),
         None,
@@ -54,11 +54,11 @@ pub fn create_dataset(
     (input, output, snapshot)
 }
 
-/// Opens a StrataFile from a path with default settings.
+/// Opens a File from a path with default settings.
 ///
 /// Uses FileBackend for local files and Lz4Compressor for decompression.
-pub fn open_snapshot(path: &Path) -> Arc<StrataFile> {
+pub fn open_snapshot(path: &Path) -> Arc<File> {
     let backend = Arc::new(FileBackend::new(path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    StrataFile::new(backend, compressor, None).unwrap()
+    File::new(backend, compressor, None).unwrap()
 }

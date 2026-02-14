@@ -8,7 +8,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, 
 
 /// Fisher-Yates shuffle implementation using xorshift64 PRNG.
 ///
-/// This is the same deterministic shuffle used by the Strata data loader.
+/// This is the same deterministic shuffle used by the Hexz data loader.
 /// We benchmark it separately to understand its scaling characteristics.
 fn shuffled_indices(count: usize, seed: u64) -> Vec<usize> {
     let mut indices: Vec<usize> = (0..count).collect();
@@ -129,7 +129,7 @@ fn bench_shuffle_determinism(c: &mut Criterion) {
 
 /// Benchmarks shuffle with different PRNG quality levels.
 ///
-/// Compares the xorshift64 PRNG used in Strata against a simpler modulo-based
+/// Compares the xorshift64 PRNG used in Hexz against a simpler modulo-based
 /// approach and a more complex xorshift128 implementation to understand the
 /// performance-quality tradeoff.
 fn bench_shuffle_prng_comparison(c: &mut Criterion) {

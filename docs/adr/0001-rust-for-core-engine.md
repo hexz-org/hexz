@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-Strata requires high-performance, seekable access to compressed data with minimal latency. The system must handle:
+Hexz requires high-performance, seekable access to compressed data with minimal latency. The system must handle:
 
 - Random access to compressed blocks with low latency
 - Zero-copy I/O operations for large datasets
@@ -28,13 +28,13 @@ The fundamental constraint is achieving low-latency block access while maintaini
 
 ## Decision
 
-We will implement the core Strata engine (file format, compression, deduplication, storage backends) in Rust.
+We will implement the core Hexz engine (file format, compression, deduplication, storage backends) in Rust.
 
 The architecture will be:
-- **Core Engine** (`strata-core`): Pure Rust, no language bindings
-- **CLI Tool** (`strata-cli`): Rust binary for system administrators
-- **Python Bindings** (`strata-loader`): PyO3 wrapper exposing engine to Python
-- **FUSE Interface** (`strata-fuse`): Rust using `fuser` crate
+- **Core Engine** (`hexz-core`): Pure Rust, no language bindings
+- **CLI Tool** (`hexz-cli`): Rust binary for system administrators
+- **Python Bindings** (`hexz-loader`): PyO3 wrapper exposing engine to Python
+- **FUSE Interface** (`hexz-fuse`): Rust using `fuser` crate
 
 This allows language-appropriate interfaces (Python for ML, CLI for ops) while keeping performance-critical code in Rust.
 

@@ -1,11 +1,11 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# Strata — Development Container
+# Hexz — Development Container
 # ──────────────────────────────────────────────────────────────────────────────
 # Provides Rust, Python, MinIO, and all system dependencies needed to build,
-# test, and benchmark Strata in an isolated environment.
+# test, and benchmark Hexz in an isolated environment.
 #
-#   docker build -f docker/dev.Dockerfile -t strata-dev .
-#   docker run --rm -it -v $(pwd):/workspace strata-dev
+#   docker build -f docker/dev.Dockerfile -t hexz-dev .
+#   docker run --rm -it -v $(pwd):/workspace hexz-dev
 # ──────────────────────────────────────────────────────────────────────────────
 
 FROM rust:1.85-bookworm AS base

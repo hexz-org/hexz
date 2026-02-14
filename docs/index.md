@@ -1,11 +1,11 @@
-# Strata Documentation
+# Hexz Documentation
 
-**Strata** is a high-performance, seekable compressed filesystem and data streaming engine designed for two primary use cases:
+**Hexz** is a high-performance, seekable compressed filesystem and data streaming engine designed for two primary use cases:
 
 1. **AI/ML Data Loading** — Stream massive datasets from S3 directly to GPU, bypassing Python GIL
 2. **VM Management** — Boot entire operating systems over network in milliseconds
 
-Built in Rust with Python bindings (PyO3), Strata provides random access to compressed data with sub-millisecond latency.
+Built in Rust with Python bindings (PyO3), Hexz provides random access to compressed data with sub-millisecond latency.
 
 ## Quick Navigation by Role
 
@@ -18,7 +18,7 @@ Built in Rust with Python bindings (PyO3), Strata provides random access to comp
 4. Optimize: [Optimize PyTorch DataLoader](how-to/ml-workflows/optimize-pytorch-dataloader.md)
 5. Reference: [Python API](reference/python-api.md)
 
-**Why Strata?** [Understand the problem we solve](explanation/why-strata-for-ml.md)
+**Why Hexz?** [Understand the problem we solve](explanation/why-hexz-for-ml.md)
 
 ### I'm a Systems Engineer / VM User
 **Goal**: Manage VM images efficiently
@@ -36,14 +36,14 @@ Built in Rust with Python bindings (PyO3), Strata provides random access to comp
 2. Architecture: [System Architecture](explanation/architecture.md)
 3. Decisions: See ADR section below for architectural decisions
 4. Roadmap: [Development Roadmap](project-docs/ROADMAP.md)
-5. Code: [GitHub Repository](https://github.com/Alethic-Systems/strata)
+5. Code: [GitHub Repository](https://github.com/Alethic-Systems/hexz)
 
 ### I Need Quick Help
 **Goal**: Solve specific problems now
 
 - [Troubleshooting Guide](how-to/troubleshooting.md)
 - [Performance Tuning](how-to/performance-tuning.md)
-- [Installation Issues](how-to/cli-usage/install-strata.md)
+- [Installation Issues](how-to/cli-usage/install-hexz.md)
 - [CLI Reference](reference/cli-reference.md)
 - [Python API Reference](reference/python-api.md)
 
@@ -56,7 +56,7 @@ This documentation follows the [Diátaxis framework](https://diataxis.fr/), orga
 ### Tutorials (Learning-Oriented)
 *Learn by doing — step-by-step lessons for beginners*
 
-- [Getting Started with Strata](tutorials/getting-started.md) — Your first snapshot in 10 minutes
+- [Getting Started with Hexz](tutorials/getting-started.md) — Your first snapshot in 10 minutes
 - [Your First ML Pipeline](tutorials/first-ml-pipeline.md) — Stream images to PyTorch
 - [Booting Your First VM](tutorials/booting-your-first-vm.md) — Boot an OS from a snapshot
 - [Understanding Compression](tutorials/understanding-compression.md) — Hands-on compression concepts
@@ -78,7 +78,7 @@ This documentation follows the [Diátaxis framework](https://diataxis.fr/), orga
 
 **CLI Usage**:
 - [Pack Datasets](how-to/cli-usage/pack-datasets.md)
-- [Install Strata](how-to/cli-usage/install-strata.md)
+- [Install Hexz](how-to/cli-usage/install-hexz.md)
 - [Verify Signatures](how-to/cli-usage/verify-signatures.md)
 
 **General**:
@@ -98,8 +98,8 @@ This documentation follows the [Diátaxis framework](https://diataxis.fr/), orga
 ### Explanation (Understanding-Oriented)
 *Understand concepts — design rationale and deep dives*
 
-- [System Architecture](explanation/architecture.md) — How Strata works internally
-- [Why Strata for ML](explanation/why-strata-for-ml.md) — Problem/solution explanation
+- [System Architecture](explanation/architecture.md) — How Hexz works internally
+- [Why Hexz for ML](explanation/why-hexz-for-ml.md) — Problem/solution explanation
 - [Deduplication Deep Dive](explanation/deduplication-deep-dive.md) — FastCDC and BLAKE3
 - [Compression Strategy](explanation/compression-strategy.md) — Block vs file compression
 - [Content-Defined Chunking](explanation/content-defined-chunking.md) — CDC concepts
@@ -151,11 +151,11 @@ Think of it as "tar.gz with random access" or "VM disk image but compressed".
 
 **ML Training**:
 ```python
-import strata
+import hexz
 import torch
 
 # Stream from S3
-dataset = strata.open("s3://bucket/imagenet.st")
+dataset = hexz.open("s3://bucket/imagenet.hxz")
 loader = torch.utils.data.DataLoader(dataset, batch_size=32)
 
 for batch in loader:
@@ -165,7 +165,7 @@ for batch in loader:
 **VM Boot**:
 ```bash
 # Boot Ubuntu directly from compressed snapshot
-strata vm boot ubuntu.st --ram 4G --net
+hexz vm boot ubuntu.st --ram 4G --net
 ```
 
 ---
@@ -176,27 +176,27 @@ strata vm boot ubuntu.st --ram 4G --net
 
 ```bash
 # From source
-git clone https://github.com/Alethic-Systems/strata.git
-cd strata
+git clone https://github.com/Alethic-Systems/hexz.git
+cd hexz
 make develop
 
 # Verify
-python -c "import strata; print(strata.__version__)"
+python -c "import hexz; print(hexz.__version__)"
 ```
 
 ### CLI Tool (VM Use Case)
 
 ```bash
 # From source
-git clone https://github.com/Alethic-Systems/strata.git
-cd strata
+git clone https://github.com/Alethic-Systems/hexz.git
+cd hexz
 make rust
 
 # Verify
-./target/release/strata --version
+./target/release/hexz --version
 ```
 
-See [Installation Guide](how-to/cli-usage/install-strata.md) for detailed instructions.
+See [Installation Guide](how-to/cli-usage/install-hexz.md) for detailed instructions.
 
 ---
 
@@ -206,12 +206,12 @@ See [Installation Guide](how-to/cli-usage/install-strata.md) for detailed instru
 
 **Python**:
 ```python
-import strata
+import hexz
 
 # Pack directory into snapshot
-strata.build(
+hexz.build(
     "/data/imagenet",
-    "imagenet.st",
+    "imagenet.hxz",
     compression="zstd",
     cdc=True  # Enable deduplication
 )
@@ -219,7 +219,7 @@ strata.build(
 
 **CLI**:
 ```bash
-strata data pack \\
+hexz data pack \\
   --disk /data/imagenet \\
   --output imagenet.st \\
   --compression zstd \\
@@ -229,10 +229,10 @@ strata data pack \\
 ### Stream from S3
 
 ```python
-import strata
+import hexz
 
 # Open snapshot from S3 (index downloads in seconds)
-with strata.open("s3://bucket/dataset.st", s3_region="us-west-2") as reader:
+with hexz.open("s3://bucket/dataset.hxz", s3_region="us-west-2") as reader:
     # Read sample at offset 1MB
     data = reader.read(4096, offset=1024*1024)
 ```
@@ -240,7 +240,7 @@ with strata.open("s3://bucket/dataset.st", s3_region="us-west-2") as reader:
 ### Boot a VM
 
 ```bash
-strata vm boot ubuntu.st \\
+hexz vm boot ubuntu.st \\
   --ram 4G \\
   --cpus 4 \\
   --net \\
@@ -268,29 +268,29 @@ See [Benchmarks](project-docs/BENCHMARKS.md) for methodology and full results.
 
 ## Community & Support
 
-- **GitHub**: [Alethic-Systems/strata](https://github.com/Alethic-Systems/strata)
-- **Issues**: [Report bugs or request features](https://github.com/Alethic-Systems/strata/issues)
-- **Discussions**: [Ask questions](https://github.com/Alethic-Systems/strata/discussions)
+- **GitHub**: [Alethic-Systems/hexz](https://github.com/Alethic-Systems/hexz)
+- **Issues**: [Report bugs or request features](https://github.com/Alethic-Systems/hexz/issues)
+- **Discussions**: [Ask questions](https://github.com/Alethic-Systems/hexz/discussions)
 - **Contributing**: See [CONTRIBUTING.md](project-docs/CONTRIBUTING.md)
 
 ---
 
 ## License
 
-Apache License 2.0 — See [LICENSE](https://github.com/Alethic-Systems/strata/blob/main/LICENSE)
+Apache License 2.0 — See [LICENSE](https://github.com/Alethic-Systems/hexz/blob/main/LICENSE)
 
 ---
 
 ## What to Read Next
 
-**New to Strata?**
+**New to Hexz?**
 → Start with [Getting Started Tutorial](tutorials/getting-started.md)
 
 **ML Engineer?**
-→ Read [Why Strata for ML](explanation/why-strata-for-ml.md), then [First ML Pipeline](tutorials/first-ml-pipeline.md)
+→ Read [Why Hexz for ML](explanation/why-hexz-for-ml.md), then [First ML Pipeline](tutorials/first-ml-pipeline.md)
 
 **Systems Engineer?**
 → Try [Booting Your First VM](tutorials/booting-your-first-vm.md)
 
 **Need help?**
-→ Check [Troubleshooting](how-to/troubleshooting.md) or [open an issue](https://github.com/Alethic-Systems/strata/issues)
+→ Check [Troubleshooting](how-to/troubleshooting.md) or [open an issue](https://github.com/Alethic-Systems/hexz/issues)

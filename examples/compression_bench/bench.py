@@ -1,10 +1,10 @@
 """
-Benchmark different Strata build profiles.
+Benchmark different Hexz build profiles.
 """
 
 import time
 import os
-import strata
+import hexz
 from pathlib import Path
 
 
@@ -15,13 +15,13 @@ def benchmark_profiles(source_dir: str):
     results = []
 
     for profile in profiles:
-        output_file = f"bench_{profile}.st"
+        output_file = f"bench_{profile}.hxz"
         print(f"\nTesting profile: {profile}")
 
         # Measure build time
         start_time = time.time()
         try:
-            meta = strata.build(source_dir, output_file, profile=profile)
+            meta = hexz.build(source_dir, output_file, profile=profile)
         except Exception as e:
             print(f"Build failed: {e}")
             continue
@@ -29,7 +29,7 @@ def benchmark_profiles(source_dir: str):
 
         # Measure read time (sequential scan)
         start_read = time.time()
-        with strata.open(output_file) as reader:
+        with hexz.open(output_file) as reader:
             # Read in 1MB chunks (uses read(buffer=...) internally)
             for _ in reader.iter_chunks(1024 * 1024):
                 pass

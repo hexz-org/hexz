@@ -81,13 +81,13 @@ def build(
 
     Example:
         >>> # ML dataset with defaults
-        >>> meta = strata.build("imagenet/", "imagenet.st", profile="ml")
+        >>> meta = hexz.build("imagenet/", "imagenet.hxz", profile="ml")
         >>> print(f"Compressed to {meta.size_compressed / 1e9:.1f} GB")
         ...
         >>> # Archival with encryption
-        >>> meta = strata.build(
+        >>> meta = hexz.build(
         ...     "backup/",
-        ...     "backup.st",
+        ...     "backup.hxz",
         ...     profile="archival",
         ...     encrypt=True,
         ...     password="secret",

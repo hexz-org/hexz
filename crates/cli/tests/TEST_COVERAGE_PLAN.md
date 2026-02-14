@@ -2,7 +2,7 @@
 
 ## Current Coverage: 14.74%
 
-This document outlines the test strategy to bring Strata to production-ready coverage (>60%).
+This document outlines the test strategy to bring Hexz to production-ready coverage (>60%).
 
 ## Coverage Targets by Module
 

@@ -16,7 +16,7 @@
 //! ## ML Training Data Randomization
 //!
 //! ```rust
-//! use strata_loader::engine::shuffle::shuffled_indices;
+//! use hexz_loader::engine::shuffle::shuffled_indices;
 //!
 //! // Shuffle 100,000 training samples with seed 42
 //! let indices = shuffled_indices(100_000, 42);
@@ -31,7 +31,7 @@
 //! ## Reproducible Experiments
 //!
 //! ```rust
-//! use strata_loader::engine::shuffle::shuffled_indices;
+//! use hexz_loader::engine::shuffle::shuffled_indices;
 //!
 //! // Same seed = same shuffle across different runs/machines
 //! let run1 = shuffled_indices(1000, 12345);
@@ -49,7 +49,7 @@
 //! within an epoch. Using a deterministic shuffle with a shared seed ensures this:
 //!
 //! ```rust
-//! use strata_loader::engine::shuffle::shuffled_indices;
+//! use hexz_loader::engine::shuffle::shuffled_indices;
 //!
 //! let epoch = 5;
 //! let seed = 42 + epoch as u64;  // Per-epoch seed
@@ -162,7 +162,7 @@
 /// ## Basic Usage
 ///
 /// ```rust
-/// use strata_loader::engine::shuffle::shuffled_indices;
+/// use hexz_loader::engine::shuffle::shuffled_indices;
 ///
 /// let indices = shuffled_indices(10, 42);
 /// assert_eq!(indices.len(), 10);
@@ -179,7 +179,7 @@
 /// ## Reproducibility Across Runs
 ///
 /// ```rust
-/// use strata_loader::engine::shuffle::shuffled_indices;
+/// use hexz_loader::engine::shuffle::shuffled_indices;
 ///
 /// let run1 = shuffled_indices(1000, 12345);
 /// let run2 = shuffled_indices(1000, 12345);
@@ -189,7 +189,7 @@
 /// ## Different Seeds Produce Different Shuffles
 ///
 /// ```rust
-/// use strata_loader::engine::shuffle::shuffled_indices;
+/// use hexz_loader::engine::shuffle::shuffled_indices;
 ///
 /// let shuffle_a = shuffled_indices(100, 1);
 /// let shuffle_b = shuffled_indices(100, 2);
@@ -199,7 +199,7 @@
 /// ## ML Training with Per-Epoch Shuffling
 ///
 /// ```rust
-/// use strata_loader::engine::shuffle::shuffled_indices;
+/// use hexz_loader::engine::shuffle::shuffled_indices;
 ///
 /// let base_seed = 42;
 /// let num_samples = 50_000;
@@ -219,7 +219,7 @@
 /// ## Empty and Edge Cases
 ///
 /// ```rust
-/// use strata_loader::engine::shuffle::shuffled_indices;
+/// use hexz_loader::engine::shuffle::shuffled_indices;
 ///
 /// // Empty shuffle
 /// let empty = shuffled_indices(0, 42);

@@ -1,10 +1,10 @@
 # Pack Datasets with the CLI
 
-**Goal**: Convert directories, disk images, or files into compressed Strata snapshots using the command-line tool.
+**Goal**: Convert directories, disk images, or files into compressed Hexz snapshots using the command-line tool.
 
 ## Prerequisites
 
-- Strata CLI installed (`make rust`)
+- Hexz CLI installed (`make rust`)
 - Source data ready (directory, disk image, or files)
 
 ## Basic Usage
@@ -12,7 +12,7 @@
 ### Pack a Single File
 
 ```bash
-strata data pack \\
+hexz data pack \\
   --disk /path/to/file.img \\
   --output snapshot.st \\
   --compression lz4
@@ -21,9 +21,9 @@ strata data pack \\
 ### Pack a Directory
 
 ```bash
-strata data pack \\
+hexz data pack \\
   --disk /path/to/dataset/ \\
-  --output dataset.st \\
+  --output dataset.hxz \\
   --compression zstd \\
   --block-size 131072
 ```
@@ -34,7 +34,7 @@ strata data pack \\
 
 **LZ4** (fast decompression):
 ```bash
-strata data pack --disk data/ --output out.st --compression lz4
+hexz data pack --disk data/ --output out.st --compression lz4
 ```
 - Speed: ~2GB/s decompression
 - Ratio: 2-3×
@@ -42,7 +42,7 @@ strata data pack --disk data/ --output out.st --compression lz4
 
 **Zstandard** (better compression):
 ```bash
-strata data pack --disk data/ --output out.st --compression zstd --compression-level 9
+hexz data pack --disk data/ --output out.st --compression zstd --compression-level 9
 ```
 - Speed: ~500MB/s decompression
 - Ratio: 3-5×
@@ -52,21 +52,21 @@ strata data pack --disk data/ --output out.st --compression zstd --compression-l
 
 ```bash
 # Small blocks (faster random access, less compression)
-strata data pack --disk data/ --output out.st --block-size 16384   # 16KB
+hexz data pack --disk data/ --output out.st --block-size 16384   # 16KB
 
 # Default (balanced)
-strata data pack --disk data/ --output out.st --block-size 65536   # 64KB
+hexz data pack --disk data/ --output out.st --block-size 65536   # 64KB
 
 # Large blocks (better compression, slower random access)
-strata data pack --disk data/ --output out.st --block-size 262144  # 256KB
+hexz data pack --disk data/ --output out.st --block-size 262144  # 256KB
 ```
 
 ### Enable Deduplication
 
 ```bash
-strata data pack \\
+hexz data pack \\
   --disk data/ \\
-  --output dataset.st \\
+  --output dataset.hxz \\
   --cdc  # Content-Defined Chunking
 ```
 
@@ -81,10 +81,10 @@ Use `--cdc` when:
 
 ```bash
 # Generate key
-strata sys keygen --output-dir ./keys
+hexz sys keygen --output-dir ./keys
 
 # Pack with encryption
-strata data pack \\
+hexz data pack \\
   --disk sensitive-data/ \\
   --output encrypted.st \\
   --encrypt \\
@@ -95,21 +95,21 @@ strata data pack \\
 
 ```bash
 # Pack and sign
-strata data pack --disk data/ --output signed.st
-strata sys sign --key ./keys/private.key signed.st
+hexz data pack --disk data/ --output signed.st
+hexz sys sign --key ./keys/private.key signed.st
 
 # Verify
-strata sys verify --key ./keys/public.key signed.st
+hexz sys verify --key ./keys/public.key signed.st
 ```
 
 ### Parent Snapshots (Incremental)
 
 ```bash
 # Create base snapshot
-strata data pack --disk v1/ --output dataset-v1.st --cdc
+hexz data pack --disk v1/ --output dataset-v1.st --cdc
 
 # Create incremental update (references parent)
-strata data pack \\
+hexz data pack \\
   --disk v2/ \\
   --output dataset-v2.st \\
   --parent dataset-v1.st \\
@@ -119,7 +119,7 @@ strata data pack \\
 ## View Snapshot Info
 
 ```bash
-strata data info snapshot.st
+hexz data info snapshot.st
 ```
 
 Output:
@@ -138,5 +138,5 @@ Deduplication: Enabled
 ## See Also
 
 - [Reference: CLI Commands](../../reference/cli-reference.md)
-- [How-To: Install Strata](install-strata.md)
+- [How-To: Install Hexz](install-hexz.md)
 - [Tutorial: Getting Started](../../tutorials/getting-started.md)

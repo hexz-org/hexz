@@ -1,6 +1,6 @@
-# Why Strata for Machine Learning
+# Why Hexz for Machine Learning
 
-This document explains the fundamental problems Strata solves for ML engineering and why traditional approaches fall short.
+This document explains the fundamental problems Hexz solves for ML engineering and why traditional approaches fall short.
 
 ## The Data Bottleneck Problem
 
@@ -75,9 +75,9 @@ The fundamental tension: **compression saves storage/bandwidth** but **random ac
 
 **Reality**: Works for specific use cases (medical imaging), not general-purpose.
 
-## The Strata Approach
+## The Hexz Approach
 
-Strata is designed from the ground up for ML workloads, combining:
+Hexz is designed from the ground up for ML workloads, combining:
 
 1. **Block-level compression** (random access with good ratios)
 2. **Streaming from S3/HTTP** (train without local copies)
@@ -88,7 +88,7 @@ Strata is designed from the ground up for ML workloads, combining:
 
 ```mermaid
 graph TB
-    S3[S3 Bucket<br/>1.3TB Compressed] -->|Range Requests| Engine[Strata Engine<br/>Rust]
+    S3[S3 Bucket<br/>1.3TB Compressed] -->|Range Requests| Engine[Hexz Engine<br/>Rust]
     Engine -->|Decompress| Cache[LRU Cache<br/>256MB]
     Cache -->|Zero-Copy| PyTorch[PyTorch DataLoader]
     PyTorch -->|Batches| GPU[GPU Training]
@@ -108,7 +108,7 @@ graph TB
 
 **Scenario**: Train ResNet-50 on ImageNet-21K (1.3TB dataset) from S3
 
-| Metric | WebDataset | Strata | Improvement |
+| Metric | WebDataset | Hexz | Improvement |
 |--------|-----------|--------|-------------|
 | First epoch time | 45min | 38min | 1.18× |
 | Second epoch time | 45min | 12min | 3.75× |
@@ -116,9 +116,9 @@ graph TB
 | Setup time | 2 hours (download) | 2 seconds (index) | 3600× |
 
 **Why the difference**:
-- **Epoch 1**: WebDataset streams sequentially (fast), Strata fetches randomly (slightly slower but caches)
-- **Epoch 2**: WebDataset re-streams (same time), Strata hits cache (much faster)
-- **Storage**: WebDataset needs full local copy, Strata caches working set only
+- **Epoch 1**: WebDataset streams sequentially (fast), Hexz fetches randomly (slightly slower but caches)
+- **Epoch 2**: WebDataset re-streams (same time), Hexz hits cache (much faster)
+- **Storage**: WebDataset needs full local copy, Hexz caches working set only
 
 ## Design Decisions
 
@@ -128,7 +128,7 @@ graph TB
 - High compression ratio (uses entire file context)
 - No random access (must decompress from start)
 
-**Block-level compression** (Strata):
+**Block-level compression** (Hexz):
 - Moderate compression ratio (each block compressed independently)
 - True random access (decompress only needed blocks)
 
@@ -162,15 +162,15 @@ Python's GIL (Global Interpreter Lock) prevents true parallelism. With 8 DataLoa
 - Workers run sequentially due to GIL
 - 8 workers ≈ 1.2× speedup (context switching overhead)
 
-**Rust Core (Strata)**:
+**Rust Core (Hexz)**:
 - Workers decompress in parallel (GIL released during I/O)
 - 8 workers = 7.5× speedup
 
-**Measured**: Training ResNet-50 with 8 workers: 850 img/s (Python) vs 6400 img/s (Strata).
+**Measured**: Training ResNet-50 with 8 workers: 850 img/s (Python) vs 6400 img/s (Hexz).
 
 ## Comparison Matrix
 
-| Feature | Individual Files | tar.gz | WebDataset | HDF5 | **Strata** |
+| Feature | Individual Files | tar.gz | WebDataset | HDF5 | **Hexz** |
 |---------|-----------------|--------|-----------|------|---------|
 | Random Access | ✓ | ✗ | Partial | ✓ | ✓ |
 | Compression | ✗ | ✓✓✓ | ✓✓ | ✓✓ | ✓✓ |
@@ -180,9 +180,9 @@ Python's GIL (Global Interpreter Lock) prevents true parallelism. With 8 DataLoa
 | Update Cost | Low | High | Medium | Medium | Low |
 | Multi-Version | ✗ | ✗ | ✗ | ✗ | ✓ |
 
-## When NOT to Use Strata
+## When NOT to Use Hexz
 
-Strata is optimized for specific ML scenarios. It may not be ideal when:
+Hexz is optimized for specific ML scenarios. It may not be ideal when:
 
 1. **Sequential-only access**: If you never shuffle and always read sequentially, WebDataset tar shards may be simpler
 2. **Small datasets (<1GB)**: Overhead of index not worth it, just use folders
@@ -191,7 +191,7 @@ Strata is optimized for specific ML scenarios. It may not be ideal when:
 
 ## The Future of ML Data Loading
 
-Strata represents a shift in thinking:
+Hexz represents a shift in thinking:
 
 **Old paradigm**: Download everything, then train
 **New paradigm**: Stream what you need, cache what's hot
@@ -201,7 +201,7 @@ As datasets grow to petabyte scale and training moves to the cloud, the old appr
 - Downloading takes days
 - Storage costs dominate compute costs
 
-Strata enables:
+Hexz enables:
 - **Instant training start** (download index, not data)
 - **Cost efficiency** (pay for storage once, use from many instances)
 - **Version management** (deduplicate across versions)

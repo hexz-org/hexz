@@ -1,11 +1,11 @@
-"""Cryptographic operations for Strata snapshots.
+"""Cryptographic operations for Hexz snapshots.
 
 This module provides key generation, signing, and verification functions
-for securing Strata snapshots with Ed25519 signatures.
+for securing Hexz snapshots with Ed25519 signatures.
 """
 
 from typing import Optional
-from . import strata_loader
+from . import hexz_loader
 from .typing import PathLike
 
 
@@ -17,7 +17,7 @@ def keygen(private_key: PathLike, public_key: PathLike) -> None:
         public_key: Path where public key will be written
 
     Example:
-        >>> from strata import crypto
+        >>> from hexz import crypto
         >>> crypto.keygen("snapshot.key", "snapshot.pub")
         >>> # Remember to set restrictive permissions on the private key
     """
@@ -27,7 +27,7 @@ def keygen(private_key: PathLike, public_key: PathLike) -> None:
     # Create a temporary directory for key generation
     with tempfile.TemporaryDirectory() as temp_dir:
         # Generate keypair in temp directory
-        priv_path, pub_path = strata_loader.keygen(temp_dir)
+        priv_path, pub_path = hexz_loader.keygen(temp_dir)
 
         # Move generated keys to desired locations
         shutil.move(priv_path, str(private_key))
@@ -42,10 +42,10 @@ def sign(snapshot: PathLike, private_key: PathLike) -> None:
         private_key: Path to private key file
 
     Example:
-        >>> from strata import crypto
-        >>> crypto.sign("snapshot.st", "snapshot.key")
+        >>> from hexz import crypto
+        >>> crypto.sign("snapshot.hxz", "snapshot.key")
     """
-    strata_loader.sign_image(str(snapshot), str(private_key))
+    hexz_loader.sign_image(str(snapshot), str(private_key))
 
 
 def verify(
@@ -64,17 +64,17 @@ def verify(
         True if signature is valid, False otherwise
 
     Example:
-        >>> from strata import crypto
-        >>> if crypto.verify("snapshot.st", "snapshot.pub"):
+        >>> from hexz import crypto
+        >>> if crypto.verify("snapshot.hxz", "snapshot.pub"):
         ...     print("Signature valid!")
         ... else:
         ...     print("Signature verification failed!")
     """
     try:
         if signature:
-            strata_loader.verify_image(str(snapshot), str(public_key), str(signature))
+            hexz_loader.verify_image(str(snapshot), str(public_key), str(signature))
         else:
-            strata_loader.verify_image(str(snapshot), str(public_key))
+            hexz_loader.verify_image(str(snapshot), str(public_key))
         # verify_image returns None on success, raises on failure
         return True
     except Exception:

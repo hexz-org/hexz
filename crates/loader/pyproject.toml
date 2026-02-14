@@ -3,7 +3,7 @@ requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "strata"
+name = "hexz"
 version = "0.1.0-alpha"
 description = "High-performance snapshot storage library with compression and encryption"
 authors = [{name = "Will"}]
@@ -55,7 +55,7 @@ test = [
 
 [tool.maturin]
 python-source = "python"
-module-name = "strata.strata_loader"
+module-name = "hexz.hexz_loader"
 features = ["pyo3/extension-module"]
 
 [tool.pytest.ini_options]

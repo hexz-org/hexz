@@ -1,8 +1,8 @@
-//! High-level operations for Strata snapshot files.
+//! High-level operations for Hexz snapshot files.
 //!
 //! This module provides the orchestration layer that combines low-level format,
 //! storage, and algorithm primitives into complete end-to-end workflows for
-//! creating, reading, and modifying Strata archives.
+//! creating, reading, and modifying Hexz archives.
 //!
 //! # Architecture
 //!
@@ -55,15 +55,15 @@
 //!
 //! # Usage from Python
 //!
-//! The operations in this module are exposed to Python via the `strata_loader` extension:
+//! The operations in this module are exposed to Python via the `hexz_loader` extension:
 //!
 //! ```python
-//! from strata import pack
+//! from hexz import pack
 //!
 //! # Create archive from Python
 //! pack(
 //!     disk="/path/to/disk.img",
-//!     output="snapshot.st",
+//!     output="snapshot.hxz",
 //!     compression="lz4",
 //!     encrypt=False
 //! )

@@ -1,6 +1,6 @@
 # Configuration Options
 
-Strata configuration via environment variables and API parameters.
+Hexz configuration via environment variables and API parameters.
 
 ## Environment Variables
 
@@ -11,17 +11,17 @@ Strata configuration via environment variables and API parameters.
 - `AWS_DEFAULT_REGION` — Default AWS region (e.g., `us-west-2`)
 - `AWS_PROFILE` — AWS CLI profile name
 
-### Strata Configuration
+### Hexz Configuration
 
-- `STRATA_CACHE_DIR` — Default cache directory (default: `$TMPDIR/strata-cache`)
-- `STRATA_CACHE_SIZE` — Default cache size in bytes (default: `268435456` = 256MB)
-- `STRATA_LOG_LEVEL` — Logging level: `error`, `warn`, `info`, `debug`, `trace`
+- `HEXZ_CACHE_DIR` — Default cache directory (default: `$TMPDIR/hexz-cache`)
+- `HEXZ_CACHE_SIZE` — Default cache size in bytes (default: `268435456` = 256MB)
+- `HEXZ_LOG_LEVEL` — Logging level: `error`, `warn`, `info`, `debug`, `trace`
 
 ### Example
 
 ```bash
-export STRATA_CACHE_SIZE=$((2 * 1024 * 1024 * 1024))  # 2GB
-export STRATA_LOG_LEVEL=debug
+export HEXZ_CACHE_SIZE=$((2 * 1024 * 1024 * 1024))  # 2GB
+export HEXZ_LOG_LEVEL=debug
 export AWS_DEFAULT_REGION=us-west-2
 
 python train.py
@@ -29,10 +29,10 @@ python train.py
 
 ## Python API Parameters
 
-### `strata.open()` Read Mode
+### `hexz.open()` Read Mode
 
 ```python
-strata.open(
+hexz.open(
     path,
     mode='r',
     # S3 options
@@ -47,10 +47,10 @@ strata.open(
 )
 ```
 
-### `strata.open()` Write Mode
+### `hexz.open()` Write Mode
 
 ```python
-strata.open(
+hexz.open(
     path,
     mode='w',
     # Compression
@@ -73,15 +73,15 @@ CLI options override environment variables.
 
 ```bash
 # Verbosity
-strata -v ...      # Verbose
-strata -vv ...     # Very verbose (debug)
-strata -vvv ...    # Trace level
-strata --quiet ... # Suppress output
+hexz -v ...      # Verbose
+hexz -vv ...     # Very verbose (debug)
+hexz -vvv ...    # Trace level
+hexz --quiet ... # Suppress output
 
 # Help
-strata --help
-strata data --help
-strata data pack --help
+hexz --help
+hexz data --help
+hexz data pack --help
 ```
 
 ## Configuration File (Future)
@@ -89,11 +89,11 @@ strata data pack --help
 Not yet implemented. Planned format:
 
 ```toml
-# ~/.config/strata/config.toml
+# ~/.config/hexz/config.toml
 
 [cache]
 size = 2147483648  # 2GB
-dir = "/tmp/strata-cache"
+dir = "/tmp/hexz-cache"
 
 [s3]
 region = "us-west-2"

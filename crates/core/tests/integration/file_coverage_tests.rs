@@ -1,4 +1,4 @@
-//! Tests targeting uncovered code paths in stratafile.rs:
+//! Tests targeting uncovered code paths in file.rs:
 //! - CRC32 corruption detection
 //! - Thin snapshot parent chain fallback (BLOCK_OFFSET_PARENT)
 //! - Zero-length/sparse block handling
@@ -7,17 +7,17 @@
 use super::common;
 use common::*;
 
+use hexz_core::algo::compression::lz4::Lz4Compressor;
+use hexz_core::format::header::Header;
+use hexz_core::format::index::MasterIndex;
+use hexz_core::format::magic::HEADER_SIZE;
+use hexz_core::ops::pack::{PackConfig, pack_snapshot};
+use hexz_core::store::StorageBackend;
+use hexz_core::store::local::FileBackend;
+use hexz_core::{File, SnapshotStream};
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::sync::Arc;
-use strata_core::algo::compression::lz4::Lz4Compressor;
-use strata_core::format::header::StrataHeader;
-use strata_core::format::index::MasterIndex;
-use strata_core::format::magic::HEADER_SIZE;
-use strata_core::ops::pack::{PackConfig, pack_snapshot};
-use strata_core::store::StorageBackend;
-use strata_core::store::local::FileBackend;
-use strata_core::{SnapshotStream, StrataFile};
 use tempfile::TempDir;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -50,7 +50,7 @@ fn test_crc32_corruption_detected() {
     let data = vec![0x42u8; 128 * 1024]; // Non-zero data
     fs::write(&disk_path, &data).unwrap();
 
-    let snap_path = temp_dir.path().join("test.st");
+    let snap_path = temp_dir.path().join("test.hxz");
     let config = PackConfig {
         disk: Some(disk_path),
         memory: None,
@@ -68,7 +68,7 @@ fn test_crc32_corruption_detected() {
     // Read the header and index to find block offsets
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
     let header_bytes = backend.read_exact(0, HEADER_SIZE).unwrap();
-    let header: StrataHeader = bincode::deserialize(&header_bytes).unwrap();
+    let header: Header = bincode::deserialize(&header_bytes).unwrap();
 
     let index_bytes = backend
         .read_exact(
@@ -84,8 +84,7 @@ fn test_crc32_corruption_detected() {
         let page_bytes = backend
             .read_exact(page_entry.offset, page_entry.length as usize)
             .unwrap();
-        let page: strata_core::format::index::IndexPage =
-            bincode::deserialize(&page_bytes).unwrap();
+        let page: hexz_core::format::index::IndexPage = bincode::deserialize(&page_bytes).unwrap();
         for block in &page.blocks {
             if block.length > 0 && block.checksum != 0 {
                 // Found a block with data and checksum
@@ -106,7 +105,7 @@ fn test_crc32_corruption_detected() {
     // Now try to read — should detect corruption
     let backend2 = Arc::new(FileBackend::new(&snap_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend2, compressor, None).unwrap();
+    let snapshot = File::new(backend2, compressor, None).unwrap();
 
     let result = snapshot.read_at(SnapshotStream::Disk, 0, 65536);
     assert!(result.is_err(), "Should detect CRC32 corruption");
@@ -135,7 +134,7 @@ fn test_crc32_valid_data_passes() {
     let data = vec![0x42u8; 128 * 1024];
     fs::write(&disk_path, &data).unwrap();
 
-    let snap_path = temp_dir.path().join("test.st");
+    let snap_path = temp_dir.path().join("test.hxz");
     let config = PackConfig {
         disk: Some(disk_path),
         memory: None,
@@ -153,7 +152,7 @@ fn test_crc32_valid_data_passes() {
     // Read without corruption — should succeed
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     let read_data = snapshot.read_at(SnapshotStream::Disk, 0, 65536).unwrap();
     assert_eq!(read_data.len(), 65536);
@@ -174,7 +173,7 @@ fn test_zero_block_sparse_handling() {
     let data = vec![0u8; 256 * 1024];
     fs::write(&disk_path, &data).unwrap();
 
-    let snap_path = temp_dir.path().join("zeros.st");
+    let snap_path = temp_dir.path().join("zeros.hxz");
     let config = PackConfig {
         disk: Some(disk_path),
         memory: None,
@@ -191,7 +190,7 @@ fn test_zero_block_sparse_handling() {
 
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     // Read all blocks — should be all zeros
     let read_data = snapshot
@@ -219,7 +218,7 @@ fn test_mixed_zero_nonzero_blocks() {
     data.extend_from_slice(&vec![0x00; 65536]); // Block 3 (sparse)
     fs::write(&disk_path, &data).unwrap();
 
-    let snap_path = temp_dir.path().join("mixed.st");
+    let snap_path = temp_dir.path().join("mixed.hxz");
     let config = PackConfig {
         disk: Some(disk_path),
         memory: None,
@@ -236,7 +235,7 @@ fn test_mixed_zero_nonzero_blocks() {
 
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     // Read each block and verify
     let block0 = snapshot.read_at(SnapshotStream::Disk, 0, 65536).unwrap();
@@ -286,7 +285,7 @@ fn test_read_past_last_page_zeroes() {
     let data = vec![0x55u8; 65536]; // Exactly one block
     fs::write(&disk_path, &data).unwrap();
 
-    let snap_path = temp_dir.path().join("small.st");
+    let snap_path = temp_dir.path().join("small.hxz");
     let config = PackConfig {
         disk: Some(disk_path),
         memory: None,
@@ -303,7 +302,7 @@ fn test_read_past_last_page_zeroes() {
 
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     // Request more data than exists — excess should be zero-filled
     let mut buffer = vec![0xFF; 65536 + 1000];
@@ -323,7 +322,7 @@ fn test_read_empty_memory_stream() {
 
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     assert_eq!(snapshot.size(SnapshotStream::Memory), 0);
 
@@ -356,7 +355,7 @@ fn test_cross_boundary_reads() {
     }
     fs::write(&disk_path, &data).unwrap();
 
-    let snap_path = temp_dir.path().join("multi.st");
+    let snap_path = temp_dir.path().join("multi.hxz");
     let config = PackConfig {
         disk: Some(disk_path),
         memory: None,
@@ -373,7 +372,7 @@ fn test_cross_boundary_reads() {
 
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     // Read spanning blocks 1 and 2 (middle of block 1 to middle of block 2)
     let mid_read = snapshot
@@ -409,14 +408,14 @@ fn test_cross_boundary_reads() {
 /// Test that encrypted + compressed data round-trips through decompress_and_verify.
 #[test]
 fn test_encrypted_read_with_crc_check() {
-    use strata_core::algo::encryption::aes_gcm::AesGcmEncryptor;
+    use hexz_core::algo::encryption::aes_gcm::AesGcmEncryptor;
 
     let temp_dir = TempDir::new().unwrap();
     let disk_path = temp_dir.path().join("disk.img");
     let original_data: Vec<u8> = (0..128 * 1024).map(|i| (i % 256) as u8).collect();
     fs::write(&disk_path, &original_data).unwrap();
 
-    let snap_path = temp_dir.path().join("encrypted.st");
+    let snap_path = temp_dir.path().join("encrypted.hxz");
     let password = "test_crc_encrypted";
 
     let config = PackConfig {
@@ -436,7 +435,7 @@ fn test_encrypted_read_with_crc_check() {
     // Open with correct password
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
     let header_bytes = backend.read_exact(0, HEADER_SIZE).unwrap();
-    let header: StrataHeader = bincode::deserialize(&header_bytes).unwrap();
+    let header: Header = bincode::deserialize(&header_bytes).unwrap();
 
     let compressor = Box::new(Lz4Compressor::new());
     let encryptor = header.encryption.as_ref().map(|params| {
@@ -444,10 +443,10 @@ fn test_encrypted_read_with_crc_check() {
             password.as_bytes(),
             &params.salt,
             params.iterations,
-        )) as Box<dyn strata_core::algo::encryption::Encryptor>
+        )) as Box<dyn hexz_core::algo::encryption::Encryptor>
     });
 
-    let snapshot = StrataFile::new(backend, compressor, encryptor).unwrap();
+    let snapshot = File::new(backend, compressor, encryptor).unwrap();
 
     // Read and verify data round-trips correctly through decrypt+decompress+CRC path
     let read_data = snapshot
@@ -460,14 +459,14 @@ fn test_encrypted_read_with_crc_check() {
 /// Test corrupted encrypted snapshot triggers error.
 #[test]
 fn test_encrypted_corruption_detected() {
-    use strata_core::algo::encryption::aes_gcm::AesGcmEncryptor;
+    use hexz_core::algo::encryption::aes_gcm::AesGcmEncryptor;
 
     let temp_dir = TempDir::new().unwrap();
     let disk_path = temp_dir.path().join("disk.img");
     let data = vec![0x42u8; 128 * 1024];
     fs::write(&disk_path, &data).unwrap();
 
-    let snap_path = temp_dir.path().join("encrypted.st");
+    let snap_path = temp_dir.path().join("encrypted.hxz");
     let password = "corrupt_test";
 
     let config = PackConfig {
@@ -487,7 +486,7 @@ fn test_encrypted_corruption_detected() {
     // Find a data block and corrupt it
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
     let header_bytes = backend.read_exact(0, HEADER_SIZE).unwrap();
-    let header: StrataHeader = bincode::deserialize(&header_bytes).unwrap();
+    let header: Header = bincode::deserialize(&header_bytes).unwrap();
 
     let index_bytes = backend
         .read_exact(
@@ -502,8 +501,7 @@ fn test_encrypted_corruption_detected() {
         let page_bytes = backend
             .read_exact(page_entry.offset, page_entry.length as usize)
             .unwrap();
-        let page: strata_core::format::index::IndexPage =
-            bincode::deserialize(&page_bytes).unwrap();
+        let page: hexz_core::format::index::IndexPage = bincode::deserialize(&page_bytes).unwrap();
         for block in &page.blocks {
             if block.length > 0 && block.checksum != 0 {
                 block_off = Some(block.offset);
@@ -521,7 +519,7 @@ fn test_encrypted_corruption_detected() {
     // Try to read with the correct password — CRC should fail before decryption
     let backend2 = Arc::new(FileBackend::new(&snap_path).unwrap());
     let header_bytes2 = backend2.read_exact(0, HEADER_SIZE).unwrap();
-    let header2: StrataHeader = bincode::deserialize(&header_bytes2).unwrap();
+    let header2: Header = bincode::deserialize(&header_bytes2).unwrap();
 
     let compressor = Box::new(Lz4Compressor::new());
     let encryptor = header2.encryption.as_ref().map(|params| {
@@ -529,10 +527,10 @@ fn test_encrypted_corruption_detected() {
             password.as_bytes(),
             &params.salt,
             params.iterations,
-        )) as Box<dyn strata_core::algo::encryption::Encryptor>
+        )) as Box<dyn hexz_core::algo::encryption::Encryptor>
     });
 
-    let snapshot = StrataFile::new(backend2, compressor, encryptor).unwrap();
+    let snapshot = File::new(backend2, compressor, encryptor).unwrap();
 
     let result = snapshot.read_at(SnapshotStream::Disk, 0, 65536);
     assert!(
@@ -552,7 +550,7 @@ fn test_sequential_reads_with_prefetch() {
 
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::with_cache(
+    let snapshot = File::with_cache(
         backend,
         compressor,
         None,
@@ -583,7 +581,7 @@ fn test_repeated_reads_use_cache() {
 
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::with_cache(
+    let snapshot = File::with_cache(
         backend,
         compressor,
         None,

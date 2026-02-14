@@ -2,14 +2,14 @@
 
 **Time to Complete**: 15 minutes
 
-**What You'll Learn**: Boot a virtual machine directly from a compressed Strata snapshot without extraction.
+**What You'll Learn**: Boot a virtual machine directly from a compressed Hexz snapshot without extraction.
 
-**What You'll Build**: A bootable Ubuntu VM running from a Strata snapshot, demonstrating instant boot capabilities.
+**What You'll Build**: A bootable Ubuntu VM running from a Hexz snapshot, demonstrating instant boot capabilities.
 
 ## Prerequisites
 
 - Completed [Getting Started](getting-started.md)
-- Strata CLI installed (`make rust`)
+- Hexz CLI installed (`make rust`)
 - QEMU installed
 - KVM support (Linux) or hardware virtualization enabled
 - 4GB of free disk space
@@ -18,7 +18,7 @@
 
 By the end of this tutorial, you will:
 
-1. Understand how Strata enables VM boot from compressed snapshots
+1. Understand how Hexz enables VM boot from compressed snapshots
 2. Create or download a bootable VM snapshot
 3. Boot a VM with custom resource allocation
 4. Configure networking and port forwarding
@@ -30,7 +30,7 @@ Check that your system supports virtualization:
 
 ```bash
 # Run system diagnostics
-./target/release/strata sys doctor
+./target/release/hexz sys doctor
 ```
 
 **Expected Output**:
@@ -61,7 +61,7 @@ wget https://example.com/ubuntu-minimal.st -O /tmp/ubuntu.st
 wget https://releases.ubuntu.com/22.04/ubuntu-22.04-live-server-amd64.iso
 
 # Install interactively via VNC
-./target/release/strata vm install \\
+./target/release/hexz vm install \\
   --iso ubuntu-22.04-live-server-amd64.iso \\
   --output /tmp/ubuntu.st \\
   --disk-size 20G \\
@@ -76,11 +76,11 @@ wget https://releases.ubuntu.com/22.04/ubuntu-22.04-live-server-amd64.iso
 Boot with default settings:
 
 ```bash
-./target/release/strata vm boot /tmp/ubuntu.st
+./target/release/hexz vm boot /tmp/ubuntu.st
 ```
 
 **What Just Happened**:
-- Strata mounted the snapshot via FUSE
+- Hexz mounted the snapshot via FUSE
 - QEMU booted using the mounted disk image
 - VM started reading blocks on-demand (no extraction)
 - Console appeared in terminal window
@@ -92,7 +92,7 @@ Boot with default settings:
 Enable network access and SSH port forwarding:
 
 ```bash
-./target/release/strata vm boot /tmp/ubuntu.st \\
+./target/release/hexz vm boot /tmp/ubuntu.st \\
   --ram 4G \\
   --cpus 4 \\
   --net \\
@@ -109,7 +109,7 @@ ssh -p 2222 user@localhost
 Run the VM without saving changes:
 
 ```bash
-./target/release/strata vm boot /tmp/ubuntu.st --snapshot
+./target/release/hexz vm boot /tmp/ubuntu.st --snapshot
 ```
 
 **Use Case**: Testing, debugging, or running untrusted code without risk.

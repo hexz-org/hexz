@@ -1,10 +1,10 @@
-# strata-server
+# hexz-server
 
-HTTP and NBD server for streaming Strata snapshot data over the network.
+HTTP and NBD server for streaming Hexz snapshot data over the network.
 
 ## Overview
 
-`strata-server` provides network-facing interfaces for accessing compressed Strata snapshots via standard protocols. It enables remote access to snapshot data without requiring clients to download entire files, making it ideal for forensics, VM hosting, and distributed data access.
+`hexz-server` provides network-facing interfaces for accessing compressed Hexz snapshots via standard protocols. It enables remote access to snapshot data without requiring clients to download entire files, making it ideal for forensics, VM hosting, and distributed data access.
 
 ## Supported Protocols
 
@@ -23,16 +23,16 @@ Future S3-compatible API for cloud integration (not yet implemented).
 
 ```rust
 use std::sync::Arc;
-use strata_core::StrataFile;
-use strata_core::store::local::FileBackend;
-use strata_core::algo::compression::lz4::Lz4Compressor;
-use strata_server::serve_http;
+use hexz_core::File;
+use hexz_core::store::local::FileBackend;
+use hexz_core::algo::compression::lz4::Lz4Compressor;
+use hexz_server::serve_http;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+    let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
     let compressor = Box::new(Lz4Compressor::new());
-    let snap = Arc::new(StrataFile::new(backend, compressor, None)?);
+    let snap = Arc::new(File::new(backend, compressor, None)?);
 
     // Start HTTP server on port 8080
     serve_http(snap, 8080).await?;
@@ -44,16 +44,16 @@ async fn main() -> anyhow::Result<()> {
 
 ```rust
 use std::sync::Arc;
-use strata_core::StrataFile;
-use strata_core::store::local::FileBackend;
-use strata_core::algo::compression::lz4::Lz4Compressor;
-use strata_server::serve_nbd;
+use hexz_core::File;
+use hexz_core::store::local::FileBackend;
+use hexz_core::algo::compression::lz4::Lz4Compressor;
+use hexz_server::serve_nbd;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+    let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
     let compressor = Box::new(Lz4Compressor::new());
-    let snap = Arc::new(StrataFile::new(backend, compressor, None)?);
+    let snap = Arc::new(File::new(backend, compressor, None)?);
 
     // Start NBD server on port 10809
     serve_nbd(snap, 10809).await?;
@@ -64,11 +64,11 @@ async fn main() -> anyhow::Result<()> {
 ### Command-Line Usage
 
 ```bash
-# Start HTTP server (via strata CLI)
-strata sys serve --port 8080 snapshot.st
+# Start HTTP server (via hexz CLI)
+hexz sys serve --port 8080 snapshot.st
 
 # Start NBD server
-strata sys serve --nbd --port 10809 snapshot.st
+hexz sys serve --nbd --port 10809 snapshot.st
 ```
 
 ## HTTP Server
@@ -144,7 +144,7 @@ sudo nbd-client -d /dev/nbd0
 ## Architecture
 
 ```
-strata-server/
+hexz-server/
 ├── src/
 │   ├── lib.rs          # HTTP server implementation (Axum)
 │   └── nbd.rs          # NBD protocol implementation
@@ -251,23 +251,23 @@ From the repository root:
 
 ```bash
 # Build server crate
-cargo build -p strata-server
+cargo build -p hexz-server
 
 # Run tests
-cargo test -p strata-server
+cargo test -p hexz-server
 
 # Run HTTP server example
-cargo run -p strata-server --example http_server
+cargo run -p hexz-server --example http_server
 ```
 
 ### Testing
 
 ```bash
 # Unit tests
-cargo test -p strata-server
+cargo test -p hexz-server
 
 # Integration tests with actual servers
-cargo test -p strata-server --test integration
+cargo test -p hexz-server --test integration
 ```
 
 ## Examples
@@ -287,11 +287,11 @@ cargo run --example nbd_server -- snapshot.st 10809
 - **axum**: HTTP server framework
 - **tokio**: Async runtime
 - **tower**: Middleware and utilities
-- **strata-core**: Core snapshot engine
+- **hexz-core**: Core snapshot engine
 
 ## See Also
 
-- **[strata-core](../core/)** - Core engine (provides StrataFile)
-- **[strata-cli](../cli/)** - CLI tool (serve command)
+- **[hexz-core](../core/)** - Core engine (provides File)
+- **[hexz-cli](../cli/)** - CLI tool (serve command)
 - **[User Documentation](../../docs/)** - Server configuration guides
 - **[Project README](../../README.md)** - Main project overview

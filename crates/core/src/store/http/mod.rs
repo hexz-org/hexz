@@ -37,12 +37,12 @@
 //! # Examples
 //!
 //! ```no_run
-//! use strata_core::store::http::HttpBackend;
-//! use strata_core::store::StorageBackend;
+//! use hexz_core::store::http::HttpBackend;
+//! use hexz_core::store::StorageBackend;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let backend = HttpBackend::new(
-//!     "https://cdn.example.com/snapshots/data.st".to_string(),
+//!     "https://cdn.example.com/snapshots/data.hxz".to_string(),
 //!     false // block restricted IPs
 //! )?;
 //!

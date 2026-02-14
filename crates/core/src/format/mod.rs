@@ -1,4 +1,4 @@
-//! On-disk format structures for Strata snapshot files.
+//! On-disk format structures for Hexz snapshot files.
 //!
 //! This module defines the binary format of `.st` files, including headers,
 //! indices, and metadata structures. All types are serialized with `bincode`
@@ -6,14 +6,14 @@
 //!
 //! # File Structure
 //!
-//! A complete Strata archive has the following layout:
+//! A complete Hexz archive has the following layout:
 //!
 //! ```text
 //! ╔══════════════════════════════════════════════════════════╗
-//! ║                  STRATA ARCHIVE (.st)                    ║
+//! ║                  HEXZ ARCHIVE (.hxz)                    ║
 //! ╠══════════════════════════════════════════════════════════╣
 //! ║ Offset 0: HEADER (4096 bytes)                           ║
-//! ║   - Magic: "STRT" (4 bytes)                             ║
+//! ║   - Magic: "HEXZ" (4 bytes)                             ║
 //! ║   - Version: u32                                         ║
 //! ║   - Block size: u32                                      ║
 //! ║   - Index offset: u64                                    ║
@@ -64,7 +64,7 @@
 
 /// Magic bytes and version constants.
 ///
-/// Defines the file signature (`STRT`) and format version that identify
+/// Defines the file signature (`HEXZ`) and format version that identify
 /// a valid `.st` file.
 pub mod magic;
 

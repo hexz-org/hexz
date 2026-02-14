@@ -3,9 +3,9 @@
 //! Tests validate correct serialization/deserialization of all format structures,
 //! ensuring forward/backward compatibility and handling of corrupt data.
 
-use strata_common::crypto::KeyDerivationParams;
-use strata_core::format::{
-    header::{CompressionType, FeatureFlags, StrataHeader},
+use hexz_common::crypto::KeyDerivationParams;
+use hexz_core::format::{
+    header::{CompressionType, FeatureFlags, Header},
     index::{BlockInfo, ENTRIES_PER_PAGE, IndexPage, MasterIndex, PageEntry},
     magic::{FORMAT_VERSION, HEADER_SIZE, MAGIC_BYTES},
 };
@@ -13,7 +13,7 @@ use strata_core::format::{
 #[test]
 fn test_magic_bytes_constant() {
     assert_eq!(MAGIC_BYTES.len(), 4);
-    assert_eq!(&MAGIC_BYTES[..], b"STRT");
+    assert_eq!(&MAGIC_BYTES[..], b"HEXZ");
 }
 
 #[test]
@@ -29,7 +29,7 @@ fn test_format_version() {
 /// Test header serialization round-trip with minimal configuration.
 #[test]
 fn test_header_serialization_minimal() {
-    let header = StrataHeader {
+    let header = Header {
         magic: *MAGIC_BYTES,
         version: FORMAT_VERSION,
         block_size: 65536,
@@ -51,7 +51,7 @@ fn test_header_serialization_minimal() {
     };
 
     let serialized = bincode::serialize(&header).expect("Failed to serialize header");
-    let deserialized: StrataHeader =
+    let deserialized: Header =
         bincode::deserialize(&serialized).expect("Failed to deserialize header");
 
     assert_eq!(deserialized.magic, *MAGIC_BYTES);
@@ -66,12 +66,12 @@ fn test_header_serialization_minimal() {
 /// Test header with all optional fields populated.
 #[test]
 fn test_header_serialization_full() {
-    let header = StrataHeader {
+    let header = Header {
         magic: *MAGIC_BYTES,
         version: FORMAT_VERSION,
         block_size: 16384,
         index_offset: 999999,
-        parent_path: Some("/path/to/parent.st".to_string()),
+        parent_path: Some("/path/to/parent.hxz".to_string()),
         dictionary_offset: Some(5000),
         dictionary_length: Some(4096),
         metadata_offset: Some(10000),
@@ -91,11 +91,11 @@ fn test_header_serialization_full() {
     };
 
     let serialized = bincode::serialize(&header).unwrap();
-    let deserialized: StrataHeader = bincode::deserialize(&serialized).unwrap();
+    let deserialized: Header = bincode::deserialize(&serialized).unwrap();
 
     assert_eq!(
         deserialized.parent_path,
-        Some("/path/to/parent.st".to_string())
+        Some("/path/to/parent.hxz".to_string())
     );
     assert_eq!(deserialized.dictionary_offset, Some(5000));
     assert_eq!(deserialized.signature_length, Some(64));
@@ -316,7 +316,7 @@ fn test_key_derivation_params() {
 /// Test that corrupted magic bytes are detectable.
 #[test]
 fn test_invalid_magic_bytes() {
-    let mut invalid_header = StrataHeader {
+    let mut invalid_header = Header {
         magic: *MAGIC_BYTES,
         version: FORMAT_VERSION,
         block_size: 65536,
@@ -341,7 +341,7 @@ fn test_invalid_magic_bytes() {
 
     // Serialize the invalid header
     let serialized = bincode::serialize(&invalid_header).unwrap();
-    let deserialized: StrataHeader = bincode::deserialize(&serialized).unwrap();
+    let deserialized: Header = bincode::deserialize(&serialized).unwrap();
 
     // Verify magic bytes are incorrect
     assert_ne!(deserialized.magic, *MAGIC_BYTES);
@@ -353,7 +353,7 @@ fn test_large_block_sizes() {
     let block_sizes = vec![16384, 65536, 262144, 1048576, 4194304];
 
     for size in block_sizes {
-        let header = StrataHeader {
+        let header = Header {
             magic: *MAGIC_BYTES,
             version: FORMAT_VERSION,
             block_size: size,
@@ -375,7 +375,7 @@ fn test_large_block_sizes() {
         };
 
         let serialized = bincode::serialize(&header).unwrap();
-        let deserialized: StrataHeader = bincode::deserialize(&serialized).unwrap();
+        let deserialized: Header = bincode::deserialize(&serialized).unwrap();
 
         assert_eq!(deserialized.block_size, size);
     }

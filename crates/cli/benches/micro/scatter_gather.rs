@@ -6,21 +6,21 @@
 //! io_uring), the latency reduction can be quantified.
 
 use criterion::{BenchmarkId, Criterion, SamplingMode, criterion_group, criterion_main};
+use hexz_cli::cmd::data::pack;
+use hexz_core::File;
+use hexz_core::algo::compression::lz4::Lz4Compressor;
+use hexz_core::api::file::SnapshotStream;
+use hexz_core::store::local::FileBackend;
 use rand::SeedableRng;
 use rand::seq::index::sample;
 use std::io::Write;
 use std::mem::MaybeUninit;
 use std::sync::Arc;
-use strata_cli::cmd::data::pack;
-use strata_core::StrataFile;
-use strata_core::algo::compression::lz4::Lz4Compressor;
-use strata_core::api::stratafile::SnapshotStream;
-use strata_core::store::local::FileBackend;
 use tempfile::NamedTempFile;
 
 const BLOCK_SIZE: u64 = 65536;
 
-/// Builds a synthetic Strata pack with known layout for scatter-gather tests.
+/// Builds a synthetic Hexz pack with known layout for scatter-gather tests.
 fn setup_snapshot(size_mb: usize) -> (NamedTempFile, NamedTempFile) {
     let size = size_mb * 1024 * 1024;
     let mut input_file = NamedTempFile::new().unwrap();
@@ -73,7 +73,7 @@ fn bench_scatter_gather_latency(c: &mut Criterion) {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snap = StrataFile::new(backend, compressor, None).unwrap();
+    let snap = File::new(backend, compressor, None).unwrap();
 
     let stream_size = snap.size(SnapshotStream::Disk);
     let num_blocks = stream_size / BLOCK_SIZE;

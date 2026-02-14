@@ -180,8 +180,8 @@
 //! ## Basic Analysis
 //!
 //! ```no_run
-//! use strata_core::algo::dedup::cdc::analyze_stream;
-//! use strata_core::algo::dedup::dcam::DedupeParams;
+//! use hexz_core::algo::dedup::cdc::analyze_stream;
+//! use hexz_core::algo::dedup::dcam::DedupeParams;
 //! use std::fs::File;
 //!
 //! # fn main() -> std::io::Result<()> {
@@ -202,8 +202,8 @@
 //! ## Streaming Chunks
 //!
 //! ```no_run
-//! use strata_core::algo::dedup::cdc::StreamChunker;
-//! use strata_core::algo::dedup::dcam::DedupeParams;
+//! use hexz_core::algo::dedup::cdc::StreamChunker;
+//! use hexz_core::algo::dedup::dcam::DedupeParams;
 //! use std::fs::File;
 //!
 //! # fn main() -> std::io::Result<()> {
@@ -223,8 +223,8 @@
 //! ## Parameter Comparison
 //!
 //! ```no_run
-//! use strata_core::algo::dedup::cdc::analyze_stream;
-//! use strata_core::algo::dedup::dcam::DedupeParams;
+//! use hexz_core::algo::dedup::cdc::analyze_stream;
+//! use hexz_core::algo::dedup::dcam::DedupeParams;
 //! use std::fs::File;
 //!
 //! # fn main() -> std::io::Result<()> {
@@ -248,7 +248,7 @@
 //! # }
 //! ```
 //!
-//! # Integration with Strata
+//! # Integration with Hexz
 //!
 //! CDC is integrated into the snapshot packing pipeline with multiple stages:
 //!
@@ -429,7 +429,7 @@ use std::io::{self, Read};
 /// # Examples
 ///
 /// ```rust
-/// # use strata_core::algo::dedup::cdc::CdcStats;
+/// # use hexz_core::algo::dedup::cdc::CdcStats;
 /// let stats = CdcStats {
 ///     total_bytes: 0, // Not tracked (estimated below)
 ///     unique_bytes: 50_000_000,
@@ -590,8 +590,8 @@ pub struct CdcStats {
 /// ## Basic Usage
 ///
 /// ```no_run
-/// use strata_core::algo::dedup::cdc::StreamChunker;
-/// use strata_core::algo::dedup::dcam::DedupeParams;
+/// use hexz_core::algo::dedup::cdc::StreamChunker;
+/// use hexz_core::algo::dedup::dcam::DedupeParams;
 /// use std::fs::File;
 ///
 /// # fn main() -> std::io::Result<()> {
@@ -610,8 +610,8 @@ pub struct CdcStats {
 /// ## With Compression Pipeline
 ///
 /// ```no_run
-/// use strata_core::algo::dedup::cdc::StreamChunker;
-/// use strata_core::algo::dedup::dcam::DedupeParams;
+/// use hexz_core::algo::dedup::cdc::StreamChunker;
+/// use hexz_core::algo::dedup::dcam::DedupeParams;
 /// use std::fs::File;
 /// use std::collections::HashMap;
 ///
@@ -643,8 +643,8 @@ pub struct CdcStats {
 /// ## Custom Parameters
 ///
 /// ```no_run
-/// use strata_core::algo::dedup::cdc::StreamChunker;
-/// use strata_core::algo::dedup::dcam::DedupeParams;
+/// use hexz_core::algo::dedup::cdc::StreamChunker;
+/// use hexz_core::algo::dedup::dcam::DedupeParams;
 /// use std::fs::File;
 ///
 /// # fn main() -> std::io::Result<()> {
@@ -775,8 +775,8 @@ impl<R: Read> StreamChunker<R> {
     /// ## Default Parameters
     ///
     /// ```no_run
-    /// use strata_core::algo::dedup::cdc::StreamChunker;
-    /// use strata_core::algo::dedup::dcam::DedupeParams;
+    /// use hexz_core::algo::dedup::cdc::StreamChunker;
+    /// use hexz_core::algo::dedup::dcam::DedupeParams;
     /// use std::fs::File;
     ///
     /// # fn main() -> std::io::Result<()> {
@@ -790,8 +790,8 @@ impl<R: Read> StreamChunker<R> {
     /// ## Custom Parameters
     ///
     /// ```no_run
-    /// use strata_core::algo::dedup::cdc::StreamChunker;
-    /// use strata_core::algo::dedup::dcam::DedupeParams;
+    /// use hexz_core::algo::dedup::cdc::StreamChunker;
+    /// use hexz_core::algo::dedup::dcam::DedupeParams;
     /// use std::fs::File;
     ///
     /// # fn main() -> std::io::Result<()> {
@@ -974,8 +974,8 @@ impl<R: Read> Iterator for StreamChunker<R> {
     /// # Examples
     ///
     /// ```no_run
-    /// use strata_core::algo::dedup::cdc::StreamChunker;
-    /// use strata_core::algo::dedup::dcam::DedupeParams;
+    /// use hexz_core::algo::dedup::cdc::StreamChunker;
+    /// use hexz_core::algo::dedup::dcam::DedupeParams;
     /// use std::fs::File;
     ///
     /// # fn main() -> std::io::Result<()> {
@@ -1147,8 +1147,8 @@ impl<R: Read> Iterator for StreamChunker<R> {
 /// ## Basic Usage
 ///
 /// ```no_run
-/// use strata_core::algo::dedup::cdc::analyze_stream;
-/// use strata_core::algo::dedup::dcam::DedupeParams;
+/// use hexz_core::algo::dedup::cdc::analyze_stream;
+/// use hexz_core::algo::dedup::dcam::DedupeParams;
 /// use std::fs::File;
 ///
 /// # fn main() -> std::io::Result<()> {
@@ -1169,8 +1169,8 @@ impl<R: Read> Iterator for StreamChunker<R> {
 /// ## Estimating Storage Savings
 ///
 /// ```no_run
-/// use strata_core::algo::dedup::cdc::analyze_stream;
-/// use strata_core::algo::dedup::dcam::DedupeParams;
+/// use hexz_core::algo::dedup::cdc::analyze_stream;
+/// use hexz_core::algo::dedup::dcam::DedupeParams;
 /// use std::fs::File;
 ///
 /// # fn main() -> std::io::Result<()> {
@@ -1190,8 +1190,8 @@ impl<R: Read> Iterator for StreamChunker<R> {
 /// ## Comparing Parameter Sets
 ///
 /// ```no_run
-/// use strata_core::algo::dedup::cdc::analyze_stream;
-/// use strata_core::algo::dedup::dcam::DedupeParams;
+/// use hexz_core::algo::dedup::cdc::analyze_stream;
+/// use hexz_core::algo::dedup::dcam::DedupeParams;
 /// use std::io::Cursor;
 ///
 /// # fn main() -> std::io::Result<()> {

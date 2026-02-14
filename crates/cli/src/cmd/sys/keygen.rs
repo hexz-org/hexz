@@ -1,7 +1,7 @@
 //! Ed25519 key pair generation for archive signing.
 //!
 //! This command generates cryptographic signing keys used to sign and verify
-//! Strata archives, ensuring authenticity and integrity.
+//! Hexz archives, ensuring authenticity and integrity.
 //!
 //! # Key Generation
 //!
@@ -19,13 +19,13 @@
 //!
 //! ```bash
 //! # Generate keys in current directory
-//! strata sys keygen
+//! hexz sys keygen
 //!
 //! # Generate keys in specific directory
-//! strata sys keygen --output-dir ~/.strata/keys
+//! hexz sys keygen --output-dir ~/.hexz/keys
 //!
 //! # Secure the private key
-//! chmod 600 ~/.strata/keys/private.key
+//! chmod 600 ~/.hexz/keys/private.key
 //! ```
 //!
 //! # Integration with Archive Signing
@@ -34,22 +34,22 @@
 //!
 //! ```bash
 //! # Sign an archive
-//! strata sys sign --key private.key snapshot.st
+//! hexz sys sign --key private.key snapshot.st
 //!
 //! # Verify the signature
-//! strata sys verify --key public.key snapshot.st
+//! hexz sys verify --key public.key snapshot.st
 //! ```
 //!
 //! # Implementation
 //!
-//! Uses Ed25519 signatures via the [`ed25519-dalek`] crate for:
+//! Uses Ed25519 signatures via the `ed25519-dalek` crate for:
 //! - Fast signature generation and verification
 //! - 64-byte signatures
 //! - Strong cryptographic security (128-bit security level)
 
 use anyhow::Result;
+use hexz_common::sign;
 use std::path::PathBuf;
-use strata_common::sign;
 
 /// Generate an Ed25519 signing key pair.
 ///
@@ -81,9 +81,9 @@ use strata_common::sign;
 ///
 /// ```no_run
 /// # use std::path::PathBuf;
-/// # use strata_cli::cmd::sys::keygen;
-/// // Generate keys in ~/.strata/keys
-/// keygen::run(Some(PathBuf::from("/home/user/.strata/keys")))?;
+/// # use hexz_cli::cmd::sys::keygen;
+/// // Generate keys in ~/.hexz/keys
+/// keygen::run(Some(PathBuf::from("/home/user/.hexz/keys")))?;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 pub fn run(output_dir: Option<PathBuf>) -> Result<()> {

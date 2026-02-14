@@ -1,6 +1,6 @@
-//! HTTP, NBD, and S3 gateway server implementations for exposing Strata snapshots.
+//! HTTP, NBD, and S3 gateway server implementations for exposing Hexz snapshots.
 //!
-//! This module provides network-facing interfaces for accessing compressed Strata
+//! This module provides network-facing interfaces for accessing compressed Hexz
 //! snapshot data over standard protocols. It supports three distinct serving modes:
 //!
 //! 1. **HTTP Range Server** (`serve_http`): Exposes disk and memory streams via
@@ -12,11 +12,11 @@
 //!
 //! # Architecture Overview
 //!
-//! All servers expose the same underlying `StrataFile` API, which provides:
+//! All servers expose the same underlying `File` API, which provides:
 //! - Block-level decompression with LRU caching
 //! - Dual-stream access (disk and memory snapshots)
 //! - Random access with minimal I/O overhead
-//! - Thread-safe concurrent reads via `Arc<StrataFile>`
+//! - Thread-safe concurrent reads via `Arc<File>`
 //!
 //! The servers differ in protocol semantics and use cases:
 //!
@@ -32,7 +32,7 @@
 //!
 //! HTTP range requests (RFC 7233) provide a standardized way to access large files
 //! in chunks without loading the entire file into memory. This aligns perfectly with
-//! Strata's block-indexed architecture, allowing clients to fetch only the data they
+//! Hexz's block-indexed architecture, allowing clients to fetch only the data they
 //! need. The implementation:
 //!
 //! - Returns HTTP 206 (Partial Content) for range requests
@@ -110,16 +110,16 @@
 //!
 //! ```no_run
 //! use std::sync::Arc;
-//! use strata_core::StrataFile;
-//! use strata_core::store::local::FileBackend;
-//! use strata_core::algo::compression::lz4::Lz4Compressor;
-//! use strata_server::serve_http;
+//! use hexz_core::File;
+//! use hexz_core::store::local::FileBackend;
+//! use hexz_core::algo::compression::lz4::Lz4Compressor;
+//! use hexz_server::serve_http;
 //!
 //! # #[tokio::main]
 //! # async fn main() -> anyhow::Result<()> {
-//! let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+//! let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
 //! let compressor = Box::new(Lz4Compressor::new());
-//! let snap = StrataFile::new(backend, compressor, None)?;
+//! let snap = File::new(backend, compressor, None)?;
 //!
 //! // Start HTTP server on port 8080
 //! serve_http(snap, 8080).await?;
@@ -131,16 +131,16 @@
 //!
 //! ```no_run
 //! use std::sync::Arc;
-//! use strata_core::StrataFile;
-//! use strata_core::store::local::FileBackend;
-//! use strata_core::algo::compression::lz4::Lz4Compressor;
-//! use strata_server::serve_nbd;
+//! use hexz_core::File;
+//! use hexz_core::store::local::FileBackend;
+//! use hexz_core::algo::compression::lz4::Lz4Compressor;
+//! use hexz_server::serve_nbd;
 //!
 //! # #[tokio::main]
 //! # async fn main() -> anyhow::Result<()> {
-//! let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+//! let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
 //! let compressor = Box::new(Lz4Compressor::new());
-//! let snap = StrataFile::new(backend, compressor, None)?;
+//! let snap = File::new(backend, compressor, None)?;
 //!
 //! // Start NBD server on port 10809
 //! serve_nbd(snap, 10809).await?;
@@ -196,9 +196,9 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
+use hexz_core::{File, SnapshotStream};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use strata_core::{SnapshotStream, StrataFile};
 use tokio::net::TcpListener;
 
 /// IPv4 address for all server listeners (localhost only).
@@ -225,7 +225,7 @@ use tokio::net::TcpListener;
 ///
 /// ```bash
 /// # Proposed CLI syntax (not yet implemented)
-/// strata-server --bind 0.0.0.0:8080 --auth-token mytoken123 snapshot.st
+/// hexz-server --bind 0.0.0.0:8080 --auth-token mytoken123 snapshot.st
 /// ```
 ///
 /// Network exposure will require authentication to be enabled (enforced by the CLI).
@@ -317,7 +317,7 @@ const MAX_CHUNK_SIZE: u64 = 32 * 1024 * 1024;
 ///
 /// # Thread Safety
 ///
-/// `AppState` is `Send + Sync` because `StrataFile` is `Send + Sync`. The underlying
+/// `AppState` is `Send + Sync` because `File` is `Send + Sync`. The underlying
 /// block cache uses `Mutex` for interior mutability, so multiple concurrent requests
 /// can safely read from the same snapshot.
 ///
@@ -326,19 +326,19 @@ const MAX_CHUNK_SIZE: u64 = 32 * 1024 * 1024;
 /// Each `AppState` clone adds ~16 bytes (one `Arc` pointer). With 1000 concurrent
 /// connections, this overhead is negligible (~16 KB).
 struct AppState {
-    /// The opened Strata snapshot file being served via HTTP.
+    /// The opened Hexz snapshot file being served via HTTP.
     ///
-    /// This is the same `StrataFile` instance for all requests. It contains:
+    /// This is the same `File` instance for all requests. It contains:
     /// - The storage backend (local file, S3, etc.)
     /// - Block cache (shared across all requests)
     /// - Decompressor instances (thread-local via pooling)
-    snap: Arc<StrataFile>,
+    snap: Arc<File>,
 }
 
-/// Exposes a `StrataFile` over NBD (Network Block Device) protocol.
+/// Exposes a `File` over NBD (Network Block Device) protocol.
 ///
 /// Starts a TCP listener on `127.0.0.1:<port>` that implements the NBD protocol,
-/// allowing Linux clients to mount the Strata snapshot as a local block device
+/// allowing Linux clients to mount the Hexz snapshot as a local block device
 /// using standard tools like `nbd-client`.
 ///
 /// This function runs indefinitely, accepting connections in a loop. Each client
@@ -346,7 +346,7 @@ struct AppState {
 ///
 /// # Arguments
 ///
-/// - `snap`: The Strata snapshot file to expose. Must be wrapped in `Arc` for sharing
+/// - `snap`: The Hexz snapshot file to expose. Must be wrapped in `Arc` for sharing
 ///   across multiple client connections.
 /// - `port`: TCP port to bind to on the loopback interface (e.g., `10809`).
 ///
@@ -369,16 +369,16 @@ struct AppState {
 ///
 /// ```no_run
 /// use std::sync::Arc;
-/// use strata_core::StrataFile;
-/// use strata_core::store::local::FileBackend;
-/// use strata_core::algo::compression::lz4::Lz4Compressor;
-/// use strata_server::serve_nbd;
+/// use hexz_core::File;
+/// use hexz_core::store::local::FileBackend;
+/// use hexz_core::algo::compression::lz4::Lz4Compressor;
+/// use hexz_server::serve_nbd;
 ///
 /// # #[tokio::main]
 /// # async fn main() -> anyhow::Result<()> {
-/// let backend = Arc::new(FileBackend::new("vm_snapshot.st".as_ref())?);
+/// let backend = Arc::new(FileBackend::new("vm_snapshot.hxz".as_ref())?);
 /// let compressor = Box::new(Lz4Compressor::new());
-/// let snap = StrataFile::new(backend, compressor, None)?;
+/// let snap = File::new(backend, compressor, None)?;
 ///
 /// // Start NBD server (runs forever)
 /// serve_nbd(snap, 10809).await?;
@@ -439,7 +439,7 @@ struct AppState {
 ///
 /// This function does not panic under normal operation. Client errors are logged
 /// and handled gracefully.
-pub async fn serve_nbd(snap: Arc<StrataFile>, port: u16) -> anyhow::Result<()> {
+pub async fn serve_nbd(snap: Arc<File>, port: u16) -> anyhow::Result<()> {
     let addr = SocketAddr::from((BIND_ADDR, port));
     let listener = TcpListener::bind(addr).await?;
 
@@ -463,7 +463,7 @@ pub async fn serve_nbd(snap: Arc<StrataFile>, port: u16) -> anyhow::Result<()> {
     }
 }
 
-/// Exposes a `StrataFile` as an S3-compatible object storage gateway.
+/// Exposes a `File` as an S3-compatible object storage gateway.
 ///
 /// # Implementation Status: NOT IMPLEMENTED
 ///
@@ -489,9 +489,9 @@ pub async fn serve_nbd(snap: Arc<StrataFile>, port: u16) -> anyhow::Result<()> {
 /// - **Error responses**: Standard S3 XML error responses
 /// - **Metadata**: ETag (CRC32 of snapshot header), Content-Type, Last-Modified
 ///
-/// ## Mapping Strata Concepts to S3
+/// ## Mapping Hexz Concepts to S3
 ///
-/// | Strata Concept | S3 Equivalent | Mapping Strategy |
+/// | Hexz Concept | S3 Equivalent | Mapping Strategy |
 /// |----------------|---------------|------------------|
 /// | Snapshot file | Bucket | One bucket per snapshot |
 /// | Disk stream | Object `disk.img` | Virtual object, synthesized from snapshot |
@@ -533,8 +533,8 @@ pub async fn serve_nbd(snap: Arc<StrataFile>, port: u16) -> anyhow::Result<()> {
 ///
 /// S3 is a de facto standard for object storage. Supporting the S3 API enables:
 ///
-/// 1. **Cloud integration**: Use Strata with existing cloud infrastructure (AWS, MinIO, etc.)
-/// 2. **Tool compatibility**: Any S3-compatible tool (s3cmd, rclone, boto3) works with Strata
+/// 1. **Cloud integration**: Use Hexz with existing cloud infrastructure (AWS, MinIO, etc.)
+/// 2. **Tool compatibility**: Any S3-compatible tool (s3cmd, rclone, boto3) works with Hexz
 /// 3. **Caching CDNs**: Front the gateway with CloudFront or similar for caching
 /// 4. **Lifecycle policies**: Future support for automated snapshot expiration
 ///
@@ -565,7 +565,7 @@ pub async fn serve_nbd(snap: Arc<StrataFile>, port: u16) -> anyhow::Result<()> {
 ///
 /// # Arguments
 ///
-/// - `_snap`: The Strata snapshot to expose (currently unused).
+/// - `_snap`: The Hexz snapshot to expose (currently unused).
 /// - `port`: TCP port to bind to on the loopback interface (e.g., `9000`).
 ///
 /// # Returns
@@ -586,16 +586,16 @@ pub async fn serve_nbd(snap: Arc<StrataFile>, port: u16) -> anyhow::Result<()> {
 ///
 /// ```no_run
 /// use std::sync::Arc;
-/// use strata_core::StrataFile;
-/// use strata_core::store::local::FileBackend;
-/// use strata_core::algo::compression::lz4::Lz4Compressor;
-/// use strata_server::serve_s3_gateway;
+/// use hexz_core::File;
+/// use hexz_core::store::local::FileBackend;
+/// use hexz_core::algo::compression::lz4::Lz4Compressor;
+/// use hexz_server::serve_s3_gateway;
 ///
 /// # #[tokio::main]
 /// # async fn main() -> anyhow::Result<()> {
-/// let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+/// let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
 /// let compressor = Box::new(Lz4Compressor::new());
-/// let snap = StrataFile::new(backend, compressor, None)?;
+/// let snap = File::new(backend, compressor, None)?;
 ///
 /// // WARNING: This will block forever without serving requests
 /// serve_s3_gateway(snap, 9000).await?;
@@ -617,7 +617,7 @@ pub async fn serve_nbd(snap: Arc<StrataFile>, port: u16) -> anyhow::Result<()> {
 /// in contributing, see `docs/s3_gateway_design.md` (to be created) for the design
 /// specification and implementation plan.
 #[deprecated(note = "Not implemented. Blocks indefinitely without serving requests.")]
-pub async fn serve_s3_gateway(_snap: Arc<StrataFile>, port: u16) -> anyhow::Result<()> {
+pub async fn serve_s3_gateway(_snap: Arc<File>, port: u16) -> anyhow::Result<()> {
     tracing::info!("Starting S3 Gateway on port {}", port);
     println!(
         "S3 Gateway started on port {} (Not fully implemented)",
@@ -627,7 +627,7 @@ pub async fn serve_s3_gateway(_snap: Arc<StrataFile>, port: u16) -> anyhow::Resu
     unreachable!();
 }
 
-/// Exposes a `StrataFile` over HTTP with range request support.
+/// Exposes a `File` over HTTP with range request support.
 ///
 /// Starts an HTTP 1.1 server on `127.0.0.1:<port>` that exposes snapshot data via
 /// two endpoints:
@@ -737,7 +737,7 @@ pub async fn serve_s3_gateway(_snap: Arc<StrataFile>, port: u16) -> anyhow::Resu
 ///
 /// # Arguments
 ///
-/// - `snap`: The Strata snapshot file to expose. Must be wrapped in `Arc` for sharing
+/// - `snap`: The Hexz snapshot file to expose. Must be wrapped in `Arc` for sharing
 ///   across request handlers.
 /// - `port`: TCP port to bind to on the loopback interface (e.g., `8080`, `3000`).
 ///
@@ -763,16 +763,16 @@ pub async fn serve_s3_gateway(_snap: Arc<StrataFile>, port: u16) -> anyhow::Resu
 ///
 /// ```no_run
 /// use std::sync::Arc;
-/// use strata_core::StrataFile;
-/// use strata_core::store::local::FileBackend;
-/// use strata_core::algo::compression::lz4::Lz4Compressor;
-/// use strata_server::serve_http;
+/// use hexz_core::File;
+/// use hexz_core::store::local::FileBackend;
+/// use hexz_core::algo::compression::lz4::Lz4Compressor;
+/// use hexz_server::serve_http;
 ///
 /// # #[tokio::main]
 /// # async fn main() -> anyhow::Result<()> {
-/// let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+/// let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
 /// let compressor = Box::new(Lz4Compressor::new());
-/// let snap = StrataFile::new(backend, compressor, None)?;
+/// let snap = File::new(backend, compressor, None)?;
 ///
 /// // Start HTTP server on port 8080 (runs forever)
 /// serve_http(snap, 8080).await?;
@@ -865,7 +865,7 @@ pub async fn serve_s3_gateway(_snap: Arc<StrataFile>, port: u16) -> anyhow::Resu
 ///
 /// This function does not panic under normal operation. Request handling errors
 /// are converted to HTTP error responses.
-pub async fn serve_http(snap: Arc<StrataFile>, port: u16) -> anyhow::Result<()> {
+pub async fn serve_http(snap: Arc<File>, port: u16) -> anyhow::Result<()> {
     let state = Arc::new(AppState { snap });
 
     let app = Router::new()
@@ -882,7 +882,7 @@ pub async fn serve_http(snap: Arc<StrataFile>, port: u16) -> anyhow::Result<()> 
 
 /// HTTP handler for the `/disk` endpoint.
 ///
-/// Serves the disk stream (persistent storage snapshot) from the Strata file.
+/// Serves the disk stream (persistent storage snapshot) from the Hexz file.
 /// Delegates to `handle_request` with `SnapshotStream::Disk`.
 ///
 /// # Route
@@ -914,7 +914,7 @@ async fn get_disk(headers: HeaderMap, State(state): State<Arc<AppState>>) -> imp
 
 /// HTTP handler for the `/memory` endpoint.
 ///
-/// Serves the memory stream (RAM snapshot) from the Strata file.
+/// Serves the memory stream (RAM snapshot) from the Hexz file.
 /// Delegates to `handle_request` with `SnapshotStream::Memory`.
 ///
 /// # Route
@@ -951,13 +951,13 @@ async fn get_memory(headers: HeaderMap, State(state): State<Arc<AppState>>) -> i
 ///
 /// 1. Parse the `Range` header (if present) or default to full stream access
 /// 2. Clamp the requested range to `MAX_CHUNK_SIZE` to prevent DoS
-/// 3. Read the data from the snapshot via `StrataFile::read_at`
+/// 3. Read the data from the snapshot via `File::read_at`
 /// 4. Return HTTP 206 with `Content-Range` header, or error status codes
 ///
 /// # Arguments
 ///
 /// - `headers`: HTTP request headers from the client (parsed by Axum)
-/// - `snap`: The Strata snapshot file to read from
+/// - `snap`: The Hexz snapshot file to read from
 /// - `stream`: Which logical stream to read (`Disk` or `Memory`)
 ///
 /// # Returns
@@ -1088,7 +1088,7 @@ async fn get_memory(headers: HeaderMap, State(state): State<Arc<AppState>>) -> i
 /// # Examples
 ///
 /// See `serve_http`, `get_disk`, and `get_memory` for usage context.
-fn handle_request(headers: HeaderMap, snap: &Arc<StrataFile>, stream: SnapshotStream) -> Response {
+fn handle_request(headers: HeaderMap, snap: &Arc<File>, stream: SnapshotStream) -> Response {
     let total_size = snap.size(stream);
 
     let (start, mut end) = if let Some(range) = headers.get(header::RANGE) {

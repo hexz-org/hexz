@@ -1,4 +1,4 @@
-# Strata Core - Comprehensive Test Plan
+# Hexz Core - Comprehensive Test Plan
 
 ## Test Organization
 

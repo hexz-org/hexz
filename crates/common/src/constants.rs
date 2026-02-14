@@ -1,16 +1,16 @@
-//! Shared constants and magic numbers for the Strata ecosystem.
+//! Shared constants and magic numbers for the Hexz ecosystem.
 //!
-//! This module defines the core tunable parameters that govern Strata's performance,
+//! This module defines the core tunable parameters that govern Hexz's performance,
 //! memory usage, and security characteristics. These constants serve as sensible
 //! defaults optimized for common workloads (VM disk images, container filesystems,
 //! database backups) running on modern hardware (multi-core CPUs, SSDs, 8+ GB RAM).
 //!
 //! **Note:** Magic bytes, format version, and header size have been moved
-//! to `strata-core::format::magic` as they are format-specific constants.
+//! to `hexz-core::format::magic` as they are format-specific constants.
 //!
 //! # Performance Tuning Philosophy
 //!
-//! Strata's default constants are chosen to provide:
+//! Hexz's default constants are chosen to provide:
 //! - **Good compression ratios** (2.5-4x typical) without sacrificing throughput
 //! - **Low read latency** (sub-millisecond for cached blocks)
 //! - **Reasonable memory usage** (~512 MiB baseline for cache)
@@ -272,7 +272,7 @@
 /// Default block size for snapshots (64 KiB).
 ///
 /// The block size determines the fundamental granularity of data storage, compression,
-/// and retrieval in Strata snapshots. Each block is independently compressed, cached,
+/// and retrieval in Hexz snapshots. Each block is independently compressed, cached,
 /// and addressed, making this constant one of the most impactful performance tuning
 /// parameters.
 ///
@@ -876,7 +876,7 @@ pub const SALT_SIZE: usize = 16;
 /// - **bcrypt**: Strong for passwords, but limited to 72-character inputs and slower
 ///   than PBKDF2 for equivalent security
 ///
-/// PBKDF2 is chosen for Strata due to simplicity, wide support, and acceptable security
+/// PBKDF2 is chosen for Hexz due to simplicity, wide support, and acceptable security
 /// when combined with high iteration counts.
 ///
 /// # Validation
@@ -1077,7 +1077,7 @@ pub const PBKDF2_ITERATIONS: u32 = 600_000;
 ///
 /// # Cache Eviction Policy
 ///
-/// Strata uses an LRU (Least Recently Used) eviction policy:
+/// Hexz uses an LRU (Least Recently Used) eviction policy:
 /// - **On cache full**: Evicts the least recently accessed block to make room
 /// - **Temporal locality**: Works well for workloads that re-access recent data
 /// - **Large scans**: Sequential scans can pollute the cache, evicting useful blocks;
@@ -1321,7 +1321,7 @@ pub const DEFAULT_PREFETCH_COUNT: u32 = 4;
 
 /// Default network timeout in seconds (30 seconds).
 ///
-/// The network timeout controls how long Strata waits for individual HTTP/S3/network
+/// The network timeout controls how long Hexz waits for individual HTTP/S3/network
 /// requests to complete before considering them failed. This applies to remote storage
 /// backends (object storage, HTTP endpoints) but not to local filesystem operations.
 ///
@@ -1482,7 +1482,7 @@ pub const DEFAULT_PREFETCH_COUNT: u32 = 4;
 /// - **Without retries**: Total latency = `timeout`
 ///   - Example: 30s total before failure
 ///
-/// If Strata implements retries, consider reducing timeout to 10-15 seconds and relying
+/// If Hexz implements retries, consider reducing timeout to 10-15 seconds and relying
 /// on retries for reliability (e.g., 3 retries × 10s = 30s total, same as single 30s request).
 ///
 /// # Per-Request vs. Total Timeout
@@ -1537,7 +1537,7 @@ pub const DEFAULT_NETWORK_TIMEOUT: u64 = 30;
 ///   still sufficient (2^128 quantum operations is beyond practical capability)
 /// - **No known weaknesses**: AES-256 has no practical attacks; all known breaks require
 ///   unrealistic conditions (related-key attacks, chosen-plaintext scenarios not
-///   applicable to Strata's design)
+///   applicable to Hexz's design)
 ///
 /// # Performance Impact
 ///
@@ -1585,7 +1585,7 @@ pub const AES_KEY_LENGTH: usize = 32;
 ///   two plaintexts, enabling cryptanalysis)
 /// - **Integrity**: Reused nonces allow forgery of authenticated tags
 ///
-/// Strata generates random nonces per block, ensuring uniqueness with high probability.
+/// Hexz generates random nonces per block, ensuring uniqueness with high probability.
 ///
 /// ## Collision Probability
 /// With 96-bit random nonces:

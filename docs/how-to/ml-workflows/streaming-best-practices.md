@@ -1,10 +1,10 @@
 # Streaming Best Practices
 
-**Goal**: Optimize Strata for production ML data streaming workflows.
+**Goal**: Optimize Hexz for production ML data streaming workflows.
 
 ## Prerequisites
 
-- Strata Python package installed
+- Hexz Python package installed
 - Experience with PyTorch DataLoader
 - Production ML training environment
 
@@ -22,8 +22,8 @@ location = s3.get_bucket_location(Bucket='my-bucket')
 print(location['LocationConstraint'])
 
 # Use matching region
-dataset = strata.open(
-    "s3://my-bucket/dataset.st",
+dataset = hexz.open(
+    "s3://my-bucket/dataset.hxz",
     s3_region=location['LocationConstraint']
 )
 ```
@@ -42,8 +42,8 @@ working_set = dataset_size * 0.4  # 400GB typical
 # Set cache to 10-20% of working set (fits in RAM)
 cache_size = int(working_set * 0.15)  # 60GB
 
-dataset = strata.open(
-    "s3://bucket/dataset.st",
+dataset = hexz.open(
+    "s3://bucket/dataset.hxz",
     cache_size=cache_size,
     cache_dir="/nvme/cache"  # Overflow to fast disk
 )
@@ -147,10 +147,10 @@ Target: >90% hit rate after first epoch.
 **Persist cache across training runs**.
 
 ```python
-dataset = strata.open(
-    "s3://bucket/dataset.st",
+dataset = hexz.open(
+    "s3://bucket/dataset.hxz",
     cache_size=2 * 1024**3,  # 2GB RAM
-    cache_dir="/nvme/strata-cache"  # Persist to NVMe
+    cache_dir="/nvme/hexz-cache"  # Persist to NVMe
 )
 ```
 
@@ -162,16 +162,16 @@ dataset = strata.open(
 
 ```bash
 # For S3 streaming (save bandwidth)
-strata data pack \
+hexz data pack \
   --disk data/ \
-  --output dataset.st \
+  --output dataset.hxz \
   --compression zstd \
   --compression-level 9
 
 # For local NVMe (fast decompression)
-strata data pack \
+hexz data pack \
   --disk data/ \
-  --output dataset.st \
+  --output dataset.hxz \
   --compression lz4
 ```
 
@@ -180,8 +180,8 @@ strata data pack \
 **Handle transient S3 failures**.
 
 ```python
-dataset = strata.open(
-    "s3://bucket/dataset.st",
+dataset = hexz.open(
+    "s3://bucket/dataset.hxz",
     retry_attempts=5,  # Retry on failure
     connect_timeout=15,
     read_timeout=60

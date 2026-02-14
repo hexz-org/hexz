@@ -53,16 +53,16 @@
 //!
 //! ```bash
 //! # Show summary of changes
-//! strata diff overlay.img
+//! hexz diff overlay.img
 //!
 //! # Show detailed block statistics
-//! strata diff overlay.img --blocks
+//! hexz diff overlay.img --blocks
 //!
 //! # List all modified block indices
-//! strata diff overlay.img --files
+//! hexz diff overlay.img --files
 //!
 //! # Estimate commit size before running vm commit
-//! strata diff vm-state.overlay --blocks
+//! hexz diff vm-state.overlay --blocks
 //! # Output: "Modified Blocks: 5120 | Total Changed Data: 20.0 MB"
 //! ```
 
@@ -149,7 +149,7 @@ const META_ENTRY_SIZE: usize = 8;
 ///
 /// ```no_run
 /// use std::path::PathBuf;
-/// use strata_cli::cmd::data::diff;
+/// use hexz_cli::cmd::data::diff;
 ///
 /// // Show summary of overlay changes
 /// diff::run(PathBuf::from("vm-state.overlay"), false, false)?;

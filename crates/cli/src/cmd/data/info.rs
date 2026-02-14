@@ -1,6 +1,6 @@
 //! Inspect archive metadata and display snapshot information.
 //!
-//! This command provides a detailed inspection of Strata snapshot files (`.st`),
+//! This command provides a detailed inspection of Hexz snapshot files (`.st`),
 //! reading the file header and master index to display metadata about the
 //! snapshot's structure, compression, encryption status, and storage statistics.
 //!
@@ -51,23 +51,23 @@
 //!
 //! ```bash
 //! # Inspect a snapshot with human-readable output
-//! strata info vm-snapshot.st
+//! hexz info vm-snapshot.st
 //!
 //! # Get machine-readable JSON for scripting
-//! strata info vm-snapshot.st --json | jq .compression_ratio
+//! hexz info vm-snapshot.st --json | jq .compression_ratio
 //!
 //! # Verify snapshot integrity
-//! strata info corrupted.st  # Will fail if header is malformed
+//! hexz info corrupted.st  # Will fail if header is malformed
 //! ```
 
 use anyhow::{Context, Result};
+use hexz_core::format::header::Header;
+use hexz_core::format::index::MasterIndex;
+use hexz_core::format::magic::HEADER_SIZE;
 use indicatif::HumanBytes;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
-use strata_core::format::header::StrataHeader;
-use strata_core::format::index::MasterIndex;
-use strata_core::format::magic::HEADER_SIZE;
 
 /// Executes the info command to display snapshot metadata.
 ///
@@ -117,13 +117,13 @@ use strata_core::format::magic::HEADER_SIZE;
 ///
 /// ```no_run
 /// use std::path::PathBuf;
-/// use strata_cli::cmd::data::info;
+/// use hexz_cli::cmd::data::info;
 ///
 /// // Display human-readable snapshot information
-/// info::run(PathBuf::from("snapshot.st"), false)?;
+/// info::run(PathBuf::from("snapshot.hxz"), false)?;
 ///
 /// // Output JSON for automated processing
-/// info::run(PathBuf::from("snapshot.st"), true)?;
+/// info::run(PathBuf::from("snapshot.hxz"), true)?;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 pub fn run(snap: PathBuf, json: bool) -> Result<()> {
@@ -133,8 +133,7 @@ pub fn run(snap: PathBuf, json: bool) -> Result<()> {
     let mut header_bytes = [0u8; HEADER_SIZE];
     f.read_exact(&mut header_bytes)
         .context("Failed to read header")?;
-    let header: StrataHeader =
-        bincode::deserialize(&header_bytes).context("Invalid header format")?;
+    let header: Header = bincode::deserialize(&header_bytes).context("Invalid header format")?;
 
     f.seek(SeekFrom::Start(header.index_offset))
         .context("Failed to seek to index")?;

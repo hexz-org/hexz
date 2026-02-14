@@ -1,10 +1,10 @@
 # Verify Snapshot Signatures
 
-**Goal**: Verify integrity and authenticity of signed Strata snapshots.
+**Goal**: Verify integrity and authenticity of signed Hexz snapshots.
 
 ## Prerequisites
 
-- Strata CLI installed
+- Hexz CLI installed
 - Public key from snapshot publisher
 - Signed snapshot file
 
@@ -18,7 +18,7 @@ Verification ensures:
 ## Verify Signed Snapshot
 
 ```bash
-strata sys verify --key public.key snapshot.st
+hexz sys verify --key public.key snapshot.st
 ```
 
 **Success output** (silent):
@@ -43,7 +43,7 @@ Public keys should be distributed via secure channel:
 **Example**:
 ```bash
 # Download official public key
-curl -O https://strata.example.com/keys/public.key
+curl -O https://hexz.example.com/keys/public.key
 
 # Verify fingerprint matches documentation
 sha256sum public.key
@@ -54,10 +54,10 @@ sha256sum public.key
 ```bash
 #!/bin/bash
 
-if strata sys verify --key public.key dataset.st; then
+if hexz sys verify --key public.key dataset.hxz; then
     echo "Verification successful"
     # Proceed with usage
-    strata vm boot dataset.st
+    hexz vm boot dataset.hxz
 else
     echo "Verification failed!" >&2
     exit 1
@@ -72,18 +72,18 @@ import sys
 
 def verify_snapshot(snapshot_path, public_key_path):
     result = subprocess.run(
-        ["strata", "sys", "verify", "--key", public_key_path, snapshot_path],
+        ["hexz", "sys", "verify", "--key", public_key_path, snapshot_path],
         capture_output=True
     )
     return result.returncode == 0
 
-if not verify_snapshot("dataset.st", "public.key"):
+if not verify_snapshot("dataset.hxz", "public.key"):
     print("Snapshot verification failed!", file=sys.stderr)
     sys.exit(1)
 
 # Safe to use
-import strata
-dataset = strata.open("dataset.st")
+import hexz
+dataset = hexz.open("dataset.hxz")
 ```
 
 ## Create Signed Snapshots
@@ -93,7 +93,7 @@ If you're publishing snapshots:
 ### Generate Keypair
 
 ```bash
-strata sys keygen --output-dir ./keys
+hexz sys keygen --output-dir ./keys
 ```
 
 Creates:
@@ -104,16 +104,16 @@ Creates:
 
 ```bash
 # Pack snapshot
-strata data pack --disk data/ --output dataset.st
+hexz data pack --disk data/ --output dataset.hxz
 
 # Sign snapshot
-strata sys sign --key keys/private.key dataset.st
+hexz sys sign --key keys/private.key dataset.hxz
 ```
 
 ### Distribute
 
 Distribute:
-- `dataset.st` (signed snapshot)
+- `dataset.hxz` (signed snapshot)
 - `public.key` (for verification)
 
 Keep secret:
@@ -134,7 +134,7 @@ PUBLIC_KEY="./trusted-keys/public.key"
 wget "$SNAPSHOT_URL" -O snapshot.st
 
 # Verify
-if ! strata sys verify --key "$PUBLIC_KEY" snapshot.st; then
+if ! hexz sys verify --key "$PUBLIC_KEY" snapshot.st; then
     echo "ERROR: Snapshot verification failed" >&2
     rm snapshot.st
     exit 1
@@ -145,7 +145,7 @@ echo "Snapshot verified successfully"
 
 Usage:
 ```bash
-./download-and-verify.sh https://example.com/dataset.st
+./download-and-verify.sh https://example.com/dataset.hxz
 ```
 
 ## Key Management Best Practices
@@ -182,4 +182,4 @@ Usage:
 
 - [Reference: CLI Commands](../../reference/cli-reference.md)
 - [How-To: Pack Datasets](pack-datasets.md)
-- [How-To: Install Strata](install-strata.md)
+- [How-To: Install Hexz](install-hexz.md)

@@ -87,11 +87,11 @@
 //! // Result: Overlay block 0 bytes 200..300 updated
 //! ```
 
-use super::Strata;
+use super::Hexz;
 use crate::vfs::BLOCK_SIZE;
 use fuser::{ReplyWrite, Request};
+use hexz_core::SnapshotStream;
 use libc::{EIO, EROFS};
-use strata_core::SnapshotStream;
 
 /// Writes a byte range into the overlay-backed disk inode with COW semantics.
 ///
@@ -174,7 +174,7 @@ use strata_core::SnapshotStream;
 /// - **Space usage**: Each modified block adds 4 KiB to overlay + 8 bytes to `.meta`
 #[allow(clippy::too_many_arguments)]
 pub fn handle_write(
-    fs: &mut Strata,
+    fs: &mut Hexz,
     _req: &Request,
     ino: u64,
     _fh: u64,

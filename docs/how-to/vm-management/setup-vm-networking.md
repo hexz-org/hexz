@@ -1,21 +1,21 @@
 # Setup VM Networking
 
-**Goal**: Configure network access for VMs booted from Strata snapshots.
+**Goal**: Configure network access for VMs booted from Hexz snapshots.
 
 ## Prerequisites
 
-- Strata CLI installed
+- Hexz CLI installed
 - VM snapshot ready
 - Basic understanding of networking concepts
 
 ## Networking Modes
 
-Strata supports QEMU user-mode networking (no root required).
+Hexz supports QEMU user-mode networking (no root required).
 
 ## Enable Basic Networking
 
 ```bash
-strata vm boot vm-snapshot.st --net
+hexz vm boot vm-snapshot.st --net
 ```
 
 **What this provides**:
@@ -31,7 +31,7 @@ Forward host ports to VM services.
 
 ```bash
 # Forward host:2222 to VM:22 (SSH)
-strata vm boot vm-snapshot.st \\
+hexz vm boot vm-snapshot.st \\
   --net \\
   --forward 2222:22
 ```
@@ -44,7 +44,7 @@ ssh -p 2222 user@localhost
 ### Forward Multiple Ports
 
 ```bash
-strata vm boot vm-snapshot.st \\
+hexz vm boot vm-snapshot.st \\
   --net \\
   --forward 2222:22 \\    # SSH
   --forward 8080:80 \\    # HTTP
@@ -76,7 +76,7 @@ sudo systemctl start ssh
 ### Step 2: Boot with SSH Port Forward
 
 ```bash
-strata vm boot vm-snapshot.st \\
+hexz vm boot vm-snapshot.st \\
   --net \\
   --forward 2222:22
 ```
@@ -100,7 +100,7 @@ ssh -p 2222 user@localhost
 
 Edit `~/.ssh/config`:
 ```
-Host strata-vm
+Host hexz-vm
     HostName localhost
     Port 2222
     User myuser
@@ -109,7 +109,7 @@ Host strata-vm
 
 Then connect with:
 ```bash
-ssh strata-vm
+ssh hexz-vm
 ```
 
 ## Web Server Access
@@ -126,7 +126,7 @@ sudo systemctl start nginx
 ### Boot with HTTP Port Forward
 
 ```bash
-strata vm boot vm-snapshot.st \\
+hexz vm boot vm-snapshot.st \\
   --net \\
   --forward 8080:80
 ```
@@ -159,7 +159,7 @@ host    all             all             0.0.0.0/0               md5
 
 Boot with port forward:
 ```bash
-strata vm boot vm-snapshot.st \\
+hexz vm boot vm-snapshot.st \\
   --net \\
   --forward 5432:5432
 ```
@@ -174,7 +174,7 @@ psql -h localhost -p 5432 -U postgres
 ### Full Development Environment
 
 ```bash
-strata vm boot dev-vm.st \\
+hexz vm boot dev-vm.st \\
   --ram 8G \\
   --cpus 4 \\
   --net \\
@@ -301,7 +301,7 @@ sudo systemctl restart ssh
 
 ## Advanced: Custom Network Configuration
 
-For more complex networking (bridged, TAP), see QEMU networking documentation. Strata CLI focuses on simple user-mode networking for most use cases.
+For more complex networking (bridged, TAP), see QEMU networking documentation. Hexz CLI focuses on simple user-mode networking for most use cases.
 
 ## See Also
 

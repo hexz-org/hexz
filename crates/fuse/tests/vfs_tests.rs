@@ -1,7 +1,7 @@
 //! Unit tests for VFS layer: make_attr, InodeType, and Overlay.
 
 use fuser::FileType;
-use strata_fuse::vfs::{InodeType, Overlay, make_attr};
+use hexz_fuse::vfs::{InodeType, Overlay, make_attr};
 use tempfile::TempDir;
 
 // ─── make_attr tests ───────────────────────────────────────────────────────

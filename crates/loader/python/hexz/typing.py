@@ -1,6 +1,6 @@
-"""Type aliases and protocols for Strata.
+"""Type aliases and protocols for Hexz.
 
-This module defines common types used throughout the Strata API.
+This module defines common types used throughout the Hexz API.
 """
 
 from typing import Union, Tuple, Protocol, Any, Dict, Literal

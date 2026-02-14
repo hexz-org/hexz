@@ -2,14 +2,14 @@
 
 **Time to Complete**: 15 minutes
 
-**What You'll Learn**: How Strata's block-level compression and deduplication work through hands-on experimentation.
+**What You'll Learn**: How Hexz's block-level compression and deduplication work through hands-on experimentation.
 
 **What You'll Build**: Multiple snapshots demonstrating compression ratios and deduplication benefits.
 
 ## Prerequisites
 
 - Completed [Getting Started](getting-started.md)
-- Strata CLI and Python package installed
+- Hexz CLI and Python package installed
 - Basic understanding of file compression
 
 ## Learning Objectives
@@ -29,7 +29,7 @@ Let's create files with different characteristics and see how they compress.
 Create `compression_test.py`:
 
 ```python
-import strata
+import hexz
 import os
 
 # Create test files
@@ -73,11 +73,11 @@ text.txt: 90,000 bytes
 Now pack these files with different compression algorithms.
 
 ```python
-import strata
+import hexz
 import os
 
 def pack_and_report(input_dir, output_file, compression):
-    with strata.open(output_file, mode="w", compression=compression) as writer:
+    with hexz.open(output_file, mode="w", compression=compression) as writer:
         for filename in os.listdir(input_dir):
             filepath = os.path.join(input_dir, filename)
             if os.path.isfile(filepath):
@@ -100,8 +100,8 @@ original = sum(
 )
 print(f"Original: {original:,} bytes\n")
 
-pack_and_report("/tmp/compression_test", "/tmp/test_lz4.st", "lz4")
-pack_and_report("/tmp/compression_test", "/tmp/test_zstd.st", "zstd")
+pack_and_report("/tmp/compression_test", "/tmp/test_lz4.hxz", "lz4")
+pack_and_report("/tmp/compression_test", "/tmp/test_zstd.hxz", "zstd")
 ```
 
 **Expected Output**:
@@ -124,7 +124,7 @@ ZSTD  : 102,000 bytes (ratio: 2.84x)
 Block-level compression enables random access. Let's see how it works.
 
 ```python
-import strata
+import hexz
 
 # Create a large file with distinct sections
 with open("/tmp/large_file.bin", "wb") as f:
@@ -136,11 +136,11 @@ with open("/tmp/large_file.bin", "wb") as f:
     f.write(b"C" * 100000)
 
 # Pack with block-level compression
-with strata.open("/tmp/blocks.st", mode="w", compression="lz4", block_size=65536) as writer:
+with hexz.open("/tmp/blocks.hxz", mode="w", compression="lz4", block_size=65536) as writer:
     writer.add("/tmp/large_file.bin")
 
 # Now we can read any section without decompressing everything
-with strata.open("/tmp/blocks.st") as reader:
+with hexz.open("/tmp/blocks.hxz") as reader:
     # Jump to middle (section 2) without decompressing section 1
     reader.seek(100000)
     data = reader.read(10)
@@ -165,7 +165,7 @@ Data at offset 200000: b'CCCCCCCCCC'
 Content-Defined Chunking (CDC) finds duplicate content even when inserted.
 
 ```python
-import strata
+import hexz
 import os
 
 # Create base file
@@ -175,11 +175,11 @@ with open("/tmp/version1.txt", "w") as f:
     f.write("Line 3\n" * 1000)
 
 # Pack without CDC
-with strata.open("/tmp/v1_no_cdc.st", mode="w") as writer:
+with hexz.open("/tmp/v1_no_cdc.hxz", mode="w") as writer:
     writer.add("/tmp/version1.txt")
 
 # Pack with CDC
-with strata.open("/tmp/v1_with_cdc.st", mode="w", cdc=True) as writer:
+with hexz.open("/tmp/v1_with_cdc.hxz", mode="w", cdc=True) as writer:
     writer.add("/tmp/version1.txt")
 
 print("Version 1:")
@@ -194,11 +194,11 @@ with open("/tmp/version2.txt", "w") as f:
     f.write("Line 3\n" * 1000)
 
 # Pack version 2 without CDC (everything shifts, no deduplication)
-with strata.open("/tmp/v2_no_cdc.st", mode="w") as writer:
+with hexz.open("/tmp/v2_no_cdc.hxz", mode="w") as writer:
     writer.add("/tmp/version2.txt")
 
 # Pack version 2 with CDC (finds common blocks despite shift)
-with strata.open("/tmp/v2_with_cdc.st", mode="w", cdc=True) as writer:
+with hexz.open("/tmp/v2_with_cdc.hxz", mode="w", cdc=True) as writer:
     writer.add("/tmp/version2.txt")
 
 print("\nVersion 2 (with insertion at start):")
@@ -206,8 +206,8 @@ print(f"  Without CDC: {os.path.getsize('/tmp/v2_no_cdc.st'):,} bytes")
 print(f"  With CDC: {os.path.getsize('/tmp/v2_with_cdc.st'):,} bytes")
 
 # Show the benefit
-v1_size = os.path.getsize("/tmp/v1_with_cdc.st")
-v2_size = os.path.getsize("/tmp/v2_with_cdc.st")
+v1_size = os.path.getsize("/tmp/v1_with_cdc.hxz")
+v2_size = os.path.getsize("/tmp/v2_with_cdc.hxz")
 print(f"\nWith CDC, version 2 is only {v2_size - v1_size:,} bytes larger")
 print("(Just the new content, not the shifted content)")
 ```
@@ -239,9 +239,9 @@ Block size affects compression ratio and access latency.
 dd if=/dev/urandom of=/tmp/test_data.bin bs=1M count=10
 
 # Pack with different block sizes
-strata data pack --disk /tmp/test_data.bin --output /tmp/4kb.st --block-size 4096
-strata data pack --disk /tmp/test_data.bin --output /tmp/64kb.st --block-size 65536
-strata data pack --disk /tmp/test_data.bin --output /tmp/256kb.st --block-size 262144
+hexz data pack --disk /tmp/test_data.bin --output /tmp/4kb.st --block-size 4096
+hexz data pack --disk /tmp/test_data.bin --output /tmp/64kb.st --block-size 65536
+hexz data pack --disk /tmp/test_data.bin --output /tmp/256kb.st --block-size 262144
 
 # Compare sizes
 ls -lh /tmp/*kb.st

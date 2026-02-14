@@ -9,8 +9,8 @@ mod tests {
     use std::net::TcpListener;
     use std::thread;
 
-    use strata_core::store::StorageBackend;
-    use strata_core::store::s3::S3Backend;
+    use hexz_core::store::StorageBackend;
+    use hexz_core::store::s3::S3Backend;
 
     /// Start a mock S3 server that handles HEAD and GET with Range on a single
     /// path-style object `/bucket/key`.

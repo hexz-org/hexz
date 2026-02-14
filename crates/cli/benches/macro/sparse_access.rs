@@ -1,23 +1,23 @@
-//! Sparse (random) access benchmarks for Strata snapshots.
+//! Sparse (random) access benchmarks for Hexz snapshots.
 //!
 //! Measures read throughput when issuing randomly scattered reads against
 //! a snapshot. Uses a deterministic pattern and a pre-built snapshot to
 //! compare cache and backend behavior under non-sequential access.
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use hexz_cli::cmd::data::pack;
+use hexz_core::File;
+use hexz_core::algo::compression::lz4::Lz4Compressor;
+use hexz_core::api::file::SnapshotStream;
+use hexz_core::store::local::FileBackend;
 use std::io::Write;
 use std::sync::Arc;
-use strata_cli::cmd::data::pack;
-use strata_core::StrataFile;
-use strata_core::algo::compression::lz4::Lz4Compressor;
-use strata_core::api::stratafile::SnapshotStream;
-use strata_core::store::local::FileBackend;
 use tempfile::NamedTempFile;
 
 /// Creates an input file and corresponding snapshot tailored for sparse-access tests.
 ///
 /// **Architectural intent:** Generates a deterministic byte pattern of configurable
-/// size and encodes it into a Strata image so that randomly scattered reads can be
+/// size and encodes it into a Hexz image so that randomly scattered reads can be
 /// issued against a known layout without additional setup logic in each benchmark.
 ///
 /// **Constraints:** The pattern cycles every 251 bytes; altering this logic changes
@@ -78,7 +78,7 @@ fn bench_sparse_access(c: &mut Criterion) {
     group.bench_function("10_scattered_64k_reads", |b| {
         let backend = Arc::new(FileBackend::new(&output_path).unwrap());
         let compressor = Box::new(Lz4Compressor::new());
-        let snap = StrataFile::new(backend, compressor, None).unwrap();
+        let snap = File::new(backend, compressor, None).unwrap();
 
         b.iter(|| {
             for i in 0..10 {
@@ -105,7 +105,7 @@ fn bench_sparse_access(c: &mut Criterion) {
 ///
 /// **Side effects:** Constructs snapshots on disk and issues repeated reads from the
 /// same offset, impacting the OS page cache and any higher-level caches used by
-/// `StrataFile`.
+/// `File`.
 fn bench_cache_performance(c: &mut Criterion) {
     let size = 10 * 1024 * 1024;
     let (_input, output) = setup_benchmark(size);
@@ -117,7 +117,7 @@ fn bench_cache_performance(c: &mut Criterion) {
         b.iter(|| {
             let backend = Arc::new(FileBackend::new(&output_path).unwrap());
             let compressor = Box::new(Lz4Compressor::new());
-            let snap = StrataFile::new(backend, compressor, None).unwrap();
+            let snap = File::new(backend, compressor, None).unwrap();
             let _ = snap
                 .read_at(SnapshotStream::Disk, 5 * 1024 * 1024, 4096)
                 .unwrap();
@@ -127,7 +127,7 @@ fn bench_cache_performance(c: &mut Criterion) {
     group.bench_function("warm_cache_4k", |b| {
         let backend = Arc::new(FileBackend::new(&output_path).unwrap());
         let compressor = Box::new(Lz4Compressor::new());
-        let snap = StrataFile::new(backend, compressor, None).unwrap();
+        let snap = File::new(backend, compressor, None).unwrap();
 
         let _ = snap
             .read_at(SnapshotStream::Disk, 5 * 1024 * 1024, 4096)

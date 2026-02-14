@@ -2,7 +2,7 @@
 //!
 //! # Overview
 //!
-//! `strata-core` implements the core logic for creating and reading Strata snapshots—
+//! `hexz-core` implements the core logic for creating and reading Hexz snapshots—
 //! compressed, block-indexed archives that support random access, remote streaming,
 //! and incremental updates. This crate contains no UI code; all user interfaces
 //! (CLI, Python, FUSE) are in separate crates.
@@ -15,22 +15,22 @@
 //! - **[`store`]**: Storage backend abstraction (local files, HTTP, S3)
 //! - **[`algo`]**: Compression, encryption, hashing, and deduplication algorithms
 //! - **[`cache`]**: LRU caching for decompressed blocks and index pages
-//! - **[`api`]**: Public API ([`StrataFile`]) for reading snapshots
+//! - **[`api`]**: Public API ([`File`]) for reading snapshots
 //! - **[`ops`]**: High-level operations for packing and manipulating snapshots
 //!
 //! # Quick Start
 //!
 //! ```no_run
-//! use strata_core::{StrataFile, SnapshotStream};
-//! use strata_core::store::local::FileBackend;
-//! use strata_core::algo::compression::lz4::Lz4Compressor;
+//! use hexz_core::{File, SnapshotStream};
+//! use hexz_core::store::local::FileBackend;
+//! use hexz_core::algo::compression::lz4::Lz4Compressor;
 //! use std::sync::Arc;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Open a local snapshot file
-//! let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+//! let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
 //! let compressor = Box::new(Lz4Compressor::new());
-//! let snapshot = StrataFile::new(backend, compressor, None)?;
+//! let snapshot = File::new(backend, compressor, None)?;
 //!
 //! // Read 4KB from disk stream at offset 1MB
 //! let data = snapshot.read_at(SnapshotStream::Disk, 1024 * 1024, 4096)?;
@@ -41,7 +41,7 @@
 //!
 //! # File Format
 //!
-//! Strata snapshots consist of:
+//! Hexz snapshots consist of:
 //! 1. A fixed-size header (512 bytes) with metadata
 //! 2. Compressed data blocks (variable size)
 //! 3. Hierarchical index pages (serialized with bincode)
@@ -86,7 +86,7 @@
 //!
 //! # Thread Safety
 //!
-//! [`StrataFile`] is `Send + Sync` and can be safely shared across threads via `Arc`.
+//! [`File`] is `Send + Sync` and can be safely shared across threads via `Arc`.
 //! Internal caches use `Mutex` for synchronization. Multiple threads can read
 //! concurrently from the same snapshot with independent cache hits.
 //!
@@ -95,21 +95,21 @@
 //! ## Reading from HTTP
 //!
 //! ```no_run
-//! use strata_core::StrataFile;
-//! use strata_core::store::http::HttpBackend;
-//! use strata_core::algo::compression::lz4::Lz4Compressor;
+//! use hexz_core::File;
+//! use hexz_core::store::http::HttpBackend;
+//! use hexz_core::algo::compression::lz4::Lz4Compressor;
 //! use std::sync::Arc;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let backend = Arc::new(HttpBackend::new(
-//!     "https://example.com/dataset.st".to_string(),
+//!     "https://example.com/dataset.hxz".to_string(),
 //!     false // don't allow restricted IPs
 //! )?);
 //! let compressor = Box::new(Lz4Compressor::new());
-//! let snapshot = StrataFile::new(backend, compressor, None)?;
+//! let snapshot = File::new(backend, compressor, None)?;
 //!
 //! // Stream data without downloading entire file
-//! let data = snapshot.read_at(strata_core::SnapshotStream::Disk, 0, 1024)?;
+//! let data = snapshot.read_at(hexz_core::SnapshotStream::Disk, 0, 1024)?;
 //! # Ok(())
 //! # }
 //! ```
@@ -120,32 +120,32 @@
 //! thin file automatically loads the parent when needed.
 //!
 //! ```no_run
-//! use strata_core::StrataFile;
-//! use strata_core::store::local::FileBackend;
-//! use strata_core::algo::compression::lz4::Lz4Compressor;
+//! use hexz_core::File;
+//! use hexz_core::store::local::FileBackend;
+//! use hexz_core::algo::compression::lz4::Lz4Compressor;
 //! use std::sync::Arc;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Open thin snapshot (parent is loaded from header parent_path when present)
-//! let thin_backend = Arc::new(FileBackend::new("incremental.st".as_ref())?);
+//! let thin_backend = Arc::new(FileBackend::new("incremental.hxz".as_ref())?);
 //! let thin_compressor = Box::new(Lz4Compressor::new());
-//! let thin = StrataFile::new(thin_backend, thin_compressor, None)?;
+//! let thin = File::new(thin_backend, thin_compressor, None)?;
 //!
 //! // Reading from thin automatically falls back to base for unchanged blocks
-//! let data = thin.read_at(strata_core::SnapshotStream::Disk, 0, 4096)?;
+//! let data = thin.read_at(hexz_core::SnapshotStream::Disk, 0, 4096)?;
 //! # Ok(())
 //! # }
 //! ```
 
 /// Public API surface for reading snapshot files.
 ///
-/// Contains [`StrataFile`](api::stratafile::StrataFile), the main entry point
+/// Contains [`api::file::File`], the main entry point
 /// for opening and reading snapshots.
 pub mod api;
 
 /// Storage backend abstraction and implementations.
 ///
-/// All backends implement [`StorageBackend`](store::StorageBackend) to provide
+/// All backends implement [`store::StorageBackend`] to provide
 /// uniform access to snapshot data regardless of source (local file, HTTP, S3).
 pub mod store;
 
@@ -157,7 +157,7 @@ pub mod cache;
 
 /// On-disk format structures: headers, indices, and serialization.
 ///
-/// These types define the binary wire format for Strata snapshots. All structures
+/// These types define the binary wire format for Hexz snapshots. All structures
 /// use `bincode` for serialization and are versioned for forward compatibility.
 pub mod format;
 
@@ -176,4 +176,4 @@ pub mod algo;
 /// that orchestrates multiple lower-level components.
 pub mod ops;
 
-pub use api::stratafile::{SnapshotStream, StrataFile};
+pub use api::file::{File, SnapshotStream};

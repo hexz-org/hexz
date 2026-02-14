@@ -1,7 +1,7 @@
-//! Cryptographically sign Strata archives with Ed25519 signatures.
+//! Cryptographically sign Hexz archives with Ed25519 signatures.
 //!
 //! This module implements the `sign` command, which creates a cryptographic
-//! signature for a Strata archive to ensure authenticity and integrity.
+//! signature for a Hexz archive to ensure authenticity and integrity.
 //!
 //! # Signing Process
 //!
@@ -39,13 +39,13 @@
 //!
 //! ```bash
 //! # Generate keys first
-//! strata sys keygen --output-dir ~/.strata/keys
+//! hexz sys keygen --output-dir ~/.hexz/keys
 //!
 //! # Sign an archive
-//! strata sys sign --key ~/.strata/keys/private.key snapshot.st
+//! hexz sys sign --key ~/.hexz/keys/private.key snapshot.st
 //!
 //! # Verify the signature
-//! strata sys verify --key ~/.strata/keys/public.key snapshot.st
+//! hexz sys verify --key ~/.hexz/keys/public.key snapshot.st
 //! ```
 //!
 //! # File Format Changes
@@ -65,15 +65,15 @@
 //! ```
 
 use anyhow::Result;
+use hexz_common::sign;
+use hexz_core::format::header::Header;
+use hexz_core::format::magic::HEADER_SIZE;
 use sha2::{Digest, Sha256};
 use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
-use strata_common::sign;
-use strata_core::format::header::StrataHeader;
-use strata_core::format::magic::HEADER_SIZE;
 
-/// Sign a Strata archive with an Ed25519 private key.
+/// Sign a Hexz archive with an Ed25519 private key.
 ///
 /// This function creates a cryptographic signature for the archive's Master Index
 ///and embeds it in the archive file, updating the header to record the signature's
@@ -82,7 +82,7 @@ use strata_core::format::magic::HEADER_SIZE;
 /// # Arguments
 ///
 /// * `key_path` - Path to the Ed25519 private key file (32 bytes)
-/// * `image_path` - Path to the Strata archive file to sign
+/// * `image_path` - Path to the Hexz archive file to sign
 ///
 /// # Process
 ///
@@ -111,9 +111,9 @@ use strata_core::format::magic::HEADER_SIZE;
 ///
 /// ```no_run
 /// # use std::path::PathBuf;
-/// # use strata_cli::cmd::sys::sign;
-/// let key = PathBuf::from("~/.strata/keys/private.key");
-/// let archive = PathBuf::from("snapshot.st");
+/// # use hexz_cli::cmd::sys::sign;
+/// let key = PathBuf::from("~/.hexz/keys/private.key");
+/// let archive = PathBuf::from("snapshot.hxz");
 /// sign::run(key, archive)?;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
@@ -126,7 +126,7 @@ pub fn run(key_path: PathBuf, image_path: PathBuf) -> Result<()> {
         .open(&image_path)?;
     let mut header_bytes = [0u8; HEADER_SIZE];
     f.read_exact(&mut header_bytes)?;
-    let mut header: StrataHeader = bincode::deserialize(&header_bytes)?;
+    let mut header: Header = bincode::deserialize(&header_bytes)?;
 
     f.seek(SeekFrom::Start(header.index_offset))?;
     let mut index_bytes = Vec::new();

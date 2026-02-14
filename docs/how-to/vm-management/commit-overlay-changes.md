@@ -1,12 +1,12 @@
 # Commit Overlay Changes
 
-**Goal**: Save changes made to a read-write overlay back into a new Strata snapshot.
+**Goal**: Save changes made to a read-write overlay back into a new Hexz snapshot.
 
 ## Prerequisites
 
 - Base snapshot
 - Overlay image with changes
-- Strata CLI installed
+- Hexz CLI installed
 
 ## Understanding Overlays
 
@@ -19,7 +19,7 @@ Base Snapshot (read-only) + Overlay (writes) = Running VM State
 ## Create Overlay During Boot
 
 ```bash
-strata vm boot base-vm.st --overlay changes.img
+hexz vm boot base-vm.st --overlay changes.img
 ```
 
 Make changes in the VM, then shutdown.
@@ -27,7 +27,7 @@ Make changes in the VM, then shutdown.
 ## Commit Overlay to New Snapshot
 
 ```bash
-strata vm commit \\
+hexz vm commit \\
   --base base-vm.st \\
   --overlay changes.img \\
   --output updated-vm.st
@@ -39,7 +39,7 @@ strata vm commit \\
 
 ```bash
 # 1. Boot with overlay
-strata vm boot ubuntu-base.st --overlay dev-setup.img
+hexz vm boot ubuntu-base.st --overlay dev-setup.img
 ```
 
 Inside VM:
@@ -52,7 +52,7 @@ sudo shutdown -h now
 
 ```bash
 # 2. Commit changes
-strata vm commit \\
+hexz vm commit \\
   --base ubuntu-base.st \\
   --overlay dev-setup.img \\
   --output ubuntu-dev.st \\
@@ -61,7 +61,7 @@ strata vm commit \\
 
 ```bash
 # 3. New snapshot ready to use
-strata vm boot ubuntu-dev.st
+hexz vm boot ubuntu-dev.st
 ```
 
 ## Incremental Updates
@@ -70,12 +70,12 @@ Make additional changes:
 
 ```bash
 # Boot the updated snapshot with new overlay
-strata vm boot ubuntu-dev.st --overlay new-changes.img
+hexz vm boot ubuntu-dev.st --overlay new-changes.img
 
 # Make more changes...
 
 # Commit again
-strata vm commit \\
+hexz vm commit \\
   --base ubuntu-dev.st \\
   --overlay new-changes.img \\
   --output ubuntu-dev-v2.st \\
@@ -99,7 +99,7 @@ Alternative approach using FUSE mount:
 ```bash
 # Mount with overlay
 mkdir /tmp/vm-mount
-strata vm mount base-vm.st /tmp/vm-mount --overlay changes.img
+hexz vm mount base-vm.st /tmp/vm-mount --overlay changes.img
 
 # Make changes to mounted filesystem
 sudo cp /etc/config /tmp/vm-mount/etc/config
@@ -108,7 +108,7 @@ sudo cp /etc/config /tmp/vm-mount/etc/config
 sudo umount /tmp/vm-mount
 
 # Commit
-strata vm commit \\
+hexz vm commit \\
   --base base-vm.st \\
   --overlay changes.img \\
   --output updated-vm.st
@@ -118,7 +118,7 @@ strata vm commit \\
 
 1. **Test before commit**: Boot with overlay to verify changes work
 2. **Enable CDC**: Always use `--cdc` flag for better deduplication
-3. **Naming convention**: Use semantic versioning (vm-v1.0.st, vm-v1.1.st)
+3. **Naming convention**: Use semantic versioning (vm-v1.0.st, vm-v1.1.hxz)
 4. **Backup base**: Keep base snapshot until new snapshot is verified
 5. **Sign snapshots**: Sign production snapshots for integrity
 

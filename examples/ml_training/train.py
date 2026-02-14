@@ -1,9 +1,9 @@
 """
-Script to demonstrate training loop with Strata Dataset.
+Script to demonstrate training loop with Hexz Dataset.
 """
 
 import time
-import strata
+import hexz
 from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
 
@@ -17,12 +17,12 @@ def collate_pad(batch):
 
 
 def train_loop():
-    print("Initializing Strata Dataset...")
+    print("Initializing Hexz Dataset...")
 
     # Initialize dataset
     # We use the index file we created to handle variable length items
-    dataset = strata.Dataset(
-        "dataset.st",
+    dataset = hexz.Dataset(
+        "dataset.hxz",
         index_file="dataset.idx",
         output_format="tensor",
         cache_size_mb=512,  # 512MB cache
@@ -36,8 +36,8 @@ def train_loop():
     print(f"Cache size: {dataset.cache_stats()['size_mb']:.2f} MB")
 
     # Create DataLoader
-    # Note: We set num_workers=0 because Strata handles prefetching internally via threads.
-    # Using multiprocessing (num_workers > 0 in DataLoader) works but duplicates the Strata Dataset instance.
+    # Note: We set num_workers=0 because Hexz handles prefetching internally via threads.
+    # Using multiprocessing (num_workers > 0 in DataLoader) works but duplicates the Hexz Dataset instance.
     loader = DataLoader(dataset, batch_size=32, num_workers=0, collate_fn=collate_pad)
 
     print("\nStarting training loop...")

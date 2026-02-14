@@ -31,13 +31,13 @@
 //! ```no_run
 //! # #[cfg(feature = "s3")]
 //! # {
-//! use strata_core::store::s3::S3Backend;
-//! use strata_core::store::StorageBackend;
+//! use hexz_core::store::s3::S3Backend;
+//! use hexz_core::store::StorageBackend;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let backend = S3Backend::new(
 //!     "my-snapshots".to_string(),
-//!     "prod/snapshot-001.st".to_string(),
+//!     "prod/snapshot-001.hxz".to_string(),
 //!     "us-east-1".to_string(),
 //!     None // Use AWS endpoint
 //! )?;

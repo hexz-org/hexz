@@ -12,7 +12,7 @@
 //!   - Verify storage backend connectivity
 //!   - Test compression and encryption functionality
 //!
-//! - [`bench`]: Benchmark archive performance
+//! - [`mod@bench`]: Benchmark archive performance
 //!   - Measure read throughput at various block sizes
 //!   - Test cache effectiveness
 //!   - Profile compression/decompression speed
@@ -34,18 +34,18 @@
 //!
 //! ```bash
 //! # Check system health
-//! strata sys doctor
+//! hexz sys doctor
 //!
 //! # Benchmark an archive
-//! strata sys bench snapshot.st --threads 8 --duration 60
+//! hexz sys bench snapshot.st --threads 8 --duration 60
 //!
 //! # Serve via NBD
-//! strata sys serve snapshot.st --nbd --port 10809
+//! hexz sys serve snapshot.st --nbd --port 10809
 //!
 //! # Generate and use signing keys
-//! strata sys keygen --output-dir ~/.strata/keys
-//! strata sys sign --key ~/.strata/keys/private.key snapshot.st
-//! strata sys verify --key ~/.strata/keys/public.key snapshot.st
+//! hexz sys keygen --output-dir ~/.hexz/keys
+//! hexz sys sign --key ~/.hexz/keys/private.key snapshot.st
+//! hexz sys verify --key ~/.hexz/keys/public.key snapshot.st
 //! ```
 //!
 //! # Feature Flags

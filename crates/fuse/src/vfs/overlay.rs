@@ -80,7 +80,7 @@
 //! ## Creating and Using an Overlay
 //!
 //! ```no_run
-//! use strata_fuse::vfs::Overlay;
+//! use hexz_fuse::vfs::Overlay;
 //! use std::path::Path;
 //!
 //! # fn main() -> std::io::Result<()> {
@@ -105,7 +105,7 @@
 //! ## Recovering from Existing Overlay
 //!
 //! ```no_run
-//! use strata_fuse::vfs::Overlay;
+//! use hexz_fuse::vfs::Overlay;
 //! use std::path::Path;
 //!
 //! # fn main() -> std::io::Result<()> {
@@ -196,7 +196,7 @@ const META_ENTRY_SIZE: usize = 8;
 ///
 /// # Lifetime
 ///
-/// Created in `Strata::new()` and dropped on unmount. The `Drop` impl
+/// Created in `Hexz::new()` and dropped on unmount. The `Drop` impl
 /// (currently a no-op) could be extended to flush pending metadata if needed.
 ///
 /// # Thread Safety
@@ -255,7 +255,7 @@ impl Overlay {
     /// # Examples
     ///
     /// ```no_run
-    /// use strata_fuse::vfs::Overlay;
+    /// use hexz_fuse::vfs::Overlay;
     /// use std::path::Path;
     ///
     /// # fn main() -> std::io::Result<()> {
@@ -336,7 +336,7 @@ impl Overlay {
     /// # Examples
     ///
     /// ```no_run
-    /// use strata_fuse::vfs::Overlay;
+    /// use hexz_fuse::vfs::Overlay;
     /// use std::path::Path;
     ///
     /// # fn main() -> std::io::Result<()> {
@@ -377,7 +377,7 @@ impl Overlay {
     /// # Examples
     ///
     /// ```no_run
-    /// use strata_fuse::vfs::Overlay;
+    /// use hexz_fuse::vfs::Overlay;
     /// use std::path::Path;
     ///
     /// # fn main() -> std::io::Result<()> {
@@ -411,7 +411,7 @@ impl Overlay {
     /// # Examples
     ///
     /// ```no_run
-    /// use strata_fuse::vfs::Overlay;
+    /// use hexz_fuse::vfs::Overlay;
     /// use std::path::Path;
     ///
     /// # fn main() -> std::io::Result<()> {
@@ -455,7 +455,7 @@ impl Overlay {
     /// # Examples
     ///
     /// ```no_run
-    /// use strata_fuse::vfs::Overlay;
+    /// use hexz_fuse::vfs::Overlay;
     /// use std::path::Path;
     ///
     /// # fn main() -> std::io::Result<()> {
@@ -515,7 +515,7 @@ impl Overlay {
     /// # Examples
     ///
     /// ```no_run
-    /// use strata_fuse::vfs::Overlay;
+    /// use hexz_fuse::vfs::Overlay;
     /// use std::path::Path;
     ///
     /// # fn main() -> std::io::Result<()> {
@@ -577,7 +577,7 @@ impl Overlay {
     /// # Examples
     ///
     /// ```no_run
-    /// use strata_fuse::vfs::Overlay;
+    /// use hexz_fuse::vfs::Overlay;
     /// use std::path::Path;
     ///
     /// # fn main() -> std::io::Result<()> {
@@ -649,7 +649,7 @@ impl Overlay {
     /// ## Block-Aligned Write
     ///
     /// ```no_run
-    /// use strata_fuse::vfs::Overlay;
+    /// use hexz_fuse::vfs::Overlay;
     /// use std::path::Path;
     ///
     /// # fn main() -> std::io::Result<()> {
@@ -666,7 +666,7 @@ impl Overlay {
     /// ## Copy-on-Write Partial Block Write
     ///
     /// ```no_run
-    /// use strata_fuse::vfs::Overlay;
+    /// use hexz_fuse::vfs::Overlay;
     /// use std::path::Path;
     ///
     /// # fn main() -> std::io::Result<()> {

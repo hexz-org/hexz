@@ -1,23 +1,23 @@
 # CLI Command Reference
 
-Complete reference for the `strata` command-line tool.
+Complete reference for the `hexz` command-line tool.
 
 ## Installation
 
 ```bash
 # Build from source
-git clone https://github.com/Alethic-Systems/strata.git
-cd strata
+git clone https://github.com/Alethic-Systems/hexz.git
+cd hexz
 make rust
 
 # Binary location
-./target/release/strata
+./target/release/hexz
 ```
 
 ## Command Structure
 
 ```
-strata <CATEGORY> <COMMAND> [OPTIONS]
+hexz <CATEGORY> <COMMAND> [OPTIONS]
 ```
 
 **Categories**:
@@ -29,13 +29,13 @@ strata <CATEGORY> <COMMAND> [OPTIONS]
 
 ## Data Commands
 
-### `strata data pack`
+### `hexz data pack`
 
 Pack files or directories into a compressed snapshot.
 
 **Synopsis**:
 ```bash
-strata data pack --disk <INPUT> --output <OUTPUT> [OPTIONS]
+hexz data pack --disk <INPUT> --output <OUTPUT> [OPTIONS]
 ```
 
 **Options**:
@@ -51,7 +51,7 @@ strata data pack --disk <INPUT> --output <OUTPUT> [OPTIONS]
 
 **Example**:
 ```bash
-strata data pack \\
+hexz data pack \\
   --disk /data/imagenet \\
   --output imagenet.st \\
   --compression zstd \\
@@ -59,18 +59,18 @@ strata data pack \\
   --cdc
 ```
 
-### `strata data info`
+### `hexz data info`
 
 Display snapshot metadata.
 
 **Synopsis**:
 ```bash
-strata data info <SNAPSHOT>
+hexz data info <SNAPSHOT>
 ```
 
 **Output**:
 ```
-Snapshot: dataset.st
+Snapshot: dataset.hxz
 Format Version: 1
 Compression: Zstandard (Level 9)
 Block Size: 65536
@@ -83,13 +83,13 @@ Encrypted: No
 Signed: Yes
 ```
 
-### `strata data diff`
+### `hexz data diff`
 
 Compare two snapshots.
 
 **Synopsis**:
 ```bash
-strata data diff <SNAPSHOT1> <SNAPSHOT2>
+hexz data diff <SNAPSHOT1> <SNAPSHOT2>
 ```
 
 **Output**: List of changed blocks with offsets.
@@ -98,13 +98,13 @@ strata data diff <SNAPSHOT1> <SNAPSHOT2>
 
 ## VM Commands
 
-### `strata vm boot`
+### `hexz vm boot`
 
 Boot a virtual machine from a snapshot.
 
 **Synopsis**:
 ```bash
-strata vm boot <SNAPSHOT> [OPTIONS]
+hexz vm boot <SNAPSHOT> [OPTIONS]
 ```
 
 **Resource Options**:
@@ -125,7 +125,7 @@ strata vm boot <SNAPSHOT> [OPTIONS]
 
 **Example**:
 ```bash
-strata vm boot ubuntu.st \\
+hexz vm boot ubuntu.st \\
   --ram 4G \\
   --cpus 4 \\
   --net \\
@@ -133,13 +133,13 @@ strata vm boot ubuntu.st \\
   --forward 8080:80
 ```
 
-### `strata vm install`
+### `hexz vm install`
 
 Install OS from ISO and save as snapshot.
 
 **Synopsis**:
 ```bash
-strata vm install --iso <ISO> --output <SNAPSHOT> [OPTIONS]
+hexz vm install --iso <ISO> --output <SNAPSHOT> [OPTIONS]
 ```
 
 **Options**:
@@ -151,7 +151,7 @@ strata vm install --iso <ISO> --output <SNAPSHOT> [OPTIONS]
 
 **Example**:
 ```bash
-strata vm install \\
+hexz vm install \\
   --iso ubuntu-22.04.iso \\
   --output ubuntu.st \\
   --disk-size 40G \\
@@ -159,13 +159,13 @@ strata vm install \\
   --vnc
 ```
 
-### `strata vm mount`
+### `hexz vm mount`
 
 Mount snapshot as FUSE filesystem.
 
 **Synopsis**:
 ```bash
-strata vm mount <SNAPSHOT> <MOUNTPOINT> [OPTIONS]
+hexz vm mount <SNAPSHOT> <MOUNTPOINT> [OPTIONS]
 ```
 
 **Options**:
@@ -175,24 +175,24 @@ strata vm mount <SNAPSHOT> <MOUNTPOINT> [OPTIONS]
 **Example**:
 ```bash
 # Read-only mount
-strata vm mount dataset.st /mnt/strata --readonly
+hexz vm mount dataset.hxz /mnt/hexz --readonly
 
 # Read-write with overlay
-strata vm mount base.st /mnt/strata --overlay changes.img
+hexz vm mount base.st /mnt/hexz --overlay changes.img
 ```
 
-### `strata vm commit`
+### `hexz vm commit`
 
 Commit overlay changes to new snapshot.
 
 **Synopsis**:
 ```bash
-strata vm commit --base <BASE> --overlay <OVERLAY> --output <OUTPUT>
+hexz vm commit --base <BASE> --overlay <OVERLAY> --output <OUTPUT>
 ```
 
 **Example**:
 ```bash
-strata vm commit \\
+hexz vm commit \\
   --base ubuntu-base.st \\
   --overlay changes.img \\
   --output ubuntu-updated.st
@@ -202,13 +202,13 @@ strata vm commit \\
 
 ## System Commands
 
-### `strata sys doctor`
+### `hexz sys doctor`
 
 Diagnose system configuration.
 
 **Synopsis**:
 ```bash
-strata sys doctor
+hexz sys doctor
 ```
 
 **Checks**:
@@ -218,13 +218,13 @@ strata sys doctor
 - Library versions
 - File system capabilities
 
-### `strata sys bench`
+### `hexz sys bench`
 
 Run performance benchmarks.
 
 **Synopsis**:
 ```bash
-strata sys bench [OPTIONS]
+hexz sys bench [OPTIONS]
 ```
 
 **Options**:
@@ -234,41 +234,41 @@ strata sys bench [OPTIONS]
 
 **Example**:
 ```bash
-strata sys bench --compression all --threads 8
+hexz sys bench --compression all --threads 8
 ```
 
-### `strata sys keygen`
+### `hexz sys keygen`
 
 Generate Ed25519 signing keypair.
 
 **Synopsis**:
 ```bash
-strata sys keygen [--output-dir <DIR>]
+hexz sys keygen [--output-dir <DIR>]
 ```
 
 **Output**: Creates `private.key` and `public.key` in specified directory (default: current directory).
 
-### `strata sys sign`
+### `hexz sys sign`
 
 Sign a snapshot.
 
 **Synopsis**:
 ```bash
-strata sys sign --key <PRIVATE_KEY> <SNAPSHOT>
+hexz sys sign --key <PRIVATE_KEY> <SNAPSHOT>
 ```
 
 **Example**:
 ```bash
-strata sys sign --key private.key dataset.st
+hexz sys sign --key private.key dataset.hxz
 ```
 
-### `strata sys verify`
+### `hexz sys verify`
 
 Verify snapshot signature.
 
 **Synopsis**:
 ```bash
-strata sys verify --key <PUBLIC_KEY> <SNAPSHOT>
+hexz sys verify --key <PUBLIC_KEY> <SNAPSHOT>
 ```
 
 **Exit Codes**:
@@ -290,8 +290,8 @@ These options work with all commands:
 
 ## Environment Variables
 
-- `STRATA_CACHE_DIR` — Default cache directory for remote snapshots
-- `STRATA_CACHE_SIZE` — Default cache size in bytes
+- `HEXZ_CACHE_DIR` — Default cache directory for remote snapshots
+- `HEXZ_CACHE_SIZE` — Default cache size in bytes
 - `AWS_PROFILE` — AWS profile for S3 access
 - `AWS_DEFAULT_REGION` — AWS region for S3
 
@@ -311,5 +311,5 @@ These options work with all commands:
 ## See Also
 
 - [How-To: Pack Datasets](../how-to/cli-usage/pack-datasets.md)
-- [How-To: Install Strata](../how-to/cli-usage/install-strata.md)
+- [How-To: Install Hexz](../how-to/cli-usage/install-hexz.md)
 - [Tutorial: Getting Started](../tutorials/getting-started.md)

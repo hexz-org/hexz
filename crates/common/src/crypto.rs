@@ -1,4 +1,4 @@
-//! Cryptographic utilities for Strata snapshot encryption.
+//! Cryptographic utilities for Hexz snapshot encryption.
 //!
 //! Defines key-derivation parameters (PBKDF2 salt and iteration count) used
 //! when creating or opening encrypted snapshots. These parameters are

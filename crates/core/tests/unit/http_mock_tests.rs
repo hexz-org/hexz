@@ -7,15 +7,15 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::thread;
 
-use strata_core::store::StorageBackend;
-use strata_core::store::http::HttpBackend;
+use hexz_core::store::StorageBackend;
+use hexz_core::store::http::HttpBackend;
 
 /// Start a simple HTTP server that responds to HEAD and GET requests.
 /// Returns (address, join_handle).
 fn start_mock_server(data: Vec<u8>) -> (String, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
-    let url = format!("http://127.0.0.1:{}/snapshot.st", addr.port());
+    let url = format!("http://127.0.0.1:{}/snapshot.hxz", addr.port());
 
     let handle = thread::spawn(move || {
         // Handle up to 20 requests then exit
@@ -188,7 +188,7 @@ fn test_http_backend_send_sync() {
 fn test_http_backend_missing_content_length() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
-    let url = format!("http://127.0.0.1:{}/snapshot.st", addr.port());
+    let url = format!("http://127.0.0.1:{}/snapshot.hxz", addr.port());
 
     let _handle = thread::spawn(move || {
         if let Ok((stream, _)) = listener.accept() {
@@ -218,7 +218,7 @@ fn test_http_backend_missing_content_length() {
 fn test_http_backend_404_response() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
-    let url = format!("http://127.0.0.1:{}/not_found.st", addr.port());
+    let url = format!("http://127.0.0.1:{}/not_found.hxz", addr.port());
 
     let _handle = thread::spawn(move || {
         if let Ok((stream, _)) = listener.accept() {

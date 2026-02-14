@@ -1,10 +1,10 @@
-//! Rust-to-Python bridge and high-performance data loading engine for Strata.
+//! Rust-to-Python bridge and high-performance data loading engine for Hexz.
 //!
 //! # Overview
 //!
-//! `strata-loader` serves as the primary interface between the high-performance
-//! `strata-core` snapshot engine and external high-level languages, primarily
-//! Python. It handles the translation of complex Rust types (like `StrataFile`)
+//! `hexz-loader` serves as the primary interface between the high-performance
+//! `hexz-core` snapshot engine and external high-level languages, primarily
+//! Python. It handles the translation of complex Rust types (like `File`)
 //! into Python-friendly classes using PyO3, while maintaining the performance
 //! guarantees required for machine learning workloads.
 //!
@@ -23,9 +23,9 @@
 //!
 //! # Key Components
 //!
-//! - `StrataReader`: Synchronous file-like reader for snapshots.
-//! - `AsyncStrataReader`: `asyncio`-compatible reader for high-throughput I/O.
-//! - `StrataBuilder`: High-level interface for creating new snapshots.
+//! - `Reader`: Synchronous file-like reader for snapshots.
+//! - `AsyncReader`: `asyncio`-compatible reader for high-throughput I/O.
+//! - `Builder`: High-level interface for creating new snapshots.
 //!
 //! # Error Handling
 //!
@@ -39,15 +39,15 @@ pub mod py_interface;
 pub mod tensor;
 
 #[pymodule]
-fn strata_loader(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn hexz_loader(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Register custom exceptions
     let py = m.py();
     py_interface::exceptions::register_exceptions(py, m)?;
 
     // Dataset classes
-    m.add_class::<py_interface::dataset::StrataReader>()?;
-    m.add_class::<py_interface::async_dataset::AsyncStrataReader>()?;
-    m.add_class::<py_interface::builder::StrataBuilder>()?;
+    m.add_class::<py_interface::dataset::Reader>()?;
+    m.add_class::<py_interface::async_dataset::AsyncReader>()?;
+    m.add_class::<py_interface::builder::Builder>()?;
 
     // Pack function
     m.add_function(wrap_pyfunction!(py_interface::pack::pack, m)?)?;
@@ -80,7 +80,7 @@ fn strata_loader(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 mod tests {
-    // Note: The strata_loader function is a PyO3 module initializer that requires
+    // Note: The hexz_loader function is a PyO3 module initializer that requires
     // a Python interpreter to test. The actual functionality is tested through
     // Python integration tests in python/tests/.
     //
@@ -110,7 +110,7 @@ mod tests {
         // Verify the py_interface module is accessible
         use crate::py_interface;
         // This will fail to compile if the module doesn't exist
-        let _ = std::mem::size_of::<py_interface::dataset::StrataReader>();
+        let _ = std::mem::size_of::<py_interface::dataset::Reader>();
     }
 
     #[test]

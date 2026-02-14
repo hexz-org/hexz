@@ -1,12 +1,12 @@
 //! Asynchronous Python snapshot reader with native asyncio integration.
 //!
-//! This module provides `AsyncStrataReader`, an async/await-compatible Python class for
-//! reading Strata snapshot files within asyncio applications. All I/O operations return
+//! This module provides `AsyncReader`, an async/await-compatible Python class for
+//! reading Hexz snapshot files within asyncio applications. All I/O operations return
 //! Python coroutines that integrate seamlessly with the asyncio event loop.
 //!
 //! # Overview
 //!
-//! `AsyncStrataReader` wraps the synchronous `strata_core::StrataFile` engine with async
+//! `AsyncReader` wraps the synchronous `hexz_core::File` engine with async
 //! Python bindings using `pyo3-async-runtimes`. All blocking operations (decompression,
 //! I/O) are executed on Tokio's blocking thread pool via `tokio::task::spawn_blocking`,
 //! ensuring they never block the asyncio event loop.
@@ -17,7 +17,7 @@
 //! - **Non-Blocking I/O**: Operations run on Tokio's blocking pool, never blocking event loop
 //! - **Concurrent Access**: Multiple coroutines can safely access the same reader concurrently
 //! - **Context Manager Support**: Implements `async with` via `__aenter__`/`__aexit__`
-//! - **Cursor and Absolute Modes**: Same dual-mode access as synchronous `StrataReader`
+//! - **Cursor and Absolute Modes**: Same dual-mode access as synchronous `Reader`
 //!
 //! # Architecture
 //!
@@ -33,7 +33,7 @@
 //!
 //! # Tokio Runtime Requirements
 //!
-//! `AsyncStrataReader` requires a Tokio runtime to be active. When using `asyncio`, the
+//! `AsyncReader` requires a Tokio runtime to be active. When using `asyncio`, the
 //! runtime is automatically managed by `pyo3-async-runtimes`. Ensure your Python environment
 //! has a running event loop:
 //!
@@ -41,7 +41,7 @@
 //! import asyncio
 //!
 //! async def main():
-//!     reader = await AsyncStrataReader.create("data.st")
+//!     reader = await AsyncReader.create("data.hxz")
 //!     data = await reader.read(1024)
 //!     return data
 //!
@@ -51,7 +51,7 @@
 //!
 //! # Concurrent Access Patterns
 //!
-//! Multiple coroutines can safely access the same `AsyncStrataReader` instance concurrently.
+//! Multiple coroutines can safely access the same `AsyncReader` instance concurrently.
 //! However, cursor-based reads serialize internally via the `Mutex`-protected cursor:
 //!
 //! ```python
@@ -59,7 +59,7 @@
 //!     return await reader.read(size)
 //!
 //! # Concurrent cursor-based reads (serialize on cursor lock)
-//! reader = await AsyncStrataReader.create("data.st")
+//! reader = await AsyncReader.create("data.hxz")
 //! results = await asyncio.gather(
 //!     read_chunk(reader, 1024),
 //!     read_chunk(reader, 1024),
@@ -72,7 +72,7 @@
 //!
 //! ```python
 //! # Concurrent random access reads (fully parallel)
-//! reader = await AsyncStrataReader.create("data.st")
+//! reader = await AsyncReader.create("data.hxz")
 //! results = await asyncio.gather(
 //!     reader.read(1024, offset=0),
 //!     reader.read(1024, offset=4096),
@@ -88,7 +88,7 @@
 //!   variable.
 //!
 //! - **Overhead**: Each async operation incurs small overhead from thread pool dispatch.
-//!   For very small reads (<1KB), synchronous `StrataReader` may be faster.
+//!   For very small reads (<1KB), synchronous `Reader` may be faster.
 //!
 //! - **Caching**: Configure `cache_capacity_bytes` and `prefetch_count` just like synchronous
 //!   readers. Cache is shared across all coroutines accessing the same reader.
@@ -98,7 +98,7 @@
 //! ## ASGI Web Application
 //!
 //! ```python
-//! from starta import AsyncStrataReader
+//! from starta import AsyncReader
 //! from fastapi import FastAPI
 //! from fastapi.responses import Response
 //!
@@ -108,7 +108,7 @@
 //! @app.on_event("startup")
 //! async def startup():
 //!     global reader
-//!     reader = await AsyncStrataReader.create("data.st")
+//!     reader = await AsyncReader.create("data.hxz")
 //!
 //! @app.get("/data/{offset}/{size}")
 //! async def get_data(offset: int, size: int):
@@ -120,7 +120,7 @@
 //!
 //! ```python
 //! import asyncio
-//! from strata import AsyncStrataReader
+//! from hexz import AsyncReader
 //!
 //! async def process_batch(reader, batch_offsets, size):
 //!     tasks = [reader.read(size, offset=off) for off in batch_offsets]
@@ -128,7 +128,7 @@
 //!     return [process(chunk) for chunk in chunks]
 //!
 //! async def main():
-//!     reader = await AsyncStrataReader.create("data.st")
+//!     reader = await AsyncReader.create("data.hxz")
 //!     batch_size = 1024
 //!     offsets = range(0, 1000000, batch_size)
 //!
@@ -143,32 +143,32 @@
 //!
 //! # Thread Safety
 //!
-//! `AsyncStrataReader` is async-safe: multiple coroutines can safely share the same instance.
+//! `AsyncReader` is async-safe: multiple coroutines can safely share the same instance.
 //! The cursor is protected by a `Mutex`, and all I/O operations run on Tokio's blocking pool,
 //! preventing event loop blocking.
 
+use hexz_core::File;
+use hexz_core::api::file::SnapshotStream;
 use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use std::sync::{Arc, Mutex};
-use strata_core::StrataFile;
-use strata_core::api::stratafile::SnapshotStream;
 
 use crate::engine::{self, OpenConfig};
 
-/// Asynchronous Python reader for Strata snapshot files.
+/// Asynchronous Python reader for Hexz snapshot files.
 ///
-/// `AsyncStrataReader` provides an async/await-compatible interface for reading compressed
+/// `AsyncReader` provides an async/await-compatible interface for reading compressed
 /// snapshot files from within asyncio applications. All I/O operations return coroutines
 /// that execute on Tokio's blocking thread pool, ensuring the event loop remains responsive.
 ///
 /// # Factory Method
 ///
-/// Unlike synchronous `StrataReader` which uses `__init__`, `AsyncStrataReader` uses a
+/// Unlike synchronous `Reader` which uses `__init__`, `AsyncReader` uses a
 /// static factory method `create()` that returns a coroutine:
 ///
 /// ```python
-/// reader = await AsyncStrataReader.create("data.st")
+/// reader = await AsyncReader.create("data.hxz")
 /// ```
 ///
 /// This is required because `__init__` cannot be async in Python.
@@ -195,11 +195,11 @@ use crate::engine::{self, OpenConfig};
 ///
 /// ```python
 /// import asyncio
-/// from strata import AsyncStrataReader
+/// from hexz import AsyncReader
 ///
 /// async def main():
 ///     # Create reader (async operation)
-///     reader = await AsyncStrataReader.create("data.st", prefetch_count=16)
+///     reader = await AsyncReader.create("data.hxz", prefetch_count=16)
 ///
 ///     # Get size (synchronous - no await needed)
 ///     total = reader.size()
@@ -216,23 +216,23 @@ use crate::engine::{self, OpenConfig};
 ///     await reader.seek(0)  # rewind
 ///
 ///     # Async context manager
-///     async with await AsyncStrataReader.create("data.st") as reader:
+///     async with await AsyncReader.create("data.hxz") as reader:
 ///         data = await reader.read(1024)
 ///
 /// asyncio.run(main())
 /// ```
-#[pyclass(module = "strata.strata_loader")]
-pub struct AsyncStrataReader {
-    inner: Arc<StrataFile>,
+#[pyclass(module = "hexz.hexz_loader")]
+pub struct AsyncReader {
+    inner: Arc<File>,
     cursor: Arc<Mutex<u64>>,
 }
 
 #[pymethods]
-impl AsyncStrataReader {
-    /// Create a new AsyncStrataReader instance (async factory method).
+impl AsyncReader {
+    /// Create a new AsyncReader instance (async factory method).
     ///
     /// Opens a snapshot file asynchronously for reading with optional configuration.
-    /// This is a static method that returns a coroutine yielding an `AsyncStrataReader`.
+    /// This is a static method that returns a coroutine yielding an `AsyncReader`.
     ///
     /// # Arguments
     ///
@@ -245,7 +245,7 @@ impl AsyncStrataReader {
     ///
     /// # Returns
     ///
-    /// Coroutine that yields a new `AsyncStrataReader` instance positioned at offset 0.
+    /// Coroutine that yields a new `AsyncReader` instance positioned at offset 0.
     ///
     /// # Raises
     ///
@@ -258,18 +258,18 @@ impl AsyncStrataReader {
     ///
     /// ```python
     /// # Local file with defaults
-    /// reader = await AsyncStrataReader.create("data.st")
+    /// reader = await AsyncReader.create("data.hxz")
     ///
     /// # S3 with region and large cache
-    /// reader = await AsyncStrataReader.create(
-    ///     "s3://bucket/data.st",
+    /// reader = await AsyncReader.create(
+    ///     "s3://bucket/data.hxz",
     ///     s3_region="us-west-2",
     ///     cache_capacity_bytes=1024*1024*1024  # 1 GB
     /// )
     ///
     /// # HTTP with prefetching
-    /// reader = await AsyncStrataReader.create(
-    ///     "https://example.com/data.st",
+    /// reader = await AsyncReader.create(
+    ///     "https://example.com/data.hxz",
     ///     prefetch_count=16
     /// )
     /// ```
@@ -285,7 +285,7 @@ impl AsyncStrataReader {
         cache_capacity_bytes: Option<usize>,
     ) -> PyResult<Bound<'_, PyAny>> {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let core = tokio::task::spawn_blocking(move || -> PyResult<Arc<StrataFile>> {
+            let core = tokio::task::spawn_blocking(move || -> PyResult<Arc<File>> {
                 let config = OpenConfig {
                     path,
                     s3_region,
@@ -299,7 +299,7 @@ impl AsyncStrataReader {
             .await
             .map_err(|e: tokio::task::JoinError| PyRuntimeError::new_err(e.to_string()))??;
 
-            let reader = AsyncStrataReader {
+            let reader = AsyncReader {
                 inner: core,
                 cursor: Arc::new(Mutex::new(0)),
             };
@@ -322,7 +322,7 @@ impl AsyncStrataReader {
     /// # Python Example
     ///
     /// ```python
-    /// reader = await AsyncStrataReader.create("data.st")
+    /// reader = await AsyncReader.create("data.hxz")
     /// size = reader.size()  # synchronous, no await
     /// print(f"Uncompressed size: {size / (1024**3):.2f} GB")
     /// ```
@@ -357,7 +357,7 @@ impl AsyncStrataReader {
     /// # Python Example
     ///
     /// ```python
-    /// reader = await AsyncStrataReader.create("data.st")
+    /// reader = await AsyncReader.create("data.hxz")
     ///
     /// # Sequential reads (cursor-based)
     /// chunk1 = await reader.read(4096)
@@ -460,7 +460,7 @@ impl AsyncStrataReader {
     /// ```python
     /// import os
     ///
-    /// reader = await AsyncStrataReader.create("data.st")
+    /// reader = await AsyncReader.create("data.hxz")
     ///
     /// # Seek to absolute position
     /// await reader.seek(4096)
@@ -525,7 +525,7 @@ impl AsyncStrataReader {
     /// # Python Example
     ///
     /// ```python
-    /// reader = await AsyncStrataReader.create("data.st")
+    /// reader = await AsyncReader.create("data.hxz")
     /// await reader.read(1024)
     /// pos = reader.tell()  # synchronous, no await
     /// print(f"Cursor at: {pos}")
@@ -539,7 +539,7 @@ impl AsyncStrataReader {
     /// Enables usage with Python's `async with` statement:
     ///
     /// ```python
-    /// async with await AsyncStrataReader.create("data.st") as reader:
+    /// async with await AsyncReader.create("data.hxz") as reader:
     ///     data = await reader.read(1024)
     /// ```
     ///

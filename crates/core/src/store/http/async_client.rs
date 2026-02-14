@@ -31,12 +31,12 @@
 //! # Examples
 //!
 //! ```no_run
-//! use strata_core::store::http::HttpBackend;
-//! use strata_core::store::StorageBackend;
+//! use hexz_core::store::http::HttpBackend;
+//! use hexz_core::store::StorageBackend;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let backend = HttpBackend::new(
-//!     "https://cdn.example.com/snapshots/data.st".to_string(),
+//!     "https://cdn.example.com/snapshots/data.hxz".to_string(),
 //!     false // block restricted IPs
 //! )?;
 //!
@@ -51,10 +51,10 @@
 use crate::store::StorageBackend;
 use crate::store::utils::validate_url;
 use bytes::Bytes;
+use hexz_common::{Error, Result};
 use reqwest::Client;
-use std::io::{Error, ErrorKind};
+use std::io::{Error as IoError, ErrorKind};
 use std::sync::Arc;
-use strata_common::{Result, StrataError};
 use tokio::runtime::Runtime;
 
 /// HTTP storage backend with embedded Tokio runtime.
@@ -67,12 +67,12 @@ use tokio::runtime::Runtime;
 /// # Examples
 ///
 /// ```no_run
-/// use strata_core::store::http::HttpBackend;
-/// use strata_core::store::StorageBackend;
+/// use hexz_core::store::http::HttpBackend;
+/// use hexz_core::store::StorageBackend;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let backend = HttpBackend::new(
-///     "https://example.com/snapshot.st".to_string(),
+///     "https://example.com/snapshot.hxz".to_string(),
 ///     false
 /// )?;
 ///
@@ -105,21 +105,21 @@ impl HttpBackend {
     pub fn new(url: String, allow_restricted: bool) -> Result<Self> {
         let safe_url = validate_url(&url, allow_restricted)?;
 
-        let runtime = Runtime::new().map_err(|e| StrataError::Io(Error::other(e)))?;
+        let runtime = Runtime::new().map_err(|e| Error::Io(IoError::other(e)))?;
 
         let client = Client::builder()
             .build()
-            .map_err(|e| StrataError::Io(Error::other(e)))?;
+            .map_err(|e| Error::Io(IoError::other(e)))?;
 
         let len = runtime.block_on(async {
             let resp = client
                 .head(&safe_url)
                 .send()
                 .await
-                .map_err(|e| StrataError::Io(Error::other(e)))?;
+                .map_err(|e| Error::Io(IoError::other(e)))?;
 
             if !resp.status().is_success() {
-                return Err(StrataError::Io(Error::other(format!(
+                return Err(Error::Io(IoError::other(format!(
                     "HTTP error: {}",
                     resp.status()
                 ))));
@@ -130,7 +130,7 @@ impl HttpBackend {
                 .and_then(|val| val.to_str().ok())
                 .and_then(|s| s.parse::<u64>().ok())
                 .ok_or_else(|| {
-                    StrataError::Io(Error::new(
+                    Error::Io(IoError::new(
                         ErrorKind::InvalidData,
                         "Missing Content-Length header",
                     ))
@@ -158,10 +158,10 @@ impl StorageBackend for HttpBackend {
                 .header("Range", range_header)
                 .send()
                 .await
-                .map_err(|e| StrataError::Io(Error::other(e)))?;
+                .map_err(|e| Error::Io(IoError::other(e)))?;
 
             if !resp.status().is_success() {
-                return Err(StrataError::Io(Error::other(format!(
+                return Err(Error::Io(IoError::other(format!(
                     "HTTP error: {}",
                     resp.status()
                 ))));
@@ -170,10 +170,10 @@ impl StorageBackend for HttpBackend {
             let bytes = resp
                 .bytes()
                 .await
-                .map_err(|e| StrataError::Io(Error::other(e)))?;
+                .map_err(|e| Error::Io(IoError::other(e)))?;
 
             if bytes.len() != len {
-                return Err(StrataError::Io(Error::new(
+                return Err(Error::Io(IoError::new(
                     ErrorKind::UnexpectedEof,
                     format!("Expected {} bytes, got {}", len, bytes.len()),
                 )));

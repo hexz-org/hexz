@@ -1,6 +1,6 @@
-//! Unmounting of FUSE-mounted Strata filesystems.
+//! Unmounting of FUSE-mounted Hexz filesystems.
 //!
-//! This command safely detaches Strata snapshots that were mounted as filesystems
+//! This command safely detaches Hexz snapshots that were mounted as filesystems
 //! using the `mount` command. It uses platform-specific unmount tools and handles
 //! error cases gracefully.
 //!
@@ -15,7 +15,7 @@
 //!
 //! ```bash
 //! # Unmount a previously mounted snapshot
-//! strata vm unmount /mnt/snapshot
+//! hexz vm unmount /mnt/snapshot
 //! ```
 //!
 //! # Error Handling
@@ -40,7 +40,7 @@ use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::process::Command;
 
-/// Unmounts a previously mounted Strata filesystem.
+/// Unmounts a previously mounted Hexz filesystem.
 ///
 /// **Architectural intent:** Attempts to detach the FUSE mount using the
 /// platform-preferred tool (`fusermount -u` on Linux), falling back to

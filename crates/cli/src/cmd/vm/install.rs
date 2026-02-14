@@ -1,7 +1,7 @@
-//! OS installation from ISO and conversion to Strata snapshot.
+//! OS installation from ISO and conversion to Hexz snapshot.
 //!
 //! This command automates the process of installing an operating system from
-//! an ISO image and converting the result into a Strata snapshot archive.
+//! an ISO image and converting the result into a Hexz snapshot archive.
 //!
 //! # Installation Workflow
 //!
@@ -16,15 +16,15 @@
 //!
 //! ```bash
 //! # Install Ubuntu with 20GB disk and 4GB RAM
-//! strata vm install --iso ubuntu-24.04.iso \
+//! hexz vm install --iso ubuntu-24.04.iso \
 //!   --disk-size 20G --ram 4G --output ubuntu.st
 //!
 //! # Install with VNC (for headless servers)
-//! strata vm install --iso debian.iso --disk-size 10G \
+//! hexz vm install --iso debian.iso --disk-size 10G \
 //!   --ram 2G --output debian.st --vnc
 //!
 //! # Install with CDC for better deduplication
-//! strata vm install --iso alpine.iso --disk-size 5G \
+//! hexz vm install --iso alpine.iso --disk-size 5G \
 //!   --ram 1G --output alpine.st --cdc
 //! ```
 //!
@@ -139,7 +139,7 @@ pub fn run(
     }
 
     println!("Installation finished (VM shut down).");
-    println!("Converting raw disk to Strata snapshot...");
+    println!("Converting raw disk to Hexz snapshot...");
 
     pack::run(
         Some(raw_path.clone()),
@@ -158,7 +158,7 @@ pub fn run(
 
     println!("Cleanup complete.");
     println!("Created: {:?}", output);
-    println!("You can now boot this with: strata boot {:?}", output);
+    println!("You can now boot this with: hexz boot {:?}", output);
 
     Ok(())
 }

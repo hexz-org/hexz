@@ -1,4 +1,4 @@
-/// Integration tests for `strata vm commit` command.
+/// Integration tests for `hexz vm commit` command.
 ///
 /// Tests the overlay merging pipeline: create a base snapshot via `data pack`,
 /// synthesize overlay + .meta files, and verify `vm commit` produces a valid
@@ -10,11 +10,11 @@ use std::fs;
 mod common;
 use common::TestEnv;
 
-/// Helper to create a strata CLI command
-fn strata() -> Command {
+/// Helper to create a hexz CLI command
+fn hexz() -> Command {
     #[allow(deprecated)]
     {
-        Command::cargo_bin("strata").expect("Failed to find strata binary")
+        Command::cargo_bin("hexz").expect("Failed to find hexz binary")
     }
 }
 
@@ -23,8 +23,8 @@ fn create_base_snapshot(env: &TestEnv, disk_data: &[u8], compression: &str) -> s
     let disk_file = env.temp_dir.path().join("disk.img");
     fs::write(&disk_file, disk_data).unwrap();
 
-    let snapshot_path = env.temp_dir.path().join("base.st");
-    strata()
+    let snapshot_path = env.temp_dir.path().join("base.hxz");
+    hexz()
         .arg("data")
         .arg("pack")
         .arg("--disk")
@@ -90,9 +90,9 @@ fn test_vm_commit_thick_lz4() {
     // Modify 4KiB blocks 2 and 5
     let (overlay, _meta) = create_overlay_files(env.temp_dir.path(), 128 * 1024, &[2, 5], 0xCD);
 
-    let output = env.temp_dir.path().join("committed.st");
+    let output = env.temp_dir.path().join("committed.hxz");
 
-    strata()
+    hexz()
         .arg("vm")
         .arg("commit")
         .arg(&base)
@@ -121,9 +121,9 @@ fn test_vm_commit_thick_zstd() {
 
     let (overlay, _meta) = create_overlay_files(env.temp_dir.path(), 128 * 1024, &[0, 3, 7], 0xBB);
 
-    let output = env.temp_dir.path().join("committed_zstd.st");
+    let output = env.temp_dir.path().join("committed_zstd.hxz");
 
-    strata()
+    hexz()
         .arg("vm")
         .arg("commit")
         .arg(&base)
@@ -149,9 +149,9 @@ fn test_vm_commit_thin_mode() {
     // Only modify block 1 — thin snapshot should be much smaller
     let (overlay, _meta) = create_overlay_files(env.temp_dir.path(), 128 * 1024, &[1], 0xFF);
 
-    let output = env.temp_dir.path().join("thin.st");
+    let output = env.temp_dir.path().join("thin.hxz");
 
-    strata()
+    hexz()
         .arg("vm")
         .arg("commit")
         .arg(&base)
@@ -181,9 +181,9 @@ fn test_vm_commit_no_modifications() {
     // Empty overlay — no modifications
     let (overlay, _meta) = create_overlay_files(env.temp_dir.path(), 64 * 1024, &[], 0x00);
 
-    let output = env.temp_dir.path().join("no_changes.st");
+    let output = env.temp_dir.path().join("no_changes.hxz");
 
-    strata()
+    hexz()
         .arg("vm")
         .arg("commit")
         .arg(&base)
@@ -205,10 +205,10 @@ fn test_vm_commit_deletes_overlay_by_default() {
 
     let (overlay, meta) = create_overlay_files(env.temp_dir.path(), 64 * 1024, &[0], 0xDD);
 
-    let output = env.temp_dir.path().join("cleanup.st");
+    let output = env.temp_dir.path().join("cleanup.hxz");
 
     // No --keep-overlay flag → overlay should be deleted
-    strata()
+    hexz()
         .arg("vm")
         .arg("commit")
         .arg(&base)
@@ -233,9 +233,9 @@ fn test_vm_commit_with_message() {
 
     let (overlay, _meta) = create_overlay_files(env.temp_dir.path(), 64 * 1024, &[0], 0x22);
 
-    let output = env.temp_dir.path().join("messaged.st");
+    let output = env.temp_dir.path().join("messaged.hxz");
 
-    strata()
+    hexz()
         .arg("vm")
         .arg("commit")
         .arg(&base)
@@ -250,7 +250,7 @@ fn test_vm_commit_with_message() {
     assert!(output.exists());
 
     // Verify the message is readable via info
-    strata()
+    hexz()
         .arg("data")
         .arg("info")
         .arg(&output)
@@ -269,9 +269,9 @@ fn test_vm_commit_custom_block_size() {
     let (overlay, _meta) =
         create_overlay_files(env.temp_dir.path(), 256 * 1024, &[0, 10, 20, 30], 0x44);
 
-    let output = env.temp_dir.path().join("block32k.st");
+    let output = env.temp_dir.path().join("block32k.hxz");
 
-    strata()
+    hexz()
         .arg("vm")
         .arg("commit")
         .arg(&base)
@@ -299,9 +299,9 @@ fn test_vm_commit_output_is_valid_snapshot() {
 
     let (overlay, _meta) = create_overlay_files(env.temp_dir.path(), 128 * 1024, &[1, 4], 0xFF);
 
-    let output = env.temp_dir.path().join("valid.st");
+    let output = env.temp_dir.path().join("valid.hxz");
 
-    strata()
+    hexz()
         .arg("vm")
         .arg("commit")
         .arg(&base)
@@ -312,7 +312,7 @@ fn test_vm_commit_output_is_valid_snapshot() {
         .success();
 
     // Verify output is a valid snapshot by running info
-    strata()
+    hexz()
         .arg("data")
         .arg("info")
         .arg(&output)
@@ -330,9 +330,9 @@ fn test_vm_commit_thick_info_shows_disk() {
 
     let (overlay, _meta) = create_overlay_files(env.temp_dir.path(), 128 * 1024, &[2], 0x88);
 
-    let output = env.temp_dir.path().join("readable.st");
+    let output = env.temp_dir.path().join("readable.hxz");
 
-    strata()
+    hexz()
         .arg("vm")
         .arg("commit")
         .arg(&base)
@@ -343,7 +343,7 @@ fn test_vm_commit_thick_info_shows_disk() {
         .success();
 
     // Verify committed snapshot reports correct metadata
-    strata()
+    hexz()
         .arg("data")
         .arg("info")
         .arg(&output)
@@ -369,12 +369,12 @@ fn test_vm_commit_nonexistent_base() {
     fs::write(&overlay, vec![0u8; 4096]).unwrap();
     fs::write(&meta, []).unwrap();
 
-    let output = env.temp_dir.path().join("out.st");
+    let output = env.temp_dir.path().join("out.hxz");
 
-    strata()
+    hexz()
         .arg("vm")
         .arg("commit")
-        .arg("/nonexistent/base.st")
+        .arg("/nonexistent/base.hxz")
         .arg(&overlay)
         .arg(&output)
         .assert()
@@ -388,9 +388,9 @@ fn test_vm_commit_nonexistent_overlay() {
     let disk_data = vec![0x00u8; 64 * 1024];
     let base = create_base_snapshot(&env, &disk_data, "lz4");
 
-    let output = env.temp_dir.path().join("out.st");
+    let output = env.temp_dir.path().join("out.hxz");
 
-    strata()
+    hexz()
         .arg("vm")
         .arg("commit")
         .arg(&base)
@@ -413,9 +413,9 @@ fn test_vm_commit_thin_shows_in_info() {
 
     let (overlay, _meta) = create_overlay_files(env.temp_dir.path(), 128 * 1024, &[0, 3], 0x88);
 
-    let output = env.temp_dir.path().join("thin_info.st");
+    let output = env.temp_dir.path().join("thin_info.hxz");
 
-    strata()
+    hexz()
         .arg("vm")
         .arg("commit")
         .arg(&base)
@@ -427,7 +427,7 @@ fn test_vm_commit_thin_shows_in_info() {
         .success();
 
     // Info should show this is a thin snapshot with parent reference
-    strata()
+    hexz()
         .arg("data")
         .arg("info")
         .arg(&output)
@@ -450,9 +450,9 @@ fn test_vm_commit_all_zero_blocks() {
     // Overlay is also all zeros (modified but still zero)
     let (overlay, _meta) = create_overlay_files(env.temp_dir.path(), 64 * 1024, &[0, 1, 2], 0x00);
 
-    let output = env.temp_dir.path().join("zeros.st");
+    let output = env.temp_dir.path().join("zeros.hxz");
 
-    strata()
+    hexz()
         .arg("vm")
         .arg("commit")
         .arg(&base)
@@ -482,9 +482,9 @@ fn test_vm_commit_many_modified_blocks() {
     let modified: Vec<u64> = (0..128).collect(); // first 128 4K blocks = first 512KB
     let (overlay, _meta) = create_overlay_files(env.temp_dir.path(), 512 * 1024, &modified, 0x22);
 
-    let output = env.temp_dir.path().join("many_mods.st");
+    let output = env.temp_dir.path().join("many_mods.hxz");
 
-    strata()
+    hexz()
         .arg("vm")
         .arg("commit")
         .arg(&base)
@@ -509,9 +509,9 @@ fn test_vm_commit_thin_many_modified_blocks() {
     let modified: Vec<u64> = (0..64).map(|i| i * 2).collect();
     let (overlay, _meta) = create_overlay_files(env.temp_dir.path(), 512 * 1024, &modified, 0x44);
 
-    let output = env.temp_dir.path().join("thin_many.st");
+    let output = env.temp_dir.path().join("thin_many.hxz");
 
-    strata()
+    hexz()
         .arg("vm")
         .arg("commit")
         .arg(&base)
@@ -539,10 +539,10 @@ fn test_vm_commit_lz4_base_zstd_commit() {
 
     let (overlay, _meta) = create_overlay_files(env.temp_dir.path(), 128 * 1024, &[0, 5], 0xBB);
 
-    let output = env.temp_dir.path().join("cross_compress.st");
+    let output = env.temp_dir.path().join("cross_compress.hxz");
 
     // Commit with zstd (different from base)
-    strata()
+    hexz()
         .arg("vm")
         .arg("commit")
         .arg(&base)
@@ -557,7 +557,7 @@ fn test_vm_commit_lz4_base_zstd_commit() {
     assert!(output.exists());
 
     // Verify the output snapshot is valid
-    strata()
+    hexz()
         .arg("data")
         .arg("info")
         .arg(&output)
@@ -575,10 +575,10 @@ fn test_vm_commit_zstd_base_lz4_commit() {
 
     let (overlay, _meta) = create_overlay_files(env.temp_dir.path(), 128 * 1024, &[1, 3], 0xDD);
 
-    let output = env.temp_dir.path().join("zstd_to_lz4.st");
+    let output = env.temp_dir.path().join("zstd_to_lz4.hxz");
 
     // Commit with lz4
-    strata()
+    hexz()
         .arg("vm")
         .arg("commit")
         .arg(&base)

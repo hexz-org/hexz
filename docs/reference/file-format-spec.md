@@ -1,10 +1,10 @@
-# Strata File Format Specification
+# Hexz File Format Specification
 
-This document describes the binary format of `.st` (Strata) files.
+This document describes the binary format of `.hxz` (Hexz) files.
 
 ## Overview
 
-Strata files use a hierarchical index structure for O(log N) block lookup:
+Hexz files use a hierarchical index structure for O(log N) block lookup:
 
 ```
 [Header] → [Master Index] → [Page Indices] → [Data Blocks]
@@ -15,8 +15,8 @@ Strata files use a hierarchical index structure for O(log N) block lookup:
 ```
 Offset          | Content
 ----------------|----------------------------------
-0x00            | File Header (64 bytes)
-0x40            | Data Blocks (variable)
+0x00            | File Header (4096 bytes)
+0x1000          | Data Blocks (variable)
 ...             | ...
 <index_offset>  | Page Index 0 (variable)
                 | Page Index 1 (variable)
@@ -28,21 +28,15 @@ EOF             | End of file
 
 ## File Header
 
-Fixed 64-byte structure at offset 0:
+Fixed 4096-byte structure at offset 0:
 
 | Offset | Size | Type | Field | Description |
 |--------|------|------|-------|-------------|
-| 0x00   | 8    | u64  | magic | Magic number: `0x53545241544120` ("STRATA ") |
-| 0x08   | 2    | u16  | version | Format version (current: 1) |
-| 0x0A   | 2    | u16  | flags | Feature flags (see below) |
-| 0x0C   | 4    | u32  | block_size | Uncompressed block size |
-| 0x10   | 1    | u8   | compression | Compression algorithm (see below) |
-| 0x11   | 1    | u8   | compression_level | Compression level (0-22) |
-| 0x12   | 6    | -    | reserved | Reserved for future use |
-| 0x18   | 8    | u64  | uncompressed_size | Total uncompressed size |
-| 0x20   | 8    | u64  | master_index_offset | Offset to master index |
-| 0x28   | 4    | u32  | master_index_size | Size of master index |
-| 0x2C   | 20   | -    | reserved | Reserved for future use |
+| 0x00   | 4    | [u8; 4]| magic | Magic bytes: `0x4845585A` ("HEXZ") |
+| 0x04   | 4    | u32  | version | Format version (current: 1) |
+| 0x08   | 4    | u32  | block_size | Uncompressed block size |
+| 0x0C   | 8    | u64  | index_offset | Offset to master index |
+| 0x14   | ...  | ...  | ... | (Other fields serialized by bincode) |
 
 **Compression Algorithms**:
 - `0x00`: None (uncompressed)
@@ -140,21 +134,17 @@ Time complexity: O(log P + log B) where P = pages, B = blocks per page
 
 ## Example
 
-Minimal valid Strata file (1 block, LZ4-compressed):
+Minimal valid Hexz file (1 block, LZ4-compressed):
 
 ```
 Offset | Hex Data
 -------|----------
-0x00   | 53 54 52 41 54 41 20   Magic "STRATA "
-0x08   | 01 00                   Version 1
-0x0A   | 00 00                   No flags
-0x0C   | 00 00 01 00             Block size 65536
-0x10   | 01                      LZ4 compression
-0x11   | 00                      Level 0
-0x18   | 00 00 01 00 00 00 00 00 Uncompressed: 65536
-0x20   | XX XX XX XX XX XX XX XX Master index offset
-0x28   | 20 00 00 00             Master index size: 32
-...    | <compressed block data>
+0x00   | 48 45 58 5A             Magic "HEXZ"
+0x04   | 01 00 00 00             Version 1
+0x08   | 00 00 01 00             Block size 65536
+0x0C   | XX XX XX XX XX XX XX XX Master index offset
+...    | <serialized header fields>
+0x1000 | <compressed block data>
 ...    | <page index: 1 BlockInfo>
 ...    | <master index: 1 PageEntry>
 ```

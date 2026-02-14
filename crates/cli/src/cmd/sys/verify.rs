@@ -1,7 +1,7 @@
-//! Verify Ed25519 signatures on Strata archives.
+//! Verify Ed25519 signatures on Hexz archives.
 //!
 //! This module implements the `verify` command, which validates the cryptographic
-//! signature on a signed Strata archive to ensure authenticity and integrity.
+//! signature on a signed Hexz archive to ensure authenticity and integrity.
 //!
 //! # Verification Process
 //!
@@ -39,7 +39,7 @@
 //!
 //! ```bash
 //! # Verify an archive signature
-//! strata sys verify --key ~/.strata/keys/public.key snapshot.st
+//! hexz sys verify --key ~/.hexz/keys/public.key snapshot.st
 //!
 //! # On success
 //! # => Signature Verified! The image index is authentic.
@@ -54,15 +54,15 @@
 //! - **Non-zero**: Verification failed (invalid signature or archive not signed)
 
 use anyhow::Result;
+use hexz_common::sign;
+use hexz_core::format::header::Header;
+use hexz_core::format::magic::HEADER_SIZE;
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
-use strata_common::sign;
-use strata_core::format::header::StrataHeader;
-use strata_core::format::magic::HEADER_SIZE;
 
-/// Verify the Ed25519 signature on a signed Strata archive.
+/// Verify the Ed25519 signature on a signed Hexz archive.
 ///
 /// This function validates that the archive's Master Index has not been modified
 /// since it was signed, and that the signature was created by the holder of the
@@ -71,7 +71,7 @@ use strata_core::format::magic::HEADER_SIZE;
 /// # Arguments
 ///
 /// * `key_path` - Path to the Ed25519 public key file (32 bytes)
-/// * `image_path` - Path to the signed Strata archive file
+/// * `image_path` - Path to the signed Hexz archive file
 ///
 /// # Process
 ///
@@ -95,9 +95,9 @@ use strata_core::format::magic::HEADER_SIZE;
 ///
 /// ```no_run
 /// # use std::path::PathBuf;
-/// # use strata_cli::cmd::sys::verify;
-/// let key = PathBuf::from("~/.strata/keys/public.key");
-/// let archive = PathBuf::from("snapshot.st");
+/// # use hexz_cli::cmd::sys::verify;
+/// let key = PathBuf::from("~/.hexz/keys/public.key");
+/// let archive = PathBuf::from("snapshot.hxz");
 ///
 /// match verify::run(key, archive) {
 ///     Ok(()) => println!("✓ Signature valid"),
@@ -111,7 +111,7 @@ pub fn run(key_path: PathBuf, image_path: PathBuf) -> Result<()> {
     let mut f = File::open(&image_path)?;
     let mut header_bytes = [0u8; HEADER_SIZE];
     f.read_exact(&mut header_bytes)?;
-    let header: StrataHeader = bincode::deserialize(&header_bytes)?;
+    let header: Header = bincode::deserialize(&header_bytes)?;
 
     let (sig_off, sig_len) = match (header.signature_offset, header.signature_length) {
         (Some(o), Some(l)) => (o, l),

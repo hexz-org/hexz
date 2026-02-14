@@ -1,16 +1,16 @@
 # Optimize PyTorch DataLoader Performance
 
-**Goal**: Maximize training throughput when loading data from Strata snapshots.
+**Goal**: Maximize training throughput when loading data from Hexz snapshots.
 
 ## Prerequisites
 
-- Strata Python package installed
+- Hexz Python package installed
 - PyTorch installed
 - Basic understanding of `torch.utils.data.DataLoader`
 
 ## Problem
 
-Default DataLoader settings often underutilize Strata's capabilities, leading to GPU starvation and slow training.
+Default DataLoader settings often underutilize Hexz's capabilities, leading to GPU starvation and slow training.
 
 ## Solution
 
@@ -54,17 +54,17 @@ for num_workers in [0, 2, 4, 8]:
 
 ## Step 2: Increase Cache Size
 
-Strata caches decompressed blocks. Larger cache improves hit rate.
+Hexz caches decompressed blocks. Larger cache improves hit rate.
 
 **Default**:
 ```python
-dataset = strata.open("s3://bucket/dataset.st")  # 256MB cache
+dataset = hexz.open("s3://bucket/dataset.hxz")  # 256MB cache
 ```
 
 **Optimized**:
 ```python
-dataset = strata.open(
-    "s3://bucket/dataset.st",
+dataset = hexz.open(
+    "s3://bucket/dataset.hxz",
     cache_size=2 * 1024**3  # 2GB cache
 )
 ```
@@ -78,10 +78,10 @@ dataset = strata.open(
 Persist cache across runs to speed up subsequent epochs.
 
 ```python
-dataset = strata.open(
-    "s3://bucket/dataset.st",
+dataset = hexz.open(
+    "s3://bucket/dataset.hxz",
     cache_size=2 * 1024**3,
-    cache_dir="/tmp/strata-cache"  # Persists to disk
+    cache_dir="/tmp/hexz-cache"  # Persists to disk
 )
 ```
 
@@ -157,14 +157,14 @@ for batch in loader:
 ```python
 import torch
 from torch.utils.data import DataLoader
-import strata
+import hexz
 
 # Open dataset with large cache
-dataset = strata.open(
-    "s3://bucket/imagenet.st",
+dataset = hexz.open(
+    "s3://bucket/imagenet.hxz",
     s3_region="us-west-2",
     cache_size=2 * 1024**3,      # 2GB cache
-    cache_dir="/tmp/strata-cache"
+    cache_dir="/tmp/hexz-cache"
 )
 
 # Create optimized DataLoader
@@ -234,7 +234,7 @@ Actual performance depends on CPU, network, and data complexity.
 
 **Workers not improving performance**:
 - Check CPU usage: `htop` should show multiple cores active
-- Ensure GIL is released (Strata does this automatically)
+- Ensure GIL is released (Hexz does this automatically)
 - Try different worker counts
 
 **High memory usage**:

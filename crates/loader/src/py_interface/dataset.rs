@@ -1,13 +1,13 @@
 //! Synchronous Python snapshot reader with file-like interface.
 //!
-//! This module provides the `StrataReader` class, a synchronous Python interface for reading
-//! Strata snapshot files. It implements Python's standard file-like protocol (`read`, `seek`,
+//! This module provides the `Reader` class, a synchronous Python interface for reading
+//! Hexz snapshot files. It implements Python's standard file-like protocol (`read`, `seek`,
 //! `tell`, etc.) with extensions for high-performance random access and zero-copy buffer
 //! operations.
 //!
 //! # Overview
 //!
-//! `StrataReader` wraps the high-performance `strata_core::StrataFile` engine with a Python-
+//! `Reader` wraps the high-performance `hexz_core::File` engine with a Python-
 //! friendly API. It supports both cursor-based sequential reading and explicit offset-based
 //! random access, making it suitable for streaming ML datasets, virtual machine disk access,
 //! and general-purpose compressed file reading.
@@ -30,7 +30,7 @@
 //! where you read sequentially from beginning to end.
 //!
 //! ```python
-//! reader = StrataReader("data.st")
+//! reader = Reader("data.hxz")
 //! chunk1 = reader.read(1024)  # reads bytes 0-1023, cursor moves to 1024
 //! chunk2 = reader.read(1024)  # reads bytes 1024-2047, cursor moves to 2048
 //! ```
@@ -41,7 +41,7 @@
 //! the cursor. This enables random access patterns common in ML training with shuffled indices.
 //!
 //! ```python
-//! reader = StrataReader("data.st")
+//! reader = Reader("data.hxz")
 //! chunk = reader.read(1024, offset=4096)  # reads bytes 4096-5119, cursor unchanged
 //! pos = reader.tell()  # still 0
 //! ```
@@ -54,7 +54,7 @@
 //! ```python
 //! import numpy as np
 //!
-//! reader = StrataReader("data.st")
+//! reader = Reader("data.hxz")
 //! buffer = np.zeros(4096, dtype=np.uint8)
 //!
 //! # Zero-copy read directly into NumPy array
@@ -78,7 +78,7 @@
 //!
 //! # Thread Safety
 //!
-//! `StrataReader` is thread-safe: the cursor is protected by a `Mutex`, allowing multiple
+//! `Reader` is thread-safe: the cursor is protected by a `Mutex`, allowing multiple
 //! threads to safely share a single reader instance. However, for best performance in
 //! multi-threaded scenarios, create one reader per thread to avoid cursor contention.
 //!
@@ -89,12 +89,12 @@
 //! ```python
 //! import torch
 //! from torch.utils.data import Dataset, DataLoader
-//! from strata import StrataReader
+//! from hexz import Reader
 //! import numpy as np
 //!
-//! class StrataDataset(Dataset):
+//! class Dataset(Dataset):
 //!     def __init__(self, path, item_size):
-//!         self.reader = StrataReader(path, prefetch_count=16)
+//!         self.reader = Reader(path, prefetch_count=16)
 //!         self.item_size = item_size
 //!         self.length = self.reader.size() // item_size
 //!
@@ -107,7 +107,7 @@
 //!         self.reader.read_at_into(offset=offset, buffer=buffer)
 //!         return torch.from_numpy(buffer)
 //!
-//! dataset = StrataDataset("training.st", item_size=1024)
+//! dataset = Dataset("training.hxz", item_size=1024)
 //! loader = DataLoader(dataset, batch_size=32, num_workers=4)
 //! ```
 //!
@@ -115,8 +115,8 @@
 //!
 //! ```python
 //! # Read directly from S3 (credentials from environment)
-//! reader = StrataReader(
-//!     "s3://my-bucket/dataset.st",
+//! reader = Reader(
+//!     "s3://my-bucket/dataset.hxz",
 //!     s3_region="us-west-2",
 //!     cache_capacity_bytes=1024*1024*1024  # 1 GB cache for remote reads
 //! )
@@ -127,25 +127,25 @@
 //!
 //! ```python
 //! # Read from HTTP with range request support
-//! reader = StrataReader("https://example.com/data.st")
+//! reader = Reader("https://example.com/data.hxz")
 //! data = reader.read(1024, offset=0)  # Range: bytes=0-1023
 //! ```
 //!
 //! # Pickle Support for Multiprocessing
 //!
-//! `StrataReader` implements `__getstate__` and `__setstate__` to support pickling,
+//! `Reader` implements `__getstate__` and `__setstate__` to support pickling,
 //! enabling safe usage with Python's `multiprocessing` module:
 //!
 //! ```python
 //! import multiprocessing as mp
-//! from strata import StrataReader
+//! from hexz import Reader
 //!
 //! def worker(reader, offset, size):
 //!     data = reader.read(size, offset=offset)
 //!     return len(data)
 //!
 //! if __name__ == "__main__":
-//!     reader = StrataReader("data.st")
+//!     reader = Reader("data.hxz")
 //!     with mp.Pool(4) as pool:
 //!         results = pool.starmap(worker, [
 //!             (reader, 0, 1024),
@@ -155,19 +155,19 @@
 //!         ])
 //! ```
 
+use hexz_core::File;
+use hexz_core::api::file::SnapshotStream;
 use pyo3::exceptions::{PyIOError, PyOSError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use std::sync::{Arc, Mutex};
-use strata_core::StrataFile;
-use strata_core::api::stratafile::SnapshotStream;
 
 use crate::engine::{self, OpenConfig};
 use crate::tensor;
 
-/// Synchronous Python reader for Strata snapshot files.
+/// Synchronous Python reader for Hexz snapshot files.
 ///
-/// `StrataReader` provides a file-like interface for reading compressed snapshot files
+/// `Reader` provides a file-like interface for reading compressed snapshot files
 /// with support for both sequential cursor-based access and random absolute offset access.
 /// It implements Python's standard I/O protocol and extends it with zero-copy buffer
 /// operations for high-performance data loading.
@@ -209,11 +209,11 @@ use crate::tensor;
 /// # Python Example
 ///
 /// ```python
-/// from strata import StrataReader
+/// from hexz import Reader
 /// import numpy as np
 ///
 /// # Open snapshot with prefetching enabled
-/// reader = StrataReader("data.st", prefetch_count=16)
+/// reader = Reader("data.hxz", prefetch_count=16)
 ///
 /// # Get total size
 /// total = reader.size()
@@ -235,20 +235,20 @@ use crate::tensor;
 /// reader.seek(-4096, 2)  # seek to 4096 bytes before end
 ///
 /// # Context manager support
-/// with StrataReader("data.st") as reader:
+/// with Reader("data.hxz") as reader:
 ///     data = reader.read(1024)
 /// # automatically closed
 /// ```
-#[pyclass(module = "strata.strata_loader")]
-pub struct StrataReader {
-    pub(crate) inner: Arc<StrataFile>,
+#[pyclass(module = "hexz.hexz_loader")]
+pub struct Reader {
+    pub(crate) inner: Arc<File>,
     path: String,
     cursor: Mutex<u64>,
 }
 
 #[pymethods]
-impl StrataReader {
-    /// Create a new StrataReader instance.
+impl Reader {
+    /// Create a new Reader instance.
     ///
     /// Opens a snapshot file for reading with optional configuration for caching,
     /// prefetching, and remote storage access.
@@ -264,7 +264,7 @@ impl StrataReader {
     ///
     /// # Returns
     ///
-    /// New `StrataReader` instance positioned at offset 0.
+    /// New `Reader` instance positioned at offset 0.
     ///
     /// # Raises
     ///
@@ -276,18 +276,18 @@ impl StrataReader {
     ///
     /// ```python
     /// # Local file with defaults
-    /// reader = StrataReader("data.st")
+    /// reader = Reader("data.hxz")
     ///
     /// # S3 with region and large cache
-    /// reader = StrataReader(
-    ///     "s3://bucket/data.st",
+    /// reader = Reader(
+    ///     "s3://bucket/data.hxz",
     ///     s3_region="us-west-2",
     ///     cache_capacity_bytes=1024*1024*1024  # 1 GB
     /// )
     ///
     /// # HTTP with prefetching for sequential access
-    /// reader = StrataReader(
-    ///     "https://example.com/data.st",
+    /// reader = Reader(
+    ///     "https://example.com/data.hxz",
     ///     prefetch_count=16
     /// )
     /// ```
@@ -311,11 +311,11 @@ impl StrataReader {
             cache_capacity_bytes,
         };
 
-        let inner = py.allow_threads(move || -> PyResult<Arc<StrataFile>> {
+        let inner = py.allow_threads(move || -> PyResult<Arc<File>> {
             engine::open_snapshot(config).map_err(|e| PyIOError::new_err(e.to_string()))
         })?;
 
-        Ok(StrataReader {
+        Ok(Reader {
             inner,
             path,
             cursor: Mutex::new(0),
@@ -338,7 +338,7 @@ impl StrataReader {
     /// # Python Example
     ///
     /// ```python
-    /// reader = StrataReader("data.st")
+    /// reader = Reader("data.hxz")
     /// size = reader.size()
     /// print(f"Uncompressed size: {size / (1024**3):.2f} GB")
     /// ```
@@ -354,10 +354,10 @@ impl StrataReader {
     /// # Python Example
     ///
     /// ```python
-    /// from strata import StrataReader
+    /// from hexz import Reader
     ///
     /// # Open a snapshot
-    /// reader = StrataReader("snapshot.st")
+    /// reader = Reader("snapshot.hxz")
     ///
     /// # Read 4096 bytes from the beginning
     /// data = reader.read(size=4096, offset=0)
@@ -427,10 +427,10 @@ impl StrataReader {
     /// # Python Example
     ///
     /// ```python
-    /// from strata import StrataReader
+    /// from hexz import Reader
     /// import numpy as np
     ///
-    /// reader = StrataReader("snapshot.st")
+    /// reader = Reader("snapshot.hxz")
     ///
     /// # Read into a NumPy array (zero-copy)
     /// buffer = np.zeros(4096, dtype=np.uint8)
@@ -491,7 +491,7 @@ impl StrataReader {
     /// ```python
     /// import numpy as np
     ///
-    /// reader = StrataReader("data.st")
+    /// reader = Reader("data.hxz")
     ///
     /// # Read into NumPy array (zero-copy)
     /// buffer = np.zeros(4096, dtype=np.uint8)
@@ -557,10 +557,10 @@ impl StrataReader {
     /// # Python Example
     ///
     /// ```python
-    /// from strata import StrataReader
+    /// from hexz import Reader
     /// import os
     ///
-    /// reader = StrataReader("snapshot.st")
+    /// reader = Reader("snapshot.hxz")
     ///
     /// # Seek to absolute position
     /// reader.seek(4096)
@@ -608,7 +608,7 @@ impl StrataReader {
     /// # Python Example
     ///
     /// ```python
-    /// reader = StrataReader("data.st")
+    /// reader = Reader("data.hxz")
     /// reader.read(1024)  # cursor advances to 1024
     /// pos = reader.tell()  # returns 1024
     /// ```
@@ -618,7 +618,7 @@ impl StrataReader {
 
     /// Check if the snapshot is readable.
     ///
-    /// Always returns `True` for `StrataReader` instances.
+    /// Always returns `True` for `Reader` instances.
     ///
     /// # Returns
     ///
@@ -629,7 +629,7 @@ impl StrataReader {
 
     /// Check if the snapshot is seekable.
     ///
-    /// Always returns `True` for `StrataReader` instances.
+    /// Always returns `True` for `Reader` instances.
     ///
     /// # Returns
     ///
@@ -640,7 +640,7 @@ impl StrataReader {
 
     /// Check if the snapshot is writable.
     ///
-    /// Always returns `False` for `StrataReader` instances (read-only).
+    /// Always returns `False` for `Reader` instances (read-only).
     ///
     /// # Returns
     ///
@@ -658,10 +658,10 @@ impl StrataReader {
     ///
     /// # Raises
     ///
-    /// `OSError`: Always raised because `StrataReader` is a virtual stream without
+    /// `OSError`: Always raised because `Reader` is a virtual stream without
     /// an associated OS file descriptor.
     fn fileno(&self) -> PyResult<i32> {
-        Err(PyOSError::new_err("StrataReader is a virtual file stream"))
+        Err(PyOSError::new_err("Reader is a virtual file stream"))
     }
 
     /// Get snapshot metadata including format information and statistics.
@@ -672,9 +672,9 @@ impl StrataReader {
     /// # Python Example
     ///
     /// ```python
-    /// from strata import StrataReader
+    /// from hexz import Reader
     ///
-    /// reader = StrataReader("snapshot.st")
+    /// reader = Reader("snapshot.hxz")
     /// meta = reader.metadata()
     ///
     /// print(f"Format version: {meta['version']}")
@@ -701,7 +701,7 @@ impl StrataReader {
 
     /// Close the snapshot reader (no-op).
     ///
-    /// Included for compatibility with Python's file protocol. StrataReader uses
+    /// Included for compatibility with Python's file protocol. Reader uses
     /// reference counting for resource management, so explicit closing is not required.
     fn close(&self) {}
 
@@ -710,7 +710,7 @@ impl StrataReader {
     /// Enables usage with Python's `with` statement:
     ///
     /// ```python
-    /// with StrataReader("data.st") as reader:
+    /// with Reader("data.hxz") as reader:
     ///     data = reader.read(1024)
     /// ```
     fn __enter__(slf: Py<Self>) -> Py<Self> {

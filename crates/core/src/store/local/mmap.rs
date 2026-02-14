@@ -81,13 +81,13 @@
 //! # Examples
 //!
 //! ```no_run
-//! use strata_core::store::local::MmapBackend;
-//! use strata_core::store::StorageBackend;
+//! use hexz_core::store::local::MmapBackend;
+//! use hexz_core::store::StorageBackend;
 //! use std::path::Path;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Open and map a snapshot file
-//! let backend = MmapBackend::new(Path::new("/data/snapshot.st"))?;
+//! let backend = MmapBackend::new(Path::new("/data/snapshot.hxz"))?;
 //!
 //! // Read 4KB starting at offset 8192
 //! let data = backend.read_exact(8192, 4096)?;
@@ -114,10 +114,10 @@
 
 use crate::store::StorageBackend;
 use bytes::Bytes;
+use hexz_common::Result;
 use memmap2::Mmap;
 use std::fs::File;
 use std::sync::Arc;
-use strata_common::Result;
 
 /// A storage backend backed by a memory-mapped file.
 ///
@@ -151,7 +151,7 @@ impl MmapBackend {
     /// # Returns
     ///
     /// - `Ok(MmapBackend)`: Successfully mapped and initialized
-    /// - `Err(StrataError::Io)`: If the file cannot be opened or mapped
+    /// - `Err(Error::Io)`: If the file cannot be opened or mapped
     ///
     /// # Errors
     ///
@@ -182,18 +182,18 @@ impl MmapBackend {
     /// # Examples
     ///
     /// ```no_run
-    /// use strata_core::store::local::MmapBackend;
+    /// use hexz_core::store::local::MmapBackend;
     /// use std::path::Path;
     ///
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// // Absolute path
-    /// let backend = MmapBackend::new(Path::new("/var/data/snapshot.st"))?;
+    /// let backend = MmapBackend::new(Path::new("/var/data/snapshot.hxz"))?;
     ///
     /// // Relative path
-    /// let backend = MmapBackend::new(Path::new("./snapshots/test.st"))?;
+    /// let backend = MmapBackend::new(Path::new("./snapshots/test.hxz"))?;
     ///
     /// // Error handling
-    /// match MmapBackend::new(Path::new("/nonexistent.st")) {
+    /// match MmapBackend::new(Path::new("/nonexistent.hxz")) {
     ///     Ok(_) => println!("Success"),
     ///     Err(e) => eprintln!("Failed to map: {}", e),
     /// }
@@ -226,7 +226,7 @@ impl StorageBackend for MmapBackend {
     /// # Returns
     ///
     /// - `Ok(Bytes)`: A buffer containing exactly `len` bytes of data
-    /// - `Err(StrataError::Io)`: If the read exceeds file boundaries
+    /// - `Err(Error::Io)`: If the read exceeds file boundaries
     ///
     /// # Errors
     ///
@@ -257,12 +257,12 @@ impl StorageBackend for MmapBackend {
     /// # Examples
     ///
     /// ```no_run
-    /// use strata_core::store::local::MmapBackend;
-    /// use strata_core::store::StorageBackend;
+    /// use hexz_core::store::local::MmapBackend;
+    /// use hexz_core::store::StorageBackend;
     /// use std::path::Path;
     ///
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let backend = MmapBackend::new(Path::new("/data/snapshot.st"))?;
+    /// let backend = MmapBackend::new(Path::new("/data/snapshot.hxz"))?;
     ///
     /// // Read first 512 bytes (header)
     /// let header = backend.read_exact(0, 512)?;
@@ -311,12 +311,12 @@ impl StorageBackend for MmapBackend {
     /// # Examples
     ///
     /// ```no_run
-    /// use strata_core::store::local::MmapBackend;
-    /// use strata_core::store::StorageBackend;
+    /// use hexz_core::store::local::MmapBackend;
+    /// use hexz_core::store::StorageBackend;
     /// use std::path::Path;
     ///
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let backend = MmapBackend::new(Path::new("/data/snapshot.st"))?;
+    /// let backend = MmapBackend::new(Path::new("/data/snapshot.hxz"))?;
     /// let size = backend.len();
     /// println!("Snapshot size: {} bytes ({} MB)", size, size / 1024 / 1024);
     /// # Ok(())

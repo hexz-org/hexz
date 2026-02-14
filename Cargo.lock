@@ -1198,6 +1198,134 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
+name = "hexz"
+version = "0.1.0-alpha"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "bincode",
+ "clap",
+ "crc32fast",
+ "criterion",
+ "ctrlc",
+ "daemonize",
+ "flate2",
+ "fuser",
+ "hex",
+ "hexz-common",
+ "hexz-core",
+ "hexz-fuse",
+ "hexz-server",
+ "indicatif",
+ "libc",
+ "lz4_flex",
+ "predicates",
+ "rand 0.8.5",
+ "rayon",
+ "rpassword",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "hexz-common"
+version = "0.1.0-alpha"
+dependencies = [
+ "bincode",
+ "ed25519-dalek",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "hexz-core"
+version = "0.1.0-alpha"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "bincode",
+ "bytes",
+ "crc32fast",
+ "dashmap",
+ "fastcdc",
+ "hexz-common",
+ "hmac",
+ "lru",
+ "lz4_flex",
+ "memmap2",
+ "openssl",
+ "pbkdf2",
+ "proptest",
+ "rand 0.8.5",
+ "rayon",
+ "reqwest",
+ "rstest",
+ "rust-s3",
+ "serde",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "url",
+ "wiremock",
+ "zstd",
+]
+
+[[package]]
+name = "hexz-fuse"
+version = "0.1.0-alpha"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "fuser",
+ "hexz-common",
+ "hexz-core",
+ "libc",
+ "serde",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
+name = "hexz-loader"
+version = "0.1.0-alpha"
+dependencies = [
+ "bincode",
+ "crc32fast",
+ "hexz-common",
+ "hexz-core",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "hexz-server"
+version = "0.1.0-alpha"
+dependencies = [
+ "anyhow",
+ "axum",
+ "bytes",
+ "hexz-common",
+ "hexz-core",
+ "tokio",
+ "tower 0.4.13",
+ "tower-http",
+ "tracing",
+]
+
+[[package]]
 name = "hmac"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2789,134 +2917,6 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
-
-[[package]]
-name = "strata"
-version = "0.1.0-alpha"
-dependencies = [
- "anyhow",
- "assert_cmd",
- "bincode",
- "clap",
- "crc32fast",
- "criterion",
- "ctrlc",
- "daemonize",
- "flate2",
- "fuser",
- "hex",
- "indicatif",
- "libc",
- "lz4_flex",
- "predicates",
- "rand 0.8.5",
- "rayon",
- "rpassword",
- "serde_json",
- "sha2",
- "strata-common",
- "strata-core",
- "strata-fuse",
- "strata-server",
- "tempfile",
- "tokio",
-]
-
-[[package]]
-name = "strata-common"
-version = "0.1.0-alpha"
-dependencies = [
- "bincode",
- "ed25519-dalek",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "strata-core"
-version = "0.1.0-alpha"
-dependencies = [
- "aes-gcm",
- "anyhow",
- "bincode",
- "bytes",
- "crc32fast",
- "dashmap",
- "fastcdc",
- "hmac",
- "lru",
- "lz4_flex",
- "memmap2",
- "openssl",
- "pbkdf2",
- "proptest",
- "rand 0.8.5",
- "rayon",
- "reqwest",
- "rstest",
- "rust-s3",
- "serde",
- "sha2",
- "strata-common",
- "tempfile",
- "thiserror",
- "tokio",
- "tracing",
- "url",
- "wiremock",
- "zstd",
-]
-
-[[package]]
-name = "strata-fuse"
-version = "0.1.0-alpha"
-dependencies = [
- "anyhow",
- "bincode",
- "fuser",
- "libc",
- "serde",
- "strata-common",
- "strata-core",
- "tempfile",
- "tracing",
-]
-
-[[package]]
-name = "strata-loader"
-version = "0.1.0-alpha"
-dependencies = [
- "bincode",
- "crc32fast",
- "pyo3",
- "pyo3-async-runtimes",
- "serde_json",
- "sha2",
- "strata-common",
- "strata-core",
- "tempfile",
- "tokio",
-]
-
-[[package]]
-name = "strata-server"
-version = "0.1.0-alpha"
-dependencies = [
- "anyhow",
- "axum",
- "bytes",
- "strata-common",
- "strata-core",
- "tokio",
- "tower 0.4.13",
- "tower-http",
- "tracing",
-]
 
 [[package]]
 name = "strsim"

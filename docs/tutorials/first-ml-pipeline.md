@@ -2,16 +2,16 @@
 
 **Time to Complete**: 20 minutes
 
-**What You'll Learn**: Stream a real image dataset directly to PyTorch using Strata, bypassing slow file I/O.
+**What You'll Learn**: Stream a real image dataset directly to PyTorch using Hexz, bypassing slow file I/O.
 
-**What You'll Build**: A complete training pipeline that loads images from a compressed Strata snapshot, achieving faster iteration than traditional folder-based datasets.
+**What You'll Build**: A complete training pipeline that loads images from a compressed Hexz snapshot, achieving faster iteration than traditional folder-based datasets.
 
 ## Prerequisites
 
 Before starting, ensure you have:
 
 - Completed [Getting Started](getting-started.md)
-- Python 3.8+ with `strata` installed (`make develop`)
+- Python 3.8+ with `hexz` installed (`make develop`)
 - PyTorch installed: `pip install torch torchvision`
 - PIL/Pillow installed: `pip install pillow`
 - ~500MB of disk space for sample dataset
@@ -22,8 +22,8 @@ No prior experience with PyTorch DataLoaders required, but basic Python knowledg
 
 By the end of this tutorial, you will:
 
-1. Pack a directory of images into a Strata snapshot
-2. Create a custom PyTorch Dataset that reads from Strata
+1. Pack a directory of images into a Hexz snapshot
+2. Create a custom PyTorch Dataset that reads from Hexz
 3. Train a simple model using multi-worker DataLoaders
 4. Understand the performance benefits over traditional approaches
 
@@ -73,19 +73,19 @@ Total uncompressed size: 12.3 MB
 
 **What Just Happened**: We created 100 random 224×224 images (typical ImageNet size). In a real scenario, these would be your actual training images.
 
-## Step 2: Pack Images into Strata Snapshot
+## Step 2: Pack Images into Hexz Snapshot
 
-Now let's compress these images into a single Strata snapshot.
+Now let's compress these images into a single Hexz snapshot.
 
 Create `pack_dataset.py`:
 
 ```python
-import strata
+import hexz
 import os
 import glob
 import time
 
-print("Packing images into Strata snapshot...")
+print("Packing images into Hexz snapshot...")
 
 # Get all image paths
 image_files = sorted(glob.glob("/tmp/sample_images/*.jpg"))
@@ -94,7 +94,7 @@ print(f"Found {len(image_files)} images")
 # Build snapshot with ML-optimized profile
 start_time = time.time()
 
-with strata.open("/tmp/dataset.st", mode="w", compression="lz4", block_size=65536) as writer:
+with hexz.open("/tmp/dataset.hxz", mode="w", compression="lz4", block_size=65536) as writer:
     for img_path in image_files:
         writer.add(img_path)
 
@@ -102,9 +102,9 @@ pack_time = time.time() - start_time
 
 # Compare sizes
 original_size = sum(os.path.getsize(f) for f in image_files)
-snapshot_size = os.path.getsize("/tmp/dataset.st")
+snapshot_size = os.path.getsize("/tmp/dataset.hxz")
 
-print(f"\n[x] Snapshot created: /tmp/dataset.st")
+print(f"\n[x] Snapshot created: /tmp/dataset.hxz")
 print(f"  Original size: {original_size / 1024 / 1024:.2f} MB")
 print(f"  Snapshot size: {snapshot_size / 1024 / 1024:.2f} MB")
 print(f"  Compression ratio: {original_size / snapshot_size:.2f}x")
@@ -118,10 +118,10 @@ python pack_dataset.py
 
 **Expected Output**:
 ```
-Packing images into Strata snapshot...
+Packing images into Hexz snapshot...
 Found 100 images
 
-[x] Snapshot created: /tmp/dataset.st
+[x] Snapshot created: /tmp/dataset.hxz
   Original size: 12.30 MB
   Snapshot size: 11.85 MB
   Compression ratio: 1.04x
@@ -139,19 +139,19 @@ Found 100 images
 
 Now let's create a Dataset class that reads from our snapshot.
 
-Create `strata_dataset.py`:
+Create `hexz_dataset.py`:
 
 ```python
 import torch
 from torch.utils.data import Dataset
 from PIL import Image
 import io
-import strata
+import hexz
 import struct
 
-class StrataImageDataset(Dataset):
+class ImageDataset(Dataset):
     """
-    PyTorch Dataset that reads JPEG images from a Strata snapshot.
+    PyTorch Dataset that reads JPEG images from a Hexz snapshot.
 
     The snapshot stores images sequentially with a simple index:
     - First 8 bytes: number of images (uint64)
@@ -160,7 +160,7 @@ class StrataImageDataset(Dataset):
     """
 
     def __init__(self, snapshot_path, transform=None):
-        self.reader = strata.open(snapshot_path)
+        self.reader = hexz.open(snapshot_path)
         self.transform = transform
 
         # For this tutorial, we'll use a simple approach:
@@ -227,11 +227,11 @@ class StrataImageDataset(Dataset):
 
 
 # Simpler version for this tutorial: pre-load everything
-class SimpleStrataDataset(Dataset):
+class SimpleDataset(Dataset):
     """Simplified version that reads all images at initialization."""
 
     def __init__(self, snapshot_path, transform=None):
-        self.reader = strata.open(snapshot_path)
+        self.reader = hexz.open(snapshot_path)
         self.transform = transform
 
         # Read everything into memory (OK for small datasets)
@@ -275,7 +275,7 @@ class SimpleStrataDataset(Dataset):
 ```
 
 **What Just Happened**: We created a PyTorch Dataset that:
-1. Opens the Strata snapshot at initialization
+1. Opens the Hexz snapshot at initialization
 2. Builds an index of JPEG image locations
 3. Returns images on-demand via `__getitem__`
 
@@ -292,7 +292,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torchvision import transforms
-from strata_dataset import SimpleStrataDataset
+from hexz_dataset import SimpleDataset
 import time
 
 # Define a tiny CNN
@@ -323,7 +323,7 @@ transform = transforms.Compose([
     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 ])
 
-dataset = SimpleStrataDataset("/tmp/dataset.st", transform=transform)
+dataset = SimpleDataset("/tmp/dataset.hxz", transform=transform)
 print(f"Dataset size: {len(dataset)} images")
 
 # Create DataLoader with multiple workers
@@ -394,15 +394,15 @@ Batch 12/13, Loss: 2.0956
 ```
 
 **What Just Happened**:
-- PyTorch DataLoader loaded batches from our Strata snapshot
+- PyTorch DataLoader loaded batches from our Hexz snapshot
 - Multiple workers loaded data in parallel (num_workers=2)
 - The model trained on images without ever extracting files to disk
 
-**Key Insight**: Strata's random access means `shuffle=True` works perfectly, unlike streaming formats that require sequential reads.
+**Key Insight**: Hexz's random access means `shuffle=True` works perfectly, unlike streaming formats that require sequential reads.
 
 ## Step 5: Compare Performance
 
-Let's compare Strata vs. traditional folder-based loading.
+Let's compare Hexz vs. traditional folder-based loading.
 
 Create `benchmark.py`:
 
@@ -410,7 +410,7 @@ Create `benchmark.py`:
 import torch
 from torch.utils.data import DataLoader
 from torchvision import transforms, datasets
-from strata_dataset import SimpleStrataDataset
+from hexz_dataset import SimpleDataset
 import time
 
 transform = transforms.Compose([
@@ -429,23 +429,23 @@ folder_time = time.time() - folder_start
 
 print(f"  Time: {folder_time:.3f}s")
 
-# Benchmark 2: Strata dataset
-print("\\nBenchmarking Strata dataset...")
-strata_dataset = SimpleStrataDataset("/tmp/dataset.st", transform=transform)
-strata_loader = DataLoader(strata_dataset, batch_size=8, num_workers=2)
+# Benchmark 2: Hexz dataset
+print("\\nBenchmarking Hexz dataset...")
+hexz_dataset = SimpleDataset("/tmp/dataset.hxz", transform=transform)
+hexz_loader = DataLoader(hexz_dataset, batch_size=8, num_workers=2)
 
-strata_start = time.time()
-for batch in strata_loader:
+hexz_start = time.time()
+for batch in hexz_loader:
     pass
-strata_time = time.time() - strata_start
+hexz_time = time.time() - hexz_start
 
-print(f"  Time: {strata_time:.3f}s")
+print(f"  Time: {hexz_time:.3f}s")
 
 # Results
 print(f"\\n--- Results ---")
 print(f"Folder-based: {folder_time:.3f}s")
-print(f"Strata-based: {strata_time:.3f}s")
-print(f"Speedup: {folder_time / strata_time:.2f}x")
+print(f"Hexz-based: {hexz_time:.3f}s")
+print(f"Speedup: {folder_time / hexz_time:.2f}x")
 ```
 
 **Expected Output**:
@@ -453,16 +453,16 @@ print(f"Speedup: {folder_time / strata_time:.2f}x")
 Benchmarking folder-based dataset...
   Time: 0.823s
 
-Benchmarking Strata dataset...
+Benchmarking Hexz dataset...
   Time: 0.456s
 
 --- Results ---
 Folder-based: 0.823s
-Strata-based: 0.456s
+Hexz-based: 0.456s
 Speedup: 1.80x
 ```
 
-**What Just Happened**: Strata was ~1.8× faster than opening 100 individual files. The speedup increases dramatically with:
+**What Just Happened**: Hexz was ~1.8× faster than opening 100 individual files. The speedup increases dramatically with:
 - More images (thousands → millions)
 - Network storage (S3, NFS) where file open overhead is higher
 - Smaller images (where overhead dominates)
@@ -471,19 +471,19 @@ Speedup: 1.80x
 
 Congratulations! You have:
 
-- [x] Packed a directory of images into a Strata snapshot
-- [x] Created a custom PyTorch Dataset reading from Strata
+- [x] Packed a directory of images into a Hexz snapshot
+- [x] Created a custom PyTorch Dataset reading from Hexz
 - [x] Trained a model with multi-worker DataLoaders
 - [x] Measured the performance improvement over folder-based datasets
 - [x] Understood the benefits of single-file datasets with random access
 
 ## Next Steps
 
-Now that you understand ML workflows with Strata:
+Now that you understand ML workflows with Hexz:
 
 - **Stream from S3**: [Setup S3 Streaming](../how-to/ml-workflows/setup-s3-streaming.md) to train without downloading datasets
 - **Optimize Performance**: [Optimize PyTorch DataLoader](../how-to/ml-workflows/optimize-pytorch-dataloader.md) for production training
-- **Migrate Existing Datasets**: [Migrate from WebDataset](../how-to/ml-workflows/migrate-from-webdataset.md) to Strata
+- **Migrate Existing Datasets**: [Migrate from WebDataset](../how-to/ml-workflows/migrate-from-webdataset.md) to Hexz
 
 ## Troubleshooting
 
@@ -502,7 +502,7 @@ Now that you understand ML workflows with Strata:
 
 ## Key Takeaways
 
-| Traditional Approach | Strata Approach |
+| Traditional Approach | Hexz Approach |
 |---------------------|-----------------|
 | Many small files | Single snapshot file |
 | File open overhead | Index lookup overhead |
@@ -510,7 +510,7 @@ Now that you understand ML workflows with Strata:
 | Manual compression | Built-in transparent compression |
 | Requires extraction | Direct access |
 
-The power of Strata for ML:
+The power of Hexz for ML:
 1. **Single file** simplifies data management and distribution
 2. **Random access** enables true shuffling (no sharding required)
 3. **Compression** reduces storage and bandwidth costs

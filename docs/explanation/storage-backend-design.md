@@ -1,13 +1,13 @@
 # Storage Backend Design
 
-How Strata abstracts over local files, S3, and HTTP.
+How Hexz abstracts over local files, S3, and HTTP.
 
 ## Design Goal
 
 Provide unified API for reading snapshots regardless of storage location:
 - Local files (`/path/to/file.st`)
 - S3 buckets (`s3://bucket/key.st`)
-- HTTP servers (`https://example.com/dataset.st`)
+- HTTP servers (`https://example.com/dataset.hxz`)
 
 ## Architecture
 
@@ -182,10 +182,10 @@ Remote backends use multi-level caching:
 
 **Implementation**:
 ```python
-dataset = strata.open(
-    "s3://bucket/dataset.st",
+dataset = hexz.open(
+    "s3://bucket/dataset.hxz",
     cache_size=512 * 1024 * 1024,  # 512MB in-memory
-    cache_dir="/nvme/strata-cache"  # Persistent disk cache
+    cache_dir="/nvme/hexz-cache"  # Persistent disk cache
 )
 ```
 
@@ -221,8 +221,8 @@ let client = S3Client::new_with(
 
 Optional bearer token:
 ```python
-dataset = strata.open(
-    "https://private.example.com/dataset.st",
+dataset = hexz.open(
+    "https://private.example.com/dataset.hxz",
     auth_token="bearer_token_here"
 )
 ```

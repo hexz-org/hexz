@@ -3,11 +3,11 @@
 //! Measures the performance characteristics of ML data loading patterns including
 //! sequential iteration, random access with shuffling, and batch loading. These
 //! benchmarks simulate real PyTorch/TensorFlow DataLoader workloads to validate
-//! that Strata can efficiently serve AI training pipelines.
+//! that Hexz can efficiently serve AI training pipelines.
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use hexz_core::api::file::SnapshotStream;
 use std::sync::Arc;
-use strata_core::api::stratafile::SnapshotStream;
 
 #[path = "common.rs"]
 mod common;

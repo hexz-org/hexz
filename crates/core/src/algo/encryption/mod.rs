@@ -2,8 +2,8 @@
 //!
 //! Provides the `Encryptor` trait and concrete implementations (AES-256-GCM).
 
+use hexz_common::Result;
 use std::fmt::Debug;
-use strata_common::Result;
 
 /// Pluggable interface for per-block authenticated encryption.
 ///

@@ -24,7 +24,7 @@ Traditional compression approaches for large datasets face a fundamental trade-o
 - Seeks are expensive (must decompress from last checkpoint)
 - Poor performance for truly random access patterns
 
-Strata's use cases demand both:
+Hexz's use cases demand both:
 1. **ML Training**: Random sample access with shuffling (millions of seeks per epoch)
 2. **VM Boot**: Random block reads as OS pages fault (thousands of seeks per second)
 

@@ -1,5 +1,5 @@
 import pytest
-import strata
+import hexz
 
 
 @pytest.mark.asyncio
@@ -7,7 +7,7 @@ async def test_async_read(base_snap_path, raw_data_path):
     with open(raw_data_path, "rb") as f:
         raw_data = f.read()
 
-    async with strata.AsyncReader(base_snap_path) as reader:
+    async with hexz.AsyncReader(base_snap_path) as reader:
         data = await reader.read(10, offset=0)
         assert bytes(data) == raw_data[:10]
 
@@ -20,6 +20,6 @@ async def test_async_read(base_snap_path, raw_data_path):
 
 @pytest.mark.asyncio
 async def test_async_context_manager(base_snap_path):
-    async with strata.AsyncReader(base_snap_path) as reader:
+    async with hexz.AsyncReader(base_snap_path) as reader:
         d = await reader.read(4)
         assert len(d) == 4

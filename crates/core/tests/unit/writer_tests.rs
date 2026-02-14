@@ -1,13 +1,13 @@
 /// Unit tests for the streaming writer
-use strata_core::ops::write::Writer;
-use strata_core::format::CompressionType;
+use hexz_core::ops::write::Writer;
+use hexz_core::format::CompressionType;
 use tempfile::TempDir;
 use std::fs;
 
 #[test]
 fn test_writer_new() {
     let temp_dir = TempDir::new().unwrap();
-    let output_path = temp_dir.path().join("test.st");
+    let output_path = temp_dir.path().join("test.hxz");
 
     let writer = Writer::new(&output_path);
     assert!(writer.is_ok(), "Writer should be created successfully");
@@ -16,7 +16,7 @@ fn test_writer_new() {
 #[test]
 fn test_writer_with_compression() {
     let temp_dir = TempDir::new().unwrap();
-    let output_path = temp_dir.path().join("compressed.st");
+    let output_path = temp_dir.path().join("compressed.hxz");
 
     let writer = Writer::new(&output_path)
         .unwrap()
@@ -28,10 +28,10 @@ fn test_writer_with_compression() {
 #[test]
 fn test_writer_write_bytes() {
     let temp_dir = TempDir::new().unwrap();
-    let output_path = temp_dir.path().join("write_test.st");
+    let output_path = temp_dir.path().join("write_test.hxz");
 
     let mut writer = Writer::new(&output_path).unwrap();
-    let data = b"Hello, Strata!";
+    let data = b"Hello, Hexz!";
 
     let result = writer.write_bytes(data);
     assert!(result.is_ok(), "Should write bytes successfully");
@@ -40,7 +40,7 @@ fn test_writer_write_bytes() {
 #[test]
 fn test_writer_write_multiple_blocks() {
     let temp_dir = TempDir::new().unwrap();
-    let output_path = temp_dir.path().join("multi_block.st");
+    let output_path = temp_dir.path().join("multi_block.hxz");
 
     let mut writer = Writer::new(&output_path).unwrap();
 
@@ -58,7 +58,7 @@ fn test_writer_write_multiple_blocks() {
 #[test]
 fn test_writer_finalize() {
     let temp_dir = TempDir::new().unwrap();
-    let output_path = temp_dir.path().join("finalize_test.st");
+    let output_path = temp_dir.path().join("finalize_test.hxz");
 
     let mut writer = Writer::new(&output_path).unwrap();
     writer.write_bytes(b"test data").unwrap();
@@ -74,7 +74,7 @@ fn test_writer_finalize() {
 #[test]
 fn test_writer_empty() {
     let temp_dir = TempDir::new().unwrap();
-    let output_path = temp_dir.path().join("empty.st");
+    let output_path = temp_dir.path().join("empty.hxz");
 
     let writer = Writer::new(&output_path).unwrap();
 
@@ -86,7 +86,7 @@ fn test_writer_empty() {
 #[test]
 fn test_writer_large_data() {
     let temp_dir = TempDir::new().unwrap();
-    let output_path = temp_dir.path().join("large.st");
+    let output_path = temp_dir.path().join("large.hxz");
 
     let mut writer = Writer::new(&output_path).unwrap();
 
@@ -103,8 +103,8 @@ fn test_writer_large_data() {
 #[test]
 fn test_writer_compression_reduces_size() {
     let temp_dir = TempDir::new().unwrap();
-    let uncompressed_path = temp_dir.path().join("uncompressed.st");
-    let compressed_path = temp_dir.path().join("compressed.st");
+    let uncompressed_path = temp_dir.path().join("uncompressed.hxz");
+    let compressed_path = temp_dir.path().join("compressed.hxz");
 
     // Compressible data
     let data = vec![0xAA; 65536]; // 64KB of same byte
@@ -134,7 +134,7 @@ fn test_writer_compression_reduces_size() {
 #[test]
 fn test_writer_add_metadata() {
     let temp_dir = TempDir::new().unwrap();
-    let output_path = temp_dir.path().join("metadata.st");
+    let output_path = temp_dir.path().join("metadata.hxz");
 
     let mut writer = Writer::new(&output_path).unwrap();
 
@@ -153,7 +153,7 @@ fn test_writer_add_metadata() {
 #[test]
 fn test_writer_bytes_written_tracking() {
     let temp_dir = TempDir::new().unwrap();
-    let output_path = temp_dir.path().join("tracking.st");
+    let output_path = temp_dir.path().join("tracking.hxz");
 
     let mut writer = Writer::new(&output_path).unwrap();
 

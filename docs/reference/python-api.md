@@ -1,25 +1,25 @@
 # Python API Reference
 
-Complete reference for the Strata Python package.
+Complete reference for the Hexz Python package.
 
 ## Installation
 
 ```bash
-pip install strata
+pip install hexz
 ```
 
 Or build from source:
 ```bash
-git clone https://github.com/Alethic-Systems/strata.git
-cd strata
+git clone https://github.com/Alethic-Systems/hexz.git
+cd hexz
 make develop
 ```
 
 ## Opening Snapshots
 
-The primary way to open snapshots is using `strata.open()`:
+The primary way to open snapshots is using `hexz.open()`:
 
-::: strata.open
+::: hexz.open
     options:
       show_root_heading: true
       show_source: false
@@ -29,9 +29,9 @@ The primary way to open snapshots is using `strata.open()`:
 
 ## Reading Snapshots
 
-The `Reader` class is returned by `strata.open(path, mode='r')` and provides methods for reading data:
+The `Reader` class is returned by `hexz.open(path, mode='r')` and provides methods for reading data:
 
-::: strata.Reader
+::: hexz.Reader
     options:
       show_root_heading: true
       show_source: false
@@ -51,7 +51,7 @@ The `Reader` class is returned by `strata.open(path, mode='r')` and provides met
 
 For async/await support, use `AsyncReader`:
 
-::: strata.AsyncReader
+::: hexz.AsyncReader
     options:
       show_root_heading: true
       show_source: false
@@ -62,9 +62,9 @@ For async/await support, use `AsyncReader`:
 
 ## Writing Snapshots
 
-The `Writer` class is returned by `strata.open(path, mode='w')`:
+The `Writer` class is returned by `hexz.open(path, mode='w')`:
 
-::: strata.Writer
+::: hexz.Writer
     options:
       show_root_heading: true
       show_source: false
@@ -77,14 +77,14 @@ The `Writer` class is returned by `strata.open(path, mode='w')`:
 
 For PyTorch and TensorFlow DataLoader integration:
 
-::: strata.Dataset
+::: hexz.Dataset
     options:
       show_root_heading: true
       show_source: false
       heading_level: 3
       show_if_no_docstring: false
 
-::: strata.TFDataset
+::: hexz.TFDataset
     options:
       show_root_heading: true
       show_source: false
@@ -95,13 +95,13 @@ For PyTorch and TensorFlow DataLoader integration:
 
 ## Building Snapshots
 
-::: strata.build
+::: hexz.build
     options:
       show_root_heading: true
       show_source: false
       heading_level: 3
 
-::: strata.PROFILES
+::: hexz.PROFILES
     options:
       show_root_heading: true
       show_source: false
@@ -111,13 +111,13 @@ For PyTorch and TensorFlow DataLoader integration:
 
 ## Inspection & Verification
 
-::: strata.inspect
+::: hexz.inspect
     options:
       show_root_heading: true
       show_source: false
       heading_level: 3
 
-::: strata.verify
+::: hexz.verify
     options:
       show_root_heading: true
       show_source: false

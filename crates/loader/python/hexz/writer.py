@@ -1,7 +1,7 @@
-"""Pythonic writer interface for creating Strata snapshots.
+"""Pythonic writer interface for creating Hexz snapshots.
 
 This module provides the high-level Writer class that wraps the Rust-implemented
-StrataBuilder with a more pythonic interface.
+Builder with a more pythonic interface.
 """
 
 from typing import Optional, Any, Dict, Literal
@@ -10,7 +10,7 @@ import tempfile
 import warnings
 import json
 
-from . import strata_loader
+from . import hexz_loader
 from .exceptions import ValidationError
 from .typing import PathLike, PackingMode
 
@@ -23,13 +23,13 @@ COMPRESSION_LEVELS = {
 
 
 class Writer:
-    """High-level writer for creating Strata snapshots with pythonic interface.
+    """High-level writer for creating Hexz snapshots with pythonic interface.
 
     Provides a fluent API for building snapshots with automatic finalization
     via context managers.
 
     Example:
-        >>> with strata.Writer("output.st", compression="zstd") as writer:
+        >>> with hexz.Writer("output.hxz", compression="zstd") as writer:
         ...     writer.add("disk.img")
         ...     writer.add_metadata({"created": "2026-02-09"})
         ... # Automatically finalized on exit
@@ -59,16 +59,16 @@ class Writer:
             block_size: Block size in bytes
             dedup: Enable deduplication
             cdc: Enable content-defined chunking (requires dedup=True)
-            encrypt: Enable encryption (Note: Use strata.pack() for encryption support)
+            encrypt: Enable encryption (Note: Use hexz.pack() for encryption support)
             password: Encryption password (required if encrypt=True)
 
         Example:
             >>> # Fast compression (good for temporary files)
-            >>> with strata.Writer("temp.st", packing="fast") as w:
+            >>> with hexz.Writer("temp.hxz", packing="fast") as w:
             ...     w.add("data.img")
             >>>
             >>> # Tight compression (good for archival)
-            >>> with strata.Writer("archive.st", packing="tight", compression="zstd") as w:
+            >>> with hexz.Writer("archive.hxz", packing="tight", compression="zstd") as w:
             ...     w.add("data.img")
         """
         self._path = str(path)
@@ -93,7 +93,7 @@ class Writer:
         compression_level = COMPRESSION_LEVELS[resolved_mode].get(compression)
 
         # Create underlying builder
-        self._builder = strata_loader.StrataBuilder(
+        self._builder = hexz_loader.Builder(
             self._path,
             block_size=block_size,
             compression=compression,
@@ -103,13 +103,13 @@ class Writer:
         )
 
         # Note: Writer currently supports basic linear writing.
-        # For encryption support, use strata.pack()
+        # For encryption support, use hexz.pack()
         # which utilizes the more advanced PackConfig pipeline.
 
         if encrypt:
             warnings.warn(
                 "Encryption in Writer is not yet implemented. "
-                "Use strata.pack() for encryption support.",
+                "Use hexz.pack() for encryption support.",
                 UserWarning,
             )
 
@@ -313,12 +313,12 @@ class Writer:
             Self for method chaining
 
         Example:
-            >>> with strata.Writer("merged.st") as writer:
-            ...     writer.merge_overlay(base="base.st", overlay="overlay.img")
+            >>> with hexz.Writer("merged.hxz") as writer:
+            ...     writer.merge_overlay(base="base.hxz", overlay="overlay.img")
             ...
             >>> # Thin snapshot (references base for unmodified blocks)
-            >>> with strata.Writer("thin.st") as writer:
-            ...     writer.merge_overlay(base="base.st", overlay="overlay.img", thin=True)
+            >>> with hexz.Writer("thin.hxz") as writer:
+            ...     writer.merge_overlay(base="base.hxz", overlay="overlay.img", thin=True)
         """
         self._builder.merge_overlay(str(base), str(overlay), thin)
         return self

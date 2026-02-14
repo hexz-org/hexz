@@ -1,18 +1,18 @@
 [package]
-name = "strata"
+name = "hexz"
 version = "0.1.0-alpha"
 edition = "2024"
 autobenches = false
 authors = ["Will McCallion"]
 license = "Apache-2.0"
-repository = "https://github.com/willmccallion/strata"
-description = "CLI tool for managing Strata snapshots and datasets"
+repository = "https://github.com/willmccallion/hexz"
+description = "CLI tool for managing Hexz snapshots and datasets"
 
 [dependencies]
-strata-core = { workspace = true }
-strata-common = { workspace = true }
-strata-fuse = { workspace = true, optional = true }
-strata-server = { workspace = true, optional = true }
+hexz-core = { workspace = true }
+hexz-common = { workspace = true }
+hexz-fuse = { workspace = true, optional = true }
+hexz-server = { workspace = true, optional = true }
 clap = { workspace = true }
 anyhow = { workspace = true }
 tokio = { workspace = true }
@@ -39,13 +39,13 @@ assert_cmd = "2.0"
 predicates = "3.0"
 
 [lib]
-name = "strata_cli"
+name = "hexz_cli"
 path = "src/lib.rs"
 bench = false
 
 # --- ADDED SECTION ---
 [[bin]]
-name = "strata"
+name = "hexz"
 path = "src/main.rs"
 bench = false
 # ---------------------
@@ -130,16 +130,16 @@ path = "benches/micro/decompress_scaling.rs"
 default = ["fuse", "server", "compression-zstd", "encryption", "diagnostics", "signing", "s3"]
 
 # Cloud storage
-s3 = ["strata-core/s3"]
+s3 = ["hexz-core/s3"]
 
 # Core functionalities
-fuse = ["dep:strata-fuse", "dep:daemonize", "dep:fuser"]
-server = ["dep:strata-server", "dep:daemonize"]
-encryption = ["strata-core/encryption"]
-signing = ["strata-common/signing"]
+fuse = ["dep:hexz-fuse", "dep:daemonize", "dep:fuser"]
+server = ["dep:hexz-server", "dep:daemonize"]
+encryption = ["hexz-core/encryption"]
+signing = ["hexz-common/signing"]
 
 # Compression algorithms
-compression-zstd = ["strata-core/compression-zstd"]
+compression-zstd = ["hexz-core/compression-zstd"]
 
 # Optional tools
 diagnostics = []

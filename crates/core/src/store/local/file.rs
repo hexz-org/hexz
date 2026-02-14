@@ -42,7 +42,7 @@
 //!
 //! # Error Handling
 //!
-//! All I/O errors are wrapped in `StrataError::Io`. Common failure modes:
+//! All I/O errors are wrapped in `Error::Io`. Common failure modes:
 //! - File not found or insufficient permissions (construction)
 //! - Unexpected EOF when reading beyond file boundaries
 //! - Storage device failures or filesystem corruption (rare)
@@ -50,13 +50,13 @@
 //! # Examples
 //!
 //! ```no_run
-//! use strata_core::store::local::FileBackend;
-//! use strata_core::store::StorageBackend;
+//! use hexz_core::store::local::FileBackend;
+//! use hexz_core::store::StorageBackend;
 //! use std::path::Path;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Open a snapshot file
-//! let backend = FileBackend::new(Path::new("/data/snapshot.st"))?;
+//! let backend = FileBackend::new(Path::new("/data/snapshot.hxz"))?;
 //!
 //! // Read 4KB starting at offset 8192
 //! let data = backend.read_exact(8192, 4096)?;
@@ -83,9 +83,9 @@
 
 use crate::store::StorageBackend;
 use bytes::{Bytes, BytesMut};
+use hexz_common::Result;
 use std::fs::File;
 use std::os::unix::fs::FileExt;
-use strata_common::Result;
 
 /// A storage backend implementation backed by a local file.
 ///
@@ -119,7 +119,7 @@ impl FileBackend {
     /// # Returns
     ///
     /// - `Ok(FileBackend)`: Successfully opened and initialized
-    /// - `Err(StrataError::Io)`: If the file cannot be opened or metadata cannot be read
+    /// - `Err(Error::Io)`: If the file cannot be opened or metadata cannot be read
     ///
     /// # Errors
     ///
@@ -132,18 +132,18 @@ impl FileBackend {
     /// # Examples
     ///
     /// ```no_run
-    /// use strata_core::store::local::FileBackend;
+    /// use hexz_core::store::local::FileBackend;
     /// use std::path::Path;
     ///
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// // Absolute path
-    /// let backend = FileBackend::new(Path::new("/var/data/snapshot.st"))?;
+    /// let backend = FileBackend::new(Path::new("/var/data/snapshot.hxz"))?;
     ///
     /// // Relative path
-    /// let backend = FileBackend::new(Path::new("./snapshots/test.st"))?;
+    /// let backend = FileBackend::new(Path::new("./snapshots/test.hxz"))?;
     ///
     /// // Error handling
-    /// match FileBackend::new(Path::new("/nonexistent.st")) {
+    /// match FileBackend::new(Path::new("/nonexistent.hxz")) {
     ///     Ok(_) => println!("Success"),
     ///     Err(e) => eprintln!("Failed to open: {}", e),
     /// }
@@ -175,7 +175,7 @@ impl StorageBackend for FileBackend {
     /// # Returns
     ///
     /// - `Ok(Bytes)`: A buffer containing exactly `len` bytes of data
-    /// - `Err(StrataError::Io)`: If the read fails or reaches unexpected EOF
+    /// - `Err(Error::Io)`: If the read fails or reaches unexpected EOF
     ///
     /// # Errors
     ///
@@ -200,12 +200,12 @@ impl StorageBackend for FileBackend {
     /// # Examples
     ///
     /// ```no_run
-    /// use strata_core::store::local::FileBackend;
-    /// use strata_core::store::StorageBackend;
+    /// use hexz_core::store::local::FileBackend;
+    /// use hexz_core::store::StorageBackend;
     /// use std::path::Path;
     ///
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let backend = FileBackend::new(Path::new("/data/snapshot.st"))?;
+    /// let backend = FileBackend::new(Path::new("/data/snapshot.hxz"))?;
     ///
     /// // Read first 512 bytes (header)
     /// let header = backend.read_exact(0, 512)?;
@@ -232,7 +232,7 @@ impl StorageBackend for FileBackend {
 
         match self.inner.read_exact_at(&mut buffer, offset) {
             Ok(_) => Ok(buffer.freeze()),
-            Err(e) => Err(strata_common::StrataError::Io(e)),
+            Err(e) => Err(hexz_common::Error::Io(e)),
         }
     }
 
@@ -254,12 +254,12 @@ impl StorageBackend for FileBackend {
     /// # Examples
     ///
     /// ```no_run
-    /// use strata_core::store::local::FileBackend;
-    /// use strata_core::store::StorageBackend;
+    /// use hexz_core::store::local::FileBackend;
+    /// use hexz_core::store::StorageBackend;
     /// use std::path::Path;
     ///
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let backend = FileBackend::new(Path::new("/data/snapshot.st"))?;
+    /// let backend = FileBackend::new(Path::new("/data/snapshot.hxz"))?;
     /// let size = backend.len();
     /// println!("Snapshot size: {} bytes ({} MB)", size, size / 1024 / 1024);
     /// # Ok(())

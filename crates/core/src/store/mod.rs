@@ -6,8 +6,8 @@
 //! transport.
 
 use bytes::Bytes;
+use hexz_common::Result;
 use std::fmt::Debug;
-use strata_common::Result;
 
 /// Abstract interface for all byte-addressable snapshot storage backends.
 ///

@@ -4,7 +4,7 @@
 
 **Prerequisites**:
 - AWS account with S3 access
-- Strata Python package installed
+- Hexz Python package installed
 - AWS CLI configured or credentials available
 
 ## Problem
@@ -13,11 +13,11 @@ Downloading large ML datasets (ImageNet, COCO, custom datasets) to local storage
 
 ## Solution
 
-Strata streams compressed snapshots directly from S3, decompressing blocks on-demand as the DataLoader requests them. Only active blocks are cached locally (default 256MB cache).
+Hexz streams compressed snapshots directly from S3, decompressing blocks on-demand as the DataLoader requests them. Only active blocks are cached locally (default 256MB cache).
 
 ## Step 1: Configure AWS Credentials
 
-Strata uses the standard AWS credential chain.
+Hexz uses the standard AWS credential chain.
 
 **Option A: AWS CLI (Recommended)**:
 ```bash
@@ -38,7 +38,7 @@ export AWS_DEFAULT_REGION="us-west-2"
 ```
 
 **Option C: IAM Role (EC2/ECS)**:
-No configuration needed. Strata automatically uses instance metadata service (IMDS).
+No configuration needed. Hexz automatically uses instance metadata service (IMDS).
 
 **Verify Access**:
 ```bash
@@ -52,7 +52,7 @@ Pack your dataset and upload it:
 
 ```bash
 # Pack dataset locally
-strata data pack \\
+hexz data pack \\
   --disk /data/imagenet-train \\
   --output imagenet-train.st \\
   --compression zstd \\
@@ -72,12 +72,12 @@ aws s3 ls s3://my-ml-datasets/imagenet-train.st
 Open the snapshot using the S3 URL:
 
 ```python
-import strata
+import hexz
 import torch
 from torch.utils.data import DataLoader
 
 # Open snapshot from S3 (downloads index only, ~1MB)
-dataset = strata.open("s3://my-ml-datasets/imagenet-train.st")
+dataset = hexz.open("s3://my-ml-datasets/imagenet-train.hxz")
 
 print(f"Dataset size: {dataset.size()} bytes")
 print(f"Index downloaded, data will stream on-demand")
@@ -88,7 +88,7 @@ print(f"Read {len(sample)} bytes")
 ```
 
 **What Happens**:
-1. Strata downloads the snapshot index (~1MB for 1TB dataset)
+1. Hexz downloads the snapshot index (~1MB for 1TB dataset)
 2. Index is cached in memory
 3. Data blocks are fetched from S3 only when accessed
 4. Recently used blocks cached in RAM (default 256MB LRU cache)
@@ -97,8 +97,8 @@ print(f"Read {len(sample)} bytes")
 
 **Specify Region Explicitly**:
 ```python
-dataset = strata.open(
-    "s3://my-ml-datasets/imagenet-train.st",
+dataset = hexz.open(
+    "s3://my-ml-datasets/imagenet-train.hxz",
     s3_region="us-west-2"  # Match your bucket region
 )
 ```
@@ -114,17 +114,17 @@ aws s3api get-bucket-location --bucket my-ml-datasets
 
 **Increase Cache Size for Large Batches**:
 ```python
-dataset = strata.open(
-    "s3://my-ml-datasets/imagenet-train.st",
+dataset = hexz.open(
+    "s3://my-ml-datasets/imagenet-train.hxz",
     cache_size=1024 * 1024 * 1024  # 1GB cache (default 256MB)
 )
 ```
 
 **Enable Disk Cache for Multi-Epoch Training**:
 ```python
-dataset = strata.open(
-    "s3://my-ml-datasets/imagenet-train.st",
-    cache_dir="/tmp/strata-cache",  # Persist cache to disk
+dataset = hexz.open(
+    "s3://my-ml-datasets/imagenet-train.hxz",
+    cache_dir="/tmp/hexz-cache",  # Persist cache to disk
     cache_size=2 * 1024**3  # 2GB
 )
 ```
@@ -135,11 +135,11 @@ dataset = strata.open(
 
 ## Step 6: Handle Connection Errors
 
-S3 requests can fail due to network issues. Strata retries automatically, but you can configure it:
+S3 requests can fail due to network issues. Hexz retries automatically, but you can configure it:
 
 ```python
-dataset = strata.open(
-    "s3://my-ml-datasets/imagenet-train.st",
+dataset = hexz.open(
+    "s3://my-ml-datasets/imagenet-train.hxz",
     retry_attempts=5,  # Default 3
     retry_delay=2.0    # Seconds between retries (exponential backoff)
 )
@@ -147,8 +147,8 @@ dataset = strata.open(
 
 **Timeout Configuration**:
 ```python
-dataset = strata.open(
-    "s3://my-ml-datasets/imagenet-train.st",
+dataset = hexz.open(
+    "s3://my-ml-datasets/imagenet-train.hxz",
     connect_timeout=10,  # Connection timeout (seconds)
     read_timeout=30      # Read timeout (seconds)
 )
@@ -162,7 +162,7 @@ Compare local vs. S3 streaming:
 import time
 
 # Local file
-local_dataset = strata.open("/nvme/imagenet-train.st")
+local_dataset = hexz.open("/nvme/imagenet-train.hxz")
 start = time.time()
 for i in range(1000):
     local_dataset.read(64*1024, offset=i*1024*1024)
@@ -170,7 +170,7 @@ local_time = time.time() - start
 print(f"Local: {local_time:.2f}s")
 
 # S3 streaming (cold cache)
-s3_dataset = strata.open("s3://my-ml-datasets/imagenet-train.st")
+s3_dataset = hexz.open("s3://my-ml-datasets/imagenet-train.hxz")
 start = time.time()
 for i in range(1000):
     s3_dataset.read(64*1024, offset=i*1024*1024)
@@ -198,7 +198,7 @@ print(f"S3 (warm): {s3_warm_time:.2f}s")
 import torch
 from torch.utils.data import DataLoader
 from torchvision import transforms
-from strata_dataset import StrataImageDataset  # From tutorial
+from hexz_dataset import ImageDataset  # From tutorial
 
 # Open S3 dataset
 transform = transforms.Compose([
@@ -207,11 +207,11 @@ transform = transforms.Compose([
                        std=[0.229, 0.224, 0.225])
 ])
 
-dataset = StrataImageDataset(
-    "s3://my-ml-datasets/imagenet-train.st",
+dataset = ImageDataset(
+    "s3://my-ml-datasets/imagenet-train.hxz",
     transform=transform,
     cache_size=2*1024**3,  # 2GB cache
-    cache_dir="/tmp/strata-cache"
+    cache_dir="/tmp/hexz-cache"
 )
 
 # Standard DataLoader

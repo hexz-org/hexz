@@ -1,8 +1,8 @@
 //! Snapshot file header and related enums.
 
+use hexz_common::constants::DEFAULT_BLOCK_SIZE;
+use hexz_common::crypto::KeyDerivationParams;
 use serde::{Deserialize, Serialize};
-use strata_common::constants::DEFAULT_BLOCK_SIZE;
-use strata_common::crypto::KeyDerivationParams;
 
 use super::magic::{FORMAT_VERSION, MAGIC_BYTES};
 
@@ -16,7 +16,7 @@ use super::magic::{FORMAT_VERSION, MAGIC_BYTES};
 ///
 /// The header occupies exactly 4096 bytes (HEADER_SIZE) at file offset 0 with
 /// the following logical structure:
-/// - Magic bytes (4): File signature "STRT"
+/// - Magic bytes (4): File signature "HEXZ"
 /// - Version (4): Format version number
 /// - Block size (4): Logical block size in bytes
 /// - Index offset (8): File offset to the master index structure
@@ -40,9 +40,9 @@ use super::magic::{FORMAT_VERSION, MAGIC_BYTES};
 /// blocks from the parent. Blocks marked with [`BLOCK_OFFSET_PARENT`] are
 /// read from the parent snapshot instead of the current file.
 ///
-/// [`BLOCK_OFFSET_PARENT`]: strata_common::constants::BLOCK_OFFSET_PARENT
+/// [`BLOCK_OFFSET_PARENT`]: hexz_common::constants::BLOCK_OFFSET_PARENT
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct StrataHeader {
+pub struct Header {
     pub magic: [u8; 4],
     pub version: u32,
     pub block_size: u32,
@@ -122,7 +122,7 @@ pub struct FeatureFlags {
     pub variable_blocks: bool,
 }
 
-impl Default for StrataHeader {
+impl Default for Header {
     fn default() -> Self {
         Self {
             magic: *MAGIC_BYTES,
@@ -148,8 +148,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_strata_header_default() {
-        let header = StrataHeader::default();
+    fn test_hexz_header_default() {
+        let header = Header::default();
 
         assert_eq!(header.magic, *MAGIC_BYTES);
         assert_eq!(header.version, FORMAT_VERSION);
@@ -170,8 +170,8 @@ mod tests {
     }
 
     #[test]
-    fn test_strata_header_with_disk() {
-        let mut header = StrataHeader::default();
+    fn test_hexz_header_with_disk() {
+        let mut header = Header::default();
         header.features.has_disk = true;
         header.index_offset = 1048576;
 
@@ -180,16 +180,16 @@ mod tests {
     }
 
     #[test]
-    fn test_strata_header_with_memory() {
-        let mut header = StrataHeader::default();
+    fn test_hexz_header_with_memory() {
+        let mut header = Header::default();
         header.features.has_memory = true;
 
         assert!(header.features.has_memory);
     }
 
     #[test]
-    fn test_strata_header_with_both_streams() {
-        let mut header = StrataHeader::default();
+    fn test_hexz_header_with_both_streams() {
+        let mut header = Header::default();
         header.features.has_disk = true;
         header.features.has_memory = true;
 
@@ -199,17 +199,17 @@ mod tests {
 
     #[test]
     #[allow(clippy::field_reassign_with_default)]
-    fn test_strata_header_with_parent_path() {
-        let mut header = StrataHeader::default();
-        header.parent_path = Some("/path/to/parent.st".to_string());
+    fn test_hexz_header_with_parent_path() {
+        let mut header = Header::default();
+        header.parent_path = Some("/path/to/parent.hxz".to_string());
 
-        assert_eq!(header.parent_path.as_deref(), Some("/path/to/parent.st"));
+        assert_eq!(header.parent_path.as_deref(), Some("/path/to/parent.hxz"));
     }
 
     #[test]
     #[allow(clippy::field_reassign_with_default)]
-    fn test_strata_header_with_dictionary() {
-        let mut header = StrataHeader::default();
+    fn test_hexz_header_with_dictionary() {
+        let mut header = Header::default();
         header.dictionary_offset = Some(4096);
         header.dictionary_length = Some(16384);
 
@@ -219,8 +219,8 @@ mod tests {
 
     #[test]
     #[allow(clippy::field_reassign_with_default)]
-    fn test_strata_header_with_metadata() {
-        let mut header = StrataHeader::default();
+    fn test_hexz_header_with_metadata() {
+        let mut header = Header::default();
         header.metadata_offset = Some(20480);
         header.metadata_length = Some(1024);
 
@@ -230,8 +230,8 @@ mod tests {
 
     #[test]
     #[allow(clippy::field_reassign_with_default)]
-    fn test_strata_header_with_signature() {
-        let mut header = StrataHeader::default();
+    fn test_hexz_header_with_signature() {
+        let mut header = Header::default();
         header.signature_offset = Some(24576);
         header.signature_length = Some(256);
 
@@ -241,8 +241,8 @@ mod tests {
 
     #[test]
     #[allow(clippy::field_reassign_with_default)]
-    fn test_strata_header_with_encryption() {
-        let mut header = StrataHeader::default();
+    fn test_hexz_header_with_encryption() {
+        let mut header = Header::default();
         header.encryption = Some(KeyDerivationParams {
             salt: [0x42; 16],
             iterations: 100000,
@@ -256,39 +256,39 @@ mod tests {
 
     #[test]
     #[allow(clippy::field_reassign_with_default)]
-    fn test_strata_header_zstd_compression() {
-        let mut header = StrataHeader::default();
+    fn test_hexz_header_zstd_compression() {
+        let mut header = Header::default();
         header.compression = CompressionType::Zstd;
 
         assert_eq!(header.compression, CompressionType::Zstd);
     }
 
     #[test]
-    fn test_strata_header_variable_blocks() {
-        let mut header = StrataHeader::default();
+    fn test_hexz_header_variable_blocks() {
+        let mut header = Header::default();
         header.features.variable_blocks = true;
 
         assert!(header.features.variable_blocks);
     }
 
     #[test]
-    fn test_strata_header_serialization() {
-        let header = StrataHeader::default();
+    fn test_hexz_header_serialization() {
+        let header = Header::default();
 
         let bytes = bincode::serialize(&header).unwrap();
-        let deserialized: StrataHeader = bincode::deserialize(&bytes).unwrap();
+        let deserialized: Header = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(deserialized, header);
     }
 
     #[test]
-    fn test_strata_header_serialization_with_all_fields() {
-        let header = StrataHeader {
+    fn test_hexz_header_serialization_with_all_fields() {
+        let header = Header {
             magic: *MAGIC_BYTES,
             version: FORMAT_VERSION,
             block_size: 65536,
             index_offset: 1048576,
-            parent_path: Some("/parent.st".to_string()),
+            parent_path: Some("/parent.hxz".to_string()),
             dictionary_offset: Some(4096),
             dictionary_length: Some(16384),
             metadata_offset: Some(20480),
@@ -308,28 +308,28 @@ mod tests {
         };
 
         let bytes = bincode::serialize(&header).unwrap();
-        let deserialized: StrataHeader = bincode::deserialize(&bytes).unwrap();
+        let deserialized: Header = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(deserialized, header);
         assert_eq!(deserialized.block_size, 65536);
-        assert_eq!(deserialized.parent_path.as_deref(), Some("/parent.st"));
+        assert_eq!(deserialized.parent_path.as_deref(), Some("/parent.hxz"));
         assert!(deserialized.features.has_disk);
         assert!(deserialized.features.has_memory);
         assert!(deserialized.features.variable_blocks);
     }
 
     #[test]
-    fn test_strata_header_equality() {
-        let header1 = StrataHeader::default();
-        let header2 = StrataHeader::default();
+    fn test_hexz_header_equality() {
+        let header1 = Header::default();
+        let header2 = Header::default();
 
         assert_eq!(header1, header2);
     }
 
     #[test]
-    fn test_strata_header_inequality() {
-        let mut header1 = StrataHeader::default();
-        let mut header2 = StrataHeader::default();
+    fn test_hexz_header_inequality() {
+        let mut header1 = Header::default();
+        let mut header2 = Header::default();
 
         header1.block_size = 4096;
         header2.block_size = 65536;
@@ -493,8 +493,8 @@ mod tests {
 
     #[test]
     #[allow(clippy::field_reassign_with_default)]
-    fn test_strata_header_custom_block_size() {
-        let mut header = StrataHeader::default();
+    fn test_hexz_header_custom_block_size() {
+        let mut header = Header::default();
         header.block_size = 131072; // 128 KB
 
         assert_eq!(header.block_size, 131072);
@@ -502,16 +502,16 @@ mod tests {
 
     #[test]
     #[allow(clippy::field_reassign_with_default)]
-    fn test_strata_header_large_index_offset() {
-        let mut header = StrataHeader::default();
+    fn test_hexz_header_large_index_offset() {
+        let mut header = Header::default();
         header.index_offset = 1099511627776; // 1 TB
 
         assert_eq!(header.index_offset, 1099511627776);
     }
 
     #[test]
-    fn test_strata_header_clone() {
-        let header1 = StrataHeader::default();
+    fn test_hexz_header_clone() {
+        let header1 = Header::default();
         let header2 = header1.clone();
 
         assert_eq!(header1, header2);
@@ -538,11 +538,11 @@ mod tests {
     }
 
     #[test]
-    fn test_strata_header_debug_format() {
-        let header = StrataHeader::default();
+    fn test_hexz_header_debug_format() {
+        let header = Header::default();
         let debug_str = format!("{:?}", header);
 
-        assert!(debug_str.contains("StrataHeader"));
+        assert!(debug_str.contains("Header"));
         assert!(debug_str.contains("magic"));
         assert!(debug_str.contains("version"));
     }

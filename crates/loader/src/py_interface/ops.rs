@@ -1,7 +1,7 @@
 //! Python utility functions for snapshot inspection, analysis, and operations.
 //!
 //! This module provides a collection of standalone Python functions for working with
-//! Strata snapshot files. These utilities cover inspection, cryptographic signing,
+//! Hexz snapshot files. These utilities cover inspection, cryptographic signing,
 //! deduplication analysis, overlay diffing, and live VM snapshotting.
 //!
 //! # Overview
@@ -45,7 +45,7 @@
 //!
 //! # Error Handling
 //!
-//! All functions raise Python exceptions from the `strata.exceptions` hierarchy:
+//! All functions raise Python exceptions from the `hexz.exceptions` hierarchy:
 //!
 //! - `IOError`: File not found, permission denied, network errors
 //! - `FormatError`: Invalid snapshot format, corrupted header
@@ -57,9 +57,9 @@
 //! ## Inspecting Snapshots
 //!
 //! ```python
-//! from strata import inspect
+//! from hexz import inspect
 //!
-//! meta = inspect("snapshot.st")
+//! meta = inspect("snapshot.hxz")
 //! print(f"Format version: {meta['version']}")
 //! print(f"Compression: {meta['compression']}")
 //! print(f"Encrypted: {meta['encrypted']}")
@@ -74,7 +74,7 @@
 //! ## Analyzing Deduplication Potential
 //!
 //! ```python
-//! from strata import analyze
+//! from hexz import analyze
 //!
 //! stats = analyze("disk.img")
 //! print(f"Unique bytes: {stats['unique_bytes']}")
@@ -85,19 +85,19 @@
 //! ## Cryptographic Signing
 //!
 //! ```python
-//! from strata import keygen, sign_image, verify_image
+//! from hexz import keygen, sign_image, verify_image
 //!
 //! # Generate keypair
 //! priv_path, pub_path = keygen("keys/")
 //! print(f"Generated: {priv_path}, {pub_path}")
 //!
 //! # Sign snapshot
-//! sign_image("snapshot.st", "keys/private.key")
+//! sign_image("snapshot.hxz", "keys/private.key")
 //! print("Snapshot signed successfully")
 //!
 //! # Verify signature
 //! try:
-//!     verify_image("snapshot.st", "keys/public.key")
+//!     verify_image("snapshot.hxz", "keys/public.key")
 //!     print("Signature valid!")
 //! except ValueError as e:
 //!     print(f"Verification failed: {e}")
@@ -106,7 +106,7 @@
 //! ## Analyzing Overlay Changes
 //!
 //! ```python
-//! from strata import diff
+//! from hexz import diff
 //!
 //! changes = diff("overlay.img")
 //! print(f"Modified blocks: {changes['modified_blocks']}")
@@ -116,14 +116,14 @@
 //! ## Live VM Snapshotting
 //!
 //! ```python
-//! from strata import snapshot_vm
+//! from hexz import snapshot_vm
 //!
 //! # Create snapshot of running VM via QMP
 //! snapshot_vm(
 //!     qmp_socket="/tmp/qemu-qmp.sock",
-//!     base_path="base-snapshot.st",
+//!     base_path="base-snapshot.hxz",
 //!     overlay_path="overlay.img",
-//!     output_path="vm-snapshot.st"
+//!     output_path="vm-snapshot.hxz"
 //! )
 //! print("VM snapshot created successfully")
 //! ```
@@ -135,6 +135,16 @@
 //! - **sign_image()**: Requires reading entire index for SHA-256 hashing
 //! - **snapshot_vm()**: Blocks until VM memory dump completes (can take seconds to minutes)
 
+#[cfg(feature = "signing")]
+use hexz_common::sign;
+use hexz_core::algo::dedup::{cdc, dcam};
+use hexz_core::format::header::Header;
+use hexz_core::format::index::MasterIndex;
+use hexz_core::format::magic::HEADER_SIZE;
+use hexz_core::format::version::{
+    CURRENT_VERSION, MAX_SUPPORTED_VERSION, MIN_SUPPORTED_VERSION, check_version,
+    compatibility_message,
+};
 use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 #[cfg(feature = "signing")]
@@ -146,18 +156,8 @@ use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
-#[cfg(feature = "signing")]
-use strata_common::sign;
-use strata_core::algo::dedup::{cdc, dcam};
-use strata_core::format::header::StrataHeader;
-use strata_core::format::index::MasterIndex;
-use strata_core::format::magic::HEADER_SIZE;
-use strata_core::format::version::{
-    CURRENT_VERSION, MAX_SUPPORTED_VERSION, MIN_SUPPORTED_VERSION, check_version,
-    compatibility_message,
-};
 
-use super::builder::StrataBuilder;
+use super::builder::Builder;
 
 /// Generate an Ed25519 keypair for signing snapshots.
 ///
@@ -182,7 +182,7 @@ use super::builder::StrataBuilder;
 /// # Python Example
 ///
 /// ```python
-/// from strata import keygen
+/// from hexz import keygen
 ///
 /// # Generate in current directory
 /// priv_key, pub_key = keygen()
@@ -216,7 +216,7 @@ pub fn keygen(output_dir: Option<String>) -> PyResult<(String, String)> {
     ))
 }
 
-/// Get the current Strata format version number.
+/// Get the current Hexz format version number.
 ///
 /// Returns the format version constant used when creating new snapshots. This can be
 /// compared against versions read from existing snapshots to determine compatibility.
@@ -228,7 +228,7 @@ pub fn keygen(output_dir: Option<String>) -> PyResult<(String, String)> {
 /// # Python Example
 ///
 /// ```python
-/// from strata import get_format_version
+/// from hexz import get_format_version
 ///
 /// version = get_format_version()
 /// print(f"Current format version: {version}")
@@ -250,7 +250,7 @@ pub fn get_format_version() -> u32 {
 /// # Python Example
 ///
 /// ```python
-/// from strata import get_min_supported_version
+/// from hexz import get_min_supported_version
 ///
 /// min_ver = get_min_supported_version()
 /// print(f"Minimum supported version: {min_ver}")
@@ -272,7 +272,7 @@ pub fn get_min_supported_version() -> u32 {
 /// # Python Example
 ///
 /// ```python
-/// from strata import get_max_supported_version
+/// from hexz import get_max_supported_version
 ///
 /// max_ver = get_max_supported_version()
 /// print(f"Maximum supported version: {max_ver}")
@@ -321,9 +321,9 @@ pub fn get_max_supported_version() -> u32 {
 /// # Python Example
 ///
 /// ```python
-/// from strata import inspect
+/// from hexz import inspect
 ///
-/// meta = inspect("snapshot.st")
+/// meta = inspect("snapshot.hxz")
 ///
 /// # Format information
 /// print(f"Version: {meta['version']}")
@@ -350,7 +350,7 @@ pub fn inspect(py: Python<'_>, path: String) -> PyResult<HashMap<String, PyObjec
     let mut header_bytes = [0u8; HEADER_SIZE];
     f.read_exact(&mut header_bytes)
         .map_err(|e| PyIOError::new_err(e.to_string()))?;
-    let header: StrataHeader =
+    let header: Header =
         bincode::deserialize(&header_bytes).map_err(|e| PyValueError::new_err(e.to_string()))?;
 
     f.seek(SeekFrom::Start(header.index_offset))
@@ -376,9 +376,9 @@ pub fn inspect(py: Python<'_>, path: String) -> PyResult<HashMap<String, PyObjec
     let compatibility = check_version(header.version);
     let is_compatible = compatibility.is_compatible();
     let compatibility_status = match compatibility {
-        strata_core::format::version::VersionCompatibility::Full => "full",
-        strata_core::format::version::VersionCompatibility::Degraded => "degraded",
-        strata_core::format::version::VersionCompatibility::Incompatible => "incompatible",
+        hexz_core::format::version::VersionCompatibility::Full => "full",
+        hexz_core::format::version::VersionCompatibility::Degraded => "degraded",
+        hexz_core::format::version::VersionCompatibility::Incompatible => "incompatible",
     };
 
     let mut dict: HashMap<String, PyObject> = HashMap::new();
@@ -512,7 +512,7 @@ pub fn inspect(py: Python<'_>, path: String) -> PyResult<HashMap<String, PyObjec
 /// # Python Example
 ///
 /// ```python
-/// from strata import analyze
+/// from hexz import analyze
 ///
 /// stats = analyze("disk.img")
 /// print(f"Unique bytes: {stats['unique_bytes']}")
@@ -593,7 +593,7 @@ pub fn analyze(py: Python<'_>, path: String) -> PyResult<HashMap<String, f64>> {
 /// # Python Example
 ///
 /// ```python
-/// from strata import diff
+/// from hexz import diff
 ///
 /// changes = diff("overlay.img")
 /// print(f"Modified blocks: {changes['modified_blocks']}")
@@ -656,13 +656,13 @@ pub fn diff(overlay_path: String) -> PyResult<HashMap<String, u64>> {
 /// # Python Example
 ///
 /// ```python
-/// from strata import keygen, sign_image
+/// from hexz import keygen, sign_image
 ///
 /// # Generate keypair
 /// priv_key, pub_key = keygen("keys/")
 ///
 /// # Sign snapshot
-/// sign_image("snapshot.st", priv_key)
+/// sign_image("snapshot.hxz", priv_key)
 /// print("Snapshot signed successfully")
 /// ```
 ///
@@ -687,7 +687,7 @@ pub fn sign_image(image_path: String, key_path: String) -> PyResult<()> {
     let mut header_bytes = [0u8; HEADER_SIZE];
     f.read_exact(&mut header_bytes)
         .map_err(|e| PyIOError::new_err(e.to_string()))?;
-    let mut header: StrataHeader =
+    let mut header: Header =
         bincode::deserialize(&header_bytes).map_err(|e| PyValueError::new_err(e.to_string()))?;
 
     f.seek(SeekFrom::Start(header.index_offset))
@@ -739,11 +739,11 @@ pub fn sign_image(image_path: String, key_path: String) -> PyResult<()> {
 /// # Python Example
 ///
 /// ```python
-/// from strata import verify_image
+/// from hexz import verify_image
 ///
 /// # Verify signature
 /// try:
-///     verify_image("snapshot.st", "keys/public.key")
+///     verify_image("snapshot.hxz", "keys/public.key")
 ///     print("Signature valid - snapshot integrity verified")
 /// except ValueError as e:
 ///     print(f"Signature verification failed: {e}")
@@ -765,7 +765,7 @@ pub fn verify_image(image_path: String, key_path: String) -> PyResult<()> {
     let mut header_bytes = [0u8; HEADER_SIZE];
     f.read_exact(&mut header_bytes)
         .map_err(|e| PyIOError::new_err(e.to_string()))?;
-    let header: StrataHeader =
+    let header: Header =
         bincode::deserialize(&header_bytes).map_err(|e| PyValueError::new_err(e.to_string()))?;
 
     let (sig_off, sig_len) = match (header.signature_offset, header.signature_length) {
@@ -868,14 +868,14 @@ fn read_qmp(stream: &mut UnixStream) -> PyResult<serde_json::Value> {
 /// # Python Example
 ///
 /// ```python
-/// from strata import snapshot_vm
+/// from hexz import snapshot_vm
 ///
 /// # Create live snapshot of running VM
 /// snapshot_vm(
 ///     qmp_socket="/tmp/qemu-qmp.sock",
-///     base_path="base-snapshot.st",
+///     base_path="base-snapshot.hxz",
 ///     overlay_path="/var/lib/vm/overlay.qcow2",
-///     output_path="vm-checkpoint.st"
+///     output_path="vm-checkpoint.hxz"
 /// )
 /// print("Live VM snapshot created")
 /// ```
@@ -936,7 +936,7 @@ pub fn snapshot_vm(
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
 
-    let mut builder = StrataBuilder::new(
+    let mut builder = Builder::new(
         output_path,
         65536,
         "lz4",

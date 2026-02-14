@@ -52,7 +52,7 @@
 //! ## Reading Unmodified Data
 //!
 //! ```no_run
-//! // Read first 4096 bytes of /mnt/strata/disk (no overlay modifications):
+//! // Read first 4096 bytes of /mnt/hexz/disk (no overlay modifications):
 //! // 1. handle_read(ino=2, offset=0, size=4096)
 //! // 2. Block 0 not modified -> read from snapshot
 //! // 3. Return snapshot bytes [0..4096]
@@ -68,11 +68,11 @@
 //! // Result: [snapshot[2048..4096], overlay[4096..8192], snapshot[8192..14336]]
 //! ```
 
-use super::Strata;
+use super::Hexz;
 use crate::vfs::BLOCK_SIZE;
 use fuser::{ReplyData, Request};
+use hexz_core::SnapshotStream;
 use libc::{EIO, ENOENT};
-use strata_core::SnapshotStream;
 
 /// Reads a byte range from a file, merging snapshot and overlay data.
 ///
@@ -153,7 +153,7 @@ use strata_core::SnapshotStream;
 ///   is limited by FUSE's single-threaded request dispatch by default).
 #[allow(clippy::too_many_arguments)]
 pub fn handle_read(
-    fs: &mut Strata,
+    fs: &mut Hexz,
     _req: &Request,
     ino: u64,
     _fh: u64,

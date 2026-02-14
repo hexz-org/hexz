@@ -3,7 +3,7 @@ import os
 import time
 import subprocess
 import socket
-import strata
+import hexz
 import shutil
 
 pytest.importorskip("boto3")
@@ -95,19 +95,19 @@ def test_async_s3_read(s3_server, s3_client, tmp_path):
     Tests that the Rust S3Backend can read from a custom S3 endpoint.
     """
     bucket = "my-test-bucket"
-    key = "snapshot.st"
+    key = "snapshot.hxz"
 
     # 1. Create a dummy snapshot file locally
     # We use a distinct pattern to verify we aren't reading zeros
     data = bytes([i % 255 for i in range(1024 * 10)])  # 10KB data
 
-    local_snap = str(tmp_path / "snap.st")
+    local_snap = str(tmp_path / "snap.hxz")
     local_data = str(tmp_path / "data.bin")
 
     with open(local_data, "wb") as f:
         f.write(data)
 
-    with strata.open(local_snap, mode="w") as w:
+    with hexz.open(local_snap, mode="w") as w:
         w.add(local_data)
 
     # Read the generated snapshot bytes (the .st file) to upload to S3
@@ -118,11 +118,11 @@ def test_async_s3_read(s3_server, s3_client, tmp_path):
     s3_client.create_bucket(Bucket=bucket)
     s3_client.put_object(Bucket=bucket, Key=key, Body=snap_file_bytes)
 
-    # 3. Open via Strata using the s3:// URI and custom endpoint
+    # 3. Open via Hexz using the s3:// URI and custom endpoint
     uri = f"s3://{bucket}/{key}"
 
     print(f"Connecting to {uri} at {s3_server}")
-    reader = strata.open(uri, endpoint_url=s3_server, allow_restricted=True)
+    reader = hexz.open(uri, endpoint_url=s3_server, allow_restricted=True)
 
     # 4. Verify Reads against ORIGINAL DATA
     # The reader returns logical data (uncompressed), so we compare against `data`

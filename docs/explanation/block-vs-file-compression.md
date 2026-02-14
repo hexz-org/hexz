@@ -1,6 +1,6 @@
 # Block-Level vs File-Level Compression
 
-Comparison of compression strategies and why Strata uses block-level compression.
+Comparison of compression strategies and why Hexz uses block-level compression.
 
 ## File-Level Compression
 
@@ -61,7 +61,7 @@ File-level compression is ideal for:
 
 ## Block-Level Compression
 
-Strata's approach: divide into blocks, compress independently.
+Hexz's approach: divide into blocks, compress independently.
 
 ### How It Works
 
@@ -144,11 +144,11 @@ Block-level compression is ideal for:
 
 **Problem**: Complexity, unpredictable performance
 
-**Strata approach**: Fixed block size chosen at pack time based on use case
+**Hexz approach**: Fixed block size chosen at pack time based on use case
 
-## Why Strata Chose Block-Level
+## Why Hexz Chose Block-Level
 
-Strata's use cases demand random access:
+Hexz's use cases demand random access:
 
 **ML Training**:
 - Random sample shuffling
@@ -166,7 +166,7 @@ Strata's use cases demand random access:
 
 ## Compression Ratio Recovery
 
-Block-level loses cross-block references, but Strata recovers some compression through:
+Block-level loses cross-block references, but Hexz recovers some compression through:
 
 ### Content-Defined Chunking (CDC)
 
@@ -194,9 +194,9 @@ Measured on 10GB text dataset:
 | Method | Compressed Size | Access Time (random 4KB) |
 |--------|----------------|-------------------------|
 | gzip (file-level) | 2.1GB (4.7x) | 8.2 seconds |
-| Strata LZ4 64KB blocks | 3.0GB (3.3x) | 0.08 milliseconds |
-| Strata Zstd 64KB blocks | 2.5GB (4.0x) | 0.15 milliseconds |
-| Strata Zstd 256KB blocks | 2.3GB (4.3x) | 0.35 milliseconds |
+| Hexz LZ4 64KB blocks | 3.0GB (3.3x) | 0.08 milliseconds |
+| Hexz Zstd 64KB blocks | 2.5GB (4.0x) | 0.15 milliseconds |
+| Hexz Zstd 256KB blocks | 2.3GB (4.3x) | 0.35 milliseconds |
 
 **Key insight**: Block-level achieves comparable compression with vastly better random access.
 
@@ -214,7 +214,7 @@ Measured on 10GB text dataset:
 - Predictable latency needed
 - Incremental updates common
 
-For Strata's use cases (ML training, VM boot), block-level is clear winner.
+For Hexz's use cases (ML training, VM boot), block-level is clear winner.
 
 ## See Also
 

@@ -1,6 +1,6 @@
 //! AES-256-GCM authenticated encryption for snapshot blocks.
 //!
-//! This module provides block-level encryption for Strata snapshots using the AES-256-GCM
+//! This module provides block-level encryption for Hexz snapshots using the AES-256-GCM
 //! (Galois/Counter Mode) authenticated encryption algorithm. It implements the `Encryptor`
 //! trait to provide transparent encryption and decryption of individual snapshot blocks with
 //! cryptographic authentication to detect tampering or corruption.
@@ -297,7 +297,7 @@
 //! ## Basic Encryption/Decryption Workflow
 //!
 //! ```rust
-//! use strata_core::algo::encryption::{Encryptor, AesGcmEncryptor};
+//! use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
 //!
 //! # fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! // Derive key from password and salt (stored in snapshot header)
@@ -325,7 +325,7 @@
 //! ## Secure Snapshot Encryption
 //!
 //! ```rust
-//! use strata_core::algo::encryption::{Encryptor, AesGcmEncryptor};
+//! use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
 //! use rand::RngCore;
 //!
 //! # fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -334,8 +334,8 @@
 //! rand::thread_rng().fill_bytes(&mut salt);
 //!
 //! // Get password from secure source (environment, prompt, key file)
-//! let password = std::env::var("STRATA_ENCRYPTION_PASSWORD")
-//!     .expect("STRATA_ENCRYPTION_PASSWORD not set")
+//! let password = std::env::var("HEXZ_ENCRYPTION_PASSWORD")
+//!     .expect("HEXZ_ENCRYPTION_PASSWORD not set")
 //!     .into_bytes();
 //!
 //! // Create encryptor with strong parameters
@@ -359,7 +359,7 @@
 //! ## Handling Decryption Failures
 //!
 //! ```rust
-//! use strata_core::algo::encryption::{Encryptor, AesGcmEncryptor};
+//! use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
 //!
 //! # fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 10_000);
@@ -393,7 +393,7 @@
 //! ## Thread-Safe Concurrent Encryption
 //!
 //! ```rust
-//! use strata_core::algo::encryption::{Encryptor, AesGcmEncryptor};
+//! use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
 //! use std::sync::Arc;
 //! use std::thread;
 //!
@@ -424,12 +424,12 @@ use aes_gcm::{
     Aes256Gcm, Key,
     aead::{Aead, KeyInit, consts::U12, generic_array::GenericArray},
 };
+use hexz_common::constants::{AES_KEY_LENGTH, AES_NONCE_LENGTH};
+use hexz_common::{Error, Result};
 use hmac::Hmac;
 use pbkdf2::pbkdf2;
 use sha2::Sha256;
 use std::fmt;
-use strata_common::constants::{AES_KEY_LENGTH, AES_NONCE_LENGTH};
-use strata_common::{Result, StrataError};
 
 /// AES-256-GCM encryptor with PBKDF2-derived keys for block-level authenticated encryption.
 ///
@@ -480,7 +480,7 @@ use strata_common::{Result, StrataError};
 /// ## Creating an Encryptor
 ///
 /// ```rust
-/// use strata_core::algo::encryption::AesGcmEncryptor;
+/// use hexz_core::algo::encryption::AesGcmEncryptor;
 ///
 /// // Derive key from password and salt
 /// let password = b"strong_random_password_here";
@@ -494,7 +494,7 @@ use strata_common::{Result, StrataError};
 /// ## Sharing Across Threads
 ///
 /// ```rust
-/// use strata_core::algo::encryption::{Encryptor, AesGcmEncryptor};
+/// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
 /// use std::sync::Arc;
 /// use std::thread;
 ///
@@ -578,7 +578,7 @@ impl fmt::Debug for AesGcmEncryptor {
     /// # Examples
     ///
     /// ```rust
-    /// use strata_core::algo::encryption::AesGcmEncryptor;
+    /// use hexz_core::algo::encryption::AesGcmEncryptor;
     ///
     /// let encryptor = AesGcmEncryptor::new(b"secret_password", b"salt12345678salt", 600_000);
     ///
@@ -674,7 +674,7 @@ impl AesGcmEncryptor {
     /// ## Secure Encryptor Creation
     ///
     /// ```rust
-    /// use strata_core::algo::encryption::AesGcmEncryptor;
+    /// use hexz_core::algo::encryption::AesGcmEncryptor;
     /// use rand::RngCore;
     ///
     /// // Generate cryptographically random salt
@@ -698,7 +698,7 @@ impl AesGcmEncryptor {
     /// ## Reproducible Key Derivation (for Decryption)
     ///
     /// ```rust
-    /// use strata_core::algo::encryption::AesGcmEncryptor;
+    /// use hexz_core::algo::encryption::AesGcmEncryptor;
     ///
     /// // Read parameters from snapshot header
     /// let stored_salt: [u8; 16] = [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0,
@@ -721,7 +721,7 @@ impl AesGcmEncryptor {
     /// ## Testing with Fast Parameters
     ///
     /// ```rust
-    /// use strata_core::algo::encryption::AesGcmEncryptor;
+    /// use hexz_core::algo::encryption::AesGcmEncryptor;
     ///
     /// // For unit tests, use lower iterations to speed up test execution
     /// // (DO NOT use in production)
@@ -820,7 +820,7 @@ impl AesGcmEncryptor {
     /// # Examples
     ///
     /// ```rust
-    /// # use strata_core::algo::encryption::AesGcmEncryptor;
+    /// # use hexz_core::algo::encryption::AesGcmEncryptor;
     /// # let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 10_000);
     /// // Internal usage (not directly callable, but conceptually):
     /// // let nonce = encryptor.generate_nonce(42);
@@ -858,7 +858,7 @@ impl Encryptor for AesGcmEncryptor {
     /// - `Ok(Vec<u8>)`: Ciphertext with appended authentication tag. Length is `data.len() + 16`.
     ///   The ciphertext can be stored and later decrypted using the same `block_idx`.
     ///
-    /// - `Err(StrataError::Encryption)`: Encryption failed (extremely rare; typically indicates
+    /// - `Err(Error::Encryption)`: Encryption failed (extremely rare; typically indicates
     ///   a bug in the underlying `aes-gcm` crate or hardware acceleration failure).
     ///
     /// # Errors
@@ -932,7 +932,7 @@ impl Encryptor for AesGcmEncryptor {
     /// ## Basic Encryption
     ///
     /// ```rust
-    /// use strata_core::algo::encryption::{Encryptor, AesGcmEncryptor};
+    /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000);
@@ -951,7 +951,7 @@ impl Encryptor for AesGcmEncryptor {
     /// ## Encrypting Multiple Blocks
     ///
     /// ```rust
-    /// use strata_core::algo::encryption::{Encryptor, AesGcmEncryptor};
+    /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000);
@@ -972,7 +972,7 @@ impl Encryptor for AesGcmEncryptor {
     /// ## Empty Block Encryption
     ///
     /// ```rust
-    /// use strata_core::algo::encryption::{Encryptor, AesGcmEncryptor};
+    /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000);
@@ -989,7 +989,7 @@ impl Encryptor for AesGcmEncryptor {
         let nonce = self.generate_nonce(block_idx);
         self.cipher
             .encrypt(&nonce, data)
-            .map_err(|e| StrataError::Encryption(e.to_string()))
+            .map_err(|e| Error::Encryption(e.to_string()))
     }
 
     /// Decrypts and verifies a block of AES-256-GCM ciphertext with authentication.
@@ -1015,7 +1015,7 @@ impl Encryptor for AesGcmEncryptor {
     ///   (ciphertext length minus authentication tag). The plaintext matches the original
     ///   input to `encrypt()`.
     ///
-    /// - `Err(StrataError::Encryption)`: Decryption or authentication failed. This occurs when:
+    /// - `Err(Error::Encryption)`: Decryption or authentication failed. This occurs when:
     ///   - **Wrong Key**: The encryptor was created with a different password, salt, or
     ///     iteration count than was used for encryption.
     ///   - **Wrong Block Index**: The `block_idx` does not match the index used during
@@ -1026,7 +1026,7 @@ impl Encryptor for AesGcmEncryptor {
     ///
     /// # Errors
     ///
-    /// This method returns `Err(StrataError::Encryption)` when authentication fails. The error
+    /// This method returns `Err(Error::Encryption)` when authentication fails. The error
     /// message is intentionally generic ("encryption error") and does **not** distinguish between:
     ///
     /// - **Wrong Password/Key**: Incorrect key derivation parameters
@@ -1078,7 +1078,7 @@ impl Encryptor for AesGcmEncryptor {
     /// ## Wrong Password or Key Parameters
     ///
     /// ```rust
-    /// use strata_core::algo::encryption::{Encryptor, AesGcmEncryptor};
+    /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let enc1 = AesGcmEncryptor::new(b"password1", b"salt12345678salt", 600_000);
@@ -1095,7 +1095,7 @@ impl Encryptor for AesGcmEncryptor {
     /// ## Wrong Block Index (Nonce Mismatch)
     ///
     /// ```rust
-    /// use strata_core::algo::encryption::{Encryptor, AesGcmEncryptor};
+    /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000);
@@ -1111,7 +1111,7 @@ impl Encryptor for AesGcmEncryptor {
     /// ## Corrupted Ciphertext
     ///
     /// ```rust
-    /// use strata_core::algo::encryption::{Encryptor, AesGcmEncryptor};
+    /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000);
@@ -1132,7 +1132,7 @@ impl Encryptor for AesGcmEncryptor {
     /// ## Basic Decryption
     ///
     /// ```rust
-    /// use strata_core::algo::encryption::{Encryptor, AesGcmEncryptor};
+    /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000);
@@ -1152,7 +1152,7 @@ impl Encryptor for AesGcmEncryptor {
     /// ## Handling Decryption Failures
     ///
     /// ```rust
-    /// use strata_core::algo::encryption::{Encryptor, AesGcmEncryptor};
+    /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() {
     /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000);
@@ -1174,7 +1174,7 @@ impl Encryptor for AesGcmEncryptor {
     /// ## Decrypting Multiple Blocks
     ///
     /// ```rust
-    /// use strata_core::algo::encryption::{Encryptor, AesGcmEncryptor};
+    /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000);
@@ -1198,7 +1198,7 @@ impl Encryptor for AesGcmEncryptor {
         let nonce = self.generate_nonce(block_idx);
         self.cipher
             .decrypt(&nonce, data)
-            .map_err(|e| StrataError::Encryption(e.to_string()))
+            .map_err(|e| Error::Encryption(e.to_string()))
     }
 }
 

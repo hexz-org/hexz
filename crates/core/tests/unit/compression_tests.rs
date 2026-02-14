@@ -6,7 +6,7 @@
 use super::common;
 use common::*;
 
-use strata_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
+use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
 
 /// Test LZ4 compression round-trip with random data.
 #[test]

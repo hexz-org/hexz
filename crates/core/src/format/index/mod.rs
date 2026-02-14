@@ -2,7 +2,7 @@
 //!
 //! # Overview
 //!
-//! Strata snapshots use a two-level index hierarchy:
+//! Hexz snapshots use a two-level index hierarchy:
 //! 1. **Master Index**: Top-level directory of index pages (stored at end of file)
 //! 2. **Index Pages**: Arrays of `BlockInfo` records for contiguous block ranges
 //!
@@ -47,7 +47,7 @@
 //!
 //! # Examples
 //!
-//! See [`crate::api::stratafile::StrataFile`] for usage examples.
+//! See [`crate::api::file::File`] for usage examples.
 
 use serde::{Deserialize, Serialize};
 
@@ -129,7 +129,7 @@ pub mod hash;
 /// # Examples
 ///
 /// ```
-/// use strata_core::format::index::ENTRIES_PER_PAGE;
+/// use hexz_core::format::index::ENTRIES_PER_PAGE;
 ///
 /// // Calculate how many pages are needed for a 1 GB disk image
 /// let block_size = 4096;
@@ -168,7 +168,7 @@ pub const ENTRIES_PER_PAGE: usize = 4096;
 /// # Examples
 ///
 /// ```
-/// use strata_core::format::index::BlockInfo;
+/// use hexz_core::format::index::BlockInfo;
 ///
 /// // Normal block
 /// let block = BlockInfo {
@@ -223,7 +223,7 @@ impl BlockInfo {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::format::index::BlockInfo;
+    /// use hexz_core::format::index::BlockInfo;
     ///
     /// // Create a sparse 4KB block
     /// let sparse = BlockInfo::sparse(4096);
@@ -253,7 +253,7 @@ impl BlockInfo {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::format::index::BlockInfo;
+    /// use hexz_core::format::index::BlockInfo;
     ///
     /// let sparse = BlockInfo::sparse(4096);
     /// assert!(sparse.is_sparse());
@@ -283,7 +283,7 @@ impl BlockInfo {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::format::index::BlockInfo;
+    /// use hexz_core::format::index::BlockInfo;
     ///
     /// let parent_block = BlockInfo {
     ///     offset: u64::MAX,  // BLOCK_OFFSET_PARENT
@@ -326,7 +326,7 @@ impl BlockInfo {
 /// # Examples
 ///
 /// ```
-/// use strata_core::format::index::PageEntry;
+/// use hexz_core::format::index::PageEntry;
 ///
 /// let entry = PageEntry {
 ///     offset: 1048576,      // Page starts at 1MB
@@ -394,7 +394,7 @@ pub struct PageEntry {
 /// # Examples
 ///
 /// ```
-/// use strata_core::format::index::{MasterIndex, PageEntry};
+/// use hexz_core::format::index::{MasterIndex, PageEntry};
 ///
 /// let master = MasterIndex {
 ///     disk_pages: vec![
@@ -456,7 +456,7 @@ pub struct MasterIndex {
 /// # Examples
 ///
 /// ```
-/// use strata_core::format::index::{IndexPage, BlockInfo};
+/// use hexz_core::format::index::{IndexPage, BlockInfo};
 ///
 /// let mut page = IndexPage {
 ///     blocks: vec![

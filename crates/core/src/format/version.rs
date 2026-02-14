@@ -1,13 +1,13 @@
 //! Format version management and compatibility checking.
 //!
-//! This module defines the versioning strategy for Strata snapshot files (`.st`),
+//! This module defines the versioning strategy for Hexz snapshot files (`.st`),
 //! enabling safe evolution of the on-disk format while maintaining backward and
 //! forward compatibility guarantees. Version negotiation ensures that readers can
 //! detect incompatible snapshots and provide actionable error messages.
 //!
 //! # Versioning Strategy
 //!
-//! Strata uses a monotonic integer versioning scheme where each version number
+//! Hexz uses a monotonic integer versioning scheme where each version number
 //! represents a distinct on-disk format:
 //!
 //! - **Version 1**: Initial format with two-level index, LZ4/Zstd compression,
@@ -17,11 +17,11 @@
 //!
 //! ## Semantic Versioning Alignment
 //!
-//! Format versions are independent of Strata software versions (semver). A software
+//! Format versions are independent of Hexz software versions (semver). A software
 //! release may support multiple format versions for backward compatibility. The
 //! mapping is defined as:
 //!
-//! | Format Version | Strata Software Versions | Key Changes |
+//! | Format Version | Hexz Software Versions | Key Changes |
 //! |----------------|--------------------------|-------------|
 //! | 1              | 0.1.0+                   | Initial release |
 //!
@@ -29,15 +29,15 @@
 //!
 //! ## Backward Compatibility (Reading Old Snapshots)
 //!
-//! Strata readers maintain compatibility with snapshots created by older software:
+//! Hexz readers maintain compatibility with snapshots created by older software:
 //!
 //! - **MIN_SUPPORTED_VERSION**: Oldest format version we can read (currently 1)
 //! - **Upgrade Path**: Snapshots older than MIN_SUPPORTED_VERSION must be migrated
-//!   using the `strata-migrate` tool (see Migration section below)
+//!   using the `hexz-migrate` tool (see Migration section below)
 //!
 //! ## Forward Compatibility (Reading New Snapshots)
 //!
-//! Strata readers handle snapshots created by newer software:
+//! Hexz readers handle snapshots created by newer software:
 //!
 //! - **MAX_SUPPORTED_VERSION**: Newest format version we can read (currently 1)
 //! - **Degraded Mode**: Future versions may enable partial reads with warnings if
@@ -50,7 +50,7 @@
 //! When opening a snapshot file:
 //!
 //! ```text
-//! 1. Read header magic bytes (validate "STRT" signature)
+//! 1. Read header magic bytes (validate "HEXZ" signature)
 //! 2. Read header.version field
 //! 3. Call check_version(header.version)
 //! 4. If VersionCompatibility::Incompatible:
@@ -77,13 +77,13 @@
 //!
 //! ## Step 2: Update Serialization Logic
 //!
-//! Modify [`crate::format::header::StrataHeader`] or [`crate::format::index::MasterIndex`]
+//! Modify [`crate::format::header::Header`] or [`crate::format::index::MasterIndex`]
 //! to include new fields or change existing structures. Use serde attributes to
 //! maintain compatibility:
 //!
 //! ```rust,ignore
 //! #[derive(Serialize, Deserialize)]
-//! pub struct StrataHeader {
+//! pub struct Header {
 //!     // Existing fields...
 //!     #[serde(skip_serializing_if = "Option::is_none")]
 //!     pub new_feature: Option<NewFeatureData>,  // Version 2+ only
@@ -115,7 +115,7 @@
 //! ```rust,ignore
 //! #[test]
 //! fn test_read_v2_snapshot() {
-//!     let snapshot = load_fixture("testdata/v2_snapshot.st");
+//!     let snapshot = load_fixture("testdata/v2_snapshot.hxz");
 //!     assert_eq!(snapshot.header.version, 2);
 //!     // Verify new features work correctly
 //! }
@@ -127,14 +127,14 @@
 //!
 //! # Migration Between Versions
 //!
-//! The `strata-migrate` tool converts snapshots between format versions:
+//! The `hexz-migrate` tool converts snapshots between format versions:
 //!
 //! ```bash
 //! # Upgrade old snapshot to current format
-//! strata-migrate upgrade --input old_v1.st --output new_v2.st
+//! hexz-migrate upgrade --input old_v1.st --output new_v2.st
 //!
 //! # Downgrade for compatibility (if supported)
-//! strata-migrate downgrade --input new_v2.st --output legacy_v1.st \
+//! hexz-migrate downgrade --input new_v2.st --output legacy_v1.st \
 //!     --target-version 1
 //! ```
 //!
@@ -159,7 +159,7 @@
 //! Version checking is performed once per snapshot open operation:
 //!
 //! - **Overhead**: Negligible (~100ns for integer comparison)
-//! - **Caching**: Version is cached in [`crate::api::stratafile::StrataFile`] struct
+//! - **Caching**: Version is cached in [`crate::api::file::File`] struct
 //! - **Hot Path**: Not in block read/write paths
 //!
 //! # Examples
@@ -167,7 +167,7 @@
 //! ## Basic Version Check
 //!
 //! ```
-//! use strata_core::format::version::{check_version, VersionCompatibility};
+//! use hexz_core::format::version::{check_version, VersionCompatibility};
 //!
 //! let snapshot_version = 1;
 //! let compat = check_version(snapshot_version);
@@ -188,25 +188,25 @@
 //! ## User-Facing Error Messages
 //!
 //! ```
-//! use strata_core::format::version::compatibility_message;
+//! use hexz_core::format::version::compatibility_message;
 //!
 //! let version = 999;  // Future version
 //! let message = compatibility_message(version);
 //! println!("{}", message);
-//! // Output: "Version 999 is too new (max supported: 1). Please upgrade Strata."
+//! // Output: "Version 999 is too new (max supported: 1). Please upgrade Hexz."
 //! ```
 //!
 //! ## Reader Implementation
 //!
 //! ```rust,ignore
-//! use strata_core::format::version::check_version;
-//! use strata_core::error::StrataError;
+//! use hexz_core::format::version::check_version;
+//! use hexz_core::error::Error;
 //!
-//! fn open_snapshot(path: &Path) -> Result<Snapshot, StrataError> {
+//! fn open_snapshot(path: &Path) -> Result<Snapshot, Error> {
 //!     let header = read_header(path)?;
 //!
 //!     if !check_version(header.version).is_compatible() {
-//!         return Err(StrataError::IncompatibleVersion {
+//!         return Err(Error::IncompatibleVersion {
 //!             found: header.version,
 //!             min_supported: MIN_SUPPORTED_VERSION,
 //!             max_supported: MAX_SUPPORTED_VERSION,
@@ -220,7 +220,7 @@
 
 use std::fmt;
 
-/// Current format version written by this build of Strata.
+/// Current format version written by this build of Hexz.
 ///
 /// This constant defines the format version number written to the `version` field
 /// of new snapshot headers. It is incremented when the on-disk format changes in
@@ -254,7 +254,7 @@ pub const CURRENT_VERSION: u32 = 1;
 ///
 /// Snapshots with `version < MIN_SUPPORTED_VERSION` are rejected with an
 /// [`VersionCompatibility::Incompatible`] error. Users must migrate such
-/// snapshots using `strata-migrate upgrade` before reading.
+/// snapshots using `hexz-migrate upgrade` before reading.
 ///
 /// # Rationale
 ///
@@ -264,32 +264,32 @@ pub const CURRENT_VERSION: u32 = 1;
 ///
 /// # Current Policy
 ///
-/// - **Strata 0.1.x - 0.9.x**: Support version 1 only
-/// - **Strata 1.0+**: May drop support for version 1 (TBD based on adoption)
+/// - **Hexz 0.1.x - 0.9.x**: Support version 1 only
+/// - **Hexz 1.0+**: May drop support for version 1 (TBD based on adoption)
 pub const MIN_SUPPORTED_VERSION: u32 = 1;
 
 /// Maximum format version readable by this build.
 ///
 /// Snapshots with `version > MAX_SUPPORTED_VERSION` are rejected unless
 /// degraded mode is enabled (not yet implemented). This prevents crashes
-/// when reading snapshots created by future Strata versions.
+/// when reading snapshots created by future Hexz versions.
 ///
 /// # Forward Compatibility
 ///
-/// Currently, Strata uses strict versioning: any version mismatch results
+/// Currently, Hexz uses strict versioning: any version mismatch results
 /// in incompatibility. Future releases may implement graceful degradation
 /// for minor version increments (e.g., ignore unknown header fields).
 ///
 /// # Upgrade Path
 ///
 /// If you encounter a snapshot with `version > MAX_SUPPORTED_VERSION`,
-/// upgrade Strata to a newer release that supports that version.
+/// upgrade Hexz to a newer release that supports that version.
 pub const MAX_SUPPORTED_VERSION: u32 = 1;
 
 /// Result of snapshot version compatibility analysis.
 ///
 /// Returned by [`check_version`] to indicate whether a snapshot with a given
-/// format version can be read by this build of Strata. This enum enables
+/// format version can be read by this build of Hexz. This enum enables
 /// graceful handling of version mismatches with appropriate error messages.
 ///
 /// # Variants
@@ -303,13 +303,13 @@ pub const MAX_SUPPORTED_VERSION: u32 = 1;
 ///   treated as Incompatible.)
 ///
 /// - **Incompatible**: Version is outside the supported range and cannot be read.
-///   The user must upgrade Strata (for newer snapshots) or migrate the snapshot
+///   The user must upgrade Hexz (for newer snapshots) or migrate the snapshot
 ///   (for older snapshots).
 ///
 /// # Examples
 ///
 /// ```
-/// use strata_core::format::version::{check_version, VersionCompatibility};
+/// use hexz_core::format::version::{check_version, VersionCompatibility};
 ///
 /// let result = check_version(1);
 /// assert_eq!(result, VersionCompatibility::Full);
@@ -348,7 +348,7 @@ impl VersionCompatibility {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::format::version::{check_version, VersionCompatibility};
+    /// use hexz_core::format::version::{check_version, VersionCompatibility};
     ///
     /// let compat = check_version(1);
     /// if compat.is_compatible() {
@@ -389,7 +389,7 @@ impl VersionCompatibility {
 /// |-----------|--------|--------|
 /// | `version < MIN_SUPPORTED_VERSION` | Incompatible | Too old, needs migration |
 /// | `MIN_SUPPORTED_VERSION <= version <= MAX_SUPPORTED_VERSION` | Full | Within supported range |
-/// | `version > MAX_SUPPORTED_VERSION` | Incompatible | Too new, upgrade Strata |
+/// | `version > MAX_SUPPORTED_VERSION` | Incompatible | Too new, upgrade Hexz |
 ///
 /// # Future Extensions
 ///
@@ -412,7 +412,7 @@ impl VersionCompatibility {
 /// # Examples
 ///
 /// ```
-/// use strata_core::format::version::{
+/// use hexz_core::format::version::{
 ///     check_version, VersionCompatibility,
 ///     MIN_SUPPORTED_VERSION, MAX_SUPPORTED_VERSION
 /// };
@@ -433,12 +433,12 @@ impl VersionCompatibility {
 /// ## Error Handling
 ///
 /// ```rust,ignore
-/// use strata_core::format::version::check_version;
+/// use hexz_core::format::version::check_version;
 ///
-/// fn open_snapshot(header: &Header) -> Result<Snapshot, StrataError> {
+/// fn open_snapshot(header: &Header) -> Result<Snapshot, Error> {
 ///     let compat = check_version(header.version);
 ///     if !compat.is_compatible() {
-///         return Err(StrataError::IncompatibleVersion {
+///         return Err(Error::IncompatibleVersion {
 ///             found: header.version,
 ///             supported_range: (MIN_SUPPORTED_VERSION, MAX_SUPPORTED_VERSION),
 ///         });
@@ -489,15 +489,15 @@ pub fn check_version(version: u32) -> VersionCompatibility {
 /// "Version 0 is too old (min supported: 1). Please upgrade the snapshot."
 /// ```
 ///
-/// Remediation: Use `strata-migrate upgrade` to convert the snapshot.
+/// Remediation: Use `hexz-migrate upgrade` to convert the snapshot.
 ///
 /// ## Too New (version > MAX_SUPPORTED_VERSION)
 ///
 /// ```text
-/// "Version 2 is too new (max supported: 1). Please upgrade Strata."
+/// "Version 2 is too new (max supported: 1). Please upgrade Hexz."
 /// ```
 ///
-/// Remediation: Install a newer version of the Strata toolchain.
+/// Remediation: Install a newer version of the Hexz toolchain.
 ///
 /// ## Degraded Compatibility (Future)
 ///
@@ -505,14 +505,14 @@ pub fn check_version(version: u32) -> VersionCompatibility {
 /// "Version 2 is newer than supported (1), features may be missing."
 /// ```
 ///
-/// Remediation: Upgrade Strata for full feature support, or proceed with warnings.
+/// Remediation: Upgrade Hexz for full feature support, or proceed with warnings.
 ///
 /// # Usage in Error Handling
 ///
 /// This function is typically called when displaying compatibility errors to users:
 ///
 /// ```rust,ignore
-/// use strata_core::format::version::{check_version, compatibility_message};
+/// use hexz_core::format::version::{check_version, compatibility_message};
 ///
 /// fn validate_snapshot(header: &Header) -> Result<(), String> {
 ///     let compat = check_version(header.version);
@@ -526,7 +526,7 @@ pub fn check_version(version: u32) -> VersionCompatibility {
 /// # Examples
 ///
 /// ```
-/// use strata_core::format::version::{compatibility_message, MAX_SUPPORTED_VERSION};
+/// use hexz_core::format::version::{compatibility_message, MAX_SUPPORTED_VERSION};
 ///
 /// // Supported version
 /// let msg = compatibility_message(1);
@@ -535,7 +535,7 @@ pub fn check_version(version: u32) -> VersionCompatibility {
 /// // Version too new
 /// let msg = compatibility_message(MAX_SUPPORTED_VERSION + 1);
 /// assert!(msg.contains("too new"));
-/// assert!(msg.contains("upgrade Strata"));
+/// assert!(msg.contains("upgrade Hexz"));
 ///
 /// // Version too old (hypothetical if MIN_SUPPORTED_VERSION > 1)
 /// let msg = compatibility_message(0);
@@ -546,10 +546,10 @@ pub fn check_version(version: u32) -> VersionCompatibility {
 /// ## CLI Integration
 ///
 /// ```bash
-/// $ strata open old_snapshot.st
+/// $ hexz open old_snapshot.st
 /// Error: Version 0 is too old (min supported: 1). Please upgrade the snapshot.
 ///
-/// Run: strata-migrate upgrade old_snapshot.st new_snapshot.st
+/// Run: hexz-migrate upgrade old_snapshot.st new_snapshot.st
 /// ```
 pub fn compatibility_message(version: u32) -> String {
     match check_version(version) {
@@ -566,7 +566,7 @@ pub fn compatibility_message(version: u32) -> String {
                 )
             } else {
                 format!(
-                    "Version {} is too new (max supported: {}). Please upgrade Strata.",
+                    "Version {} is too new (max supported: {}). Please upgrade Hexz.",
                     version, MAX_SUPPORTED_VERSION
                 )
             }
@@ -722,7 +722,7 @@ mod tests {
             "Message: {}",
             msg
         );
-        assert!(msg.contains("upgrade Strata"), "Message: {}", msg);
+        assert!(msg.contains("upgrade Hexz"), "Message: {}", msg);
     }
 
     #[test]

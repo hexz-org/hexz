@@ -1,6 +1,6 @@
 # Content-Defined Chunking Explained
 
-This document explains how content-defined chunking (CDC) enables deduplication in Strata.
+This document explains how content-defined chunking (CDC) enables deduplication in Hexz.
 
 ## The Problem: Fixed-Size Chunking
 
@@ -63,7 +63,7 @@ Instead of "cut every 64KB", CDC says "cut when the data looks a certain way".
 
 ## FastCDC Algorithm
 
-Strata uses FastCDC, an optimized CDC variant.
+Hexz uses FastCDC, an optimized CDC variant.
 
 ### Why FastCDC?
 
@@ -188,29 +188,29 @@ CDC adds computational cost:
 | Completely new data | N/A | N/A | Tie |
 | Random data | N/A | N/A | Tie |
 
-## Enabling CDC in Strata
+## Enabling CDC in Hexz
 
 ```bash
 # Pack with CDC enabled
-strata data pack \
+hexz data pack \
   --disk data/ \
-  --output dataset.st \
+  --output dataset.hxz \
   --cdc
 
 # Without CDC (fixed-size blocking)
-strata data pack \
+hexz data pack \
   --disk data/ \
-  --output dataset.st
+  --output dataset.hxz
 ```
 
 **Python**:
 ```python
 # With CDC
-with strata.open("dataset.st", mode="w", cdc=True) as writer:
+with hexz.open("dataset.hxz", mode="w", cdc=True) as writer:
     writer.add("data/")
 
 # Without CDC
-with strata.open("dataset.st", mode="w") as writer:
+with hexz.open("dataset.hxz", mode="w") as writer:
     writer.add("data/")
 ```
 
@@ -220,12 +220,12 @@ Advanced: Adjust CDC behavior for specific needs.
 
 **Smaller chunks** (more dedup opportunities, more index overhead):
 ```bash
-strata data pack --disk data/ --output dataset.st --cdc --min-chunk-size 8192 --avg-chunk-size 32768
+hexz data pack --disk data/ --output dataset.hxz --cdc --min-chunk-size 8192 --avg-chunk-size 32768
 ```
 
 **Larger chunks** (less overhead, less dedup granularity):
 ```bash
-strata data pack --disk data/ --output dataset.st --cdc --min-chunk-size 32768 --avg-chunk-size 131072
+hexz data pack --disk data/ --output dataset.hxz --cdc --min-chunk-size 32768 --avg-chunk-size 131072
 ```
 
 ## Real-World Example
@@ -254,7 +254,7 @@ For these cases, CDC adds overhead without benefit. Disable CDC.
 
 ## Implementation Notes
 
-Strata's CDC implementation:
+Hexz's CDC implementation:
 
 - Uses gear-based rolling hash (not Rabin)
 - Enforces min/max bounds (normalized chunking)

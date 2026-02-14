@@ -1,17 +1,17 @@
 # Boot VM from Snapshot
 
-**Goal**: Start a virtual machine directly from a Strata snapshot.
+**Goal**: Start a virtual machine directly from a Hexz snapshot.
 
 ## Prerequisites
 
-- Strata CLI installed
+- Hexz CLI installed
 - QEMU and KVM installed
 - Bootable VM snapshot
 
 ## Basic Boot
 
 ```bash
-strata vm boot vm-snapshot.st
+hexz vm boot vm-snapshot.st
 ```
 
 This opens a console window with the booted VM.
@@ -19,7 +19,7 @@ This opens a console window with the booted VM.
 ## Boot with Custom Resources
 
 ```bash
-strata vm boot vm-snapshot.st \\
+hexz vm boot vm-snapshot.st \\
   --ram 4G \\
   --cpus 4
 ```
@@ -29,7 +29,7 @@ Supported RAM formats: `512M`, `1G`, `2048M`, `8G`
 ## Boot with Networking
 
 ```bash
-strata vm boot vm-snapshot.st \\
+hexz vm boot vm-snapshot.st \\
   --net \\
   --forward 2222:22
 ```
@@ -42,7 +42,7 @@ ssh -p 2222 user@localhost
 ## Boot Headless (No Display)
 
 ```bash
-strata vm boot vm-snapshot.st \\
+hexz vm boot vm-snapshot.st \\
   --headless \\
   --net \\
   --forward 2222:22
@@ -53,7 +53,7 @@ Useful for server VMs accessed only via SSH.
 ## Boot with VNC
 
 ```bash
-strata vm boot vm-snapshot.st \\
+hexz vm boot vm-snapshot.st \\
   --vnc
 ```
 
@@ -62,7 +62,7 @@ Connect via VNC client to `localhost:5900`.
 ## Boot in Snapshot Mode (Ephemeral)
 
 ```bash
-strata vm boot vm-snapshot.st --snapshot
+hexz vm boot vm-snapshot.st --snapshot
 ```
 
 All changes discarded on VM shutdown. Useful for testing.
@@ -70,7 +70,7 @@ All changes discarded on VM shutdown. Useful for testing.
 ## Complete Example
 
 ```bash
-strata vm boot ubuntu-dev.st \\
+hexz vm boot ubuntu-dev.st \\
   --ram 8G \\
   --cpus 4 \\
   --net \\

@@ -1,17 +1,17 @@
-# strata-core
+# hexz-core
 
 Core engine for high-performance data streaming with compression and deduplication.
 
 ## Overview
 
-`strata-core` is the heart of the Strata system—a seekable, deduplicated compression engine that enables random access to compressed data without decompressing entire archives. It provides block-level compression, content-defined chunking for deduplication, and pluggable storage backends for local files, HTTP, and S3.
+`hexz-core` is the heart of the Hexz system—a seekable, deduplicated compression engine that enables random access to compressed data without decompressing entire archives. It provides block-level compression, content-defined chunking for deduplication, and pluggable storage backends for local files, HTTP, and S3.
 
 This crate contains no UI code; all user interfaces (CLI, Python bindings, FUSE) are in separate crates.
 
 ## Architecture
 
 ```
-strata-core/
+hexz-core/
 ├── algo/         # Compression, dedup, encryption algorithms
 │   ├── compression/    # LZ4, Zstandard
 │   ├── encryption/     # AES-256-GCM
@@ -28,7 +28,7 @@ strata-core/
 │   ├── http/           # Remote streaming over HTTP
 │   └── s3/             # AWS S3/compatible object storage
 ├── api/          # Public API surface
-│   └── stratafile.rs   # Main entry point: StrataFile
+│   └── file.rs   # Main entry point: File
 └── ops/          # High-level operations
     └── pack/           # Create snapshots from raw data
 ```
@@ -38,16 +38,16 @@ strata-core/
 ### Reading a Local Snapshot
 
 ```rust
-use strata_core::{StrataFile, SnapshotStream};
-use strata_core::store::local::FileBackend;
-use strata_core::algo::compression::lz4::Lz4Compressor;
+use hexz_core::{File, SnapshotStream};
+use hexz_core::store::local::FileBackend;
+use hexz_core::algo::compression::lz4::Lz4Compressor;
 use std::sync::Arc;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Open a local snapshot file
-    let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+    let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None)?;
+    let snapshot = File::new(backend, compressor, None)?;
 
     // Read 4KB from disk stream at offset 1MB
     let data = snapshot.read_at(SnapshotStream::Disk, 1024 * 1024, 4096)?;
@@ -60,21 +60,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Streaming from HTTP
 
 ```rust
-use strata_core::StrataFile;
-use strata_core::store::http::HttpBackend;
-use strata_core::algo::compression::lz4::Lz4Compressor;
+use hexz_core::File;
+use hexz_core::store::http::HttpBackend;
+use hexz_core::algo::compression::lz4::Lz4Compressor;
 use std::sync::Arc;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backend = Arc::new(HttpBackend::new(
-        "https://example.com/dataset.st".to_string(),
+        "https://example.com/dataset.hxz".to_string(),
         false // don't allow restricted IPs
     )?);
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None)?;
+    let snapshot = File::new(backend, compressor, None)?;
 
     // Stream data without downloading entire file
-    let data = snapshot.read_at(strata_core::SnapshotStream::Disk, 0, 1024)?;
+    let data = snapshot.read_at(hexz_core::SnapshotStream::Disk, 0, 1024)?;
 
     Ok(())
 }
@@ -88,13 +88,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - **Remote Streaming**: Stream from HTTP/S3 with intelligent block prefetching
 - **Encryption**: Optional AES-256-GCM block-level encryption
 - **Thin Snapshots**: Parent references for incremental backups
-- **Thread-Safe**: `StrataFile` is `Send + Sync` with concurrent read support
+- **Thread-Safe**: `File` is `Send + Sync` with concurrent read support
 - **Low Latency**: ~1ms cold cache, ~0.08ms warm cache random access
 - **Pluggable Backends**: Uniform API for local files, memory-mapped files, HTTP, and S3
 
 ## File Format
 
-Strata snapshots consist of:
+Hexz snapshots consist of:
 
 1. **Header** (512 bytes): Metadata, compression algorithm, encryption info, parent path
 2. **Data Blocks**: Variable-size compressed blocks (typically 64KB-256KB)
@@ -146,7 +146,7 @@ Pluggable algorithms via traits:
 
 ## Thread Safety
 
-`StrataFile` is `Send + Sync` and can be safely wrapped in `Arc` for multi-threaded access:
+`File` is `Send + Sync` and can be safely wrapped in `Arc` for multi-threaded access:
 
 ```rust
 use std::sync::Arc;
@@ -176,14 +176,14 @@ All development commands use the project Makefile. From the repository root:
 ### Building
 
 ```bash
-# Build entire workspace (includes strata-core)
+# Build entire workspace (includes hexz-core)
 make rust
 
 # Build in debug mode for faster compilation
-cargo build -p strata-core
+cargo build -p hexz-core
 
 # Build with specific features
-cargo build -p strata-core --features s3,encryption
+cargo build -p hexz-core --features s3,encryption
 ```
 
 ### Testing
@@ -199,8 +199,8 @@ make test-rust
 make test-rust cache
 
 # Or use cargo directly for this crate
-cargo test -p strata-core
-cargo test -p strata-core --test integration
+cargo test -p hexz-core
+cargo test -p hexz-core --test integration
 ```
 
 ### Linting & Formatting
@@ -241,7 +241,7 @@ See `make help` for all available commands.
 ## See Also
 
 - **[User Documentation](../../docs/)** - Tutorials, how-to guides, explanations
-- **[API Documentation](https://docs.rs/strata-core)** - Full API reference on docs.rs
+- **[API Documentation](https://docs.rs/hexz-core)** - Full API reference on docs.rs
 - **[CLI Tool](../cli/)** - Command-line interface for creating snapshots
 - **[Python Bindings](../loader/)** - PyTorch integration for ML workflows
 - **[Project README](../../README.md)** - Main project overview

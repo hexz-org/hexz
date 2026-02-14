@@ -1,12 +1,12 @@
-# strata-cli
+# hexz-cli
 
-Command-line tool for managing Strata snapshots, datasets, and virtual machines.
+Command-line tool for managing Hexz snapshots, datasets, and virtual machines.
 
 ## Overview
 
-The `strata` CLI provides a comprehensive interface for creating, analyzing, and managing Strata snapshots. It supports dataset packing for AI/ML workflows, VM snapshot management, and diagnostic tools for inspecting snapshot internals.
+The `hexz` CLI provides a comprehensive interface for creating, analyzing, and managing Hexz snapshots. It supports dataset packing for AI/ML workflows, VM snapshot management, and diagnostic tools for inspecting snapshot internals.
 
-This is the primary tool for developers and data engineers working with the Strata format.
+This is the primary tool for developers and data engineers working with the Hexz format.
 
 ## Installation
 
@@ -14,8 +14,8 @@ This is the primary tool for developers and data engineers working with the Stra
 
 ```bash
 # Clone the repository
-git clone https://github.com/willmccallion/strata.git
-cd strata
+git clone https://github.com/willmccallion/hexz.git
+cd hexz
 
 # Install the CLI
 make install
@@ -24,20 +24,20 @@ make install
 cargo install --path crates/cli
 ```
 
-After installation, the `strata` command will be available in your PATH.
+After installation, the `hexz` command will be available in your PATH.
 
 ## Quick Examples
 
 ### Pack a Dataset
 
-Convert raw files into a compressed, deduplicated Strata snapshot:
+Convert raw files into a compressed, deduplicated Hexz snapshot:
 
 ```bash
 # Pack a directory of images for ML training
-strata data pack --disk ./raw_images --output dataset.st --cdc
+hexz data pack --disk ./raw_images --output dataset.hxz --cdc
 
 # Pack with custom compression and encryption
-strata data pack \
+hexz data pack \
   --disk ./data \
   --output encrypted.st \
   --compression zstd \
@@ -48,27 +48,27 @@ strata data pack \
 
 ```bash
 # Show snapshot metadata
-strata data info dataset.st
+hexz data info dataset.hxz
 
 # Get JSON output for programmatic access
-strata data info dataset.st --json
+hexz data info dataset.hxz --json
 ```
 
 ### Boot a VM from Snapshot
 
 ```bash
 # Boot a VM with 4GB RAM (requires FUSE feature)
-strata vm boot ubuntu-22.04.st --ram 4G
+hexz vm boot ubuntu-22.04.st --ram 4G
 
 # Boot without KVM acceleration
-strata vm boot snapshot.st --ram 2G --no-kvm
+hexz vm boot snapshot.st --ram 2G --no-kvm
 ```
 
 ## Command Reference
 
 The CLI is organized into three main command groups:
 
-### Data Commands (`strata data`)
+### Data Commands (`hexz data`)
 
 Work with datasets and snapshots for ML/AI workflows:
 
@@ -83,15 +83,15 @@ Work with datasets and snapshots for ML/AI workflows:
 **Example:**
 ```bash
 # Pack with deduplication
-strata data pack --disk ./images --output train.st --cdc
+hexz data pack --disk ./images --output train.st --cdc
 
 # View detailed info
-strata data info train.st --json
+hexz data info train.st --json
 ```
 
-### VM Commands (`strata vm`)
+### VM Commands (`hexz vm`)
 
-Manage virtual machines using Strata snapshots (requires `fuse` feature):
+Manage virtual machines using Hexz snapshots (requires `fuse` feature):
 
 | Command | Description |
 |---------|-------------|
@@ -103,16 +103,16 @@ Manage virtual machines using Strata snapshots (requires `fuse` feature):
 **Example:**
 ```bash
 # Install Ubuntu from ISO
-strata vm install ubuntu-22.04.iso --disk-size 20G --output ubuntu.st
+hexz vm install ubuntu-22.04.iso --disk-size 20G --output ubuntu.st
 
 # Boot the installed system
-strata vm boot ubuntu.st --ram 4G
+hexz vm boot ubuntu.st --ram 4G
 
 # Snapshot a running VM
-strata vm snapshot --socket /tmp/vm.sock --output checkpoint.st
+hexz vm snapshot --socket /tmp/vm.sock --output checkpoint.st
 ```
 
-### System Commands (`strata sys`)
+### System Commands (`hexz sys`)
 
 Server and infrastructure operations:
 
@@ -123,7 +123,7 @@ Server and infrastructure operations:
 **Example:**
 ```bash
 # Serve snapshots over HTTP
-strata sys serve --port 8080 --path /snapshots
+hexz sys serve --port 8080 --path /snapshots
 ```
 
 ## Common Options
@@ -135,7 +135,7 @@ Choose compression algorithm with `--compression`:
 - `zstd` - Better compression (~500MB/s), higher ratio
 
 ```bash
-strata data pack --disk ./data --output data.st --compression zstd
+hexz data pack --disk ./data --output data.st --compression zstd
 ```
 
 ### Content-Defined Chunking (CDC)
@@ -144,10 +144,10 @@ Enable deduplication with `--cdc`:
 
 ```bash
 # Use default CDC settings (FastCDC)
-strata data pack --disk ./data --output data.st --cdc
+hexz data pack --disk ./data --output data.st --cdc
 
 # Custom chunk sizes
-strata data pack \
+hexz data pack \
   --disk ./data \
   --output data.st \
   --cdc \
@@ -162,13 +162,13 @@ Encrypt snapshots with `--encrypt`:
 
 ```bash
 # You'll be prompted for a password
-strata data pack --disk ./data --output secure.st --encrypt
+hexz data pack --disk ./data --output secure.st --encrypt
 ```
 
 ## Architecture
 
 ```
-strata-cli/
+hexz-cli/
 ├── src/
 │   ├── main.rs        # Entry point
 │   ├── args.rs        # CLI argument parsing (clap)
@@ -197,7 +197,7 @@ make rust
 make install
 
 # Run CLI directly
-make run info dataset.st
+make run info dataset.hxz
 ```
 
 ### Testing
@@ -267,7 +267,7 @@ Build without optional features:
 
 ```bash
 # Minimal build (no VM support)
-cargo build -p strata --no-default-features --features encryption,compression-zstd
+cargo build -p hexz --no-default-features --features encryption,compression-zstd
 ```
 
 ## Performance
@@ -283,6 +283,6 @@ The CLI is optimized for high-throughput operations:
 
 - **[User Documentation](../../docs/)** - Tutorials and how-to guides
 - **[CLI Reference](../../docs/reference/cli-reference.md)** - Complete command documentation
-- **[strata-core](../core/)** - Core engine library
+- **[hexz-core](../core/)** - Core engine library
 - **[Python Bindings](../loader/)** - PyTorch integration
 - **[Project README](../../README.md)** - Main project overview

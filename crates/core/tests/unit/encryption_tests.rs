@@ -6,7 +6,7 @@
 use super::common;
 use common::*;
 
-use strata_core::algo::encryption::{Encryptor, aes_gcm::AesGcmEncryptor};
+use hexz_core::algo::encryption::{Encryptor, aes_gcm::AesGcmEncryptor};
 
 /// Test basic encryption/decryption round-trip.
 #[test]

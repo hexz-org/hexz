@@ -69,10 +69,10 @@ vm/
 data/
 test_artifacts/
 mnt_large_test/
-*.st
+*.hxz
 *.raw
 raw_data/
-*.strata
+*.hexz
 
 # Benchmarking and profiling
 flamegraph.svg

@@ -1,6 +1,6 @@
-"""Strata: High-performance snapshot storage for machine learning.
+"""Hexz: High-performance snapshot storage for machine learning.
 
-Strata is a Python library for reading and creating compressed snapshots
+Hexz is a Python library for reading and creating compressed snapshots
 with random access support. It's optimized for:
 
 - Machine learning dataset streaming (PyTorch/TensorFlow integration)
@@ -16,28 +16,28 @@ Key Features:
 - Async support: Asynchronous I/O for high-throughput workloads
 
 Quick Start:
-    >>> import strata
+    >>> import hexz
     >>>
     >>> # Build a snapshot with smart defaults
-    >>> meta = strata.build("data/", "dataset.st", profile="ml")
+    >>> meta = hexz.build("data/", "dataset.hxz", profile="ml")
     >>>
     >>> # Read with modern API
-    >>> with strata.open("dataset.st") as reader:
+    >>> with hexz.open("dataset.hxz") as reader:
     ...     data = reader[0:4096]  # Slice notation!
     ...     meta = reader.metadata  # Property access!
     ...     print(meta)  # Human-readable info
     >>>
     >>> # ML integration
-    >>> dataset = strata.Dataset("dataset.st", item_size=1024)
+    >>> dataset = hexz.Dataset("dataset.hxz", item_size=1024)
     >>> loader = torch.utils.data.DataLoader(dataset, batch_size=32)
     >>>
     >>> # Cryptographic signing
-    >>> from strata import crypto
+    >>> from hexz import crypto
     >>> crypto.keygen("key.priv", "key.pub")
-    >>> crypto.sign("dataset.st", "key.priv")
-    >>> crypto.verify("dataset.st", "key.pub")
+    >>> crypto.sign("dataset.hxz", "key.priv")
+    >>> crypto.verify("dataset.hxz", "key.pub")
 
-See documentation for advanced usage: https://github.com/strata-storage/strata
+See documentation for advanced usage: https://github.com/hexz-storage/hexz
 """
 
 from typing import Union, Any
@@ -75,7 +75,7 @@ from .exceptions import (
     IOError,
     MountError,
     NetworkError,
-    StrataError,
+    Error,
     ValidationError,
     VersionError,
 )
@@ -117,7 +117,7 @@ except ImportError:
 
 
 def open(path: PathLike, *, mode: str = "r", **options: Any) -> Union[Reader, Writer]:
-    """Open a Strata snapshot for reading or writing.
+    """Open a Hexz snapshot for reading or writing.
 
     Args:
         path: Path to .st file. Supports local paths, HTTP/HTTPS URLs, and S3 URIs.
@@ -141,16 +141,16 @@ def open(path: PathLike, *, mode: str = "r", **options: Any) -> Union[Reader, Wr
 
     Example:
         >>> # Read with default settings (cache_size=default, prefetch=True)
-        >>> with strata.open("data.st") as reader:
+        >>> with hexz.open("data.hxz") as reader:
         ...     data = reader.read(4096)
         ...     chunk = reader.read(100, offset=0)  # random access
         ...
         >>> # Read with custom cache and prefetch disabled
-        >>> with strata.open("data.st", cache_size="2G", prefetch=False) as reader:
+        >>> with hexz.open("data.hxz", cache_size="2G", prefetch=False) as reader:
         ...     data = reader.read(4096)
         ...
         >>> # Write a new snapshot
-        >>> with strata.open("out.st", mode="w", packing="tight") as writer:
+        >>> with hexz.open("out.hxz", mode="w", packing="tight") as writer:
         ...     writer.add("input.img")
     """
     if "r" in mode:
@@ -165,7 +165,7 @@ __version__ = "0.1.0-alpha"
 
 
 def version() -> str:
-    """Return the version of the Strata library."""
+    """Return the version of the Hexz library."""
     return __version__
 
 
@@ -197,7 +197,7 @@ __all__ = [
     "MIN_SUPPORTED_VERSION",
     "MAX_SUPPORTED_VERSION",
     # === Exceptions (10) ===
-    "StrataError",
+    "Error",
     "IOError",
     "NetworkError",
     "FormatError",

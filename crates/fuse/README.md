@@ -1,16 +1,16 @@
-# strata-fuse
+# hexz-fuse
 
-FUSE filesystem adapter for mounting Strata snapshots as block device files.
+FUSE filesystem adapter for mounting Hexz snapshots as block device files.
 
 ## Overview
 
-`strata-fuse` provides a FUSE (Filesystem in Userspace) implementation that mounts Strata snapshots as accessible filesystems. This enables standard tools (dd, qemu, parted, mount) to interact with compressed snapshots as if they were regular files or block devices.
+`hexz-fuse` provides a FUSE (Filesystem in Userspace) implementation that mounts Hexz snapshots as accessible filesystems. This enables standard tools (dd, qemu, parted, mount) to interact with compressed snapshots as if they were regular files or block devices.
 
-The FUSE adapter is primarily used for **VM operations** where QEMU needs to access disk images stored in Strata format.
+The FUSE adapter is primarily used for **VM operations** where QEMU needs to access disk images stored in Hexz format.
 
 ## How It Works
 
-When mounted, a Strata snapshot appears as a minimal filesystem:
+When mounted, a Hexz snapshot appears as a minimal filesystem:
 
 ```
 /mnt/snapshot/
@@ -34,8 +34,8 @@ Reads from these files transparently decompress blocks on-the-fly. Optional over
 ### Command-Line Usage
 
 ```bash
-# Mount a snapshot (requires strata CLI with fuse feature)
-strata vm mount snapshot.st /mnt/snapshot
+# Mount a snapshot (requires hexz CLI with fuse feature)
+hexz vm mount snapshot.st /mnt/snapshot
 
 # Access the disk image
 sudo dd if=/mnt/snapshot/disk of=output.raw bs=1M count=100
@@ -50,18 +50,18 @@ fusermount -u /mnt/snapshot
 ### Programmatic Usage
 
 ```rust
-use strata_fuse::mount_fs;
-use strata_core::StrataFile;
-use strata_core::store::local::FileBackend;
-use strata_core::algo::compression::lz4::Lz4Compressor;
+use hexz_fuse::mount_fs;
+use hexz_core::File;
+use hexz_core::store::local::FileBackend;
+use hexz_core::algo::compression::lz4::Lz4Compressor;
 use std::sync::Arc;
 use std::path::Path;
 
 fn main() -> anyhow::Result<()> {
     // Open snapshot
-    let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+    let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
     let compressor = Box::new(Lz4Compressor::new());
-    let snap = Arc::new(StrataFile::new(backend, compressor, None)?);
+    let snap = Arc::new(File::new(backend, compressor, None)?);
 
     // Mount at /mnt/snapshot with overlay
     mount_fs(
@@ -79,7 +79,7 @@ fn main() -> anyhow::Result<()> {
 ## Architecture
 
 ```
-strata-fuse/
+hexz-fuse/
 ├── src/
 │   ├── lib.rs          # Public API (mount_fs)
 │   ├── fuse/           # FUSE filesystem implementation
@@ -97,17 +97,17 @@ When mounted with an overlay file, the FUSE filesystem provides copy-on-write se
 
 - **Reads**: Check overlay first; if not present, read from base snapshot
 - **Writes**: Store in overlay file; base snapshot remains immutable
-- **Commit**: Use `strata vm commit` to merge overlay into a new snapshot
+- **Commit**: Use `hexz vm commit` to merge overlay into a new snapshot
 
 ```bash
 # Mount with overlay
-strata vm mount base.st /mnt/vm --overlay changes.bin
+hexz vm mount base.st /mnt/vm --overlay changes.bin
 
 # Make modifications (e.g., install software in VM)
 # All writes go to changes.bin
 
 # Commit overlay to new snapshot
-strata vm commit --overlay changes.bin --base base.st --output updated.st
+hexz vm commit --overlay changes.bin --base base.st --output updated.st
 ```
 
 This is useful for:
@@ -119,11 +119,11 @@ This is useful for:
 
 ### VM Boot
 
-Boot a virtual machine from a Strata snapshot:
+Boot a virtual machine from a Hexz snapshot:
 
 ```bash
 # Mount snapshot
-strata vm mount ubuntu.st /mnt/ubuntu
+hexz vm mount ubuntu.st /mnt/ubuntu
 
 # Boot with QEMU
 qemu-system-x86_64 \
@@ -132,7 +132,7 @@ qemu-system-x86_64 \
   -enable-kvm
 
 # Or use the integrated boot command
-strata vm boot ubuntu.st --ram 4G
+hexz vm boot ubuntu.st --ram 4G
 ```
 
 ### Disk Image Manipulation
@@ -141,7 +141,7 @@ Use standard tools on compressed snapshots:
 
 ```bash
 # Mount snapshot
-strata vm mount disk.st /mnt/disk
+hexz vm mount disk.st /mnt/disk
 
 # Partition with parted
 sudo parted /mnt/disk/disk print
@@ -159,7 +159,7 @@ Access individual files without full decompression:
 
 ```bash
 # Mount snapshot
-strata vm mount snapshot.st /mnt/snap
+hexz vm mount snapshot.st /mnt/snap
 
 # Mount the disk's filesystem (assuming ext4 at offset 0)
 sudo mount -o loop /mnt/snap/disk /mnt/contents
@@ -220,10 +220,10 @@ From the repository root:
 
 ```bash
 # Build fuse crate
-cargo build -p strata-fuse
+cargo build -p hexz-fuse
 
 # Run tests
-cargo test -p strata-fuse
+cargo test -p hexz-fuse
 
 # Build CLI with FUSE support
 make rust
@@ -233,10 +233,10 @@ make rust
 
 ```bash
 # Run FUSE-specific tests
-cargo test -p strata-fuse
+cargo test -p hexz-fuse
 
 # Integration tests (requires FUSE available)
-cargo test -p strata-fuse --test integration
+cargo test -p hexz-fuse --test integration
 ```
 
 ## Limitations
@@ -248,7 +248,7 @@ cargo test -p strata-fuse --test integration
 
 ## See Also
 
-- **[strata-core](../core/)** - Core engine (provides StrataFile)
-- **[strata-cli](../cli/)** - CLI tool (mount/boot commands)
+- **[hexz-core](../core/)** - Core engine (provides File)
+- **[hexz-cli](../cli/)** - CLI tool (mount/boot commands)
 - **[User Documentation](../../docs/)** - VM usage guides
 - **[Project README](../../README.md)** - Main project overview

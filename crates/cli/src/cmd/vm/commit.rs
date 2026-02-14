@@ -44,7 +44,7 @@
 //! - Example: 10 GB disk with 500 MB changes → ~200 MB thin snapshot
 //!
 //! **Parent Reference Mechanism:**
-//! - Parent path stored in `StrataHeader.parent_path` field (absolute path)
+//! - Parent path stored in `Header.parent_path` field (absolute path)
 //! - Unmodified blocks marked with `BLOCK_OFFSET_PARENT` sentinel value
 //! - Read path resolves parent recursively at runtime
 //!
@@ -100,27 +100,27 @@
 //!
 //! ```bash
 //! # Create thick (standalone) snapshot after VM modifications
-//! strata vm commit \
+//! hexz vm commit \
 //!   --base vm-base.st \
 //!   --overlay vm-state.overlay \
 //!   --output vm-updated.st
 //!
 //! # Create thin (incremental) snapshot for space efficiency
-//! strata vm commit \
+//! hexz vm commit \
 //!   --base vm-base.st \
 //!   --overlay vm-state.overlay \
 //!   --output vm-incremental.st \
 //!   --thin
 //!
 //! # Commit with memory dump (from live snapshot)
-//! strata vm commit \
+//! hexz vm commit \
 //!   --base vm-base.st \
 //!   --overlay vm-state.overlay \
 //!   --memory vm-memory.dump \
 //!   --output vm-checkpoint.st
 //!
 //! # Keep overlay after commit (for debugging)
-//! strata vm commit \
+//! hexz vm commit \
 //!   --base vm-base.st \
 //!   --overlay vm-state.overlay \
 //!   --output vm-new.st \
@@ -128,22 +128,22 @@
 //! ```
 
 use anyhow::Result;
+use hexz_common::constants::{BLOCK_OFFSET_PARENT, DEFAULT_ZSTD_LEVEL};
+use hexz_core::File as HexzFile;
+use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
+use hexz_core::api::file::SnapshotStream;
+use hexz_core::format::{
+    header::{CompressionType, FeatureFlags, Header},
+    index::{BlockInfo, ENTRIES_PER_PAGE, IndexPage, MasterIndex, PageEntry},
+    magic::{FORMAT_VERSION, HEADER_SIZE, MAGIC_BYTES},
+};
+use hexz_core::store::StorageBackend;
+use hexz_core::store::local::FileBackend;
 use indicatif::ProgressBar;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
-use strata_common::constants::{BLOCK_OFFSET_PARENT, DEFAULT_ZSTD_LEVEL};
-use strata_core::StrataFile;
-use strata_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
-use strata_core::api::stratafile::SnapshotStream;
-use strata_core::format::{
-    header::{CompressionType, FeatureFlags, StrataHeader},
-    index::{BlockInfo, ENTRIES_PER_PAGE, IndexPage, MasterIndex, PageEntry},
-    magic::{FORMAT_VERSION, HEADER_SIZE, MAGIC_BYTES},
-};
-use strata_core::store::StorageBackend;
-use strata_core::store::local::FileBackend;
 
 const OVERLAY_BLOCK_SIZE: u64 = 4096;
 const META_ENTRY_SIZE: usize = 8;
@@ -225,14 +225,14 @@ const META_ENTRY_SIZE: usize = 8;
 ///
 /// ```no_run
 /// use std::path::PathBuf;
-/// use strata_cli::cmd::vm::commit;
+/// use hexz_cli::cmd::vm::commit;
 ///
 /// // Create thick snapshot with LZ4 compression
 /// commit::run(
-///     PathBuf::from("base.st"),
+///     PathBuf::from("base.hxz"),
 ///     PathBuf::from("changes.overlay"),
 ///     None,
-///     PathBuf::from("updated.st"),
+///     PathBuf::from("updated.hxz"),
 ///     "lz4".to_string(),
 ///     65536,     // 64 KiB blocks
 ///     false,     // delete overlay
@@ -242,10 +242,10 @@ const META_ENTRY_SIZE: usize = 8;
 ///
 /// // Create thin snapshot with Zstd and memory
 /// commit::run(
-///     PathBuf::from("base.st"),
+///     PathBuf::from("base.hxz"),
 ///     PathBuf::from("state.overlay"),
 ///     Some(PathBuf::from("memory.dump")),
-///     PathBuf::from("checkpoint.st"),
+///     PathBuf::from("checkpoint.hxz"),
 ///     "zstd".to_string(),
 ///     65536,
 ///     true,      // keep overlay
@@ -273,7 +273,7 @@ pub fn run(
 
     let backend = Arc::new(FileBackend::new(&base_path)?);
     let header_bytes = backend.read_exact(0, HEADER_SIZE)?;
-    let header: StrataHeader = bincode::deserialize(&header_bytes)?;
+    let header: Header = bincode::deserialize(&header_bytes)?;
 
     let read_compressor: Box<dyn Compressor> = match header.compression {
         CompressionType::Lz4 => Box::new(Lz4Compressor::new()),
@@ -289,7 +289,7 @@ pub fn run(
         }
     };
 
-    let base_snap = Arc::new(StrataFile::new(backend, read_compressor, None)?);
+    let base_snap = Arc::new(HexzFile::new(backend, read_compressor, None)?);
 
     let meta_path = overlay_path.with_extension("meta");
     let mut modified_blocks = std::collections::HashSet::new();
@@ -566,7 +566,7 @@ pub fn run(
         None
     };
 
-    let new_header = StrataHeader {
+    let new_header = Header {
         magic: *MAGIC_BYTES,
         version: FORMAT_VERSION,
         block_size,

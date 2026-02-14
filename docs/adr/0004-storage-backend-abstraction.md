@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-Strata must read compressed snapshots from diverse storage systems:
+Hexz must read compressed snapshots from diverse storage systems:
 
 **ML Training Workflows**:
 - **S3**: Primary storage for shared datasets (multi-region, versioned buckets)
@@ -91,7 +91,7 @@ Remote backends automatically cache fetched blocks:
 
 - **Unified API**: Same code works for local and remote snapshots
 - **Zero-Copy Local Reads**: Memory mapping for maximum performance (no syscall per read)
-- **Transparent Remote Access**: ML engineers use `strata.open("s3://...")` without special handling
+- **Transparent Remote Access**: ML engineers use `hexz.open("s3://...")` without special handling
 - **Testability**: Mock backend for unit tests without real S3/HTTP
 - **Extensibility**: Adding new backends (GCS, Azure Blob, IPFS) requires implementing one trait
 - **Connection Pooling**: HTTP(S) connections reused across requests

@@ -6,9 +6,9 @@
 //! guide codec selection based on workload characteristics.
 
 use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
-use strata_core::algo::compression::lz4::Lz4Compressor;
-use strata_core::algo::compression::Compressor;
-use strata_core::algo::compression::zstd::ZstdCompressor;
+use hexz_core::algo::compression::lz4::Lz4Compressor;
+use hexz_core::algo::compression::Compressor;
+use hexz_core::algo::compression::zstd::ZstdCompressor;
 
 /// Benchmarks compression and decompression performance for available codecs.
 ///

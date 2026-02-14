@@ -1,6 +1,6 @@
 //! Lazy, sequential iteration over snapshot streams with prefetching.
 //!
-//! This module provides a Rust `Iterator` abstraction over Strata snapshot data,
+//! This module provides a Rust `Iterator` abstraction over Hexz snapshot data,
 //! enabling efficient streaming access to large datasets without loading the entire
 //! snapshot into memory. It is designed for ML data pipelines, log processing, and
 //! any workload that benefits from sequential access with automatic prefetching.
@@ -58,12 +58,12 @@
 //! ## Sequential ML Dataset Iteration
 //!
 //! ```rust,no_run
-//! use strata_loader::engine::{OpenConfig, open_snapshot};
-//! use strata_loader::engine::iterator::{IterConfig, SnapshotIterator};
-//! use strata_core::api::stratafile::SnapshotStream;
+//! use hexz_loader::engine::{OpenConfig, open_snapshot};
+//! use hexz_loader::engine::iterator::{IterConfig, SnapshotIterator};
+//! use hexz_core::api::file::SnapshotStream;
 //!
 //! let snap = open_snapshot(OpenConfig {
-//!     path: "/data/imagenet-train.st".to_string(),
+//!     path: "/data/imagenet-train.hxz".to_string(),
 //!     s3_region: None,
 //!     endpoint_url: None,
 //!     allow_restricted: false,
@@ -88,12 +88,12 @@
 //! ## Epoch-Based Training with Reset
 //!
 //! ```rust,no_run
-//! use strata_loader::engine::{OpenConfig, open_snapshot};
-//! use strata_loader::engine::iterator::{IterConfig, SnapshotIterator};
-//! use strata_core::api::stratafile::SnapshotStream;
+//! use hexz_loader::engine::{OpenConfig, open_snapshot};
+//! use hexz_loader::engine::iterator::{IterConfig, SnapshotIterator};
+//! use hexz_core::api::file::SnapshotStream;
 //!
 //! let snap = open_snapshot(OpenConfig {
-//!     path: "s3://ml-datasets/coco.st".to_string(),
+//!     path: "s3://ml-datasets/coco.hxz".to_string(),
 //!     s3_region: Some("us-east-1".to_string()),
 //!     endpoint_url: None,
 //!     allow_restricted: false,
@@ -116,18 +116,18 @@
 //!
 //! ## Multithreaded Parallel Iteration
 //!
-//! Because `Arc<StrataFile>` is `Send + Sync`, you can create multiple iterators
+//! Because `Arc<File>` is `Send + Sync`, you can create multiple iterators
 //! on different threads, each reading different regions:
 //!
 //! ```rust,no_run
 //! use std::sync::Arc;
 //! use std::thread;
-//! use strata_loader::engine::{OpenConfig, open_snapshot};
-//! use strata_loader::engine::iterator::{IterConfig, SnapshotIterator};
-//! use strata_core::api::stratafile::SnapshotStream;
+//! use hexz_loader::engine::{OpenConfig, open_snapshot};
+//! use hexz_loader::engine::iterator::{IterConfig, SnapshotIterator};
+//! use hexz_core::api::file::SnapshotStream;
 //!
 //! let snap = open_snapshot(OpenConfig {
-//!     path: "/data/large-dataset.st".to_string(),
+//!     path: "/data/large-dataset.hxz".to_string(),
 //!     s3_region: None,
 //!     endpoint_url: None,
 //!     allow_restricted: false,
@@ -165,11 +165,11 @@
 //! This allows graceful error handling in long-running data pipelines:
 //!
 //! ```rust,no_run
-//! use strata_loader::engine::iterator::SnapshotIterator;
-//! # use strata_loader::engine::{OpenConfig, open_snapshot};
-//! # use strata_loader::engine::iterator::IterConfig;
+//! use hexz_loader::engine::iterator::SnapshotIterator;
+//! # use hexz_loader::engine::{OpenConfig, open_snapshot};
+//! # use hexz_loader::engine::iterator::IterConfig;
 //! # let snap = open_snapshot(OpenConfig {
-//! #     path: "/data/dataset.st".to_string(),
+//! #     path: "/data/dataset.hxz".to_string(),
 //! #     s3_region: None, endpoint_url: None, allow_restricted: false,
 //! #     prefetch_count: 0, cache_capacity_bytes: None,
 //! # }).unwrap();
@@ -194,11 +194,11 @@
 //!
 //! [`SnapshotIterator`] itself is **not** `Sync` (it contains a mutable offset).
 //! However, you can create multiple independent iterators from the same
-//! `Arc<StrataFile>` on different threads without contention.
+//! `Arc<File>` on different threads without contention.
 
+use hexz_core::File;
+use hexz_core::api::file::SnapshotStream;
 use std::sync::Arc;
-use strata_core::StrataFile;
-use strata_core::api::stratafile::SnapshotStream;
 
 /// Configuration parameters for snapshot iteration behavior.
 ///
@@ -224,8 +224,8 @@ use strata_core::api::stratafile::SnapshotStream;
 /// The `Default` implementation provides balanced settings for local filesystem access:
 ///
 /// ```rust
-/// use strata_loader::engine::iterator::IterConfig;
-/// use strata_core::api::stratafile::SnapshotStream;
+/// use hexz_loader::engine::iterator::IterConfig;
+/// use hexz_core::api::file::SnapshotStream;
 ///
 /// let config = IterConfig::default();
 /// assert_eq!(config.block_size, 65536);         // 64KB blocks
@@ -238,8 +238,8 @@ use strata_core::api::stratafile::SnapshotStream;
 /// ## High-Throughput Sequential (Local SSD)
 ///
 /// ```rust
-/// use strata_loader::engine::iterator::IterConfig;
-/// use strata_core::api::stratafile::SnapshotStream;
+/// use hexz_loader::engine::iterator::IterConfig;
+/// use hexz_core::api::file::SnapshotStream;
 ///
 /// let config = IterConfig {
 ///     block_size: 1024 * 1024,  // 1MB blocks for fewer syscalls
@@ -251,8 +251,8 @@ use strata_core::api::stratafile::SnapshotStream;
 /// ## Network Backend (S3, HTTP)
 ///
 /// ```rust
-/// use strata_loader::engine::iterator::IterConfig;
-/// use strata_core::api::stratafile::SnapshotStream;
+/// use hexz_loader::engine::iterator::IterConfig;
+/// use hexz_core::api::file::SnapshotStream;
 ///
 /// let config = IterConfig {
 ///     block_size: 65536,      // 64KB blocks (balance latency/throughput)
@@ -264,8 +264,8 @@ use strata_core::api::stratafile::SnapshotStream;
 /// ## Memory-Constrained Environment
 ///
 /// ```rust
-/// use strata_loader::engine::iterator::IterConfig;
-/// use strata_core::api::stratafile::SnapshotStream;
+/// use hexz_loader::engine::iterator::IterConfig;
+/// use hexz_core::api::file::SnapshotStream;
 ///
 /// let config = IterConfig {
 ///     block_size: 4096,   // 4KB blocks (minimal memory)
@@ -327,17 +327,17 @@ impl Default for IterConfig {
 ///
 /// # Ownership and Thread Safety
 ///
-/// - **Shared Snapshot**: Holds an `Arc<StrataFile>`, allowing the iterator to be
+/// - **Shared Snapshot**: Holds an `Arc<File>`, allowing the iterator to be
 ///   created from a snapshot shared across threads.
 /// - **Private State**: The `offset` field is mutable and **not** synchronized, so
 ///   `SnapshotIterator` is **not** `Sync`. Each thread should create its own iterator
-///   from a cloned `Arc<StrataFile>`.
+///   from a cloned `Arc<File>`.
 ///
 /// # Memory Layout
 ///
 /// ```text
 /// SnapshotIterator (40 bytes on 64-bit systems)
-/// ├─ snap: Arc<StrataFile>     (16 bytes: pointer + ref count)
+/// ├─ snap: Arc<File>     (16 bytes: pointer + ref count)
 /// ├─ config: IterConfig        (16 bytes: block_size + prefetch_count + stream)
 /// ├─ offset: u64               (8 bytes: current read position)
 /// └─ total_size: u64           (8 bytes: stream size for bounds checking)
@@ -345,7 +345,7 @@ impl Default for IterConfig {
 ///
 /// # Lifetime
 ///
-/// The iterator remains valid as long as the underlying `Arc<StrataFile>` is alive.
+/// The iterator remains valid as long as the underlying `Arc<File>` is alive.
 /// When the iterator is dropped, it decrements the `Arc` reference count but does
 /// **not** close the snapshot if other references exist.
 ///
@@ -354,12 +354,12 @@ impl Default for IterConfig {
 /// ## Basic Sequential Reading
 ///
 /// ```rust,no_run
-/// use strata_loader::engine::{OpenConfig, open_snapshot};
-/// use strata_loader::engine::iterator::{IterConfig, SnapshotIterator};
-/// use strata_core::api::stratafile::SnapshotStream;
+/// use hexz_loader::engine::{OpenConfig, open_snapshot};
+/// use hexz_loader::engine::iterator::{IterConfig, SnapshotIterator};
+/// use hexz_core::api::file::SnapshotStream;
 ///
 /// let snap = open_snapshot(OpenConfig {
-///     path: "/data/dataset.st".to_string(),
+///     path: "/data/dataset.hxz".to_string(),
 ///     s3_region: None,
 ///     endpoint_url: None,
 ///     allow_restricted: false,
@@ -381,10 +381,10 @@ impl Default for IterConfig {
 /// ## Reusing an Iterator Across Epochs
 ///
 /// ```rust,no_run
-/// # use strata_loader::engine::{OpenConfig, open_snapshot};
-/// # use strata_loader::engine::iterator::{IterConfig, SnapshotIterator};
+/// # use hexz_loader::engine::{OpenConfig, open_snapshot};
+/// # use hexz_loader::engine::iterator::{IterConfig, SnapshotIterator};
 /// # let snap = open_snapshot(OpenConfig {
-/// #     path: "/data/dataset.st".to_string(),
+/// #     path: "/data/dataset.hxz".to_string(),
 /// #     s3_region: None, endpoint_url: None, allow_restricted: false,
 /// #     prefetch_count: 0, cache_capacity_bytes: None,
 /// # }).unwrap();
@@ -401,7 +401,7 @@ impl Default for IterConfig {
 /// ```
 pub struct SnapshotIterator {
     /// Shared reference to the underlying snapshot.
-    snap: Arc<StrataFile>,
+    snap: Arc<File>,
 
     /// Iteration configuration (block size, prefetch, stream).
     config: IterConfig,
@@ -436,12 +436,12 @@ impl SnapshotIterator {
     ///
     /// ```rust,no_run
     /// use std::sync::Arc;
-    /// use strata_loader::engine::{OpenConfig, open_snapshot};
-    /// use strata_loader::engine::iterator::{IterConfig, SnapshotIterator};
-    /// use strata_core::api::stratafile::SnapshotStream;
+    /// use hexz_loader::engine::{OpenConfig, open_snapshot};
+    /// use hexz_loader::engine::iterator::{IterConfig, SnapshotIterator};
+    /// use hexz_core::api::file::SnapshotStream;
     ///
     /// let snap = open_snapshot(OpenConfig {
-    ///     path: "/data/snapshot.st".to_string(),
+    ///     path: "/data/snapshot.hxz".to_string(),
     ///     s3_region: None,
     ///     endpoint_url: None,
     ///     allow_restricted: false,
@@ -463,7 +463,7 @@ impl SnapshotIterator {
     ///
     /// This operation completes in O(1) time and performs no I/O beyond reading the
     /// cached header.
-    pub fn new(snap: Arc<StrataFile>, config: IterConfig) -> Self {
+    pub fn new(snap: Arc<File>, config: IterConfig) -> Self {
         let total_size = snap.size(config.stream);
         Self {
             snap,
@@ -482,10 +482,10 @@ impl SnapshotIterator {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use strata_loader::engine::{OpenConfig, open_snapshot};
-    /// # use strata_loader::engine::iterator::{IterConfig, SnapshotIterator};
+    /// # use hexz_loader::engine::{OpenConfig, open_snapshot};
+    /// # use hexz_loader::engine::iterator::{IterConfig, SnapshotIterator};
     /// # let snap = open_snapshot(OpenConfig {
-    /// #     path: "/data/dataset.st".to_string(),
+    /// #     path: "/data/dataset.hxz".to_string(),
     /// #     s3_region: None, endpoint_url: None, allow_restricted: false,
     /// #     prefetch_count: 0, cache_capacity_bytes: None,
     /// # }).unwrap();
@@ -539,8 +539,8 @@ impl Iterator for SnapshotIterator {
 mod tests {
     use super::*;
     use crate::engine::{OpenConfig, open_snapshot};
+    use hexz_core::ops::pack::{PackConfig, pack_snapshot};
     use std::fs;
-    use strata_core::ops::pack::{PackConfig, pack_snapshot};
     use tempfile::TempDir;
 
     /// Helper to create a test disk image
@@ -557,9 +557,9 @@ mod tests {
         disk_size: usize,
         pattern: u8,
         block_size: u32,
-    ) -> Arc<StrataFile> {
+    ) -> Arc<File> {
         let disk_path = create_test_disk(dir, disk_size, pattern);
-        let output_path = dir.path().join("test.st");
+        let output_path = dir.path().join("test.hxz");
 
         let config = PackConfig {
             disk: Some(disk_path),
@@ -887,7 +887,7 @@ mod tests {
     fn test_iterator_with_cache() {
         let temp_dir = TempDir::new().unwrap();
         let disk_path = create_test_disk(&temp_dir, 16384, 0x66);
-        let output_path = temp_dir.path().join("cached.st");
+        let output_path = temp_dir.path().join("cached.hxz");
 
         let config = PackConfig {
             disk: Some(disk_path),
@@ -944,7 +944,7 @@ mod tests {
         let memory_path = temp_dir.path().join("memory.dump");
         fs::write(&memory_path, vec![0x88; 2048]).unwrap();
 
-        let output_path = temp_dir.path().join("with_mem.st");
+        let output_path = temp_dir.path().join("with_mem.hxz");
 
         let config = PackConfig {
             disk: Some(disk_path),
@@ -1017,7 +1017,7 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
         let disk_path = create_test_disk(&temp_dir, 4096, 0xAA);
-        let output_path = temp_dir.path().join("corrupted.st");
+        let output_path = temp_dir.path().join("corrupted.hxz");
 
         // Create a valid snapshot
         let config = PackConfig {

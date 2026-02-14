@@ -167,7 +167,7 @@
 //!
 //! ```rust,ignore
 //! use pyo3::prelude::*;
-//! use strata_loader::tensor::numpy::{acquire_writable_buffer, copy_to_buffer};
+//! use hexz_loader::tensor::numpy::{acquire_writable_buffer, copy_to_buffer};
 //!
 //! #[pyfunction]
 //! fn fill_array(arr: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -182,7 +182,7 @@
 //!
 //! ```python
 //! import numpy as np
-//! import strata_loader
+//! import hexz_loader
 //!
 //! arr = np.zeros(1024, dtype=np.uint8)
 //! fill_array(arr)
@@ -193,7 +193,7 @@
 //!
 //! ```rust,ignore
 //! use pyo3::prelude::*;
-//! use strata_loader::tensor::numpy::acquire_writable_buffer;
+//! use hexz_loader::tensor::numpy::acquire_writable_buffer;
 //!
 //! #[pyfunction]
 //! fn try_write(obj: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -305,7 +305,7 @@ const PY_BUF_WRITABLE: c_int = 0x0001;
 /// # Example Usage
 ///
 /// ```rust,ignore
-/// use strata_loader::tensor::numpy::{acquire_writable_buffer, copy_to_buffer};
+/// use hexz_loader::tensor::numpy::{acquire_writable_buffer, copy_to_buffer};
 ///
 /// fn write_data(py_obj: &Bound<'_, PyAny>, data: &[u8]) -> PyResult<()> {
 ///     let buf = acquire_writable_buffer(py_obj)?;  // Acquire buffer
@@ -402,7 +402,7 @@ pub struct BufferInfo {
 ///
 /// ```rust,ignore
 /// use pyo3::prelude::*;
-/// use strata_loader::tensor::numpy::acquire_writable_buffer;
+/// use hexz_loader::tensor::numpy::acquire_writable_buffer;
 ///
 /// #[pyfunction]
 /// fn get_buffer_size(arr: &Bound<'_, PyAny>) -> PyResult<usize> {
@@ -415,7 +415,7 @@ pub struct BufferInfo {
 ///
 /// ```python
 /// import numpy as np
-/// import strata_loader
+/// import hexz_loader
 ///
 /// arr = np.zeros(1024, dtype=np.uint8)
 /// size = get_buffer_size(arr)
@@ -427,7 +427,7 @@ pub struct BufferInfo {
 /// ```rust,ignore
 /// use pyo3::prelude::*;
 /// use pyo3::exceptions::PyValueError;
-/// use strata_loader::tensor::numpy::acquire_writable_buffer;
+/// use hexz_loader::tensor::numpy::acquire_writable_buffer;
 ///
 /// #[pyfunction]
 /// fn try_acquire(obj: &Bound<'_, PyAny>) -> PyResult<String> {
@@ -458,7 +458,7 @@ pub struct BufferInfo {
 /// ```rust,ignore
 /// use pyo3::prelude::*;
 /// use pyo3::exceptions::PyValueError;
-/// use strata_loader::tensor::numpy::acquire_writable_buffer;
+/// use hexz_loader::tensor::numpy::acquire_writable_buffer;
 ///
 /// #[pyfunction]
 /// fn write_data(obj: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -569,7 +569,7 @@ pub fn acquire_writable_buffer(obj: &Bound<'_, PyAny>) -> PyResult<BufferInfo> {
 ///
 /// ```rust,ignore
 /// use pyo3::prelude::*;
-/// use strata_loader::tensor::numpy::{acquire_writable_buffer, copy_to_buffer};
+/// use hexz_loader::tensor::numpy::{acquire_writable_buffer, copy_to_buffer};
 ///
 /// #[pyfunction]
 /// fn fill_buffer(arr: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -600,7 +600,7 @@ pub fn acquire_writable_buffer(obj: &Bound<'_, PyAny>) -> PyResult<BufferInfo> {
 /// ```rust,ignore
 /// use pyo3::prelude::*;
 /// use pyo3::exceptions::PyValueError;
-/// use strata_loader::tensor::numpy::{acquire_writable_buffer, copy_to_buffer};
+/// use hexz_loader::tensor::numpy::{acquire_writable_buffer, copy_to_buffer};
 ///
 /// #[pyfunction]
 /// fn write_exact(arr: &Bound<'_, PyAny>, data: Vec<u8>) -> PyResult<()> {
@@ -623,7 +623,7 @@ pub fn acquire_writable_buffer(obj: &Bound<'_, PyAny>) -> PyResult<BufferInfo> {
 ///
 /// ```rust,ignore
 /// use pyo3::prelude::*;
-/// use strata_loader::tensor::numpy::{acquire_writable_buffer, copy_to_buffer};
+/// use hexz_loader::tensor::numpy::{acquire_writable_buffer, copy_to_buffer};
 ///
 /// #[pyfunction]
 /// fn write_partial(arr: &Bound<'_, PyAny>, offset: usize, length: usize) -> PyResult<()> {

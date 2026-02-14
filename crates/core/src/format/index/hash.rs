@@ -143,12 +143,12 @@
 //! Internal HashMap collisions are handled transparently by chaining or
 //! linear probing and do not affect correctness.
 //!
-//! # Integration with Strata Format
+//! # Integration with Hexz Format
 //!
 //! The hash index is an **alternative** to the default paginated index, not
 //! a replacement. Snapshots using hash-based indexing would:
 //!
-//! 1. Set a feature flag in [`StrataHeader`] to indicate hash index mode
+//! 1. Set a feature flag in [`Header`] to indicate hash index mode
 //! 2. Serialize the entire `HashIndex` at `header.index_offset`
 //! 3. Omit master index and page structures
 //!
@@ -213,8 +213,8 @@
 //! ## Basic Usage
 //!
 //! ```
-//! use strata_core::format::index::hash::HashIndex;
-//! use strata_core::format::index::BlockInfo;
+//! use hexz_core::format::index::hash::HashIndex;
+//! use hexz_core::format::index::BlockInfo;
 //!
 //! let mut index = HashIndex::new();
 //!
@@ -242,7 +242,7 @@
 //!
 //! ```rust,ignore
 //! use sha2::{Sha256, Digest};
-//! use strata_core::format::index::hash::HashIndex;
+//! use hexz_core::format::index::hash::HashIndex;
 //!
 //! fn write_block_with_dedup(
 //!     data: &[u8],
@@ -278,7 +278,7 @@
 //! }
 //! ```
 //!
-//! [`StrataHeader`]: crate::format::header::StrataHeader
+//! [`Header`]: crate::format::header::Header
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -345,7 +345,7 @@ use super::BlockInfo;
 ///
 /// ```rust,ignore
 /// use std::sync::{Arc, RwLock};
-/// use strata_core::format::index::hash::HashIndex;
+/// use hexz_core::format::index::hash::HashIndex;
 ///
 /// let index = Arc::new(RwLock::new(HashIndex::new()));
 ///
@@ -393,7 +393,7 @@ impl HashIndex {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::format::index::hash::HashIndex;
+    /// use hexz_core::format::index::hash::HashIndex;
     ///
     /// let index = HashIndex::new();
     /// assert_eq!(index.len(), 0);
@@ -428,7 +428,7 @@ impl HashIndex {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::format::index::hash::HashIndex;
+    /// use hexz_core::format::index::hash::HashIndex;
     ///
     /// // Pre-allocate for 1 million blocks
     /// let index = HashIndex::with_capacity(1_000_000);
@@ -466,8 +466,8 @@ impl HashIndex {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::format::index::hash::HashIndex;
-    /// use strata_core::format::index::BlockInfo;
+    /// use hexz_core::format::index::hash::HashIndex;
+    /// use hexz_core::format::index::BlockInfo;
     ///
     /// let mut index = HashIndex::new();
     /// let block = BlockInfo {
@@ -535,7 +535,7 @@ impl HashIndex {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::format::index::hash::HashIndex;
+    /// use hexz_core::format::index::hash::HashIndex;
     ///
     /// let mut index = HashIndex::new();
     ///
@@ -577,8 +577,8 @@ impl HashIndex {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::format::index::hash::HashIndex;
-    /// use strata_core::format::index::BlockInfo;
+    /// use hexz_core::format::index::hash::HashIndex;
+    /// use hexz_core::format::index::BlockInfo;
     ///
     /// let mut index = HashIndex::new();
     ///
@@ -639,8 +639,8 @@ impl HashIndex {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::format::index::hash::HashIndex;
-    /// use strata_core::format::index::BlockInfo;
+    /// use hexz_core::format::index::hash::HashIndex;
+    /// use hexz_core::format::index::BlockInfo;
     ///
     /// let mut index = HashIndex::new();
     ///
@@ -678,8 +678,8 @@ impl HashIndex {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::format::index::hash::HashIndex;
-    /// use strata_core::format::index::BlockInfo;
+    /// use hexz_core::format::index::hash::HashIndex;
+    /// use hexz_core::format::index::BlockInfo;
     ///
     /// let mut index = HashIndex::new();
     /// assert_eq!(index.len(), 0);
@@ -704,8 +704,8 @@ impl HashIndex {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::format::index::hash::HashIndex;
-    /// use strata_core::format::index::BlockInfo;
+    /// use hexz_core::format::index::hash::HashIndex;
+    /// use hexz_core::format::index::BlockInfo;
     ///
     /// let mut index = HashIndex::new();
     /// assert!(index.is_empty());
@@ -737,7 +737,7 @@ impl HashIndex {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::format::index::hash::HashIndex;
+    /// use hexz_core::format::index::hash::HashIndex;
     ///
     /// let mut index = HashIndex::new();
     ///
@@ -771,8 +771,8 @@ impl HashIndex {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::format::index::hash::HashIndex;
-    /// use strata_core::format::index::BlockInfo;
+    /// use hexz_core::format::index::hash::HashIndex;
+    /// use hexz_core::format::index::BlockInfo;
     ///
     /// let mut index = HashIndex::new();
     ///

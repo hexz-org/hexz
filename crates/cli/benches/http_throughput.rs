@@ -5,12 +5,12 @@
 //! compare remote-access performance and validate backend behavior.
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use hexz_core::store::StorageBackend;
+use hexz_core::store::http::HttpBackend;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::Arc;
 use std::thread;
-use strata_core::store::StorageBackend;
-use strata_core::store::http::HttpBackend;
 
 /// Starts a minimal HTTP server that supports ranged reads over a fixed in-memory buffer.
 ///

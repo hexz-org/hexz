@@ -1,11 +1,11 @@
-//! Pack data into a Strata archive.
+//! Pack data into a Hexz archive.
 //!
 //! This command creates a `.st` archive from disk images and/or memory dumps,
-//! delegating to the core packing logic in [`strata_core::ops::pack`].
+//! delegating to the core packing logic in [`hexz_core::ops::pack`].
 //!
 //! # Overview
 //!
-//! The `pack` command is the primary way to create Strata archives from raw data.
+//! The `pack` command is the primary way to create Hexz archives from raw data.
 //! It supports multiple compression algorithms, encryption, deduplication, and
 //! both fixed-size and content-defined chunking strategies.
 //!
@@ -21,28 +21,28 @@
 //!
 //! **For maximum speed:**
 //! ```bash
-//! strata data pack --disk image.img --output fast.st --compression lz4
+//! hexz data pack --disk image.img --output fast.st --compression lz4
 //! ```
 //!
 //! **For maximum compression:**
 //! ```bash
-//! strata data pack --disk image.img --output small.st \
+//! hexz data pack --disk image.img --output small.st \
 //!   --compression zstd --train-dict --cdc
 //! ```
 //!
 //! **For balanced performance:**
 //! ```bash
-//! strata data pack --disk image.img --output balanced.st \
+//! hexz data pack --disk image.img --output balanced.st \
 //!   --compression lz4 --block-size 131072
 //! ```
 
 use crate::ui::progress::create_progress_bar;
 use anyhow::Result;
+use hexz_core::ops::pack::{PackConfig, pack_snapshot};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use strata_core::ops::pack::{PackConfig, pack_snapshot};
 
-/// Execute the pack command to create a Strata snapshot archive.
+/// Execute the pack command to create a Hexz snapshot archive.
 ///
 /// This command creates a `.st` snapshot file from disk and/or memory dump files.
 /// It supports compression (LZ4 or Zstd), optional encryption, deduplication,
@@ -86,12 +86,12 @@ use strata_core::ops::pack::{PackConfig, pack_snapshot};
 ///
 /// ```no_run
 /// # use std::path::PathBuf;
-/// # use strata_cli::cmd::data::pack;
+/// # use hexz_cli::cmd::data::pack;
 /// // Pack a disk image with Zstd compression and dictionary training
 /// pack::run(
 ///     Some(PathBuf::from("disk.img")),
 ///     None,
-///     PathBuf::from("snapshot.st"),
+///     PathBuf::from("snapshot.hxz"),
 ///     "zstd".to_string(),
 ///     false,  // no encryption
 ///     true,   // train dictionary

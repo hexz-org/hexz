@@ -1,6 +1,6 @@
-//! PyO3 binding layer for Strata snapshot I/O.
+//! PyO3 binding layer for Hexz snapshot I/O.
 //!
-//! This module provides the complete Python API for Strata, enabling high-performance
+//! This module provides the complete Python API for Hexz, enabling high-performance
 //! snapshot reading, writing, and manipulation from Python code. All classes and functions
 //! exposed to Python are defined here using PyO3 bindings.
 //!
@@ -8,14 +8,14 @@
 //!
 //! The Python interface is organized into several specialized modules:
 //!
-//! - **[`dataset`]**: Synchronous snapshot reader (`StrataReader`) implementing Python's
+//! - **[`dataset`]**: Synchronous snapshot reader (`Reader`) implementing Python's
 //!   file-like protocol with efficient cursor management and zero-copy buffer operations.
 //!
-//! - **[`async_dataset`]**: Asynchronous snapshot reader (`AsyncStrataReader`) with native
+//! - **[`async_dataset`]**: Asynchronous snapshot reader (`AsyncReader`) with native
 //!   Python `asyncio` integration via `pyo3-async-runtimes`. All I/O operations are executed
 //!   on Tokio's blocking thread pool to avoid blocking the event loop.
 //!
-//! - **[`builder`]**: Low-level snapshot creation API (`StrataBuilder`) supporting disk/memory
+//! - **[`builder`]**: Low-level snapshot creation API (`Builder`) supporting disk/memory
 //!   image packing, overlay merging, compression, deduplication, and content-defined chunking.
 //!
 //! - **[`pack`]**: High-level packing function wrapping `core::ops::pack` for creating
@@ -25,7 +25,7 @@
 //!   and live VM snapshotting via QMP.
 //!
 //! - **[`exceptions`]**: Custom Python exception types mapping Rust errors to a structured
-//!   exception hierarchy (`StrataError`, `IOError`, `FormatError`, etc.).
+//!   exception hierarchy (`Error`, `IOError`, `FormatError`, etc.).
 //!
 //! # Integration with PyO3
 //!
@@ -34,7 +34,7 @@
 //!
 //! - **GIL Release**: Long-running operations (I/O, compression, hashing) release the Global
 //!   Interpreter Lock via `py.allow_threads()`, enabling true parallelism when multiple
-//!   threads call into Strata.
+//!   threads call into Hexz.
 //!
 //! - **Buffer Protocol**: Direct integration with Python's buffer protocol allows zero-copy
 //!   reads into NumPy arrays and other buffer-supporting types via `read_at_into()` and
@@ -51,11 +51,11 @@
 //! ## Synchronous Reading
 //!
 //! ```python
-//! from strata import StrataReader
+//! from hexz import Reader
 //! import numpy as np
 //!
 //! # Open snapshot and read sequentially
-//! reader = StrataReader("dataset.st")
+//! reader = Reader("dataset.hxz")
 //! chunk1 = reader.read(4096)  # reads from cursor
 //! chunk2 = reader.read(4096)  # advances cursor
 //!
@@ -70,11 +70,11 @@
 //! ## Asynchronous Reading
 //!
 //! ```python
-//! from strata import AsyncStrataReader
+//! from hexz import AsyncReader
 //! import asyncio
 //!
 //! async def process_snapshot():
-//!     reader = await AsyncStrataReader.create("dataset.st")
+//!     reader = await AsyncReader.create("dataset.hxz")
 //!     data = await reader.read(4096)
 //!     await reader.seek(0)
 //!     return data
@@ -85,10 +85,10 @@
 //! ## Snapshot Creation
 //!
 //! ```python
-//! from strata import StrataBuilder
+//! from hexz import Builder
 //!
 //! # Create snapshot with compression and deduplication
-//! builder = StrataBuilder("output.st", compression="zstd", dedup=True)
+//! builder = Builder("output.hxz", compression="zstd", dedup=True)
 //! builder.add_disk_file("disk.img")
 //! builder.finalize()
 //! ```
@@ -97,9 +97,9 @@
 //!
 //! ```python
 //! # Merge overlay changes into thin snapshot (references parent)
-//! builder = StrataBuilder("merged.st")
+//! builder = Builder("merged.hxz")
 //! builder.merge_overlay(
-//!     base_path="base.st",
+//!     base_path="base.hxz",
 //!     overlay_path="overlay.img",
 //!     thin=True  # creates thin snapshot referencing base
 //! )
@@ -117,18 +117,18 @@
 //! - **Buffer Reuse**: Use `read_at_into()` and `readinto()` to avoid allocations when
 //!   reading into pre-allocated buffers (NumPy arrays, ByteArrays).
 //!
-//! - **Async Concurrency**: `AsyncStrataReader` operations run on the Tokio blocking pool,
+//! - **Async Concurrency**: `AsyncReader` operations run on the Tokio blocking pool,
 //!   allowing safe concurrent access from multiple coroutines without blocking the event loop.
 //!
 //! # Thread Safety
 //!
-//! - **StrataReader**: Thread-safe. Multiple threads can share the same reader instance
+//! - **Reader**: Thread-safe. Multiple threads can share the same reader instance
 //!   (cursor is protected by a `Mutex`), but for best performance, use one reader per thread.
 //!
-//! - **AsyncStrataReader**: Async-safe. Can be accessed from multiple coroutines, but I/O
+//! - **AsyncReader**: Async-safe. Can be accessed from multiple coroutines, but I/O
 //!   operations serialize internally via `spawn_blocking`.
 //!
-//! - **StrataBuilder**: NOT thread-safe. Use a single thread for building. The `finalize()`
+//! - **Builder**: NOT thread-safe. Use a single thread for building. The `finalize()`
 //!   method consumes the builder, preventing accidental reuse.
 //!
 //! # Error Handling

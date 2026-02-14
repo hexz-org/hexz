@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../../scripts/lib/common.sh"
 
 PROJECT_ROOT="$(get_project_root)"
-BIN="${BIN:-$PROJECT_ROOT/target/release/strata}"
+BIN="${BIN:-$PROJECT_ROOT/target/release/hexz}"
 
 # Default size 100MB
 SIZE_MB=${1:-100}
@@ -14,8 +14,8 @@ SIZE_MB=${1:-100}
 # Paths
 DATA_DIR="$PROJECT_ROOT/data"
 DATA_FILE="$DATA_DIR/bench_data_${SIZE_MB}MB.json"
-SNAP_NODICT="$DATA_DIR/bench_${SIZE_MB}MB_nodict.st"
-SNAP_DICT="$DATA_DIR/bench_${SIZE_MB}MB_dict.st"
+SNAP_NODICT="$DATA_DIR/bench_${SIZE_MB}MB_nodict.hxz"
+SNAP_DICT="$DATA_DIR/bench_${SIZE_MB}MB_dict.hxz"
 MOUNT_DIR="$PROJECT_ROOT/mnt_bench"
 BLOCK_SIZE=4096
 
@@ -28,7 +28,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-info "=== Strata Dictionary vs Standard Benchmark ==="
+info "=== Hexz Dictionary vs Standard Benchmark ==="
 info "Target Size: ${SIZE_MB} MB"
 info "Block Size:  ${BLOCK_SIZE} bytes"
 

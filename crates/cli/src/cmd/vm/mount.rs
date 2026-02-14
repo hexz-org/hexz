@@ -1,6 +1,6 @@
-//! Mount Strata snapshots as FUSE filesystems or NBD block devices.
+//! Mount Hexz snapshots as FUSE filesystems or NBD block devices.
 //!
-//! This command exposes Strata snapshots to the host operating system by mounting
+//! This command exposes Hexz snapshots to the host operating system by mounting
 //! them as either FUSE filesystems (default) or NBD (Network Block Device) devices.
 //! The mount provides read-only or read-write access with optional overlay support
 //! for copy-on-write semantics, cache configuration, and permission mapping.
@@ -63,16 +63,16 @@
 //! **Commit Workflow:**
 //! ```bash
 //! # Mount with persistent overlay
-//! strata mount snapshot.st /mnt --rw --overlay changes.overlay
+//! hexz mount snapshot.st /mnt --rw --overlay changes.overlay
 //!
 //! # Make changes inside /mnt
 //! # ...
 //!
 //! # Unmount
-//! strata unmount /mnt
+//! hexz unmount /mnt
 //!
 //! # Commit changes to new snapshot
-//! strata vm commit --base snapshot.st --overlay changes.overlay --output new.st
+//! hexz vm commit --base snapshot.st --overlay changes.overlay --output new.st
 //! ```
 //!
 //! # Cache Size Semantics
@@ -126,7 +126,7 @@
 //! - `release()`: Syncs overlay metadata on file close
 //!
 //! **Mount Options:**
-//! - `FSName=strata`: Identifies mount in `/proc/mounts`
+//! - `FSName=hexz`: Identifies mount in `/proc/mounts`
 //! - `DefaultPermissions`: Enables kernel permission checks
 //! - `RO` or `RW`: Read-only or read-write mode
 //!
@@ -134,40 +134,41 @@
 //!
 //! ```bash
 //! # Read-only FUSE mount
-//! strata mount snapshot.st /mnt
+//! hexz mount snapshot.st /mnt
 //!
 //! # Read-write mount with ephemeral overlay
-//! strata mount snapshot.st /mnt --rw
+//! hexz mount snapshot.st /mnt --rw
 //!
 //! # Read-write mount with persistent overlay
-//! strata mount snapshot.st /mnt --rw --overlay changes.overlay
+//! hexz mount snapshot.st /mnt --rw --overlay changes.overlay
 //!
 //! # Mount as daemon with cache
-//! strata mount snapshot.st /mnt --daemon --cache-size 512M
+//! hexz mount snapshot.st /mnt --daemon --cache-size 512M
 //!
 //! # NBD mount (requires root)
-//! sudo strata mount snapshot.st /mnt --nbd
+//! sudo hexz mount snapshot.st /mnt --nbd
 //!
 //! # Custom ownership
-//! strata mount snapshot.st /mnt --uid 1000 --gid 1000
+//! hexz mount snapshot.st /mnt --uid 1000 --gid 1000
 //! ```
 
 use anyhow::{Context, Result};
 use daemonize::Daemonize;
+use hexz_common::constants::DEFAULT_ZSTD_LEVEL;
+use hexz_core::File;
+use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
+use hexz_core::algo::encryption::aes_gcm::AesGcmEncryptor;
+use hexz_core::format::header::{CompressionType, Header};
+use hexz_core::format::magic::HEADER_SIZE;
+use hexz_core::store::StorageBackend;
+use hexz_core::store::local::FileBackend;
+use hexz_fuse::fuse::Hexz;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use strata_common::constants::DEFAULT_ZSTD_LEVEL;
-use strata_core::StrataFile;
-use strata_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
-use strata_core::algo::encryption::aes_gcm::AesGcmEncryptor;
-use strata_core::format::header::{CompressionType, StrataHeader};
-use strata_core::format::magic::HEADER_SIZE;
-use strata_core::store::StorageBackend;
-use strata_core::store::local::FileBackend;
 
 /// Parses human-readable size strings into byte counts.
 ///
@@ -217,7 +218,7 @@ pub(crate) fn parse_size(s: &str) -> Result<usize> {
     Ok((n * multiplier) as usize)
 }
 
-/// Opens a Strata snapshot and initializes decompression and decryption.
+/// Opens a Hexz snapshot and initializes decompression and decryption.
 ///
 /// This helper function is shared by both FUSE and NBD code paths. It handles:
 /// - Reading and parsing the snapshot header
@@ -229,12 +230,12 @@ pub(crate) fn parse_size(s: &str) -> Result<usize> {
 ///
 /// # Arguments
 ///
-/// * `strata_path` - Path to the `.st` snapshot file (can be relative or absolute)
+/// * `hexz_path` - Path to the `.st` snapshot file (can be relative or absolute)
 /// * `cache_size` - Optional cache size string (e.g., "256M", "1G")
 ///
 /// # Returns
 ///
-/// `Arc<StrataFile>` that can be shared across threads for concurrent access.
+/// `Arc<File>` that can be shared across threads for concurrent access.
 ///
 /// # Password Handling
 ///
@@ -251,15 +252,15 @@ pub(crate) fn parse_size(s: &str) -> Result<usize> {
 /// - Password is incorrect (decryption fails)
 /// - Dictionary cannot be loaded (corrupted dictionary region)
 /// - Cache size string is malformed
-fn open_snapshot(strata_path: &str, cache_size: Option<String>) -> Result<Arc<StrataFile>> {
-    let abs_strata_path = std::fs::canonicalize(strata_path)
-        .context(format!("Failed to resolve snapshot path: {}", strata_path))?;
+fn open_snapshot(hexz_path: &str, cache_size: Option<String>) -> Result<Arc<File>> {
+    let abs_hexz_path = std::fs::canonicalize(hexz_path)
+        .context(format!("Failed to resolve snapshot path: {}", hexz_path))?;
 
     // Pre-read header for password prompt
     let (header, password) = {
-        let backend = FileBackend::new(&abs_strata_path)?;
+        let backend = FileBackend::new(&abs_hexz_path)?;
         let header_bytes = backend.read_exact(0, HEADER_SIZE)?;
-        let header: StrataHeader = bincode::deserialize(&header_bytes)?;
+        let header: Header = bincode::deserialize(&header_bytes)?;
 
         let password = if header.encryption.is_some() {
             Some(rpassword::prompt_password("Enter encryption password: ")?)
@@ -269,7 +270,7 @@ fn open_snapshot(strata_path: &str, cache_size: Option<String>) -> Result<Arc<St
         (header, password)
     };
 
-    let backend = Arc::new(FileBackend::new(&abs_strata_path)?);
+    let backend = Arc::new(FileBackend::new(&abs_hexz_path)?);
 
     let dictionary = if let (Some(offset), Some(length)) =
         (header.dictionary_offset, header.dictionary_length)
@@ -290,7 +291,7 @@ fn open_snapshot(strata_path: &str, cache_size: Option<String>) -> Result<Arc<St
             &params.salt,
             params.iterations,
         ))
-            as Box<dyn strata_core::algo::encryption::Encryptor>)
+            as Box<dyn hexz_core::algo::encryption::Encryptor>)
     } else {
         None
     };
@@ -301,7 +302,7 @@ fn open_snapshot(strata_path: &str, cache_size: Option<String>) -> Result<Arc<St
         None
     };
 
-    Ok(StrataFile::with_cache(
+    Ok(File::with_cache(
         backend,
         compressor,
         encryptor,
@@ -312,13 +313,13 @@ fn open_snapshot(strata_path: &str, cache_size: Option<String>) -> Result<Arc<St
 
 /// Executes the mount command to expose a snapshot via FUSE or NBD.
 ///
-/// Mounts a Strata snapshot at the specified mountpoint using either FUSE
+/// Mounts a Hexz snapshot at the specified mountpoint using either FUSE
 /// (default) or NBD (if `--nbd` flag is set). Supports read-only and read-write
 /// modes, optional overlay for copy-on-write, caching, and daemon mode.
 ///
 /// # Arguments
 ///
-/// * `strata_path` - Path to the `.st` snapshot file
+/// * `hexz_path` - Path to the `.st` snapshot file
 /// * `mountpoint` - Directory where snapshot will be mounted
 /// * `overlay` - Optional overlay file path for read-write mounts (persistent)
 /// * `daemon` - If true, daemonize the process and run in background
@@ -346,7 +347,7 @@ fn open_snapshot(strata_path: &str, cache_size: Option<String>) -> Result<Arc<St
 ///
 /// **Daemon Mode:**
 /// - Process detaches and runs in background
-/// - Logs redirected to `/tmp/strata.log` and `/tmp/strata.err`
+/// - Logs redirected to `/tmp/hexz.log` and `/tmp/hexz.err`
 /// - Working directory changed to `/`
 /// - Useful for long-running mounts
 ///
@@ -394,11 +395,11 @@ fn open_snapshot(strata_path: &str, cache_size: Option<String>) -> Result<Arc<St
 ///
 /// ```no_run
 /// use std::path::PathBuf;
-/// use strata_cli::cmd::vm::mount;
+/// use hexz_cli::cmd::vm::mount;
 ///
 /// // Read-only FUSE mount
 /// mount::run(
-///     "snapshot.st".to_string(),
+///     "snapshot.hxz".to_string(),
 ///     PathBuf::from("/mnt"),
 ///     None,
 ///     false, // not daemon
@@ -411,7 +412,7 @@ fn open_snapshot(strata_path: &str, cache_size: Option<String>) -> Result<Arc<St
 ///
 /// // Read-write mount with persistent overlay
 /// mount::run(
-///     "snapshot.st".to_string(),
+///     "snapshot.hxz".to_string(),
 ///     PathBuf::from("/mnt"),
 ///     Some(PathBuf::from("changes.overlay")),
 ///     false,
@@ -425,7 +426,7 @@ fn open_snapshot(strata_path: &str, cache_size: Option<String>) -> Result<Arc<St
 /// ```
 #[allow(clippy::too_many_arguments)]
 pub fn run(
-    strata_path: String,
+    hexz_path: String,
     mountpoint: PathBuf,
     overlay: Option<PathBuf>,
     daemon: bool,
@@ -437,7 +438,7 @@ pub fn run(
 ) -> Result<()> {
     if nbd {
         #[cfg(feature = "server")]
-        return run_nbd(strata_path, mountpoint, cache_size);
+        return run_nbd(hexz_path, mountpoint, cache_size);
         #[cfg(not(feature = "server"))]
         anyhow::bail!("NBD support requires the 'server' feature");
     }
@@ -449,7 +450,7 @@ pub fn run(
 
     // FIX: Don't use canonicalize on the overlay path directly, as it fails if the file doesn't exist.
     // Instead, resolve it relative to current dir if needed, or just pass it through.
-    // Strata::new handles creation.
+    // Hexz::new handles creation.
     let abs_overlay_path = if let Some(p) = &overlay {
         if p.is_absolute() {
             Some(p.clone())
@@ -461,13 +462,13 @@ pub fn run(
     };
 
     // Open snapshot
-    let snap = open_snapshot(&strata_path, cache_size)?;
+    let snap = open_snapshot(&hexz_path, cache_size)?;
 
     // Daemonize if requested
     if daemon {
-        let stdout = std::fs::File::create("/tmp/strata.log")
+        let stdout = std::fs::File::create("/tmp/hexz.log")
             .unwrap_or_else(|_| std::fs::File::create("/dev/null").unwrap());
-        let stderr = std::fs::File::create("/tmp/strata.err")
+        let stderr = std::fs::File::create("/tmp/hexz.err")
             .unwrap_or_else(|_| std::fs::File::create("/dev/null").unwrap());
 
         Daemonize::new()
@@ -491,7 +492,7 @@ pub fn run(
     };
 
     let mut options = vec![
-        fuser::MountOption::FSName("strata".to_string()),
+        fuser::MountOption::FSName("hexz".to_string()),
         fuser::MountOption::DefaultPermissions,
     ];
 
@@ -501,7 +502,7 @@ pub fn run(
         options.push(fuser::MountOption::RO);
     }
 
-    let fs = strata_fuse::fuse::Strata::new(snap, final_overlay_path.as_deref(), uid, gid)?;
+    let fs = Hexz::new(snap, final_overlay_path.as_deref(), uid, gid)?;
 
     if daemon {
         eprintln!("Mounting at {:?} (daemonized)", abs_mountpoint);
@@ -513,7 +514,7 @@ pub fn run(
 }
 
 #[cfg(feature = "server")]
-fn run_nbd(strata_path: String, mountpoint: PathBuf, cache_size: Option<String>) -> Result<()> {
+fn run_nbd(hexz_path: String, mountpoint: PathBuf, cache_size: Option<String>) -> Result<()> {
     // 1. Check for sudo/root (NBD requires it)
     let is_root = unsafe { libc::geteuid() == 0 };
     if !is_root {
@@ -521,7 +522,7 @@ fn run_nbd(strata_path: String, mountpoint: PathBuf, cache_size: Option<String>)
     }
 
     // 2. Open Snapshot
-    let snap = open_snapshot(&strata_path, cache_size)?;
+    let snap = open_snapshot(&hexz_path, cache_size)?;
 
     // 3. Find a free NBD device
     let nbd_dev = find_free_nbd_device()?;
@@ -539,7 +540,7 @@ fn run_nbd(strata_path: String, mountpoint: PathBuf, cache_size: Option<String>)
 
     let snap_clone = snap.clone();
     rt.spawn(async move {
-        if let Err(e) = strata_server::serve_nbd(snap_clone, port).await {
+        if let Err(e) = hexz_server::serve_nbd(snap_clone, port).await {
             eprintln!("NBD Server error: {}", e);
         }
     });

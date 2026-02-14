@@ -3,7 +3,7 @@
 //! Provides a `ContentHasher` trait for computing content-defined hashes
 //! used in deduplication and integrity verification.
 
-use strata_common::Result;
+use hexz_common::Result;
 
 /// Trait for content-addressing hash functions.
 ///

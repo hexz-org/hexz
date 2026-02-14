@@ -1,6 +1,6 @@
-# Install Strata
+# Install Hexz
 
-**Goal**: Install Strata CLI and Python package on your system.
+**Goal**: Install Hexz CLI and Python package on your system.
 
 ## Prerequisites
 
@@ -20,8 +20,8 @@ source $HOME/.cargo/env
 
 **Step 2: Clone Repository**:
 ```bash
-git clone https://github.com/Alethic-Systems/strata.git
-cd strata
+git clone https://github.com/Alethic-Systems/hexz.git
+cd hexz
 ```
 
 **Step 3: Install System Dependencies**:
@@ -46,7 +46,7 @@ brew install macfuse pkg-config python3
 make rust
 ```
 
-Binary location: `./target/release/strata`
+Binary location: `./target/release/hexz`
 
 **Step 5: Build Python Package**:
 ```bash
@@ -55,8 +55,8 @@ make develop
 
 **Step 6: Verify Installation**:
 ```bash
-./target/release/strata --version
-python -c "import strata; print(strata.__version__)"
+./target/release/hexz --version
+python -c "import hexz; print(hexz.__version__)"
 ```
 
 ### Method 2: Python Package Only
@@ -64,8 +64,8 @@ python -c "import strata; print(strata.__version__)"
 If you only need the Python loader (no CLI):
 
 ```bash
-git clone https://github.com/Alethic-Systems/strata.git
-cd strata
+git clone https://github.com/Alethic-Systems/hexz.git
+cd hexz
 pip install maturin
 maturin develop
 ```
@@ -75,13 +75,13 @@ maturin develop
 After building:
 
 ```bash
-sudo cp ./target/release/strata /usr/local/bin/
-strata --version
+sudo cp ./target/release/hexz /usr/local/bin/
+hexz --version
 ```
 
 Or add to PATH:
 ```bash
-echo 'export PATH="$HOME/strata/target/release:$PATH"' >> ~/.bashrc
+echo 'export PATH="$HOME/hexz/target/release:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
@@ -90,23 +90,23 @@ source ~/.bashrc
 ### Check CLI
 
 ```bash
-strata --version
-strata sys doctor
+hexz --version
+hexz sys doctor
 ```
 
 ### Check Python Package
 
 ```python
-import strata
-print(strata.__version__)
+import hexz
+print(hexz.__version__)
 
 # Test basic functionality
-with strata.open("/tmp/test.st", mode="w") as writer:
-    writer.write(b"Hello, Strata!")
+with hexz.open("/tmp/test.hxz", mode="w") as writer:
+    writer.write(b"Hello, Hexz!")
 
-with strata.open("/tmp/test.st") as reader:
+with hexz.open("/tmp/test.hxz") as reader:
     data = reader.read(14)
-    assert data == b"Hello, Strata!"
+    assert data == b"Hello, Hexz!"
     print("Installation verified!")
 ```
 
@@ -195,10 +195,10 @@ Ensure Command Line Tools installed:
 xcode-select --install
 ```
 
-## Updating Strata
+## Updating Hexz
 
 ```bash
-cd strata
+cd hexz
 git pull
 make clean
 make build
@@ -208,17 +208,17 @@ make build
 
 ### Remove CLI
 ```bash
-sudo rm /usr/local/bin/strata
+sudo rm /usr/local/bin/hexz
 ```
 
 ### Remove Python Package
 ```bash
-pip uninstall strata
+pip uninstall hexz
 ```
 
 ### Remove Source
 ```bash
-rm -rf ~/strata
+rm -rf ~/hexz
 ```
 
 ## Next Steps

@@ -2,7 +2,7 @@
 ///
 /// These tests verify that the PyO3 bindings work correctly by:
 /// 1. Packing data using CLI
-/// 2. Loading it via Python API (strata_loader)
+/// 2. Loading it via Python API (hexz_loader)
 /// 3. Verifying correctness
 use assert_cmd::Command;
 use std::fs;
@@ -11,18 +11,18 @@ use std::process::Command as StdCommand;
 mod common;
 use common::{TestEnv, compressible_data, random_data};
 
-/// Helper to create a strata CLI command
-fn strata() -> Command {
+/// Helper to create a hexz CLI command
+fn hexz() -> Command {
     #[allow(deprecated)]
     {
-        Command::cargo_bin("strata").expect("Failed to find strata binary")
+        Command::cargo_bin("hexz").expect("Failed to find hexz binary")
     }
 }
 
-/// Check if Python and strata_loader are available
+/// Check if Python and hexz_loader are available
 fn python_available() -> bool {
     StdCommand::new("python3")
-        .args(["-c", "import strata_loader"])
+        .args(["-c", "import hexz_loader"])
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
@@ -45,16 +45,16 @@ fn run_python_script(script: &str) -> Result<String, String> {
 #[test]
 fn test_python_import() {
     if !python_available() {
-        eprintln!("Skipping: Python or strata_loader not available");
+        eprintln!("Skipping: Python or hexz_loader not available");
         return;
     }
 
     let script = r#"
-import strata_loader
+import hexz_loader
 print("OK")
 "#;
 
-    let output = run_python_script(script).expect("Failed to import strata_loader");
+    let output = run_python_script(script).expect("Failed to import hexz_loader");
     assert!(output.contains("OK"));
 }
 
@@ -66,12 +66,12 @@ fn test_python_pack_and_read() {
     }
 
     let env = TestEnv::new();
-    let test_data = b"Hello from Strata!";
+    let test_data = b"Hello from Hexz!";
     let input_file = env.temp_dir.path().join("input.txt");
     fs::write(&input_file, test_data).unwrap();
 
     // Pack using CLI
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg(&input_file)
@@ -83,10 +83,10 @@ fn test_python_pack_and_read() {
     // Read using Python
     let script = format!(
         r#"
-import strata_loader
+import hexz_loader
 
 # Open the snapshot
-reader = strata_loader.Reader("{}")
+reader = hexz_loader.Reader("{}")
 
 # Read all data
 data = reader.read_at(0, {})
@@ -98,7 +98,7 @@ print(data.decode('utf-8'))
 
     let output = run_python_script(&script).expect("Python read failed");
     assert!(
-        output.contains("Hello from Strata!"),
+        output.contains("Hello from Hexz!"),
         "Data mismatch: {}",
         output
     );
@@ -119,7 +119,7 @@ fn test_python_dataset_iteration() {
     fs::write(&input_file, &test_data).unwrap();
 
     // Pack it
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg(&input_file)
@@ -131,10 +131,10 @@ fn test_python_dataset_iteration() {
     // Iterate using Python Dataset
     let script = format!(
         r#"
-import strata_loader
+import hexz_loader
 
 # Create dataset with 1KB chunks
-dataset = strata_loader.Dataset(
+dataset = hexz_loader.Dataset(
     path="{}",
     chunk_size=1024,
     shuffle=False
@@ -177,7 +177,7 @@ fn test_python_dataset_shuffling() {
     let input_file = env.temp_dir.path().join("shuffle_test.bin");
     fs::write(&input_file, &test_data).unwrap();
 
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg(&input_file)
@@ -188,10 +188,10 @@ fn test_python_dataset_shuffling() {
 
     let script = format!(
         r#"
-import strata_loader
+import hexz_loader
 
 # Test with shuffle enabled
-dataset_shuffled = strata_loader.Dataset(
+dataset_shuffled = hexz_loader.Dataset(
     path="{}",
     chunk_size=512,
     shuffle=True,
@@ -225,7 +225,7 @@ fn test_python_cache_size_parameter() {
     let input_file = env.temp_dir.path().join("cache_test.bin");
     fs::write(&input_file, &test_data).unwrap();
 
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg(&input_file)
@@ -237,11 +237,11 @@ fn test_python_cache_size_parameter() {
     // Test with different cache sizes
     let script = format!(
         r#"
-import strata_loader
+import hexz_loader
 
 # Test with cache_size parameter (if implemented)
 try:
-    reader = strata_loader.Reader("{}", cache_size="1M")
+    reader = hexz_loader.Reader("{}", cache_size="1M")
     data = reader.read_at(0, 100)
     print("cache_size: OK")
 except TypeError:
@@ -267,7 +267,7 @@ fn test_python_pack_from_memory() {
 
     let script = format!(
         r#"
-import strata_loader
+import hexz_loader
 
 # Test packing from Python
 try:
@@ -275,7 +275,7 @@ try:
     data = b"Test data from Python" * 100
 
     # Pack it (if pack() API is available)
-    strata_loader.pack(
+    hexz_loader.pack(
         data,
         output="{}",
         compression="lz4"
@@ -307,11 +307,11 @@ fn test_python_error_handling() {
     }
 
     let script = r#"
-import strata_loader
+import hexz_loader
 
 try:
     # Try to open non-existent file
-    reader = strata_loader.Reader("/nonexistent/file.strata")
+    reader = hexz_loader.Reader("/nonexistent/file.hexz")
     print("ERROR: Should have raised exception")
 except Exception as e:
     print(f"exception: {type(e).__name__}")
@@ -336,7 +336,7 @@ fn test_python_concurrent_readers() {
     let input_file = env.temp_dir.path().join("concurrent.bin");
     fs::write(&input_file, &test_data).unwrap();
 
-    strata()
+    hexz()
         .arg("data")
         .arg("pack")
         .arg(&input_file)
@@ -347,7 +347,7 @@ fn test_python_concurrent_readers() {
 
     let script = format!(
         r#"
-import strata_loader
+import hexz_loader
 import threading
 
 path = "{}"
@@ -355,7 +355,7 @@ errors = []
 
 def read_worker(offset, size):
     try:
-        reader = strata_loader.Reader(path)
+        reader = hexz_loader.Reader(path)
         data = reader.read_at(offset, size)
         if len(data) != size:
             errors.append(f"Size mismatch at {{offset}}")

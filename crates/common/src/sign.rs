@@ -1,14 +1,14 @@
-//! Cryptographic signing and verification for Strata snapshot integrity.
+//! Cryptographic signing and verification for Hexz snapshot integrity.
 //!
-//! This module provides primitives for signing and verifying Strata snapshot files
+//! This module provides primitives for signing and verifying Hexz snapshot files
 //! using Ed25519 digital signatures. It enables authenticating that a snapshot's
 //! master index has not been tampered with and was created by a holder of the
 //! corresponding private key.
 //!
 //! # Overview
 //!
-//! Strata snapshots contain critical system state, including file mappings, block
-//! metadata, and compression metadata. To ensure integrity and authenticity, Strata
+//! Hexz snapshots contain critical system state, including file mappings, block
+//! metadata, and compression metadata. To ensure integrity and authenticity, Hexz
 //! supports cryptographic signing of the master index—the authoritative registry of
 //! all blocks and their locations within the snapshot file.
 //!
@@ -21,7 +21,7 @@
 //!
 //! ## Ed25519 Digital Signatures
 //!
-//! Strata uses **Ed25519**, a modern elliptic-curve signature scheme providing:
+//! Hexz uses **Ed25519**, a modern elliptic-curve signature scheme providing:
 //! - **Security**: 128-bit security level, resistant to quantum pre-image attacks
 //! - **Performance**: Fast signing (~50k signatures/sec on typical hardware)
 //! - **Determinism**: No random number generation during signing (reduces attack surface)
@@ -44,7 +44,7 @@
 //!
 //! ## Threat Model
 //!
-//! Strata's signing mechanism defends against:
+//! Hexz's signing mechanism defends against:
 //!
 //! ### In-Scope Threats
 //! - **Malicious snapshot modification**: Attackers cannot alter the master index
@@ -82,7 +82,7 @@
 //!
 //! ## Secure Boot / Immutable Infrastructure
 //!
-//! Strata snapshots can serve as root filesystem images for unikernels or containers.
+//! Hexz snapshots can serve as root filesystem images for unikernels or containers.
 //! Signing ensures that only authorized images boot, preventing rootkit injection
 //! or configuration tampering.
 //!
@@ -103,7 +103,7 @@
 //!
 //! ## Software Distribution
 //!
-//! Distributing pre-built Strata snapshots (e.g., application bundles, VM images)
+//! Distributing pre-built Hexz snapshots (e.g., application bundles, VM images)
 //! requires authenticity guarantees to prevent supply-chain attacks.
 //!
 //! Example:
@@ -141,8 +141,8 @@
 //! The signature is deterministic: signing the same digest with the same key always
 //! produces the same signature. This prevents signature malleability attacks.
 //!
-//! Signatures are stored in Strata snapshot files at the location specified by
-//! `StrataHeader::signature_offset` and `StrataHeader::signature_length`. The
+//! Signatures are stored in Hexz snapshot files at the location specified by
+//! `Header::signature_offset` and `Header::signature_length`. The
 //! signature is appended after the master index to avoid modifying earlier file
 //! regions.
 //!
@@ -213,16 +213,16 @@
 //! ## Full Workflow: Key Generation, Signing, and Verification
 //!
 //! This example demonstrates the complete lifecycle of signing and verifying a
-//! Strata snapshot.
+//! Hexz snapshot.
 //!
 //! ```no_run
 //! use std::path::Path;
 //! use std::fs::{self, OpenOptions};
 //! use std::io::{Read, Write, Seek, SeekFrom};
 //! use sha2::{Sha256, Digest};
-//! use strata_common::sign::{generate_keypair, sign_digest, verify_digest};
+//! use hexz_common::sign::{generate_keypair, sign_digest, verify_digest};
 //!
-//! # fn main() -> strata_common::Result<()> {
+//! # fn main() -> hexz_common::Result<()> {
 //! // Step 1: Generate keypair
 //! let private_key = Path::new("snapshot.key");
 //! let public_key = Path::new("snapshot.pub");
@@ -251,7 +251,7 @@
 //! let mut snapshot = OpenOptions::new()
 //!     .write(true)
 //!     .create(true)
-//!     .open("snapshot.strata")?;
+//!     .open("snapshot.hexz")?;
 //! snapshot.write_all(index_data)?;
 //! let sig_offset = snapshot.seek(SeekFrom::Current(0))?;
 //! snapshot.write_all(&signature)?;
@@ -266,14 +266,14 @@
 //! # }
 //! ```
 //!
-//! ## Production Integration with Strata CLI
+//! ## Production Integration with Hexz CLI
 //!
-//! The Strata CLI (`strata sign` and `strata verify` commands) integrates these
+//! The Hexz CLI (`hexz sign` and `hexz verify` commands) integrates these
 //! primitives to sign complete snapshot files. The CLI:
-//! 1. Parses the `StrataHeader` to locate the master index
+//! 1. Parses the `Header` to locate the master index
 //! 2. Computes SHA-256 of the index bytes
 //! 3. Signs the digest and appends the signature to the snapshot file
-//! 4. Updates `StrataHeader::signature_offset` and `signature_length` fields
+//! 4. Updates `Header::signature_offset` and `signature_length` fields
 //!
 //! See `crates/cli/src/cmd/sys/sign.rs` and `crates/cli/src/cmd/sys/verify.rs`
 //! for the complete implementation.
@@ -284,7 +284,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! strata-common = { version = "0.1.0", features = ["signing"] }
+//! hexz-common = { version = "0.1.0", features = ["signing"] }
 //! ```
 //!
 //! This allows builds that do not require signing to avoid including cryptographic
@@ -368,7 +368,7 @@ use std::path::Path;
 ///
 /// # Errors
 ///
-/// This function returns [`StrataError::Io`] if:
+/// This function returns [`Error::Io`] if:
 /// - **File creation fails**:
 ///   - Parent directory does not exist
 ///   - Permission denied (cannot write to target directory)
@@ -387,9 +387,9 @@ use std::path::Path;
 ///
 /// ```no_run
 /// use std::path::Path;
-/// use strata_common::sign::generate_keypair;
+/// use hexz_common::sign::generate_keypair;
 ///
-/// # fn main() -> strata_common::Result<()> {
+/// # fn main() -> hexz_common::Result<()> {
 /// let private_key = Path::new("snapshot.key");
 /// let public_key = Path::new("snapshot.pub");
 ///
@@ -405,7 +405,7 @@ use std::path::Path;
 /// # }
 /// ```
 ///
-/// [`StrataError::Io`]: crate::StrataError::Io
+/// [`Error::Io`]: crate::Error::Io
 /// [`File::create`]: std::fs::File::create
 ///
 /// # Examples
@@ -415,9 +415,9 @@ use std::path::Path;
 /// ```no_run
 /// use std::path::Path;
 /// use std::fs;
-/// use strata_common::sign::generate_keypair;
+/// use hexz_common::sign::generate_keypair;
 ///
-/// # fn main() -> strata_common::Result<()> {
+/// # fn main() -> hexz_common::Result<()> {
 /// let private_key = Path::new("snapshot.key");
 /// let public_key = Path::new("snapshot.pub");
 ///
@@ -456,15 +456,15 @@ use std::path::Path;
 /// ```no_run
 /// use std::path::Path;
 /// use std::fs;
-/// use strata_common::sign::generate_keypair;
+/// use hexz_common::sign::generate_keypair;
 ///
-/// # fn main() -> strata_common::Result<()> {
-/// let private_key = Path::new("/etc/strata/signing.key");
-/// let public_key = Path::new("/etc/strata/signing.pub");
+/// # fn main() -> hexz_common::Result<()> {
+/// let private_key = Path::new("/etc/hexz/signing.key");
+/// let public_key = Path::new("/etc/hexz/signing.pub");
 ///
 /// // Check for existing keys to prevent accidental overwrites
 /// if private_key.exists() || public_key.exists() {
-///     return Err(strata_common::StrataError::Format(
+///     return Err(hexz_common::Error::Format(
 ///         "Key files already exist. Use a different path or remove existing keys.".into()
 ///     ));
 /// }
@@ -497,9 +497,9 @@ use std::path::Path;
 /// use std::path::Path;
 /// use std::fs;
 /// use std::process::Command;
-/// use strata_common::sign::generate_keypair;
+/// use hexz_common::sign::generate_keypair;
 ///
-/// # fn main() -> strata_common::Result<()> {
+/// # fn main() -> hexz_common::Result<()> {
 /// let private_key = Path::new("snapshot.key");
 /// let public_key = Path::new("snapshot.pub");
 ///
@@ -585,7 +585,7 @@ pub fn generate_keypair(private_out: &Path, public_out: &Path) -> Result<()> {
 /// ## Digest Length
 /// The `digest` parameter accepts **any byte slice**, but typical usage passes a
 /// cryptographic hash output:
-/// - **SHA-256**: 32 bytes (recommended for Strata snapshots)
+/// - **SHA-256**: 32 bytes (recommended for Hexz snapshots)
 /// - **SHA-512**: 64 bytes
 /// - **BLAKE3**: 32 bytes (default output length)
 ///
@@ -596,7 +596,7 @@ pub fn generate_keypair(private_out: &Path, public_out: &Path) -> Result<()> {
 /// - Fail to provide the collision-resistance properties required for security
 ///
 /// ## Digest Algorithm
-/// For Strata snapshots, the digest **must** be computed as:
+/// For Hexz snapshots, the digest **must** be computed as:
 /// ```text
 /// digest = SHA-256(master_index_bytes)
 /// ```
@@ -650,7 +650,7 @@ pub fn generate_keypair(private_out: &Path, public_out: &Path) -> Result<()> {
 ///
 /// # Errors
 ///
-/// This function returns [`StrataError::Io`] if:
+/// This function returns [`Error::Io`] if:
 /// - **Private key file does not exist**: No file at `private_key_path`
 /// - **Permission denied**: Insufficient permissions to read the key file
 /// - **File is not exactly 32 bytes**: The key file is truncated, corrupted, or
@@ -661,7 +661,7 @@ pub fn generate_keypair(private_out: &Path, public_out: &Path) -> Result<()> {
 /// scalar), the function will still succeed but produce an unpredictable signature.
 /// Keys generated by [`generate_keypair`] are always valid.
 ///
-/// [`StrataError::Io`]: crate::StrataError::Io
+/// [`Error::Io`]: crate::Error::Io
 /// [`verify_digest`]: verify_digest
 /// [`generate_keypair`]: generate_keypair
 ///
@@ -672,9 +672,9 @@ pub fn generate_keypair(private_out: &Path, public_out: &Path) -> Result<()> {
 /// ```no_run
 /// use std::path::Path;
 /// use sha2::{Sha256, Digest};
-/// use strata_common::sign::sign_digest;
+/// use hexz_common::sign::sign_digest;
 ///
-/// # fn main() -> strata_common::Result<()> {
+/// # fn main() -> hexz_common::Result<()> {
 /// // Compute SHA-256 digest of data to sign
 /// let data = b"Critical snapshot data that must be authenticated";
 /// let mut hasher = Sha256::new();
@@ -696,9 +696,9 @@ pub fn generate_keypair(private_out: &Path, public_out: &Path) -> Result<()> {
 /// ```no_run
 /// use std::path::Path;
 /// use sha2::{Sha256, Digest};
-/// use strata_common::sign::sign_digest;
+/// use hexz_common::sign::sign_digest;
 ///
-/// # fn main() -> strata_common::Result<()> {
+/// # fn main() -> hexz_common::Result<()> {
 /// // Compute digest over multiple data chunks
 /// let mut hasher = Sha256::new();
 /// hasher.update(b"Header: ");
@@ -719,9 +719,9 @@ pub fn generate_keypair(private_out: &Path, public_out: &Path) -> Result<()> {
 /// ```no_run
 /// use std::path::Path;
 /// use sha2::{Sha256, Digest};
-/// use strata_common::sign::sign_digest;
+/// use hexz_common::sign::sign_digest;
 ///
-/// # fn main() -> strata_common::Result<()> {
+/// # fn main() -> hexz_common::Result<()> {
 /// let data = b"deterministic test";
 /// let mut hasher = Sha256::new();
 /// hasher.update(data);
@@ -745,7 +745,7 @@ pub fn generate_keypair(private_out: &Path, public_out: &Path) -> Result<()> {
 /// ```no_run
 /// use std::path::Path;
 /// use sha2::{Sha256, Digest};
-/// use strata_common::sign::sign_digest;
+/// use hexz_common::sign::sign_digest;
 ///
 /// # fn main() {
 /// let digest = Sha256::digest(b"test data");
@@ -765,7 +765,7 @@ pub fn generate_keypair(private_out: &Path, public_out: &Path) -> Result<()> {
 /// # }
 /// ```
 ///
-/// ## Integration with Strata Snapshot Signing
+/// ## Integration with Hexz Snapshot Signing
 ///
 /// This example mirrors the production usage in `crates/cli/src/cmd/sys/sign.rs`.
 ///
@@ -774,13 +774,13 @@ pub fn generate_keypair(private_out: &Path, public_out: &Path) -> Result<()> {
 /// use std::fs::File;
 /// use std::io::{Read, Seek, SeekFrom};
 /// use sha2::{Sha256, Digest};
-/// use strata_common::sign::sign_digest;
+/// use hexz_common::sign::sign_digest;
 ///
-/// # fn main() -> strata_common::Result<()> {
+/// # fn main() -> hexz_common::Result<()> {
 /// // Open snapshot file
-/// let mut snapshot = File::open("system.strata")?;
+/// let mut snapshot = File::open("system.hexz")?;
 ///
-/// // Read header to locate master index (simplified - real code parses StrataHeader)
+/// // Read header to locate master index (simplified - real code parses Header)
 /// let index_offset = 4096u64; // Example offset
 /// snapshot.seek(SeekFrom::Start(index_offset))?;
 ///
@@ -861,7 +861,7 @@ pub fn sign_digest(private_key_path: &Path, digest: &[u8]) -> Result<[u8; 64]> {
 /// ```
 ///
 /// ## Digest Algorithm Consistency
-/// Both the signer and verifier **must use the same hash algorithm**. For Strata
+/// Both the signer and verifier **must use the same hash algorithm**. For Hexz
 /// snapshots, this is always **SHA-256** of the master index bytes.
 ///
 /// # Verification Process
@@ -953,14 +953,14 @@ pub fn sign_digest(private_key_path: &Path, digest: &[u8]) -> Result<[u8; 64]> {
 ///
 /// This function returns an error if:
 ///
-/// ## I/O Errors ([`StrataError::Io`])
+/// ## I/O Errors ([`Error::Io`])
 /// - **Public key file does not exist**: No file at `public_key_path`
 /// - **Permission denied**: Insufficient permissions to read the key file
 /// - **File is not exactly 32 bytes**: The key file is truncated, corrupted, or
 ///   contains extra data. Valid Ed25519 public keys are always 32 bytes.
 /// - **I/O error during read**: Hardware failure, network filesystem timeout, etc.
 ///
-/// ## Format Errors ([`StrataError::Format`])
+/// ## Format Errors ([`Error::Format`])
 /// - **Invalid public key encoding**: The 32-byte public key does not represent
 ///   a valid Edwards curve point. This can occur if:
 ///   - The bytes are not a valid curve point (not on the curve)
@@ -975,8 +975,8 @@ pub fn sign_digest(private_key_path: &Path, digest: &[u8]) -> Result<[u8; 64]> {
 /// **Important**: Verification failure does not reveal **why** verification failed
 /// (prevents side-channel attacks).
 ///
-/// [`StrataError::Io`]: crate::StrataError::Io
-/// [`StrataError::Format`]: crate::StrataError::Format
+/// [`Error::Io`]: crate::Error::Io
+/// [`Error::Format`]: crate::Error::Format
 /// [`generate_keypair`]: generate_keypair
 /// [`sign_digest`]: sign_digest
 ///
@@ -987,9 +987,9 @@ pub fn sign_digest(private_key_path: &Path, digest: &[u8]) -> Result<[u8; 64]> {
 /// ```no_run
 /// use std::path::Path;
 /// use sha2::{Sha256, Digest};
-/// use strata_common::sign::{generate_keypair, sign_digest, verify_digest};
+/// use hexz_common::sign::{generate_keypair, sign_digest, verify_digest};
 ///
-/// # fn main() -> strata_common::Result<()> {
+/// # fn main() -> hexz_common::Result<()> {
 /// // Generate keypair
 /// let private_key = Path::new("test.key");
 /// let public_key = Path::new("test.pub");
@@ -1012,9 +1012,9 @@ pub fn sign_digest(private_key_path: &Path, digest: &[u8]) -> Result<[u8; 64]> {
 /// ```no_run
 /// use std::path::Path;
 /// use sha2::{Sha256, Digest};
-/// use strata_common::sign::{sign_digest, verify_digest};
+/// use hexz_common::sign::{sign_digest, verify_digest};
 ///
-/// # fn main() -> strata_common::Result<()> {
+/// # fn main() -> hexz_common::Result<()> {
 /// let data = b"original data";
 /// let digest = Sha256::digest(data);
 /// let signature = sign_digest(Path::new("test.key"), &digest)?;
@@ -1040,9 +1040,9 @@ pub fn sign_digest(private_key_path: &Path, digest: &[u8]) -> Result<[u8; 64]> {
 /// use std::path::Path;
 /// use std::fs;
 /// use sha2::{Sha256, Digest};
-/// use strata_common::sign::verify_digest;
+/// use hexz_common::sign::verify_digest;
 ///
-/// # fn main() -> strata_common::Result<()> {
+/// # fn main() -> hexz_common::Result<()> {
 /// let public_key_path = Path::new("vendor.pub");
 ///
 /// // Read public key bytes
@@ -1080,11 +1080,11 @@ pub fn sign_digest(private_key_path: &Path, digest: &[u8]) -> Result<[u8; 64]> {
 /// use std::path::Path;
 /// use std::fs;
 /// use sha2::{Sha256, Digest};
-/// use strata_common::sign::verify_digest;
+/// use hexz_common::sign::verify_digest;
 ///
-/// # fn main() -> strata_common::Result<()> {
+/// # fn main() -> hexz_common::Result<()> {
 /// let public_key = Path::new("release.pub");
-/// let snapshots = vec!["snapshot1.strata", "snapshot2.strata", "snapshot3.strata"];
+/// let snapshots = vec!["snapshot1.hexz", "snapshot2.hexz", "snapshot3.hexz"];
 ///
 /// for snapshot_path in snapshots {
 ///     // Read snapshot data (simplified - real code reads master index)
@@ -1110,7 +1110,7 @@ pub fn sign_digest(private_key_path: &Path, digest: &[u8]) -> Result<[u8; 64]> {
 /// # }
 /// ```
 ///
-/// ## Integration with Strata Snapshot Verification
+/// ## Integration with Hexz Snapshot Verification
 ///
 /// This example mirrors the production usage in `crates/cli/src/cmd/sys/verify.rs`.
 ///
@@ -1119,10 +1119,10 @@ pub fn sign_digest(private_key_path: &Path, digest: &[u8]) -> Result<[u8; 64]> {
 /// use std::fs::File;
 /// use std::io::{Read, Seek, SeekFrom};
 /// use sha2::{Sha256, Digest};
-/// use strata_common::sign::verify_digest;
+/// use hexz_common::sign::verify_digest;
 ///
-/// # fn main() -> strata_common::Result<()> {
-/// let snapshot_path = Path::new("system.strata");
+/// # fn main() -> hexz_common::Result<()> {
+/// let snapshot_path = Path::new("system.hexz");
 /// let public_key = Path::new("release.pub");
 ///
 /// let mut file = File::open(snapshot_path)?;
@@ -1158,8 +1158,8 @@ pub fn sign_digest(private_key_path: &Path, digest: &[u8]) -> Result<[u8; 64]> {
 /// ```no_run
 /// use std::path::Path;
 /// use sha2::{Sha256, Digest};
-/// use strata_common::sign::verify_digest;
-/// use strata_common::StrataError;
+/// use hexz_common::sign::verify_digest;
+/// use hexz_common::Error;
 ///
 /// # fn main() {
 /// let public_key = Path::new("test.pub");
@@ -1168,14 +1168,14 @@ pub fn sign_digest(private_key_path: &Path, digest: &[u8]) -> Result<[u8; 64]> {
 ///
 /// match verify_digest(public_key, &digest, &signature) {
 ///     Ok(_) => println!("Signature valid"),
-///     Err(StrataError::Io(e)) => {
+///     Err(Error::Io(e)) => {
 ///         eprintln!("I/O error reading public key: {}", e);
 ///         eprintln!("Possible causes:");
 ///         eprintln!("  - Public key file does not exist");
 ///         eprintln!("  - Insufficient permissions");
 ///         eprintln!("  - File is wrong size (must be exactly 32 bytes)");
 ///     }
-///     Err(StrataError::Format(e)) => {
+///     Err(Error::Format(e)) => {
 ///         eprintln!("Signature verification failed: {}", e);
 ///         eprintln!("Possible causes:");
 ///         eprintln!("  - Signature is invalid (forgery attempt or corruption)");
@@ -1196,52 +1196,52 @@ pub fn verify_digest(
     let mut key_bytes = [0u8; 32];
     f.read_exact(&mut key_bytes)?;
 
-    let verifying_key = VerifyingKey::from_bytes(&key_bytes)
-        .map_err(|e| crate::StrataError::Format(e.to_string()))?;
+    let verifying_key =
+        VerifyingKey::from_bytes(&key_bytes).map_err(|e| crate::Error::Format(e.to_string()))?;
     let signature = ed25519_dalek::Signature::from_bytes(signature_bytes);
     verifying_key
         .verify(digest, &signature)
-        .map_err(|e| crate::StrataError::Format(e.to_string()))?;
+        .map_err(|e| crate::Error::Format(e.to_string()))?;
     Ok(())
 }
 
-/// Computes the SHA-256 digest of a Strata snapshot's master index.
+/// Computes the SHA-256 digest of a Hexz snapshot's master index.
 ///
 /// **Current Status: NOT IMPLEMENTED**
 ///
 /// This function is **not currently implemented** and will always return an error.
 /// The digest computation logic has been moved to the CLI layer (`crates/cli/src/cmd/sys/sign.rs`)
-/// to avoid circular dependencies between `strata-common` and `strata-core`.
+/// to avoid circular dependencies between `hexz-common` and `hexz-core`.
 ///
 /// # Why This Function Is Unimplemented
 ///
 /// ## Circular Dependency Problem
 /// To compute the snapshot digest, this function needs to:
-/// 1. Read the Strata snapshot file header
+/// 1. Read the Hexz snapshot file header
 /// 2. Deserialize the header to extract `index_offset` and `index_length`
 /// 3. Read the master index bytes from the file
 /// 4. Compute SHA-256 of the index bytes
 ///
-/// However, the `StrataHeader` type is defined in `strata-core`, which **depends on**
-/// `strata-common`. If `strata-common` were to depend on `strata-core`, this would
+/// However, the `Header` type is defined in `hexz-core`, which **depends on**
+/// `hexz-common`. If `hexz-common` were to depend on `hexz-core`, this would
 /// create a circular dependency:
 ///
 /// ```text
-/// strata-common (sign.rs) --> strata-core (StrataHeader)
+/// hexz-common (sign.rs) --> hexz-core (Header)
 ///                               |
 ///                               v
-///                           strata-common (error.rs, Result<T>)
+///                           hexz-common (error.rs, Result<T>)
 /// ```
 ///
 /// Rust does not allow circular dependencies between crates.
 ///
 /// ## Resolution Strategy
 /// The digest computation logic has been moved to `crates/cli/src/cmd/sys/sign.rs`,
-/// which has access to both `strata-common` (for signing primitives) and `strata-core`
+/// which has access to both `hexz-common` (for signing primitives) and `hexz-core`
 /// (for header parsing). This maintains the following dependency graph:
 ///
 /// ```text
-/// strata-cli --> strata-core --> strata-common
+/// hexz-cli --> hexz-core --> hexz-common
 ///     |                              |
 ///     +------------------------------+
 /// ```
@@ -1255,33 +1255,33 @@ pub fn verify_digest(
 /// - **Cons**: Digest computation is not reusable outside the CLI
 /// - **Status**: This is the current implementation approach
 ///
-/// ## Option 2: Move to strata-core
-/// Create a new public function `strata_core::digest::compute_master_index_digest(path: &Path)`
+/// ## Option 2: Move to hexz-core
+/// Create a new public function `hexz_core::digest::compute_master_index_digest(path: &Path)`
 /// that computes the digest and can be called by both the CLI and other crates.
 /// - **Pros**: Reusable, keeps digest logic with header parsing
-/// - **Cons**: Adds digest computation responsibility to `strata-core`
+/// - **Cons**: Adds digest computation responsibility to `hexz-core`
 ///
 /// ## Option 3: Manual Header Parsing
-/// Parse the header bytes manually in `strata-common` without depending on
-/// `strata-core` types. This would require:
+/// Parse the header bytes manually in `hexz-common` without depending on
+/// `hexz-core` types. This would require:
 /// - Hardcoding the header format (brittle, error-prone)
 /// - Duplicating deserialization logic (violates DRY principle)
-/// - Maintaining synchronization with `strata-core` header changes
+/// - Maintaining synchronization with `hexz-core` header changes
 /// - **Verdict**: Not recommended due to maintainability concerns
 ///
 /// # Current Implementation Workflow
 ///
-/// To sign a Strata snapshot using the current implementation:
+/// To sign a Hexz snapshot using the current implementation:
 ///
 /// ```bash
 /// # Generate keypair
-/// strata keygen --private snapshot.key --public snapshot.pub
+/// hexz keygen --private snapshot.key --public snapshot.pub
 ///
 /// # Sign snapshot (digest computation happens internally)
-/// strata sign --key snapshot.key snapshot.strata
+/// hexz sign --key snapshot.key snapshot.hexz
 ///
 /// # Verify snapshot
-/// strata verify --key snapshot.pub snapshot.strata
+/// hexz verify --key snapshot.pub snapshot.hexz
 /// ```
 ///
 /// The digest computation is performed in `crates/cli/src/cmd/sys/sign.rs` as follows:
@@ -1291,7 +1291,7 @@ pub fn verify_digest(
 /// let mut f = File::open(&image_path)?;
 /// let mut header_bytes = [0u8; HEADER_SIZE];
 /// f.read_exact(&mut header_bytes)?;
-/// let header: StrataHeader = bincode::deserialize(&header_bytes)?;
+/// let header: Header = bincode::deserialize(&header_bytes)?;
 ///
 /// // Seek to master index and read it
 /// f.seek(SeekFrom::Start(header.index_offset))?;
@@ -1303,29 +1303,29 @@ pub fn verify_digest(
 /// hasher.update(&index_bytes);
 /// let digest = hasher.finalize();
 ///
-/// // Sign the digest (calls sign_digest from strata-common)
+/// // Sign the digest (calls sign_digest from hexz-common)
 /// let signature = sign::sign_digest(&key_path, &digest)?;
 /// ```
 ///
 /// # Arguments
 ///
-/// * `path` - Path to the Strata snapshot file. This parameter is currently ignored
+/// * `path` - Path to the Hexz snapshot file. This parameter is currently ignored
 ///   because the function is not implemented.
 ///
 /// # Returns
 ///
 /// This function **never returns successfully**. It always returns
-/// [`StrataError::Format`] with the message:
+/// [`Error::Format`] with the message:
 /// ```text
 /// "Digest computation should be done in CLI/Core layer"
 /// ```
 ///
 /// # Errors
 ///
-/// Always returns [`StrataError::Format`] indicating that digest computation must
+/// Always returns [`Error::Format`] indicating that digest computation must
 /// be performed at the CLI or Core layer due to architectural constraints.
 ///
-/// [`StrataError::Format`]: crate::StrataError::Format
+/// [`Error::Format`]: crate::Error::Format
 /// [`sign_digest`]: sign_digest
 ///
 /// # Examples
@@ -1334,10 +1334,10 @@ pub fn verify_digest(
 ///
 /// ```no_run
 /// use std::path::Path;
-/// use strata_common::sign::compute_snapshot_digest;
+/// use hexz_common::sign::compute_snapshot_digest;
 ///
 /// # fn main() {
-/// let snapshot = Path::new("system.strata");
+/// let snapshot = Path::new("system.hexz");
 ///
 /// match compute_snapshot_digest(snapshot) {
 ///     Ok(digest) => {
@@ -1354,16 +1354,16 @@ pub fn verify_digest(
 /// ## Correct Approach: Manual Digest Computation
 ///
 /// If you need to compute a snapshot digest programmatically, use this approach
-/// (requires access to `strata-core`):
+/// (requires access to `hexz-core`):
 ///
 /// ```rust,ignore
 /// use std::path::Path;
 /// use std::fs::File;
 /// use std::io::{Read, Seek, SeekFrom};
 /// use sha2::{Sha256, Digest};
-/// use strata_core::format::header::StrataHeader;
-/// use strata_core::format::magic::HEADER_SIZE;
-/// use strata_common::sign::sign_digest;
+/// use hexz_core::format::header::Header;
+/// use hexz_core::format::magic::HEADER_SIZE;
+/// use hexz_common::sign::sign_digest;
 ///
 /// fn compute_and_sign_snapshot(
 ///     snapshot_path: &Path,
@@ -1375,7 +1375,7 @@ pub fn verify_digest(
 ///     // Read and parse header
 ///     let mut header_bytes = [0u8; HEADER_SIZE];
 ///     f.read_exact(&mut header_bytes)?;
-///     let header: StrataHeader = bincode::deserialize(&header_bytes)?;
+///     let header: Header = bincode::deserialize(&header_bytes)?;
 ///
 ///     // Read master index
 ///     f.seek(SeekFrom::Start(header.index_offset))?;
@@ -1392,16 +1392,16 @@ pub fn verify_digest(
 /// }
 /// ```
 ///
-/// ## Verification Workflow (Also Requires strata-core)
+/// ## Verification Workflow (Also Requires hexz-core)
 ///
 /// ```rust,ignore
 /// use std::path::Path;
 /// use std::fs::File;
 /// use std::io::{Read, Seek, SeekFrom};
 /// use sha2::{Sha256, Digest};
-/// use strata_core::format::header::StrataHeader;
-/// use strata_core::format::magic::HEADER_SIZE;
-/// use strata_common::sign::verify_digest;
+/// use hexz_core::format::header::Header;
+/// use hexz_core::format::magic::HEADER_SIZE;
+/// use hexz_common::sign::verify_digest;
 ///
 /// fn verify_snapshot(
 ///     snapshot_path: &Path,
@@ -1412,7 +1412,7 @@ pub fn verify_digest(
 ///     // Read header
 ///     let mut header_bytes = [0u8; HEADER_SIZE];
 ///     f.read_exact(&mut header_bytes)?;
-///     let header: StrataHeader = bincode::deserialize(&header_bytes)?;
+///     let header: Header = bincode::deserialize(&header_bytes)?;
 ///
 ///     // Extract signature location from header
 ///     let (sig_offset, sig_len) = match (header.signature_offset, header.signature_length) {
@@ -1446,9 +1446,9 @@ pub fn verify_digest(
 ///
 /// If you are maintaining code that previously depended on `compute_snapshot_digest`,
 /// you should:
-/// 1. Move digest computation to a layer that has access to `strata-core`
+/// 1. Move digest computation to a layer that has access to `hexz-core`
 /// 2. Use the manual approach shown in the examples above
-/// 3. Consider using the Strata CLI commands (`strata sign`, `strata verify`) instead
+/// 3. Consider using the Hexz CLI commands (`hexz sign`, `hexz verify`) instead
 ///    of implementing custom signing workflows
 ///
 /// # See Also
@@ -1460,17 +1460,17 @@ pub fn verify_digest(
 pub fn compute_snapshot_digest(path: &Path) -> Result<[u8; 32]> {
     let mut f = File::open(path)?;
     // Read header to find index offset
-    // Note: HEADER_SIZE constant is now in strata-core::format::magic (4096 bytes)
+    // Note: HEADER_SIZE constant is now in hexz-core::format::magic (4096 bytes)
     let mut header_bytes = [0u8; 4096];
     f.read_exact(&mut header_bytes)?;
 
-    // We ideally should deserialize header, but since `strata_core` depends on `strata_common`,
-    // we can't depend on `strata_core` here. We have to parse the offset manually or move this logic
-    // to `strata_cli` or `strata_core`.
-    // Move this logic to `strata_cli` which has access to `strata_core`.
+    // We ideally should deserialize header, but since `hexz_core` depends on `hexz_common`,
+    // we can't depend on `hexz_core` here. We have to parse the offset manually or move this logic
+    // to `hexz_cli` or `hexz_core`.
+    // Move this logic to `hexz_cli` which has access to `hexz_core`.
     // Only keeping keygen/sign/verify primitives here.
 
-    Err(crate::StrataError::Format(
+    Err(crate::Error::Format(
         "Digest computation should be done in CLI/Core layer".into(),
     ))
 }
@@ -1939,7 +1939,7 @@ mod tests {
     #[test]
     fn test_compute_snapshot_digest_returns_error() {
         let temp_dir = std::env::temp_dir();
-        let fake_snapshot = temp_dir.join("fake_snapshot.strata");
+        let fake_snapshot = temp_dir.join("fake_snapshot.hexz");
 
         // Create a fake snapshot file with at least 4096 bytes
         let mut file = File::create(&fake_snapshot).expect("Failed to create fake snapshot");
@@ -1955,7 +1955,7 @@ mod tests {
         );
 
         // Verify error message
-        if let Err(crate::StrataError::Format(msg)) = result {
+        if let Err(crate::Error::Format(msg)) = result {
             assert!(
                 msg.contains("CLI/Core layer"),
                 "Error message should mention CLI/Core layer"
@@ -1971,7 +1971,7 @@ mod tests {
     #[test]
     fn test_compute_snapshot_digest_missing_file() {
         let temp_dir = std::env::temp_dir();
-        let nonexistent_snapshot = temp_dir.join("nonexistent_snapshot_12345.strata");
+        let nonexistent_snapshot = temp_dir.join("nonexistent_snapshot_12345.hexz");
 
         // Ensure file doesn't exist
         let _ = fs::remove_file(&nonexistent_snapshot);

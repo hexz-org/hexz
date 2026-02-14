@@ -6,16 +6,16 @@
 use super::common;
 use common::*;
 
+use hexz_core::algo::compression::lz4::Lz4Compressor;
+use hexz_core::algo::compression::zstd::ZstdCompressor;
+use hexz_core::ops::pack::{PackConfig, pack_snapshot};
+use hexz_core::store::local::FileBackend;
+use hexz_core::{File, SnapshotStream};
 use std::fs;
 use std::io::Write;
 use std::mem::MaybeUninit;
 use std::path::PathBuf;
 use std::sync::Arc;
-use strata_core::algo::compression::lz4::Lz4Compressor;
-use strata_core::algo::compression::zstd::ZstdCompressor;
-use strata_core::ops::pack::{PackConfig, pack_snapshot};
-use strata_core::store::local::FileBackend;
-use strata_core::{SnapshotStream, StrataFile};
 use tempfile::TempDir;
 
 /// Helper to create a test file with specific content.
@@ -33,7 +33,7 @@ fn test_pack_and_read_lz4() {
 
     // Create a 1MB test disk image
     let disk_path = create_test_file(&temp_dir, "disk.img", 1024 * 1024, 0x42);
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     // Pack the snapshot
     let config = PackConfig {
@@ -61,7 +61,7 @@ fn test_pack_and_read_lz4() {
     // Read back the snapshot
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     // Verify size
     assert_eq!(snapshot.size(SnapshotStream::Disk), 1024 * 1024);
@@ -87,7 +87,7 @@ fn test_pack_disk_and_memory() {
     // Create test files
     let disk_path = create_test_file(&temp_dir, "disk.img", 512 * 1024, 0xAA);
     let memory_path = create_test_file(&temp_dir, "memory.dump", 256 * 1024, 0xBB);
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     // Pack both streams
     let config = PackConfig {
@@ -108,7 +108,7 @@ fn test_pack_disk_and_memory() {
     // Read back
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     // Verify both stream sizes
     assert_eq!(snapshot.size(SnapshotStream::Disk), 512 * 1024);
@@ -140,7 +140,7 @@ fn test_pack_varied_data() {
     }
     drop(file);
 
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -160,7 +160,7 @@ fn test_pack_varied_data() {
     // Read back and verify
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     // Verify each block has the correct pattern
     for i in 0..16 {
@@ -182,7 +182,7 @@ fn test_pack_varied_data() {
 fn test_random_access_patterns() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 1024 * 1024, 0x55);
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -201,7 +201,7 @@ fn test_random_access_patterns() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     // Test various read patterns
     let test_cases = vec![
@@ -233,7 +233,7 @@ fn test_random_access_patterns() {
 fn test_read_beyond_end() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 4096, 0x77);
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -252,7 +252,7 @@ fn test_read_beyond_end() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     // Read starting beyond end should return empty
     let data = snapshot.read_at(SnapshotStream::Disk, 10000, 1000).unwrap();
@@ -268,7 +268,7 @@ fn test_read_beyond_end() {
 fn test_empty_snapshot() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 0, 0);
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -287,7 +287,7 @@ fn test_empty_snapshot() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     assert_eq!(snapshot.size(SnapshotStream::Disk), 0);
 
@@ -300,7 +300,7 @@ fn test_empty_snapshot() {
 fn test_small_snapshot() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 512, 0x88);
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -319,7 +319,7 @@ fn test_small_snapshot() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     assert_eq!(snapshot.size(SnapshotStream::Disk), 512);
 
@@ -334,7 +334,7 @@ fn test_small_snapshot() {
 fn test_pack_with_zstd_level1() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 1024 * 1024, 0x42);
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -353,7 +353,7 @@ fn test_pack_with_zstd_level1() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(ZstdCompressor::new(1, None));
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     assert_eq!(snapshot.size(SnapshotStream::Disk), 1024 * 1024);
     let data = snapshot.read_at(SnapshotStream::Disk, 0, 4096).unwrap();
@@ -364,7 +364,7 @@ fn test_pack_with_zstd_level1() {
 fn test_pack_with_zstd_level9() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 512 * 1024, 0xAB);
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -383,7 +383,7 @@ fn test_pack_with_zstd_level9() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(ZstdCompressor::new(9, None));
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     let data = snapshot.read_at(SnapshotStream::Disk, 0, 512).unwrap();
     assert_eq!(data.len(), 512);
@@ -404,7 +404,7 @@ fn test_pack_with_zstd_dictionary() {
     }
     drop(file);
 
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -432,7 +432,7 @@ fn test_pack_with_zstd_dictionary() {
 fn test_pack_with_4kb_blocks() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 256 * 1024, 0x11);
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -451,7 +451,7 @@ fn test_pack_with_4kb_blocks() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     let data = snapshot
         .read_at(SnapshotStream::Disk, 0, 256 * 1024)
@@ -463,7 +463,7 @@ fn test_pack_with_4kb_blocks() {
 fn test_pack_with_256kb_blocks() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 2 * 1024 * 1024, 0x22);
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -482,7 +482,7 @@ fn test_pack_with_256kb_blocks() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     assert_eq!(snapshot.size(SnapshotStream::Disk), 2 * 1024 * 1024);
 }
@@ -491,7 +491,7 @@ fn test_pack_with_256kb_blocks() {
 fn test_pack_with_1mb_blocks() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 5 * 1024 * 1024, 0x33);
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -510,7 +510,7 @@ fn test_pack_with_1mb_blocks() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     let data = snapshot
         .read_at(SnapshotStream::Disk, 2 * 1024 * 1024, 1024)
@@ -528,7 +528,7 @@ fn test_pack_random_data() {
     let random_data = create_random_data(512 * 1024);
     fs::write(&disk_path, &random_data).unwrap();
 
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -547,7 +547,7 @@ fn test_pack_random_data() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     let data = snapshot
         .read_at(SnapshotStream::Disk, 0, 512 * 1024)
@@ -563,7 +563,7 @@ fn test_pack_sparse_data() {
     let sparse_data = create_sparse_data(1024 * 1024, 0.95); // 95% zeros
     fs::write(&disk_path, &sparse_data).unwrap();
 
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -582,7 +582,7 @@ fn test_pack_sparse_data() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(ZstdCompressor::new(3, None));
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     let data = snapshot
         .read_at(SnapshotStream::Disk, 0, 1024 * 1024)
@@ -598,7 +598,7 @@ fn test_pack_structured_data() {
     let structured_data = create_structured_data(512 * 1024, 1024);
     fs::write(&disk_path, &structured_data).unwrap();
 
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -617,7 +617,7 @@ fn test_pack_structured_data() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(ZstdCompressor::new(3, None));
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     let data = snapshot
         .read_at(SnapshotStream::Disk, 100000, 10000)
@@ -631,7 +631,7 @@ fn test_pack_structured_data() {
 fn test_pack_10mb_file() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 10 * 1024 * 1024, 0x99);
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -650,7 +650,7 @@ fn test_pack_10mb_file() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     assert_eq!(snapshot.size(SnapshotStream::Disk), 10 * 1024 * 1024);
 
@@ -670,7 +670,7 @@ fn test_pack_10mb_file() {
 fn test_pack_100mb_file() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 100 * 1024 * 1024, 0xAA);
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -689,7 +689,7 @@ fn test_pack_100mb_file() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     assert_eq!(snapshot.size(SnapshotStream::Disk), 100 * 1024 * 1024);
 }
@@ -704,7 +704,7 @@ fn test_sequential_reads_full_file() {
     let test_data = create_random_data(512 * 1024);
     fs::write(&disk_path, &test_data).unwrap();
 
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -723,7 +723,7 @@ fn test_sequential_reads_full_file() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     // Read entire file sequentially in 64KB chunks
     let mut reconstructed = Vec::new();
@@ -751,7 +751,7 @@ fn test_pack_large_disk_small_memory() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 2 * 1024 * 1024, 0xDD);
     let memory_path = create_test_file(&temp_dir, "memory.dump", 64 * 1024, 0xCC);
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -770,7 +770,7 @@ fn test_pack_large_disk_small_memory() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     assert_eq!(snapshot.size(SnapshotStream::Disk), 2 * 1024 * 1024);
     assert_eq!(snapshot.size(SnapshotStream::Memory), 64 * 1024);
@@ -781,7 +781,7 @@ fn test_pack_equal_disk_and_memory() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 1024 * 1024, 0xEE);
     let memory_path = create_test_file(&temp_dir, "memory.dump", 1024 * 1024, 0xFF);
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -800,7 +800,7 @@ fn test_pack_equal_disk_and_memory() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     let disk_data = snapshot.read_at(SnapshotStream::Disk, 0, 1024).unwrap();
     let mem_data = snapshot.read_at(SnapshotStream::Memory, 0, 1024).unwrap();
@@ -815,7 +815,7 @@ fn test_pack_equal_disk_and_memory() {
 fn test_compression_ratio_zeros() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 1024 * 1024, 0x00);
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path.clone()),
@@ -849,7 +849,7 @@ fn test_compression_ratio_zeros() {
 fn test_pack_file_not_multiple_of_block_size() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 100000, 0xBB); // Not a multiple of 65536
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -868,7 +868,7 @@ fn test_pack_file_not_multiple_of_block_size() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     assert_eq!(snapshot.size(SnapshotStream::Disk), 100000);
     let data = snapshot.read_at(SnapshotStream::Disk, 0, 100000).unwrap();
@@ -879,7 +879,7 @@ fn test_pack_file_not_multiple_of_block_size() {
 fn test_pack_single_block_file() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 32768, 0xCC); // Half a block
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -898,7 +898,7 @@ fn test_pack_single_block_file() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     let data = snapshot.read_at(SnapshotStream::Disk, 0, 32768).unwrap();
     assert!(data.iter().all(|&b| b == 0xCC));
@@ -917,7 +917,7 @@ fn test_pack_verify_all_patterns() {
     }
     drop(file);
 
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -936,7 +936,7 @@ fn test_pack_verify_all_patterns() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     // Verify each block
     for i in 0..8 {
@@ -956,7 +956,7 @@ fn test_pack_verify_all_patterns() {
 fn test_read_at_into_uninit_matches_read_at() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 1024 * 1024, 0x42);
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -974,7 +974,7 @@ fn test_read_at_into_uninit_matches_read_at() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     let cases = [(0u64, 4096), (0, 0), (512 * 1024, 8192), (100, 100)];
     for (offset, len) in cases {
@@ -1002,7 +1002,7 @@ fn test_read_at_into_uninit_matches_read_at() {
 fn test_read_at_into_uninit_edge_cases() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 4096, 0xAB);
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -1020,7 +1020,7 @@ fn test_read_at_into_uninit_edge_cases() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     // Empty buffer: must not crash
     let mut uninit_empty: [std::mem::MaybeUninit<u8>; 0] = [];
@@ -1054,7 +1054,7 @@ fn test_read_at_into_uninit_edge_cases() {
 fn test_read_at_into_uninit_bytes_matches_read_at() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 8192, 0xCD);
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -1072,7 +1072,7 @@ fn test_read_at_into_uninit_bytes_matches_read_at() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     let expected = snapshot.read_at(SnapshotStream::Disk, 100, 200).unwrap();
     let mut buf = vec![0xFFu8; 200]; // dirty buffer
@@ -1089,7 +1089,7 @@ fn test_read_at_into_uninit_bytes_matches_read_at() {
 fn test_parallel_read_consistency() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 512 * 1024, 0x42);
-    let output_path = temp_dir.path().join("snapshot.st");
+    let output_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -1107,7 +1107,7 @@ fn test_parallel_read_consistency() {
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = StrataFile::new(backend, compressor, None).unwrap();
+    let snapshot = File::new(backend, compressor, None).unwrap();
 
     // Multi-block read: offset and length chosen to span several 64K blocks
     let cases = [

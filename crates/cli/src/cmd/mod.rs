@@ -1,13 +1,13 @@
-//! Command handlers for the Strata CLI.
+//! Command handlers for the Hexz CLI.
 //!
 //! This module organizes all CLI subcommands into logical groups following a
-//! **Noun-Verb hierarchy** (e.g., `strata data pack`, `strata vm boot`). Each
+//! **Noun-Verb hierarchy** (e.g., `hexz data pack`, `hexz vm boot`). Each
 //! submodule contains the implementation logic for its respective commands.
 //!
 //! # Architecture
 //!
 //! ```text
-//! strata <CATEGORY> <ACTION> [OPTIONS]
+//! hexz <CATEGORY> <ACTION> [OPTIONS]
 //!        ^^^^^^^^^^  ^^^^^^
 //!        module      function
 //! ```

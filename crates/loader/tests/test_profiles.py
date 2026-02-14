@@ -1,5 +1,5 @@
 """
-Tests for profile-based snapshot building in strata.profiles.
+Tests for profile-based snapshot building in hexz.profiles.
 
 This module tests the uncovered functionality in profiles.py:
 - build() with file source
@@ -12,7 +12,7 @@ This module tests the uncovered functionality in profiles.py:
 import pytest
 import tempfile
 import os
-import strata
+import hexz
 
 
 def test_build_with_file_source():
@@ -23,10 +23,10 @@ def test_build_with_file_source():
         with open(input_file, "wb") as f:
             f.write(b"test data" * 1000)
 
-        output_file = os.path.join(tmpdir, "output.st")
+        output_file = os.path.join(tmpdir, "output.hxz")
 
         # Build snapshot from single file
-        meta = strata.build(input_file, output_file, profile="generic")
+        meta = hexz.build(input_file, output_file, profile="generic")
 
         assert meta is not None
         assert meta.size_compressed > 0
@@ -45,10 +45,10 @@ def test_build_with_directory_source():
             with open(file_path, "wb") as f:
                 f.write(b"data" * 100)
 
-        output_file = os.path.join(tmpdir, "output.st")
+        output_file = os.path.join(tmpdir, "output.hxz")
 
         # Build snapshot from directory
-        meta = strata.build(test_dir, output_file, profile="ml")
+        meta = hexz.build(test_dir, output_file, profile="ml")
 
         assert meta is not None
         assert meta.size_compressed > 0
@@ -58,11 +58,11 @@ def test_build_with_directory_source():
 def test_build_invalid_source():
     """Test ValidationError on non-existent source."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        output_file = os.path.join(tmpdir, "output.st")
+        output_file = os.path.join(tmpdir, "output.hxz")
         nonexistent = os.path.join(tmpdir, "nonexistent")
 
-        with pytest.raises(strata.ValidationError, match="Source not found"):
-            strata.build(nonexistent, output_file)
+        with pytest.raises(hexz.ValidationError, match="Source not found"):
+            hexz.build(nonexistent, output_file)
 
 
 def test_build_with_profile_overrides():
@@ -72,10 +72,10 @@ def test_build_with_profile_overrides():
         with open(input_file, "wb") as f:
             f.write(b"test data" * 500)
 
-        output_file = os.path.join(tmpdir, "output.st")
+        output_file = os.path.join(tmpdir, "output.hxz")
 
         # Build with profile and overrides
-        meta = strata.build(
+        meta = hexz.build(
             input_file,
             output_file,
             profile="generic",
@@ -94,9 +94,9 @@ def test_build_ml_profile():
         with open(input_file, "wb") as f:
             f.write(b"x" * 10000)
 
-        output_file = os.path.join(tmpdir, "dataset.st")
+        output_file = os.path.join(tmpdir, "dataset.hxz")
 
-        meta = strata.build(input_file, output_file, profile="ml")
+        meta = hexz.build(input_file, output_file, profile="ml")
 
         assert meta is not None
         assert meta.version == 1
@@ -109,9 +109,9 @@ def test_build_eda_profile():
         with open(input_file, "wb") as f:
             f.write(b"y" * 10000)
 
-        output_file = os.path.join(tmpdir, "data.st")
+        output_file = os.path.join(tmpdir, "data.hxz")
 
-        meta = strata.build(input_file, output_file, profile="eda")
+        meta = hexz.build(input_file, output_file, profile="eda")
 
         assert meta is not None
         assert meta.version == 1
@@ -124,9 +124,9 @@ def test_build_embedded_profile():
         with open(input_file, "wb") as f:
             f.write(b"z" * 5000)
 
-        output_file = os.path.join(tmpdir, "firmware.st")
+        output_file = os.path.join(tmpdir, "firmware.hxz")
 
-        meta = strata.build(input_file, output_file, profile="embedded")
+        meta = hexz.build(input_file, output_file, profile="embedded")
 
         assert meta is not None
         assert meta.version == 1
@@ -139,9 +139,9 @@ def test_build_archival_profile():
         with open(input_file, "wb") as f:
             f.write(b"a" * 10000)
 
-        output_file = os.path.join(tmpdir, "archive.st")
+        output_file = os.path.join(tmpdir, "archive.hxz")
 
-        meta = strata.build(input_file, output_file, profile="archival")
+        meta = hexz.build(input_file, output_file, profile="archival")
 
         assert meta is not None
         assert meta.version == 1
@@ -154,9 +154,9 @@ def test_build_generic_profile():
         with open(input_file, "wb") as f:
             f.write(b"b" * 8000)
 
-        output_file = os.path.join(tmpdir, "generic.st")
+        output_file = os.path.join(tmpdir, "generic.hxz")
 
-        meta = strata.build(input_file, output_file, profile="generic")
+        meta = hexz.build(input_file, output_file, profile="generic")
 
         assert meta is not None
         assert meta.version == 1
@@ -169,10 +169,10 @@ def test_build_default_profile():
         with open(input_file, "wb") as f:
             f.write(b"c" * 6000)
 
-        output_file = os.path.join(tmpdir, "default.st")
+        output_file = os.path.join(tmpdir, "default.hxz")
 
         # Should use default profile (generic)
-        meta = strata.build(input_file, output_file)
+        meta = hexz.build(input_file, output_file)
 
         assert meta is not None
         assert meta.version == 1
@@ -186,14 +186,14 @@ def test_build_creates_valid_snapshot():
         with open(input_file, "wb") as f:
             f.write(test_data)
 
-        output_file = os.path.join(tmpdir, "output.st")
+        output_file = os.path.join(tmpdir, "output.hxz")
 
-        meta = strata.build(input_file, output_file, profile="ml")
+        meta = hexz.build(input_file, output_file, profile="ml")
 
         assert meta is not None
 
         # Verify the snapshot can be read
-        reader = strata.Reader(output_file)
+        reader = hexz.Reader(output_file)
         assert reader.metadata.disk_size == len(test_data)
 
         # Read and verify data
@@ -208,10 +208,10 @@ def test_build_with_cdc_override():
         with open(input_file, "wb") as f:
             f.write(b"d" * 20000)
 
-        output_file = os.path.join(tmpdir, "output.st")
+        output_file = os.path.join(tmpdir, "output.hxz")
 
         # Enable CDC via override
-        meta = strata.build(
+        meta = hexz.build(
             input_file,
             output_file,
             profile="generic",

@@ -6,13 +6,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../../scripts/lib/common.sh"
 
 PROJECT_ROOT="$(get_project_root)"
-BIN="${BIN:-$PROJECT_ROOT/target/release/strata}"
+BIN="${BIN:-$PROJECT_ROOT/target/release/hexz}"
 
 # Default size 1GB
 SIZE_GB=${1:-1}
 
 DATA_FILE="test_dump_${SIZE_GB}GB.bin"
-SNAP_FILE="test_dump_${SIZE_GB}GB.st"
+SNAP_FILE="test_dump_${SIZE_GB}GB.hxz"
 MOUNT_DIR="mnt_large_test"
 RESTORE_FILE="test_dump_${SIZE_GB}GB.restored"
 
@@ -28,7 +28,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-info "=== Strata Large Scale Benchmark ==="
+info "=== Hexz Large Scale Benchmark ==="
 info "Target Size: ${SIZE_GB} GB"
 
 # 1. Build

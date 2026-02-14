@@ -1,11 +1,11 @@
-# Strata Development Roadmap
+# Hexz Development Roadmap
 
 > **Last Updated:** 2026-02-08
 > **Status:** Core refactoring complete. Ready for production hardening and feature expansion.
 
 ## Project Status
 
-Strata has completed major architectural refactoring and is now a modular, well-documented system with:
+Hexz has completed major architectural refactoring and is now a modular, well-documented system with:
 - Clean separation between core engine, storage backends, and interfaces
 - Python bindings for ML data loading
 - CLI tool with nested subcommands
@@ -104,10 +104,10 @@ Strata has completed major architectural refactoring and is now a modular, well-
 - [ ] **DCAM Parameter Tuning**
   - Implement automatic parameter selection
   - Add dry-run mode to estimate savings before packing
-  - CLI command: `strata analyze <input> --estimate-savings`
+  - CLI command: `hexz analyze <input> --estimate-savings`
 
 - [ ] **Dedup Statistics**
-  - Show deduplication ratio in `strata inspect`
+  - Show deduplication ratio in `hexz inspect`
   - Track per-block dedup hits during reads
   - Generate dedup efficiency reports
 
@@ -167,7 +167,7 @@ Strata has completed major architectural refactoring and is now a modular, well-
 
 - [ ] **Hugging Face Datasets**
   - Plugin for `datasets` library
-  - Enable streaming HF datasets via Strata
+  - Enable streaming HF datasets via Hexz
 
 #### Cloud Backend Expansion
 - [ ] **Azure Blob Storage Backend**
@@ -191,14 +191,14 @@ Strata has completed major architectural refactoring and is now a modular, well-
   - Live progress monitoring
 
 - [ ] **Data Migration Tools**
-  - `strata convert tar <input> <output>` - Convert tar archives
-  - `strata convert hdf5 <input> <output>` - Convert HDF5 files
-  - `strata convert webdataset <input> <output>` - Convert WebDataset shards
+  - `hexz convert tar <input> <output>` - Convert tar archives
+  - `hexz convert hdf5 <input> <output>` - Convert HDF5 files
+  - `hexz convert webdataset <input> <output>` - Convert WebDataset shards
 
 - [ ] **Snapshot Management**
-  - `strata diff <snap1> <snap2>` - Compare snapshots
-  - `strata merge <snap1> <snap2> <output>` - Merge snapshots
-  - `strata repair <snapshot>` - Repair corrupted snapshots
+  - `hexz diff <snap1> <snap2>` - Compare snapshots
+  - `hexz merge <snap1> <snap2> <output>` - Merge snapshots
+  - `hexz repair <snapshot>` - Repair corrupted snapshots
 
 ### Advanced Features
 
@@ -276,7 +276,7 @@ Strata has completed major architectural refactoring and is now a modular, well-
 - Learned index structures for faster lookup
 - Adaptive algorithms based on dataset characteristics
 
-#### Distributed Strata
+#### Distributed Hexz
 - Multi-writer coordination
 - Distributed caching
 - Global deduplication across machines
@@ -303,7 +303,7 @@ Strata has completed major architectural refactoring and is now a modular, well-
 - [ ] Video demonstrations
 
 ### Long-Term
-- [ ] Build community around Strata
+- [ ] Build community around Hexz
 - [ ] Commercial support options
 - [ ] Managed hosting service
 - [ ] Enterprise features

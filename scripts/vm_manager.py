@@ -13,10 +13,10 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     datefmt="%H:%M:%S",
 )
-logger = logging.getLogger("strata_vm")
+logger = logging.getLogger("hexz_vm")
 
 
-class StrataVMManager:
+class VMManager:
     def __init__(
         self, binary_path: Optional[str] = None, workspace_root: Optional[str] = None
     ):
@@ -30,7 +30,7 @@ class StrataVMManager:
         self.output_dir.mkdir(exist_ok=True)
 
     def _find_binary(self, custom_path: Optional[str]) -> Path:
-        """Locate the strata binary."""
+        """Locate the hexz binary."""
         if custom_path:
             path = Path(custom_path)
             if path.exists() and os.access(path, os.X_OK):
@@ -38,17 +38,17 @@ class StrataVMManager:
             raise FileNotFoundError(f"Custom binary not found at {custom_path}")
 
         # Check cargo target directory
-        target_release = self.workspace_root / "target" / "release" / "strata"
+        target_release = self.workspace_root / "target" / "release" / "hexz"
         if target_release.exists():
             return target_release
 
         # Check PATH
-        which_bin = shutil.which("strata")
+        which_bin = shutil.which("hexz")
         if which_bin:
             return Path(which_bin)
 
         raise FileNotFoundError(
-            "Could not find 'strata' binary. Please run 'cargo build --release' or provide --binary-path."
+            "Could not find 'hexz' binary. Please run 'cargo build --release' or provide --binary-path."
         )
 
     def download_ubuntu(self, iso_name: str = "ubuntu-22.04.5-desktop-amd64.iso"):
@@ -84,11 +84,11 @@ class StrataVMManager:
         iso_path: Path,
         disk_size: str = "10G",
         ram: str = "2G",
-        output_name: str = "ubuntu.st",
+        output_name: str = "ubuntu.hxz",
         gui: bool = False,
         keep_iso: bool = False,
     ):
-        """Run strata install."""
+        """Run hexz install."""
         output_name = os.path.basename(output_name)
         output_path = self.output_dir / output_name
 
@@ -137,7 +137,7 @@ class StrataVMManager:
         gui: bool = False,
         network: bool = True,
     ):
-        """Run strata boot."""
+        """Run hexz boot."""
         if not snapshot_path.exists():
             logger.error(f"Snapshot not found: {snapshot_path}")
             sys.exit(1)
@@ -169,7 +169,7 @@ class StrataVMManager:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Strata VM Automation Script")
+    parser = argparse.ArgumentParser(description="Hexz VM Automation Script")
     parser.add_argument(
         "action", choices=["install", "boot", "all"], help="Action to perform"
     )
@@ -178,8 +178,8 @@ def main():
     )
     parser.add_argument("--disk-size", default="10G", help="Disk size (e.g., 10G)")
     parser.add_argument("--ram", default="2G", help="RAM size (e.g., 2G)")
-    parser.add_argument("--snapshot", default="ubuntu.st", help="Snapshot filename")
-    parser.add_argument("--binary", help="Path to strata binary")
+    parser.add_argument("--snapshot", default="ubuntu.hxz", help="Snapshot filename")
+    parser.add_argument("--binary", help="Path to hexz binary")
     parser.add_argument(
         "--gui", action="store_true", help="Enable GUI (disable --no-graphics)"
     )
@@ -190,7 +190,7 @@ def main():
 
     args = parser.parse_args()
 
-    manager = StrataVMManager(binary_path=args.binary)
+    manager = VMManager(binary_path=args.binary)
 
     if args.action in ["install", "all"]:
         iso_path = manager.download_ubuntu(args.iso)

@@ -1,6 +1,6 @@
 //! High-level snapshot packing operations.
 //!
-//! This module implements the core business logic for creating Strata snapshot files
+//! This module implements the core business logic for creating Hexz snapshot files
 //! from raw disk and memory images. It orchestrates a multi-stage pipeline that
 //! transforms raw input data into compressed, indexed, and optionally encrypted
 //! snapshot files optimized for fast random access and deduplication.
@@ -72,7 +72,7 @@
 //! │ Stage 4: Header Writing                                              │
 //! │                                                                      │
 //! │  - Seek to file start (reserved 512 bytes)                          │
-//! │  - Write StrataHeader with format metadata                          │
+//! │  - Write Header with format metadata                          │
 //! │  - Includes: compression type, encryption params, index offset      │
 //! │  - Flush to ensure atomicity                                        │
 //! └─────────────────────────────────────────────────────────────────────┘
@@ -152,8 +152,8 @@
 //!
 //! This module is designed to be called from multiple contexts:
 //!
-//! - **CLI Commands**: `strata data pack` (with terminal progress bars)
-//! - **Python Bindings**: `strata.pack()` (with optional callbacks)
+//! - **CLI Commands**: `hexz data pack` (with terminal progress bars)
+//! - **Python Bindings**: `hexz.pack()` (with optional callbacks)
 //! - **Rust Applications**: Direct API usage for embedded scenarios
 //!
 //! By keeping pack operations separate from UI/CLI code, we avoid pulling in
@@ -164,14 +164,14 @@
 //! ## Basic Packing (LZ4, No Encryption)
 //!
 //! ```no_run
-//! use strata_core::ops::pack::{pack_snapshot, PackConfig};
+//! use hexz_core::ops::pack::{pack_snapshot, PackConfig};
 //! use std::path::PathBuf;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = PackConfig {
 //!     disk: Some(PathBuf::from("disk.raw")),
 //!     memory: None,
-//!     output: PathBuf::from("snapshot.st"),
+//!     output: PathBuf::from("snapshot.hxz"),
 //!     compression: "lz4".to_string(),
 //!     ..Default::default()
 //! };
@@ -184,13 +184,13 @@
 //! ## Advanced Packing (Zstd with Dictionary, CDC, Encryption)
 //!
 //! ```no_run
-//! use strata_core::ops::pack::{pack_snapshot, PackConfig};
+//! use hexz_core::ops::pack::{pack_snapshot, PackConfig};
 //! use std::path::PathBuf;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = PackConfig {
 //!     disk: Some(PathBuf::from("ubuntu.qcow2")),
-//!     output: PathBuf::from("ubuntu.st"),
+//!     output: PathBuf::from("ubuntu.hxz"),
 //!     compression: "zstd".to_string(),
 //!     train_dict: true,         // Train dictionary for better ratio
 //!     cdc_enabled: true,        // Content-defined chunking
@@ -210,13 +210,13 @@
 //! ## Progress Reporting
 //!
 //! ```no_run
-//! use strata_core::ops::pack::{pack_snapshot, PackConfig};
+//! use hexz_core::ops::pack::{pack_snapshot, PackConfig};
 //! use std::path::PathBuf;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = PackConfig {
 //!     disk: Some(PathBuf::from("disk.raw")),
-//!     output: PathBuf::from("snapshot.st"),
+//!     output: PathBuf::from("snapshot.hxz"),
 //!     ..Default::default()
 //! };
 //!
@@ -266,21 +266,21 @@
 //! For production use cases requiring atomicity, write to a temporary file and
 //! perform an atomic rename after successful completion.
 
+use hexz_common::constants::{DEFAULT_ZSTD_LEVEL, DICT_TRAINING_SIZE, ENTROPY_THRESHOLD};
+use hexz_common::crypto::KeyDerivationParams;
+use hexz_common::{Error, Result};
 use sha2::Digest;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use strata_common::constants::{DEFAULT_ZSTD_LEVEL, DICT_TRAINING_SIZE, ENTROPY_THRESHOLD};
-use strata_common::crypto::KeyDerivationParams;
-use strata_common::{Result, StrataError};
 
 use crate::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
 use crate::algo::dedup::cdc::StreamChunker;
 use crate::algo::dedup::dcam::DedupeParams;
 use crate::algo::encryption::{Encryptor, aes_gcm::AesGcmEncryptor};
 use crate::format::{
-    header::{CompressionType, FeatureFlags, StrataHeader},
+    header::{CompressionType, FeatureFlags, Header},
     index::{BlockInfo, ENTRIES_PER_PAGE, IndexPage, MasterIndex, PageEntry},
     magic::{FORMAT_VERSION, HEADER_SIZE, MAGIC_BYTES},
 };
@@ -293,20 +293,20 @@ use crate::format::{
 /// # Examples
 ///
 /// ```
-/// use strata_core::ops::pack::PackConfig;
+/// use hexz_core::ops::pack::PackConfig;
 /// use std::path::PathBuf;
 ///
 /// // Basic configuration with defaults
 /// let config = PackConfig {
 ///     disk: Some(PathBuf::from("disk.img")),
-///     output: PathBuf::from("snapshot.st"),
+///     output: PathBuf::from("snapshot.hxz"),
 ///     ..Default::default()
 /// };
 ///
 /// // Advanced configuration with CDC and encryption
 /// let advanced = PackConfig {
 ///     disk: Some(PathBuf::from("disk.img")),
-///     output: PathBuf::from("snapshot.st"),
+///     output: PathBuf::from("snapshot.hxz"),
 ///     compression: "zstd".to_string(),
 ///     encrypt: true,
 ///     password: Some("secret".to_string()),
@@ -350,7 +350,7 @@ impl Default for PackConfig {
         Self {
             disk: None,
             memory: None,
-            output: PathBuf::from("output.st"),
+            output: PathBuf::from("output.hxz"),
             compression: "lz4".to_string(),
             encrypt: false,
             password: None,
@@ -395,7 +395,7 @@ impl Default for PackConfig {
 /// # Examples
 ///
 /// ```
-/// # use strata_core::ops::pack::calculate_entropy;
+/// # use hexz_core::ops::pack::calculate_entropy;
 /// // Homogeneous data (low entropy)
 /// let zeros = vec![0u8; 1024];
 /// let entropy = calculate_entropy(&zeros);
@@ -489,7 +489,7 @@ impl<R: Read> Iterator for FixedChunker<R> {
 
 /// Packs a snapshot file from disk and/or memory images.
 ///
-/// This is the main entry point for creating Strata snapshot files. It orchestrates
+/// This is the main entry point for creating Hexz snapshot files. It orchestrates
 /// the complete packing pipeline: dictionary training, stream processing, index
 /// building, and header finalization.
 ///
@@ -518,9 +518,9 @@ impl<R: Read> Iterator for FixedChunker<R> {
 /// # Returns
 ///
 /// - `Ok(())`: Snapshot packed successfully
-/// - `Err(StrataError::Io)`: I/O error (file access, disk full, permission denied)
-/// - `Err(StrataError::Compression)`: Compression error (unlikely, usually indicates invalid state)
-/// - `Err(StrataError::Encryption)`: Encryption error (invalid password format, crypto failure)
+/// - `Err(Error::Io)`: I/O error (file access, disk full, permission denied)
+/// - `Err(Error::Compression)`: Compression error (unlikely, usually indicates invalid state)
+/// - `Err(Error::Encryption)`: Encryption error (invalid password format, crypto failure)
 ///
 /// # Errors
 ///
@@ -551,13 +551,13 @@ impl<R: Read> Iterator for FixedChunker<R> {
 /// ## Basic Usage
 ///
 /// ```no_run
-/// use strata_core::ops::pack::{pack_snapshot, PackConfig};
+/// use hexz_core::ops::pack::{pack_snapshot, PackConfig};
 /// use std::path::PathBuf;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = PackConfig {
 ///     disk: Some(PathBuf::from("disk.raw")),
-///     output: PathBuf::from("snapshot.st"),
+///     output: PathBuf::from("snapshot.hxz"),
 ///     ..Default::default()
 /// };
 ///
@@ -569,13 +569,13 @@ impl<R: Read> Iterator for FixedChunker<R> {
 /// ## With Progress Reporting
 ///
 /// ```no_run
-/// use strata_core::ops::pack::{pack_snapshot, PackConfig};
+/// use hexz_core::ops::pack::{pack_snapshot, PackConfig};
 /// use std::path::PathBuf;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = PackConfig {
 ///     disk: Some(PathBuf::from("ubuntu.qcow2")),
-///     output: PathBuf::from("ubuntu.st"),
+///     output: PathBuf::from("ubuntu.hxz"),
 ///     compression: "zstd".to_string(),
 ///     train_dict: true,
 ///     ..Default::default()
@@ -592,13 +592,13 @@ impl<R: Read> Iterator for FixedChunker<R> {
 /// ## Encrypted Snapshot
 ///
 /// ```no_run
-/// use strata_core::ops::pack::{pack_snapshot, PackConfig};
+/// use hexz_core::ops::pack::{pack_snapshot, PackConfig};
 /// use std::path::PathBuf;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = PackConfig {
 ///     disk: Some(PathBuf::from("sensitive.raw")),
-///     output: PathBuf::from("sensitive.st"),
+///     output: PathBuf::from("sensitive.hxz"),
 ///     encrypt: true,
 ///     password: Some("strong_passphrase".to_string()),
 ///     ..Default::default()
@@ -613,13 +613,13 @@ impl<R: Read> Iterator for FixedChunker<R> {
 /// ## Content-Defined Chunking for Deduplication
 ///
 /// ```no_run
-/// use strata_core::ops::pack::{pack_snapshot, PackConfig};
+/// use hexz_core::ops::pack::{pack_snapshot, PackConfig};
 /// use std::path::PathBuf;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = PackConfig {
 ///     disk: Some(PathBuf::from("incremental-backup.raw")),
-///     output: PathBuf::from("backup.st"),
+///     output: PathBuf::from("backup.hxz"),
 ///     cdc_enabled: true,
 ///     min_chunk: 16384,   // 16 KiB
 ///     avg_chunk: 65536,   // 64 KiB
@@ -652,7 +652,7 @@ impl<R: Read> Iterator for FixedChunker<R> {
 /// rename after success:
 ///
 /// ```no_run
-/// # use strata_core::ops::pack::{pack_snapshot, PackConfig};
+/// # use hexz_core::ops::pack::{pack_snapshot, PackConfig};
 /// # use std::path::PathBuf;
 /// # use std::fs;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -663,7 +663,7 @@ impl<R: Read> Iterator for FixedChunker<R> {
 /// };
 ///
 /// pack_snapshot::<fn(u64, u64)>(config.clone(), None)?;
-/// fs::rename("snapshot.st.tmp", "snapshot.st")?;
+/// fs::rename("snapshot.st.tmp", "snapshot.hxz")?;
 /// # Ok(())
 /// # }
 /// ```
@@ -682,7 +682,7 @@ where
 {
     // Validate inputs
     if config.disk.is_none() && config.memory.is_none() {
-        return Err(StrataError::Io(std::io::Error::new(
+        return Err(Error::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "At least one input (disk or memory) must be provided",
         )));
@@ -723,7 +723,7 @@ where
     // Initialize encryptor if requested
     let (encryptor, enc_header) = if config.encrypt {
         let password = config.password.clone().ok_or_else(|| {
-            StrataError::Io(std::io::Error::new(
+            Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "Password required for encryption",
             ))
@@ -779,7 +779,7 @@ where
     out.write_all(&index_bytes)?;
 
     // Write header
-    let header = StrataHeader {
+    let header = Header {
         magic: *MAGIC_BYTES,
         version: FORMAT_VERSION,
         block_size: config.block_size,
@@ -843,7 +843,7 @@ where
 /// # Returns
 ///
 /// - `Ok(Vec<u8>)`: Trained dictionary bytes (empty if training fails or no suitable samples)
-/// - `Err(StrataError)`: I/O error reading input file
+/// - `Err(Error)`: I/O error reading input file
 ///
 /// # Performance
 ///
@@ -980,7 +980,7 @@ fn train_dictionary(input_path: &Path, block_size: u32) -> Result<Vec<u8>> {
 /// # Returns
 ///
 /// - `Ok(())`: Stream processed successfully
-/// - `Err(StrataError)`: I/O error, compression error, or encryption error
+/// - `Err(Error)`: I/O error, compression error, or encryption error
 ///
 /// # Side Effects
 ///
@@ -1304,7 +1304,7 @@ mod tests {
     fn test_pack_config_clone() {
         let config1 = PackConfig {
             disk: Some(PathBuf::from("/dev/sda")),
-            output: PathBuf::from("output.st"),
+            output: PathBuf::from("output.hxz"),
             compression: "zstd".to_string(),
             encrypt: true,
             password: Some("secret".to_string()),

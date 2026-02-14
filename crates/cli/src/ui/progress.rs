@@ -22,7 +22,7 @@
 //! # Usage
 //!
 //! ```no_run
-//! use strata_cli::ui::progress::{create_progress_bar, create_spinner};
+//! use hexz_cli::ui::progress::{create_progress_bar, create_spinner};
 //!
 //! // Determinate operation
 //! let pb = create_progress_bar(1024 * 1024 * 100); // 100 MB
@@ -62,7 +62,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 /// # Example
 ///
 /// ```no_run
-/// # use strata_cli::ui::progress::create_progress_bar;
+/// # use hexz_cli::ui::progress::create_progress_bar;
 /// let file_size = 1024 * 1024 * 100; // 100 MB
 /// let pb = create_progress_bar(file_size);
 ///
@@ -106,7 +106,7 @@ pub fn create_progress_bar(total: u64) -> ProgressBar {
 /// # Example
 ///
 /// ```no_run
-/// # use strata_cli::ui::progress::create_spinner;
+/// # use hexz_cli::ui::progress::create_spinner;
 /// let sp = create_spinner("Initializing...");
 ///
 /// std::thread::sleep(std::time::Duration::from_millis(100));

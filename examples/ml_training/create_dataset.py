@@ -4,11 +4,11 @@ Script to create a dummy dataset for ML training example.
 
 import struct
 import numpy as np
-import strata
+import hexz
 from pathlib import Path
 
 
-def create_dummy_dataset(output_path: str = "dataset.st", num_items: int = 1000):
+def create_dummy_dataset(output_path: str = "dataset.hxz", num_items: int = 1000):
     print(f"Creating dummy dataset with {num_items} items...")
 
     # We will simulate variable length items (e.g. text or compressed images)
@@ -18,7 +18,7 @@ def create_dummy_dataset(output_path: str = "dataset.st", num_items: int = 1000)
     current_offset = 0
     index_entries = []
 
-    with strata.open(output_path, mode="w", packing="fast") as w:
+    with hexz.open(output_path, mode="w", packing="fast") as w:
         for i in range(num_items):
             size = np.random.randint(1024, 10240)
             data = np.random.bytes(size)

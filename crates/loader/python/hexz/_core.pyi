@@ -1,13 +1,13 @@
 """Type stubs for Rust-implemented core functionality.
 
-This file provides type hints for the _strata_core extension module
+This file provides type hints for the _hexz_core extension module
 implemented in Rust using PyO3.
 """
 
 from typing import Optional, Dict, Any
 
-class StrataReader:
-    """Low-level reader for Strata snapshots (Rust implementation)."""
+class Reader:
+    """Low-level reader for Hexz snapshots (Rust implementation)."""
 
     def __init__(
         self,
@@ -16,7 +16,7 @@ class StrataReader:
         endpoint_url: Optional[str] = None,
         allow_restricted: bool = False,
     ) -> None:
-        """Open a Strata snapshot for reading.
+        """Open a Hexz snapshot for reading.
 
         Args:
             path: Path or URL to the snapshot file
@@ -113,8 +113,8 @@ class StrataReader:
         """Support for pickle deserialization."""
         ...
 
-class AsyncStrataReader:
-    """Async reader for Strata snapshots (Rust implementation)."""
+class AsyncReader:
+    """Async reader for Hexz snapshots (Rust implementation)."""
 
     def __init__(
         self,
@@ -123,7 +123,7 @@ class AsyncStrataReader:
         endpoint_url: Optional[str] = None,
         allow_restricted: bool = False,
     ) -> None:
-        """Open a Strata snapshot for async reading.
+        """Open a Hexz snapshot for async reading.
 
         Args:
             path: Path or URL to the snapshot file
@@ -160,8 +160,8 @@ class AsyncStrataReader:
         """Async close the snapshot and release resources."""
         ...
 
-class StrataBuilder:
-    """Low-level builder for creating Strata snapshots (Rust implementation)."""
+class Builder:
+    """Low-level builder for creating Hexz snapshots (Rust implementation)."""
 
     def __init__(
         self,
@@ -223,7 +223,7 @@ def pack(
     avg_chunk: int = 65536,
     max_chunk: int = 131072,
 ) -> None:
-    """Pack a disk image into a Strata snapshot.
+    """Pack a disk image into a Hexz snapshot.
 
     Args:
         disk: Path to input disk image
@@ -239,7 +239,7 @@ def pack(
     ...
 
 def inspect(path: str) -> Dict[str, Any]:
-    """Inspect a Strata snapshot and return metadata.
+    """Inspect a Hexz snapshot and return metadata.
 
     Args:
         path: Path to .st file

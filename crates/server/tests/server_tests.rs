@@ -1,6 +1,6 @@
 //! Unit tests for server utilities (parse_range, constants).
 
-use strata_server::parse_range;
+use hexz_server::parse_range;
 
 #[test]
 fn test_parse_range_valid_bounded() {

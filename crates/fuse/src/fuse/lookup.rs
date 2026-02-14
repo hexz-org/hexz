@@ -45,24 +45,24 @@
 //! ## Mounting and Listing Directory Entries
 //!
 //! ```no_run
-//! use strata_core::StrataFile;
-//! use strata_core::store::local::FileBackend;
-//! use strata_core::algo::compression::lz4::Lz4Compressor;
-//! use strata_fuse::mount_fs;
+//! use hexz_core::File;
+//! use hexz_core::store::local::FileBackend;
+//! use hexz_core::algo::compression::lz4::Lz4Compressor;
+//! use hexz_fuse::mount_fs;
 //! use std::sync::Arc;
 //! use std::path::Path;
 //!
 //! # fn main() -> anyhow::Result<()> {
-//! let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+//! let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
 //! let compressor = Box::new(Lz4Compressor::new());
-//! let snap = StrataFile::new(backend, compressor, None)?;
+//! let snap = File::new(backend, compressor, None)?;
 //!
-//! mount_fs(snap, Path::new("/mnt/strata"), None, 1000, 1000)?;
+//! mount_fs(snap, Path::new("/mnt/hexz"), None, 1000, 1000)?;
 //! # Ok(())
 //! # }
 //! ```
 
-use super::{Strata, TTL};
+use super::{Hexz, TTL};
 use crate::vfs::InodeType;
 use fuser::{ReplyAttr, ReplyDirectory, ReplyEntry, Request};
 use libc::{EIO, ENOENT, EROFS};
@@ -110,13 +110,7 @@ use std::ffi::OsStr;
 /// - Time complexity: O(1) hash lookup in `InodeMap`
 /// - Typical latency: 50-100 nanoseconds
 /// - No I/O operations performed
-pub fn handle_lookup(
-    fs: &mut Strata,
-    _req: &Request,
-    parent: u64,
-    name: &OsStr,
-    reply: ReplyEntry,
-) {
+pub fn handle_lookup(fs: &mut Hexz, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
     if let Some(inode) = fs.inodes.lookup(parent, name) {
         let attr = fs.get_merged_attr(inode);
         reply.entry(&TTL, &attr, 0);
@@ -163,7 +157,7 @@ pub fn handle_lookup(
 /// # Examples
 ///
 /// ```text
-/// // stat /mnt/strata/disk with overlay enabled:
+/// // stat /mnt/hexz/disk with overlay enabled:
 /// // - Base snapshot: 10 GiB
 /// // - Overlay file: 12 GiB (after guest extended partition)
 /// // - Reported size: 12 GiB (overlay size wins)
@@ -173,7 +167,7 @@ pub fn handle_lookup(
 ///
 /// - Time complexity: O(1) + optional `fstat` on overlay file
 /// - Typical latency: 1-2 microseconds with overlay, 50-100 ns without
-pub fn handle_getattr(fs: &mut Strata, _req: &Request, ino: u64, reply: ReplyAttr) {
+pub fn handle_getattr(fs: &mut Hexz, _req: &Request, ino: u64, reply: ReplyAttr) {
     let attr = fs.get_merged_attr(ino);
     reply.attr(&TTL, &attr);
 }
@@ -233,7 +227,7 @@ pub fn handle_getattr(fs: &mut Strata, _req: &Request, ino: u64, reply: ReplyAtt
 ///
 /// ```text
 /// // Extend disk to 20 GiB:
-/// // $ truncate -s 20G /mnt/strata/disk
+/// // $ truncate -s 20G /mnt/hexz/disk
 /// // -> setattr(ino=2, size=Some(20*1024^3)) -> overlay.file.set_len(20G)
 /// ```
 ///
@@ -243,7 +237,7 @@ pub fn handle_getattr(fs: &mut Strata, _req: &Request, ino: u64, reply: ReplyAtt
 /// - Typical latency: 5-10 microseconds (depends on filesystem)
 #[allow(clippy::too_many_arguments)]
 pub fn handle_setattr(
-    fs: &mut Strata,
+    fs: &mut Hexz,
     _req: &Request,
     ino: u64,
     _mode: Option<u32>,
@@ -316,7 +310,7 @@ pub fn handle_setattr(
 /// # Examples
 ///
 /// ```text
-/// // $ ls /mnt/strata
+/// // $ ls /mnt/hexz
 /// // .  ..  disk  memory
 /// //
 /// // Internally:
@@ -329,7 +323,7 @@ pub fn handle_setattr(
 /// - Typical latency: < 1 microsecond
 /// - No I/O operations performed
 pub fn handle_readdir(
-    fs: &mut Strata,
+    fs: &mut Hexz,
     _req: &Request,
     ino: u64,
     _fh: u64,

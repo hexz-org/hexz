@@ -1,6 +1,6 @@
 # Deduplication Deep Dive
 
-Technical deep dive into Strata's deduplication system.
+Technical deep dive into Hexz's deduplication system.
 
 ## Deduplication Overview
 
@@ -159,7 +159,7 @@ Factors affecting deduplication ratio:
 
 **Hash before compression**: Lower dedup ratio (uncompressed data has less redundancy)
 
-**Hash after compression** (Strata's approach): Better dedup ratio (compressed data eliminates local redundancy, finds global duplicates)
+**Hash after compression** (Hexz's approach): Better dedup ratio (compressed data eliminates local redundancy, finds global duplicates)
 
 ## Performance Considerations
 
@@ -209,8 +209,8 @@ Deduplication reduces I/O:
 Packing multiple files separately creates separate snapshots:
 
 ```bash
-strata data pack --disk file1.bin --output snapshot1.st --cdc
-strata data pack --disk file2.bin --output snapshot2.st --cdc
+hexz data pack --disk file1.bin --output snapshot1.st --cdc
+hexz data pack --disk file2.bin --output snapshot2.st --cdc
 ```
 
 Even if file1 and file2 have identical content, no deduplication between snapshot1.st and snapshot2.st.
@@ -223,7 +223,7 @@ mkdir /tmp/combined
 cp file1.bin file2.bin /tmp/combined/
 
 # Pack directory (dedup within snapshot)
-strata data pack --disk /tmp/combined/ --output snapshot.st --cdc
+hexz data pack --disk /tmp/combined/ --output snapshot.st --cdc
 ```
 
 ### Thin Snapshots
@@ -231,7 +231,7 @@ strata data pack --disk /tmp/combined/ --output snapshot.st --cdc
 Thin snapshots reference parent snapshot:
 
 ```bash
-strata data pack --disk v2/ --output v2.st --parent v1.st --cdc
+hexz data pack --disk v2/ --output v2.st --parent v1.st --cdc
 ```
 
 **Limitation**: v2.st depends on v1.st existing at same path

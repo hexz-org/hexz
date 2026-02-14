@@ -1,11 +1,11 @@
 [package]
-name = "strata-common"
+name = "hexz-common"
 version = "0.1.0-alpha"
 edition = "2024"
 authors = ["Will McCallion"]
 license = "Apache-2.0"
-repository = "https://github.com/willmccallion/strata"
-description = "Common utilities and configuration for Strata"
+repository = "https://github.com/willmccallion/hexz"
+description = "Common utilities and configuration for Hexz"
 
 [dependencies]
 thiserror.workspace = true

@@ -1,18 +1,18 @@
-# Migrate from WebDataset to Strata
+# Migrate from WebDataset to Hexz
 
-**Goal**: Convert existing WebDataset tar shards to Strata snapshots for better performance and simpler management.
+**Goal**: Convert existing WebDataset tar shards to Hexz snapshots for better performance and simpler management.
 
 ## Prerequisites
 
 - Existing WebDataset tar shards
-- Strata CLI and Python package installed
+- Hexz CLI and Python package installed
 - Understanding of your current data layout
 
 ## Why Migrate
 
-WebDataset limitations that Strata solves:
+WebDataset limitations that Hexz solves:
 
-| Issue | WebDataset | Strata |
+| Issue | WebDataset | Hexz |
 |-------|-----------|--------|
 | File count | Thousands of tar shards | Single snapshot file |
 | True shuffling | Limited to within shards | Global shuffling supported |
@@ -24,7 +24,7 @@ WebDataset limitations that Strata solves:
 
 ### Strategy 1: Direct Conversion (Simple)
 
-Convert all tar files into a single Strata snapshot.
+Convert all tar files into a single Hexz snapshot.
 
 **Step 1: Extract tar shards to temporary directory**:
 ```bash
@@ -36,11 +36,11 @@ for shard in *.tar; do
 done
 ```
 
-**Step 2: Pack into Strata snapshot**:
+**Step 2: Pack into Hexz snapshot**:
 ```bash
-strata data pack \
+hexz data pack \
   --disk /tmp/webdataset_extracted \
-  --output dataset.st \
+  --output dataset.hxz \
   --compression zstd \
   --compression-level 9 \
   --cdc
@@ -48,7 +48,7 @@ strata data pack \
 
 **Step 3: Upload to S3 (if needed)**:
 ```bash
-aws s3 cp dataset.st s3://my-bucket/datasets/
+aws s3 cp dataset.hxz s3://my-bucket/datasets/
 ```
 
 **Step 4: Update training code**:
@@ -58,10 +58,10 @@ import webdataset as wds
 
 dataset = wds.WebDataset("s3://bucket/shards/shard-{000000..000999}.tar")
 
-# New Strata code
-import strata
+# New Hexz code
+import hexz
 
-dataset = strata.open("s3://bucket/datasets/dataset.st")
+dataset = hexz.open("s3://bucket/datasets/dataset.hxz")
 ```
 
 ### Strategy 2: Preserve Shard Structure (Compatibility)
@@ -74,9 +74,9 @@ for shard in shard-*.tar; do
     temp_dir=$(mktemp -d)
     tar -xf "$shard" -C "$temp_dir"
 
-    # Convert to Strata
-    output="${shard%.tar}.st"
-    strata data pack \
+    # Convert to Hexz
+    output="${shard%.tar}.hxz"
+    hexz data pack \
       --disk "$temp_dir" \
       --output "$output" \
       --compression lz4
@@ -89,11 +89,11 @@ done
 Then update code to use multiple snapshots:
 ```python
 import glob
-import strata
+import hexz
 
 # Load all shard snapshots
-shard_paths = glob.glob("shard-*.st")
-readers = [strata.open(path) for path in shard_paths]
+shard_paths = glob.glob("shard-*.hxz")
+readers = [hexz.open(path) for path in shard_paths]
 
 # Custom Dataset to handle multiple snapshots
 class MultiSnapshotDataset(torch.utils.data.Dataset):
@@ -122,14 +122,14 @@ Convert without extracting all data to disk.
 **Python script** (`convert_webdataset.py`):
 ```python
 import tarfile
-import strata
+import hexz
 import glob
 from tqdm import tqdm
 
-output_path = "dataset.st"
+output_path = "dataset.hxz"
 shard_pattern = "shard-*.tar"
 
-with strata.open(output_path, mode="w", compression="zstd", cdc=True) as writer:
+with hexz.open(output_path, mode="w", compression="zstd", cdc=True) as writer:
     for shard_path in tqdm(sorted(glob.glob(shard_pattern))):
         with tarfile.open(shard_path, "r") as tar:
             for member in tar.getmembers():
@@ -174,10 +174,10 @@ loader = torch.utils.data.DataLoader(
 )
 ```
 
-### After: Strata with Same Preprocessing
+### After: Hexz with Same Preprocessing
 
 ```python
-import strata
+import hexz
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
@@ -190,9 +190,9 @@ preproc = transforms.Compose([
                        std=[0.229, 0.224, 0.225])
 ])
 
-class StrataImageDataset(Dataset):
+class ImageDataset(Dataset):
     def __init__(self, snapshot_path, transform=None):
-        self.reader = strata.open(snapshot_path)
+        self.reader = hexz.open(snapshot_path)
         self.transform = transform
         # Build index (see tutorial for full implementation)
         self._build_index()
@@ -215,8 +215,8 @@ class StrataImageDataset(Dataset):
 
         return image, label
 
-dataset = StrataImageDataset(
-    "s3://bucket/datasets/dataset.st",
+dataset = ImageDataset(
+    "s3://bucket/datasets/dataset.hxz",
     transform=preproc
 )
 
@@ -232,7 +232,7 @@ loader = DataLoader(
 
 Benchmark on 1TB ImageNet dataset:
 
-| Metric | WebDataset (1000 shards) | Strata (single file) |
+| Metric | WebDataset (1000 shards) | Hexz (single file) |
 |--------|--------------------------|----------------------|
 | Files to manage | 1000 | 1 |
 | First epoch (S3) | 45 min | 38 min |
@@ -256,9 +256,9 @@ Benchmark on 1TB ImageNet dataset:
 
 ## Rollback Plan
 
-Keep WebDataset shards until confident in Strata migration:
+Keep WebDataset shards until confident in Hexz migration:
 
-1. Test Strata for 2-3 full training runs
+1. Test Hexz for 2-3 full training runs
 2. Compare validation metrics with WebDataset baseline
 3. Only delete WebDataset shards after validation
 
@@ -268,7 +268,7 @@ Keep WebDataset shards until confident in Strata migration:
 - Use streaming conversion (Strategy 3)
 - Process shards in batches
 
-**"Strata snapshot larger than expected"**:
+**"Hexz snapshot larger than expected"**:
 - Ensure `--cdc` flag is enabled for deduplication
 - Check if data is already compressed (JPEGs won't compress further)
 

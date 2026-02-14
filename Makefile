@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-#  Strata — Build, Test, and Release
+#  Hexz — Build, Test, and Release
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Run from repo root.  make help  for targets.
 #  Override tools:  CARGO=cargo, MATURIN=maturin  or put them in .make.env
@@ -11,7 +11,7 @@ SHELL           := /bin/bash
 
 # ── Paths & tools ─────────────────────────────────────────────────────────────
 LOADER_CRATE    := crates/loader
-BENCH_PACKAGE   := strata
+BENCH_PACKAGE   := hexz
 CRITERION_DIR   := target/criterion
 BENCH_STORE_DIR := .criterion
 BENCH_CMP_TMP   := _cmp
@@ -83,7 +83,7 @@ endif
 
 # ── Phony ────────────────────────────────────────────────────────────────────
 .PHONY: help build rust python develop install run clean
-.PHONY: test test-rust test-python test-integration test-list test-cov test-cov-rust test-cov-python
+.PHONY: test test-rust test-python test-integration test-list test-cov test-cov-rust test-cov-python mutants
 .PHONY: lint fmt fmt-check clippy deny check
 .PHONY: bench bench-list bench-compare save-baseline archive-baseline restore-baseline compare-baseline fuzz
 .PHONY: docker-dev docker-bench docs docs-python setup setup-check ci
@@ -93,13 +93,13 @@ endif
 # ═══════════════════════════════════════════════════════════════════════════════
 HELP_W := 35
 help:
-	@printf "\n$(BOLD)Strata$(RESET) — snapshot storage engine\n\n"
+	@printf "\n$(BOLD)Hexz$(RESET) — snapshot storage engine\n\n"
 	@printf "  $(CYAN)Build$(RESET)\n"
 	@printf "    %-$(HELP_W)s  Build Rust workspace + Python wheel (release)\n" "make build"
 	@printf "    %-$(HELP_W)s  Build Rust workspace only (release)\n" "make rust"
 	@printf "    %-$(HELP_W)s  Build Python extension wheel (dist)\n" "make python"
 	@printf "    %-$(HELP_W)s  Install Python extension (editable)\n" "make develop"
-	@printf "    %-$(HELP_W)s  Install strata CLI locally\n" "make install"
+	@printf "    %-$(HELP_W)s  Install hexz CLI locally\n" "make install"
 	@printf "    %-$(HELP_W)s  Run CLI; e.g. make run serve\n" "make run [args]"
 	@printf "\n  $(CYAN)Feature Selection$(RESET) (for build/develop/python targets)\n"
 	@printf "    %-$(HELP_W)s  Default features (s3, zstd, signing)\n" "make develop FEATURES=default"
@@ -114,6 +114,7 @@ help:
 	@printf "    %-$(HELP_W)s  Coverage report (Rust + Python)\n" "make test-cov"
 	@printf "    %-$(HELP_W)s  Rust coverage only (cargo-llvm-cov)\n" "make test-cov-rust"
 	@printf "    %-$(HELP_W)s  Python coverage only (pytest-cov)\n" "make test-cov-python"
+	@printf "    %-$(HELP_W)s  Mutation testing (cargo-mutants)\n" "make mutants"
 	@printf "\n  $(CYAN)Quality$(RESET)\n"
 	@printf "    %-$(HELP_W)s  Format check + clippy\n" "make lint"
 	@printf "    %-$(HELP_W)s  Auto-format Rust + Python\n" "make fmt"
@@ -175,7 +176,7 @@ else
 endif
 
 install:
-	@printf "$(GREEN)Installing strata CLI…$(RESET)\n"
+	@printf "$(GREEN)Installing hexz CLI…$(RESET)\n"
 	$(CARGO) install --path crates/cli
 
 run:
@@ -232,7 +233,7 @@ test-cov:
 	@printf "\n$(CYAN)[2/2] Running Python tests (may take a moment)…$(RESET)\n"
 	@cd $(LOADER_CRATE) && \
 		$(MATURIN) develop -q -E test,numpy >/dev/null 2>&1 && \
-		../../$(PYTHON) -m pytest tests/ --cov=python/strata --cov-report=term-missing --tb=no --color=yes -q -p no:warnings 2>&1 | \
+		../../$(PYTHON) -m pytest tests/ --cov=python/hexz --cov-report=term-missing --tb=no --color=yes -q -p no:warnings 2>&1 | \
 		sed '/^Requirement already satisfied/d; /^Collecting/d; /^Downloading/d; /^Installing/d; /^Successfully installed/d; /✏️/d; /^Ignoring/d; /^warnings summary/,/^-- Docs:/d' | \
 		awk 'BEGIN{in_cov=0} /^Name/ {in_cov=1} in_cov {print} /^TOTAL/ {in_cov=0; print ""; next} /passed|failed|error|skipped/ && !in_cov {print}'
 	@printf "\n$(GREEN)✓ Coverage complete$(RESET)\n"
@@ -255,9 +256,57 @@ test-cov-python:
 		$(MATURIN) develop -q -E test,numpy >/dev/null 2>&1
 	@printf "$(CYAN)Running Python tests (may take a moment)…$(RESET)\n"
 	@cd $(LOADER_CRATE) && \
-		../../$(PYTHON) -m pytest tests/ --cov=python/strata --cov-report=term-missing --tb=no --color=yes -q -p no:warnings 2>&1 | \
+		../../$(PYTHON) -m pytest tests/ --cov=python/hexz --cov-report=term-missing --tb=no --color=yes -q -p no:warnings 2>&1 | \
 		sed '/^Requirement already satisfied/d; /^Collecting/d; /^Downloading/d; /^Installing/d; /^Successfully installed/d; /✏️/d; /^Ignoring/d; /^warnings summary/,/^-- Docs:/d' | \
 		awk 'BEGIN{in_cov=0} /^Name/ {in_cov=1} in_cov {print} /^TOTAL/ {in_cov=0; print ""; next} /passed|failed|error|skipped/ && !in_cov {print}'
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Mutation Testing
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mutation testing inserts small changes (mutants) into your code to verify that
+# tests catch them. If a mutant survives (tests still pass), it indicates missing
+# or weak test coverage for that code path.
+#
+# Common mutants include:
+#   - Replacing == with !=, < with <=, + with -, etc.
+#   - Removing return values or replacing them with defaults
+#   - Skipping function bodies
+#
+# Output interpretation:
+#   - CAUGHT: Test failed on mutant (good - tests detected the change)
+#   - MISSED: Test passed on mutant (bad - tests didn't detect the change)
+#   - TIMEOUT: Mutant caused infinite loop or very slow execution
+#   - UNVIABLE: Mutant didn't compile (expected for type-safe mutations)
+#
+# Having some missed mutants is normal and acceptable:
+#   - Defensive code (redundant checks) may have missed mutants
+#   - Logging/debug code mutations often aren't caught
+#   - Error messages/formatting changes don't affect behavior
+#   - Some mutations create semantically equivalent code
+#
+# For Python-tested code (py_interface/, loader bindings):
+#   cargo-mutants only runs Rust tests, so it will show many missed mutants
+#   in PyO3 bindings that are actually tested via Python integration tests.
+#   This is expected and acceptable - focus on core algorithm code instead.
+#
+# Usage:
+#   make mutants              # Run on all workspace (slow, ~30-60 min)
+#   make mutants MUTANTS_ARGS="--file src/algo/compression/lz4.rs"  # Single file
+#   make mutants MUTANTS_ARGS="--in-diff HEAD~5"  # Only recent changes
+#   make mutants MUTANTS_ARGS="-p hexz-core"  # Single package
+#
+# Note: Automatically excludes py_interface/ (tested via Python, not Rust tests)
+mutants:
+	@command -v cargo-mutants >/dev/null 2>&1 || { \
+		printf "$(BOLD)cargo-mutants not installed.$(RESET)\n"; \
+		printf "Install with: $(CYAN)cargo install cargo-mutants$(RESET)\n"; \
+		exit 1; \
+	}
+	@printf "$(GREEN)Running mutation testing…$(RESET)\n"
+	@printf "$(CYAN)This may take 30-60 minutes for full workspace.$(RESET)\n"
+	@printf "$(CYAN)Use MUTANTS_ARGS to filter (see make help for examples).$(RESET)\n"
+	@printf "$(CYAN)Excluding: py_interface/ (tested via Python integration tests)$(RESET)\n"
+	$(CARGO) mutants --no-shuffle --exclude 'py_interface/**' $(MUTANTS_ARGS)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Quality
@@ -396,11 +445,11 @@ fuzz:
 # ═══════════════════════════════════════════════════════════════════════════════
 docker-dev:
 	@printf "$(GREEN)Building dev container…$(RESET)\n"
-	docker build -f docker/dev.Dockerfile -t strata-dev .
+	docker build -f docker/dev.Dockerfile -t hexz-dev .
 
 docker-bench:
 	@printf "$(GREEN)Building benchmark container…$(RESET)\n"
-	docker build -f docker/bench.Dockerfile -t strata-bench .
+	docker build -f docker/bench.Dockerfile -t hexz-bench .
 
 docs:
 	@printf "$(GREEN)Building Rust docs…$(RESET)\n"

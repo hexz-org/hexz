@@ -7,7 +7,7 @@
 
 use crate::constants::{DEFAULT_CACHE_SIZE, DEFAULT_NETWORK_TIMEOUT, DEFAULT_PREFETCH_COUNT};
 
-/// Pre-defined optimization profiles for the `strata build` command.
+/// Pre-defined optimization profiles for the `hexz build` command.
 ///
 /// **Architectural intent:** Simplifies the configuration surface for common
 /// use cases by grouping block size, compression, and alignment settings into

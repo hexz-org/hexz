@@ -1,4 +1,4 @@
-//! Python exception types and error conversion for Strata.
+//! Python exception types and error conversion for Hexz.
 //!
 //! This module defines custom Python exception types that map Rust errors to a structured
 //! exception hierarchy. It provides clear, specific error types for different failure modes
@@ -7,13 +7,13 @@
 //!
 //! # Exception Hierarchy
 //!
-//! All Strata exceptions inherit from `StrataError`, which itself inherits from Python's
-//! built-in `Exception`. This allows callers to catch all Strata-specific errors with a
-//! single `except StrataError` clause or target specific error categories:
+//! All Hexz exceptions inherit from `Error`, which itself inherits from Python's
+//! built-in `Exception`. This allows callers to catch all Hexz-specific errors with a
+//! single `except Error` clause or target specific error categories:
 //!
 //! ```text
 //! Exception (built-in)
-//! └── StrataError (base for all Strata errors)
+//! └── Error (base for all Hexz errors)
 //!     ├── IOError (I/O and storage errors)
 //!     │   └── NetworkError (remote storage errors)
 //!     ├── FormatError (invalid file format)
@@ -26,21 +26,21 @@
 //!
 //! # Exception Types
 //!
-//! ## StrataError
+//! ## Error
 //!
-//! Base exception for all Strata-related errors. Catch this to handle any Strata error:
+//! Base exception for all Hexz-related errors. Catch this to handle any Hexz error:
 //!
 //! ```python
 //! try:
-//!     reader = StrataReader("data.st")
-//! except StrataError as e:
-//!     print(f"Strata error: {e}")
+//!     reader = Reader("data.hxz")
+//! except Error as e:
+//!     print(f"Hexz error: {e}")
 //! ```
 //!
 //! ## IOError
 //!
 //! I/O operation failed. Includes file system errors, permission denied, device errors.
-//! Inherits from both `StrataError` and Python's `OSError` for compatibility.
+//! Inherits from both `Error` and Python's `OSError` for compatibility.
 //!
 //! Common causes:
 //! - File not found
@@ -50,7 +50,7 @@
 //!
 //! ```python
 //! try:
-//!     reader = StrataReader("missing.st")
+//!     reader = Reader("missing.hxz")
 //! except IOError as e:
 //!     print(f"I/O error: {e}")
 //! ```
@@ -67,7 +67,7 @@
 //!
 //! ```python
 //! try:
-//!     reader = StrataReader("s3://invalid-bucket/data.st")
+//!     reader = Reader("s3://invalid-bucket/data.hxz")
 //! except NetworkError as e:
 //!     print(f"Network error: {e}")
 //! ```
@@ -77,14 +77,14 @@
 //! Invalid file format or corrupted snapshot structure.
 //!
 //! Common causes:
-//! - Wrong magic bytes (not a Strata file)
+//! - Wrong magic bytes (not a Hexz file)
 //! - Corrupted header
 //! - Invalid index structure
 //! - Truncated file
 //!
 //! ```python
 //! try:
-//!     reader = StrataReader("not-a-snapshot.txt")
+//!     reader = Reader("not-a-snapshot.txt")
 //! except FormatError as e:
 //!     print(f"Format error: {e}")
 //! ```
@@ -95,12 +95,12 @@
 //! supported range.
 //!
 //! Common causes:
-//! - Snapshot created with newer version of Strata
+//! - Snapshot created with newer version of Hexz
 //! - Legacy snapshot format no longer supported
 //!
 //! ```python
 //! try:
-//!     reader = StrataReader("old-format.st")
+//!     reader = Reader("old-format.hxz")
 //! except VersionError as e:
 //!     print(f"Version error: {e}")
 //!     print(f"File version: {e.file_version}")
@@ -119,7 +119,7 @@
 //!
 //! ```python
 //! try:
-//!     reader = StrataReader("ftp://example.com/data.st")  # unsupported scheme
+//!     reader = Reader("ftp://example.com/data.hxz")  # unsupported scheme
 //! except ValidationError as e:
 //!     print(f"Validation error: {e}")
 //! ```
@@ -135,7 +135,7 @@
 //!
 //! ```python
 //! try:
-//!     builder = StrataBuilder("out.st", compression="invalid")
+//!     builder = Builder("out.hxz", compression="invalid")
 //! except CompressionError as e:
 //!     print(f"Compression error: {e}")
 //! ```
@@ -152,7 +152,7 @@
 //!
 //! ```python
 //! try:
-//!     reader = StrataReader("encrypted.st", password="wrong")
+//!     reader = Reader("encrypted.hxz", password="wrong")
 //! except EncryptionError as e:
 //!     print(f"Encryption error: {e}")
 //! ```
@@ -173,10 +173,10 @@
 //! Catch specific exceptions when you can handle them differently:
 //!
 //! ```python
-//! from strata import StrataReader, IOError, FormatError, VersionError
+//! from hexz import Reader, IOError, FormatError, VersionError
 //!
 //! try:
-//!     reader = StrataReader("data.st")
+//!     reader = Reader("data.hxz")
 //! except IOError as e:
 //!     print(f"File not accessible: {e}")
 //!     # Try alternative path
@@ -190,16 +190,16 @@
 //!
 //! ## Generic Exception Handling
 //!
-//! Catch `StrataError` for general error handling:
+//! Catch `Error` for general error handling:
 //!
 //! ```python
-//! from strata import StrataReader, StrataError
+//! from hexz import Reader, Error
 //!
 //! try:
-//!     reader = StrataReader("data.st")
+//!     reader = Reader("data.hxz")
 //!     data = reader.read(4096)
-//! except StrataError as e:
-//!     logger.error(f"Strata operation failed: {e}")
+//! except Error as e:
+//!     logger.error(f"Hexz operation failed: {e}")
 //!     return None
 //! ```
 //!
@@ -209,8 +209,8 @@
 //!
 //! ```python
 //! try:
-//!     reader = StrataReader("data.st")
-//! except StrataError as e:
+//!     reader = Reader("data.hxz")
+//! except Error as e:
 //!     logger.error(f"Failed to open snapshot: {e}")
 //!     raise  # preserves traceback
 //! ```
@@ -219,7 +219,7 @@
 //!
 //! This module uses PyO3's `create_exception!` macro to define exception types that
 //! inherit from Python's exception hierarchy. The exceptions are defined in both Rust
-//! (this file) and Python (`strata/exceptions.py`) for rich documentation and proper
+//! (this file) and Python (`hexz/exceptions.py`) for rich documentation and proper
 //! hierarchy in both languages.
 //!
 //! The `From<OpenError>` implementation automatically converts Rust errors to Python
@@ -233,17 +233,17 @@ use crate::engine::OpenError;
 
 // Define custom Python exception types
 // These will be registered in the Python module and can be imported as:
-// from strata import StrataError, IOError, FormatError, etc.
+// from hexz import Error, IOError, FormatError, etc.
 
-create_exception!(strata, StrataError, PyException);
-create_exception!(strata, IOError, StrataError);
-create_exception!(strata, NetworkError, IOError);
-create_exception!(strata, FormatError, StrataError);
-create_exception!(strata, ValidationError, StrataError);
-create_exception!(strata, CompressionError, StrataError);
-create_exception!(strata, EncryptionError, StrataError);
-create_exception!(strata, CacheError, StrataError);
-create_exception!(strata, VersionError, FormatError);
+create_exception!(hexz, Error, PyException);
+create_exception!(hexz, IOError, Error);
+create_exception!(hexz, NetworkError, IOError);
+create_exception!(hexz, FormatError, Error);
+create_exception!(hexz, ValidationError, Error);
+create_exception!(hexz, CompressionError, Error);
+create_exception!(hexz, EncryptionError, Error);
+create_exception!(hexz, CacheError, Error);
+create_exception!(hexz, VersionError, FormatError);
 
 /// Register all custom exceptions with the Python module.
 ///
@@ -253,11 +253,11 @@ pub fn register_exceptions(
     _m: &pyo3::Bound<'_, pyo3::types::PyModule>,
 ) -> pyo3::PyResult<()> {
     // Note: We don't add exceptions here because they're already defined
-    // in the Python layer (strata/exceptions.py). The create_exception! macro
+    // in the Python layer (hexz/exceptions.py). The create_exception! macro
     // creates Rust types that we can use to raise those exceptions.
     //
     // If we wanted to define them purely in Rust, we would do:
-    // m.add("StrataError", py.get_type_bound::<StrataError>())?;
+    // m.add("Error", py.get_type_bound::<Error>())?;
     // But since we have rich Python docstrings and a proper hierarchy,
     // we just use the Python-defined exceptions.
     Ok(())
@@ -280,12 +280,12 @@ pub fn register_exceptions(
 ///
 /// ```rust,ignore
 /// #[pyfunction]
-/// fn open_snapshot(path: String) -> PyResult<StrataReader> {
+/// fn open_snapshot(path: String) -> PyResult<Reader> {
 ///     let config = OpenConfig { path, ... };
 ///     // If this returns Err(OpenError::Io(...)), it's automatically
 ///     // converted to Python IOError via this trait
 ///     let inner = engine::open_snapshot(config)?;
-///     Ok(StrataReader { inner, ... })
+///     Ok(Reader { inner, ... })
 /// }
 /// ```
 impl From<OpenError> for PyErr {
@@ -316,14 +316,14 @@ impl IntoPyIOError for std::io::Error {
     }
 }
 
-/// Helper trait for converting generic errors to StrataError
-pub trait IntoStrataError {
-    fn into_strata_error(self) -> PyErr;
+/// Helper trait for converting generic errors to Error
+pub trait IntoError {
+    fn into_hexz_error(self) -> PyErr;
 }
 
-impl<E: std::fmt::Display> IntoStrataError for E {
-    fn into_strata_error(self) -> PyErr {
-        StrataError::new_err(format!("{}", self))
+impl<E: std::fmt::Display> IntoError for E {
+    fn into_hexz_error(self) -> PyErr {
+        Error::new_err(format!("{}", self))
     }
 }
 

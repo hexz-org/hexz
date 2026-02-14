@@ -167,8 +167,8 @@ pub fn random_password() -> String {
 /// Create a simple snapshot for testing using PackConfig
 pub fn create_simple_snapshot() -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn std::error::Error>>
 {
+    use hexz_core::ops::pack::{PackConfig, pack_snapshot};
     use std::fs;
-    use strata_core::ops::pack::{PackConfig, pack_snapshot};
     use tempfile::TempDir;
 
     let temp_dir = TempDir::new()?;
@@ -178,7 +178,7 @@ pub fn create_simple_snapshot() -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn
     let disk_path = temp_dir.path().join("disk.img");
     fs::write(&disk_path, &data)?;
 
-    let snap_path = temp_dir.path().join("snapshot.st");
+    let snap_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -199,7 +199,7 @@ pub fn create_simple_snapshot() -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn
 
     // Persist the temp dir by leaking it (files needed for test lifetime)
     let persisted = temp_dir.keep();
-    let final_snap = persisted.join("snapshot.st");
+    let final_snap = persisted.join("snapshot.hxz");
 
     Ok((final_snap, data))
 }
@@ -207,8 +207,8 @@ pub fn create_simple_snapshot() -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn
 /// Create a snapshot with memory data using PackConfig
 pub fn create_snapshot_with_memory()
 -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn std::error::Error>> {
+    use hexz_core::ops::pack::{PackConfig, pack_snapshot};
     use std::fs;
-    use strata_core::ops::pack::{PackConfig, pack_snapshot};
     use tempfile::TempDir;
 
     let temp_dir = TempDir::new()?;
@@ -222,7 +222,7 @@ pub fn create_snapshot_with_memory()
     fs::write(&disk_path, &disk_data)?;
     fs::write(&mem_path, &mem_data)?;
 
-    let snap_path = temp_dir.path().join("snapshot.st");
+    let snap_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -242,7 +242,7 @@ pub fn create_snapshot_with_memory()
     pack_snapshot(config, None::<fn(u64, u64)>)?;
 
     let persisted = temp_dir.keep();
-    let final_snap = persisted.join("snapshot.st");
+    let final_snap = persisted.join("snapshot.hxz");
 
     Ok((final_snap, disk_data))
 }
@@ -250,8 +250,8 @@ pub fn create_snapshot_with_memory()
 /// Create a multi-block snapshot for testing parallel decompression
 pub fn create_multi_block_snapshot()
 -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn std::error::Error>> {
+    use hexz_core::ops::pack::{PackConfig, pack_snapshot};
     use std::fs;
-    use strata_core::ops::pack::{PackConfig, pack_snapshot};
     use tempfile::TempDir;
 
     let temp_dir = TempDir::new()?;
@@ -261,7 +261,7 @@ pub fn create_multi_block_snapshot()
     let disk_path = temp_dir.path().join("disk.img");
     fs::write(&disk_path, &data)?;
 
-    let snap_path = temp_dir.path().join("snapshot.st");
+    let snap_path = temp_dir.path().join("snapshot.hxz");
 
     let config = PackConfig {
         disk: Some(disk_path),
@@ -281,7 +281,7 @@ pub fn create_multi_block_snapshot()
     pack_snapshot(config, None::<fn(u64, u64)>)?;
 
     let persisted = temp_dir.keep();
-    let final_snap = persisted.join("snapshot.st");
+    let final_snap = persisted.join("snapshot.hxz");
 
     Ok((final_snap, data))
 }

@@ -1,19 +1,19 @@
-//! File signature, magic bytes, and header size constants for Strata snapshots.
+//! File signature, magic bytes, and header size constants for Hexz snapshots.
 //!
 //! This module defines the fundamental constants that identify and structure
-//! Strata snapshot files (`.st`). These values form the first line of defense
+//! Hexz snapshot files (`.hxz`). These values form the first line of defense
 //! against file corruption and format misidentification, enabling readers to
 //! quickly reject invalid files before attempting deserialization.
 //!
 //! # File Format Overview
 //!
-//! Every Strata snapshot file has the following fixed structure:
+//! Every Hexz snapshot file has the following fixed structure:
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────┐
-//! │ Byte 0-3: Magic Bytes ("STRT")                              │
+//! │ Byte 0-3: Magic Bytes ("HEXZ")                              │
 //! ├─────────────────────────────────────────────────────────────┤
-//! │ Byte 4-4095: Header (bincode-serialized StrataHeader)       │
+//! │ Byte 4-4095: Header (bincode-serialized Header)             │
 //! │   - version: u32                                             │
 //! │   - block_size: u32                                          │
 //! │   - index_offset: u64                                        │
@@ -30,18 +30,18 @@
 //!
 //! # Magic Bytes Rationale
 //!
-//! The 4-byte signature `STRT` (ASCII: 0x53 0x54 0x52 0x54) serves multiple purposes:
+//! The 4-byte signature `HEXZ` (ASCII: 0x48 0x45 0x58 0x5A) serves multiple purposes:
 //!
 //! ## Immediate Format Validation
 //!
-//! Readers can detect non-Strata files with a single 4-byte read before
+//! Readers can detect non-Hexz files with a single 4-byte read before
 //! attempting any deserialization, preventing crashes or misinterpretation:
 //!
 //! ```rust,ignore
 //! let mut magic = [0u8; 4];
 //! file.read_exact(&mut magic)?;
 //! if &magic != MAGIC_BYTES {
-//!     return Err(StrataError::InvalidMagic { found: magic });
+//!     return Err(Error::InvalidMagic { found: magic });
 //! }
 //! ```
 //!
@@ -52,13 +52,13 @@
 //!
 //! ## File Type Identification
 //!
-//! Operating systems and tools (e.g., `file(1)`) can identify `.st` files
-//! by searching for the `STRT` signature, even if the file extension is wrong.
+//! Operating systems and tools (e.g., `file(1)`) can identify `.hxz` files
+//! by searching for the `HEXZ` signature, even if the file extension is wrong.
 //!
 //! ## Endianness Independence
 //!
 //! The ASCII signature avoids byte-order ambiguity. Unlike a numeric magic number
-//! (e.g., `0x53545254`), the byte sequence is identical on little-endian and
+//! (e.g., `0x4845585A`), the byte sequence is identical on little-endian and
 //! big-endian systems.
 //!
 //! # Header Size Calculation
@@ -73,7 +73,7 @@
 //!
 //! ## Padding Strategy
 //!
-//! The actual serialized [`StrataHeader`] is typically 200-500 bytes. The
+//! The actual serialized [`Header`] is typically 200-500 bytes. The
 //! remaining space is zero-padded, providing:
 //!
 //! - **Forward compatibility**: New header fields can be added without changing
@@ -89,14 +89,14 @@
 //! // Single aligned read for header
 //! let mut header_buf = vec![0u8; HEADER_SIZE];
 //! file.read_exact(&mut header_buf)?;
-//! let header: StrataHeader = bincode::deserialize(&header_buf[4..])?;
+//! let header: Header = bincode::deserialize(&header_buf[4..])?;
 //! ```
 //!
 //! # Backward Compatibility Guarantee
 //!
-//! These constants are **immutable** across all Strata versions:
+//! These constants are **immutable** across all Hexz versions:
 //!
-//! - `MAGIC_BYTES` must always be `b"STRT"` (changing this creates a new file format)
+//! - `MAGIC_BYTES` must always be `b"HEXZ"` (changing this creates a new file format)
 //! - `HEADER_SIZE` must always be `4096` (changing this breaks offset calculations)
 //!
 //! The [`FORMAT_VERSION`] constant, however, **can and will change** to indicate
@@ -120,7 +120,7 @@
 //!
 //! ```rust,ignore
 //! let config = bincode::config::standard().with_limit(HEADER_SIZE as u64);
-//! let header: StrataHeader = bincode::decode_from_slice(&header_buf, config)?;
+//! let header: Header = bincode::decode_from_slice(&header_buf, config)?;
 //! ```
 //!
 //! # File Type Registration
@@ -130,35 +130,35 @@
 //! ## MIME Type (Proposed)
 //!
 //! ```text
-//! application/x-strata-snapshot
+//! application/x-hexz-snapshot
 //! ```
 //!
 //! ## Magic Database Entry (`/etc/magic`)
 //!
 //! ```text
-//! 0       string  STRT            Strata snapshot file
+//! 0       string  HEXZ            Hexz snapshot file
 //! >4      ulelong x               \b, version %d
 //! ```
 //!
 //! ## File Extension
 //!
-//! The conventional extension is `.st`, though the format does not require it.
+//! The conventional extension is `.hxz`, though the format does not require it.
 //!
 //! # Examples
 //!
 //! ## Validating Magic Bytes
 //!
 //! ```
-//! use strata_core::format::magic::MAGIC_BYTES;
+//! use hexz_core::format::magic::MAGIC_BYTES;
 //!
-//! let file_header = b"STRT..."; // First bytes of a file
+//! let file_header = b"HEXZ..."; // First bytes of a file
 //! assert_eq!(&file_header[..4], MAGIC_BYTES);
 //! ```
 //!
 //! ## Header Offset Calculation
 //!
 //! ```
-//! use strata_core::format::magic::HEADER_SIZE;
+//! use hexz_core::format::magic::HEADER_SIZE;
 //!
 //! // First compressed block starts immediately after header
 //! let first_block_offset = HEADER_SIZE;
@@ -170,9 +170,9 @@
 //! ```rust,ignore
 //! use std::fs::File;
 //! use std::io::Read;
-//! use strata_core::format::magic::MAGIC_BYTES;
+//! use hexz_core::format::magic::MAGIC_BYTES;
 //!
-//! fn is_strata_file(path: &Path) -> std::io::Result<bool> {
+//! fn is_hexz_file(path: &Path) -> std::io::Result<bool> {
 //!     let mut file = File::open(path)?;
 //!     let mut magic = [0u8; 4];
 //!     file.read_exact(&mut magic)?;
@@ -183,28 +183,28 @@
 //! ## Reader Implementation
 //!
 //! ```rust,ignore
-//! use strata_core::format::magic::{MAGIC_BYTES, HEADER_SIZE, FORMAT_VERSION};
-//! use strata_core::format::header::StrataHeader;
-//! use strata_core::error::StrataError;
+//! use hexz_core::format::magic::{MAGIC_BYTES, HEADER_SIZE, FORMAT_VERSION};
+//! use hexz_core::format::header::Header;
+//! use hexz_core::error::Error;
 //!
-//! fn read_header(file: &mut File) -> Result<StrataHeader, StrataError> {
+//! fn read_header(file: &mut File) -> Result<Header, Error> {
 //!     // Read full header region (magic + serialized header)
 //!     let mut buf = vec![0u8; HEADER_SIZE];
 //!     file.read_exact(&mut buf)?;
 //!
 //!     // Validate magic bytes
 //!     if &buf[0..4] != MAGIC_BYTES {
-//!         return Err(StrataError::InvalidMagic {
+//!         return Err(Error::InvalidMagic {
 //!             found: buf[0..4].try_into().unwrap(),
 //!         });
 //!     }
 //!
 //!     // Deserialize header (bytes 4..4096)
-//!     let header: StrataHeader = bincode::deserialize(&buf[4..])?;
+//!     let header: Header = bincode::deserialize(&buf[4..])?;
 //!
 //!     // Validate version
 //!     if header.version != FORMAT_VERSION {
-//!         return Err(StrataError::UnsupportedVersion {
+//!         return Err(Error::UnsupportedVersion {
 //!             found: header.version,
 //!             supported: FORMAT_VERSION,
 //!         });
@@ -214,43 +214,43 @@
 //! }
 //! ```
 //!
-//! [`StrataHeader`]: crate::format::header::StrataHeader
+//! [`Header`]: crate::format::header::Header
 
-/// File signature identifying Strata snapshot files.
+/// File signature identifying Hexz snapshot files.
 ///
-/// This 4-byte constant (`STRT` in ASCII, 0x53 0x54 0x52 0x54 in hex) appears
-/// at the beginning of every valid `.st` file. Readers must validate this
+/// This 4-byte constant (`HEXZ` in ASCII, 0x48 0x45 0x58 0x5A in hex) appears
+/// at the beginning of every valid `.hxz` file. Readers must validate this
 /// signature before attempting to parse the rest of the header.
 ///
 /// # Rationale
 ///
-/// - **ASCII-readable**: Easy to identify in hex dumps (`53 54 52 54` = "STRT")
-/// - **Low collision probability**: Unlikely to appear at offset 0 in non-Strata files
+/// - **ASCII-readable**: Easy to identify in hex dumps (`48 45 58 5A` = "HEXZ")
+/// - **Low collision probability**: Unlikely to appear at offset 0 in non-Hexz files
 /// - **Endian-neutral**: Byte sequence is identical regardless of CPU byte order
-/// - **Mnemonic**: "STRT" abbreviates "Strata" and suggests "start" of file
+/// - **Mnemonic**: "HEXZ" identifies the project and format
 ///
 /// # Validation Example
 ///
 /// ```
-/// use strata_core::format::magic::MAGIC_BYTES;
+/// use hexz_core::format::magic::MAGIC_BYTES;
 ///
-/// let file_start = b"STRT\x01\x00\x00\x00..."; // First bytes of a file
+/// let file_start = b"HEXZ\x01\x00\x00\x00..."; // First bytes of a file
 /// if &file_start[..4] == MAGIC_BYTES {
-///     println!("Valid Strata file");
+///     println!("Valid Hexz file");
 /// } else {
-///     eprintln!("Not a Strata file");
+///     eprintln!("Not a Hexz file");
 /// }
 /// ```
 ///
 /// # Error Handling
 ///
 /// If magic bytes do not match, the file is either:
-/// - Not a Strata snapshot (e.g., wrong file type)
+/// - Not a Hexz snapshot (e.g., wrong file type)
 /// - Corrupted (e.g., truncated, damaged sectors)
 /// - Generated by incompatible software (e.g., future format with different signature)
 ///
 /// In all cases, reject the file immediately without attempting deserialization.
-pub const MAGIC_BYTES: &[u8; 4] = b"STRT";
+pub const MAGIC_BYTES: &[u8; 4] = b"HEXZ";
 
 /// Format version number for snapshots written by this build.
 ///
@@ -260,7 +260,7 @@ pub const MAGIC_BYTES: &[u8; 4] = b"STRT";
 ///
 /// # Current Version
 ///
-/// **Version 1**: Initial Strata format with:
+/// **Version 1**: Initial Hexz format with:
 /// - Two-level index (master index + paginated block metadata)
 /// - bincode serialization for headers and indices
 /// - LZ4 and Zstd compression support
@@ -270,9 +270,9 @@ pub const MAGIC_BYTES: &[u8; 4] = b"STRT";
 ///
 /// # Version History
 ///
-/// | Version | Strata Release | Key Changes |
-/// |---------|----------------|-------------|
-/// | 1       | 0.1.0          | Initial format |
+/// | Version | Hexz Release | Key Changes |
+/// |---------|--------------|-------------|
+/// | 1       | 0.1.0        | Initial format |
 ///
 /// # Version Checking
 ///
@@ -283,10 +283,10 @@ pub const MAGIC_BYTES: &[u8; 4] = b"STRT";
 /// # Examples
 ///
 /// ```
-/// use strata_core::format::magic::FORMAT_VERSION;
-/// use strata_core::format::header::StrataHeader;
+/// use hexz_core::format::magic::FORMAT_VERSION;
+/// use hexz_core::format::header::Header;
 ///
-/// let mut header = StrataHeader::default();
+/// let mut header = Header::default();
 /// assert_eq!(header.version, FORMAT_VERSION);
 /// assert_eq!(FORMAT_VERSION, 1);
 /// ```
@@ -294,9 +294,9 @@ pub const FORMAT_VERSION: u32 = 1;
 
 /// Size of the fixed header region at the start of snapshot files.
 ///
-/// Every Strata snapshot begins with a 4096-byte (4 KB) header containing:
+/// Every Hexz snapshot begins with a 4096-byte (4 KB) header containing:
 /// - Magic bytes (4 bytes)
-/// - Serialized [`StrataHeader`] structure (variable, typically 200-500 bytes)
+/// - Serialized [`Header`] structure (variable, typically 200-500 bytes)
 /// - Zero-padding to fill remaining space
 ///
 /// This size is **immutable** across all format versions. Changing it would
@@ -316,8 +316,8 @@ pub const FORMAT_VERSION: u32 = 1;
 /// ```text
 /// Offset | Size  | Contents
 /// -------|-------|--------------------------------------------------
-/// 0      | 4     | Magic bytes (b"STRT")
-/// 4      | ~400  | Serialized StrataHeader (bincode format)
+/// 0      | 4     | Magic bytes (b"HEXZ")
+/// 4      | ~400  | Serialized Header (bincode format)
 /// ~404   | ~3692 | Zero-padding (reserved for future extensions)
 /// 4096   | ...   | Start of compressed block data
 /// ```
@@ -355,9 +355,9 @@ pub const FORMAT_VERSION: u32 = 1;
 /// ```rust,ignore
 /// use std::fs::File;
 /// use std::io::Read;
-/// use strata_core::format::magic::HEADER_SIZE;
+/// use hexz_core::format::magic::HEADER_SIZE;
 ///
-/// let mut file = File::open("snapshot.st")?;
+/// let mut file = File::open("snapshot.hxz")?;
 /// let mut header_buf = vec![0u8; HEADER_SIZE];
 /// file.read_exact(&mut header_buf)?;
 ///
@@ -367,7 +367,7 @@ pub const FORMAT_VERSION: u32 = 1;
 /// ## Calculating Block Offsets
 ///
 /// ```
-/// use strata_core::format::magic::HEADER_SIZE;
+/// use hexz_core::format::magic::HEADER_SIZE;
 ///
 /// // First block is written immediately after header
 /// let first_block_offset = HEADER_SIZE;
@@ -378,5 +378,5 @@ pub const FORMAT_VERSION: u32 = 1;
 /// assert_eq!(second_block_offset, 6144);
 /// ```
 ///
-/// [`StrataHeader`]: crate::format::header::StrataHeader
+/// [`Header`]: crate::format::header::Header
 pub const HEADER_SIZE: usize = 4096;

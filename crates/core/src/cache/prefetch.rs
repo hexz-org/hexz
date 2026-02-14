@@ -18,7 +18,7 @@
 //! - **Fixed window size**: The prefetch distance is constant (typically 4-16 blocks)
 //!   and does not adjust based on observed access patterns
 //! - **No sequential detection**: The prefetcher assumes sequential access; the caller
-//!   (typically `StrataFile::read_at_into_uninit`) is responsible for deciding when
+//!   (typically `File::read_at_into_uninit`) is responsible for deciding when
 //!   to trigger prefetching based on observed workload patterns
 //! - **Atomic configuration**: Window size can be updated at runtime without locks,
 //!   enabling dynamic tuning in response to workload changes
@@ -73,7 +73,7 @@
 //!
 //! - **Per-access cost**: O(window_size) to compute prefetch targets (typically < 1 µs)
 //! - **Background I/O**: Prefetch requests spawn lightweight threads or async tasks
-//!   (implementation-dependent, managed by `StrataFile`)
+//!   (implementation-dependent, managed by `File`)
 //!
 //! ## Bandwidth Overhead
 //!
@@ -109,14 +109,14 @@
 //!
 //! To disable prefetching entirely:
 //! - Set `window_size = 0` when constructing `Prefetcher::new(0)`
-//! - Or pass `prefetch_window_size = None` to `StrataFile::with_options()`
+//! - Or pass `prefetch_window_size = None` to `File::with_options()`
 //!
 //! # Examples
 //!
 //! ## Basic Usage
 //!
 //! ```
-//! use strata_core::cache::prefetch::Prefetcher;
+//! use hexz_core::cache::prefetch::Prefetcher;
 //!
 //! // Configure 8-block readahead for streaming workloads
 //! let prefetcher = Prefetcher::new(8);
@@ -126,13 +126,13 @@
 //! assert_eq!(targets, vec![101, 102, 103, 104, 105, 106, 107, 108]);
 //!
 //! // Background task: fetch blocks 101-108 into cache
-//! // (actual prefetch execution is handled by StrataFile)
+//! // (actual prefetch execution is handled by File)
 //! ```
 //!
 //! ## Adaptive Tuning
 //!
 //! ```
-//! use strata_core::cache::prefetch::Prefetcher;
+//! use hexz_core::cache::prefetch::Prefetcher;
 //! use std::sync::Arc;
 //!
 //! let prefetcher = Arc::new(Prefetcher::new(4));
@@ -145,19 +145,19 @@
 //! // prefetcher.set_window_size(0);
 //! ```
 //!
-//! ## Integration with StrataFile
+//! ## Integration with File
 //!
 //! ```no_run
-//! # use strata_core::StrataFile;
-//! # use strata_core::store::local::FileBackend;
-//! # use strata_core::algo::compression::lz4::Lz4Compressor;
+//! # use hexz_core::File;
+//! # use hexz_core::store::local::FileBackend;
+//! # use hexz_core::algo::compression::lz4::Lz4Compressor;
 //! # use std::sync::Arc;
 //! # fn main() -> anyhow::Result<()> {
-//! let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+//! let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
 //! let compressor = Box::new(Lz4Compressor::new());
 //!
-//! // Enable prefetching at StrataFile creation
-//! let snapshot = StrataFile::with_cache(
+//! // Enable prefetching at File creation
+//! let snapshot = File::with_cache(
 //!     backend,
 //!     compressor,
 //!     None, // encryptor
@@ -166,7 +166,7 @@
 //! )?;
 //!
 //! // Prefetching happens automatically during sequential reads
-//! // (triggered internally by StrataFile::read_at_into_uninit)
+//! // (triggered internally by File::read_at_into_uninit)
 //! # Ok(())
 //! # }
 //! ```
@@ -177,11 +177,11 @@
 //!
 //! This implementation deliberately omits sequential pattern detection (unlike Linux
 //! kernel readahead or database buffer managers) for several reasons:
-//! - **Caller context**: `StrataFile` has full visibility into access patterns and
+//! - **Caller context**: `File` has full visibility into access patterns and
 //!   can make better decisions about when to prefetch
 //! - **Simplicity**: No history tracking, no stride detection, no state machine overhead
 //! - **Predictability**: Fixed behavior is easier to reason about and debug
-//! - **Composability**: Higher-level policies (in `StrataFile` or applications) can
+//! - **Composability**: Higher-level policies (in `File` or applications) can
 //!   layer sophisticated heuristics atop this simple primitive
 //!
 //! ## Thread Safety
@@ -222,7 +222,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 /// # Examples
 ///
 /// ```
-/// use strata_core::cache::prefetch::Prefetcher;
+/// use hexz_core::cache::prefetch::Prefetcher;
 ///
 /// let prefetcher = Prefetcher::new(4);
 /// let targets = prefetcher.get_prefetch_targets(10);
@@ -262,7 +262,7 @@ impl Prefetcher {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::cache::prefetch::Prefetcher;
+    /// use hexz_core::cache::prefetch::Prefetcher;
     ///
     /// // Aggressive prefetching for high-latency S3 backend
     /// let s3_prefetcher = Prefetcher::new(16);
@@ -284,7 +284,7 @@ impl Prefetcher {
     ///
     /// Given the index of a block currently being accessed, this method returns a
     /// contiguous sequence of block indices that immediately follow it. The caller
-    /// (typically `StrataFile`) is responsible for scheduling the actual I/O operations
+    /// (typically `File`) is responsible for scheduling the actual I/O operations
     /// to load these blocks into the cache.
     ///
     /// The returned vector contains exactly `window_size` consecutive block indices,
@@ -319,7 +319,7 @@ impl Prefetcher {
     /// ## Standard Prefetch
     ///
     /// ```
-    /// use strata_core::cache::prefetch::Prefetcher;
+    /// use hexz_core::cache::prefetch::Prefetcher;
     ///
     /// let prefetcher = Prefetcher::new(5);
     /// let targets = prefetcher.get_prefetch_targets(42);
@@ -329,7 +329,7 @@ impl Prefetcher {
     /// ## Disabled Prefetch
     ///
     /// ```
-    /// use strata_core::cache::prefetch::Prefetcher;
+    /// use hexz_core::cache::prefetch::Prefetcher;
     ///
     /// let prefetcher = Prefetcher::new(0);
     /// let targets = prefetcher.get_prefetch_targets(100);
@@ -339,7 +339,7 @@ impl Prefetcher {
     /// ## Boundary Case
     ///
     /// ```
-    /// use strata_core::cache::prefetch::Prefetcher;
+    /// use hexz_core::cache::prefetch::Prefetcher;
     ///
     /// let prefetcher = Prefetcher::new(1);
     /// let targets = prefetcher.get_prefetch_targets(999);
@@ -355,7 +355,7 @@ impl Prefetcher {
     /// - **I/O scheduling**: Issue async or background reads for the target blocks
     /// - **Error handling**: Prefetch failures should not impact the foreground read
     ///
-    /// See `StrataFile::read_at_into_uninit` for a reference implementation.
+    /// See `File::read_at_into_uninit` for a reference implementation.
     pub fn get_prefetch_targets(&self, current_block: u64) -> Vec<u64> {
         let size = self.window_size.load(Ordering::Relaxed);
         if size == 0 {

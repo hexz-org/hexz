@@ -1,7 +1,7 @@
-//! Implementation of the `strata doctor` command.
+//! Implementation of the `hexz doctor` command.
 //!
 //! Performs comprehensive system health checks to verify that all required
-//! dependencies, kernel modules, and system resources are available for Strata
+//! dependencies, kernel modules, and system resources are available for Hexz
 //! operations. This command helps troubleshoot installation issues and validates
 //! the environment before running VMs or mounting snapshots.
 //!
@@ -10,12 +10,12 @@
 //! ## Binary Dependencies
 //!
 //! **`fusermount`:**
-//! - Required for: FUSE mounting (`strata mount`)
+//! - Required for: FUSE mounting (`hexz mount`)
 //! - Checks: Command exists and returns version
 //! - Failure mode: Command not found or non-zero exit code
 //!
 //! **`qemu-system-x86_64`:**
-//! - Required for: VM booting (`strata boot`)
+//! - Required for: VM booting (`hexz boot`)
 //! - Checks: Command exists and returns version
 //! - Failure mode: Command not found or non-zero exit code
 //!
@@ -69,14 +69,14 @@
 //!
 //! ```bash
 //! # Run comprehensive health check
-//! strata doctor
+//! hexz doctor
 //!
 //! # Include in bug reports
-//! strata doctor > strata-diagnostics.txt
+//! hexz doctor > hexz-diagnostics.txt
 //!
 //! # Verify installation
 //! sudo apt install qemu-system-x86 fuse3
-//! strata doctor  # Should show all OK
+//! hexz doctor  # Should show all OK
 //! ```
 
 use anyhow::Result;
@@ -91,7 +91,7 @@ use std::process::Command;
 /// # Output Format
 ///
 /// ```text
-/// Strata Doctor - System Health Check
+/// Hexz Doctor - System Health Check
 ///
 /// Checking fusermount... OK
 /// Checking qemu-system-x86_64... OK
@@ -110,14 +110,14 @@ use std::process::Command;
 /// # Examples
 ///
 /// ```no_run
-/// use strata_cli::cmd::sys::doctor;
+/// use hexz_cli::cmd::sys::doctor;
 ///
 /// // Run system diagnostics
 /// doctor::run()?;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 pub fn run() -> Result<()> {
-    println!("Strata Doctor - System Health Check\n");
+    println!("Hexz Doctor - System Health Check\n");
 
     check_binary("fusermount", &["--version"]);
     check_binary("qemu-system-x86_64", &["--version"]);

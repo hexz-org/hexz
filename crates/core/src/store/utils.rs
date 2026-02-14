@@ -5,9 +5,9 @@
 //! attacks. It detects and blocks access to internal networks, loopback addresses,
 //! and cloud metadata endpoints.
 
-use std::io::{Error, ErrorKind};
+use hexz_common::{Error, Result};
+use std::io::{Error as IoError, ErrorKind};
 use std::net::{IpAddr, ToSocketAddrs};
-use strata_common::{Result, StrataError};
 use url::{Host, Url};
 
 /// Checks if an IP address belongs to a restricted range.
@@ -34,7 +34,7 @@ use url::{Host, Url};
 ///
 /// ```
 /// use std::net::IpAddr;
-/// use strata_core::store::utils::is_restricted_ip;
+/// use hexz_core::store::utils::is_restricted_ip;
 ///
 /// // Loopback is restricted
 /// assert!(is_restricted_ip("127.0.0.1".parse::<IpAddr>().unwrap()));
@@ -106,7 +106,7 @@ pub fn is_restricted_ip(ip: IpAddr) -> bool {
 /// # Returns
 ///
 /// - `Ok(String)`: The validated and normalized URL
-/// - `Err(StrataError::Io)`: If URL is malformed, uses invalid scheme, or points to restricted IP
+/// - `Err(Error::Io)`: If URL is malformed, uses invalid scheme, or points to restricted IP
 ///
 /// # Security
 ///
@@ -119,30 +119,30 @@ pub fn is_restricted_ip(ip: IpAddr) -> bool {
 /// # Examples
 ///
 /// ```
-/// use strata_core::store::utils::validate_url;
+/// use hexz_core::store::utils::validate_url;
 ///
 /// // Valid public URL
-/// assert!(validate_url("https://example.com/file.st", false).is_ok());
+/// assert!(validate_url("https://example.com/file.hxz", false).is_ok());
 ///
 /// // Invalid scheme
-/// assert!(validate_url("ftp://example.com/file.st", false).is_err());
+/// assert!(validate_url("ftp://example.com/file.hxz", false).is_err());
 ///
 /// // Restricted IP (blocked by default)
-/// assert!(validate_url("http://127.0.0.1/file.st", false).is_err());
+/// assert!(validate_url("http://127.0.0.1/file.hxz", false).is_err());
 ///
 /// // Restricted IP (allowed with flag)
-/// assert!(validate_url("http://127.0.0.1/file.st", true).is_ok());
+/// assert!(validate_url("http://127.0.0.1/file.hxz", true).is_ok());
 /// ```
 pub fn validate_url(url_str: &str, allow_restricted: bool) -> Result<String> {
     let url = Url::parse(url_str).map_err(|e| {
-        StrataError::Io(Error::new(
+        Error::Io(IoError::new(
             ErrorKind::InvalidInput,
             format!("Invalid URL: {}", e),
         ))
     })?;
 
     if url.scheme() != "http" && url.scheme() != "https" {
-        return Err(StrataError::Io(Error::new(
+        return Err(Error::Io(IoError::new(
             ErrorKind::InvalidInput,
             "Only HTTP and HTTPS schemes are allowed",
         )));
@@ -155,12 +155,12 @@ pub fn validate_url(url_str: &str, allow_restricted: bool) -> Result<String> {
 
     let host = url
         .host()
-        .ok_or_else(|| StrataError::Io(Error::new(ErrorKind::InvalidInput, "URL missing host")))?;
+        .ok_or_else(|| Error::Io(IoError::new(ErrorKind::InvalidInput, "URL missing host")))?;
 
     match host {
         Host::Ipv4(ip) => {
             if is_restricted_ip(IpAddr::V4(ip)) {
-                return Err(StrataError::Io(Error::new(
+                return Err(Error::Io(IoError::new(
                     ErrorKind::PermissionDenied,
                     format!("Access to internal/private IP denied: {}", ip),
                 )));
@@ -168,7 +168,7 @@ pub fn validate_url(url_str: &str, allow_restricted: bool) -> Result<String> {
         }
         Host::Ipv6(ip) => {
             if is_restricted_ip(IpAddr::V6(ip)) {
-                return Err(StrataError::Io(Error::new(
+                return Err(Error::Io(IoError::new(
                     ErrorKind::PermissionDenied,
                     format!("Access to internal/private IP denied: {}", ip),
                 )));
@@ -185,7 +185,7 @@ pub fn validate_url(url_str: &str, allow_restricted: bool) -> Result<String> {
             // Try parsing as IP first to avoid DNS lookup for literals
             if let Ok(ip) = clean_domain.parse::<IpAddr>() {
                 if is_restricted_ip(ip) {
-                    return Err(StrataError::Io(Error::new(
+                    return Err(Error::Io(IoError::new(
                         ErrorKind::PermissionDenied,
                         format!("Access to internal/private IP denied: {}", ip),
                     )));
@@ -196,7 +196,7 @@ pub fn validate_url(url_str: &str, allow_restricted: bool) -> Result<String> {
             let port = url.port_or_known_default().unwrap_or(80);
 
             let addrs = (clean_domain, port).to_socket_addrs().map_err(|e| {
-                StrataError::Io(Error::other(format!(
+                Error::Io(IoError::other(format!(
                     "DNS resolution failed for domain '{}': {}",
                     clean_domain, e
                 )))
@@ -204,7 +204,7 @@ pub fn validate_url(url_str: &str, allow_restricted: bool) -> Result<String> {
 
             for addr in addrs {
                 if is_restricted_ip(addr.ip()) {
-                    return Err(StrataError::Io(Error::new(
+                    return Err(Error::Io(IoError::new(
                         ErrorKind::PermissionDenied,
                         format!("Access to internal/private IP denied: {}", addr.ip()),
                     )));
@@ -395,19 +395,19 @@ mod tests {
 
     #[test]
     fn test_validate_url_valid_https() {
-        let result = validate_url("https://example.com/file.st", false);
+        let result = validate_url("https://example.com/file.hxz", false);
         assert!(result.is_ok(), "HTTPS URL should be valid");
     }
 
     #[test]
     fn test_validate_url_valid_http() {
-        let result = validate_url("http://example.com/file.st", false);
+        let result = validate_url("http://example.com/file.hxz", false);
         assert!(result.is_ok(), "HTTP URL should be valid");
     }
 
     #[test]
     fn test_validate_url_invalid_scheme_ftp() {
-        let result = validate_url("ftp://example.com/file.st", false);
+        let result = validate_url("ftp://example.com/file.hxz", false);
         assert!(result.is_err(), "FTP scheme should be rejected");
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.to_lowercase().contains("http"));
@@ -433,7 +433,7 @@ mod tests {
 
     #[test]
     fn test_validate_url_ipv4_loopback_blocked() {
-        let result = validate_url("http://127.0.0.1/file.st", false);
+        let result = validate_url("http://127.0.0.1/file.hxz", false);
         assert!(result.is_err(), "Loopback IP should be blocked");
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.to_lowercase().contains("denied"));
@@ -442,9 +442,9 @@ mod tests {
     #[test]
     fn test_validate_url_ipv4_private_blocked() {
         let urls = vec![
-            "http://10.0.0.1/file.st",
-            "http://172.16.0.1/file.st",
-            "http://192.168.1.1/file.st",
+            "http://10.0.0.1/file.hxz",
+            "http://172.16.0.1/file.hxz",
+            "http://192.168.1.1/file.hxz",
         ];
         for url in urls {
             let result = validate_url(url, false);
@@ -460,29 +460,29 @@ mod tests {
 
     #[test]
     fn test_validate_url_ipv6_loopback_blocked() {
-        let result = validate_url("http://[::1]/file.st", false);
+        let result = validate_url("http://[::1]/file.hxz", false);
         assert!(result.is_err(), "IPv6 loopback should be blocked");
     }
 
     #[test]
     fn test_validate_url_ipv6_unique_local_blocked() {
-        let result = validate_url("http://[fc00::1]/file.st", false);
+        let result = validate_url("http://[fc00::1]/file.hxz", false);
         assert!(result.is_err(), "IPv6 unique local should be blocked");
     }
 
     #[test]
     fn test_validate_url_ipv6_link_local_blocked() {
-        let result = validate_url("http://[fe80::1]/file.st", false);
+        let result = validate_url("http://[fe80::1]/file.hxz", false);
         assert!(result.is_err(), "IPv6 link-local should be blocked");
     }
 
     #[test]
     fn test_validate_url_allow_restricted_flag() {
         let urls = vec![
-            "http://127.0.0.1/file.st",
-            "http://10.0.0.1/file.st",
-            "http://192.168.1.1/file.st",
-            "http://[::1]/file.st",
+            "http://127.0.0.1/file.hxz",
+            "http://10.0.0.1/file.hxz",
+            "http://192.168.1.1/file.hxz",
+            "http://[::1]/file.hxz",
         ];
         for url in urls {
             let result = validate_url(url, true);
@@ -507,7 +507,7 @@ mod tests {
 
     #[test]
     fn test_validate_url_domain_with_port() {
-        let result = validate_url("https://example.com:8080/file.st", false);
+        let result = validate_url("https://example.com:8080/file.hxz", false);
         assert!(result.is_ok(), "URL with custom port should be valid");
     }
 
@@ -521,7 +521,7 @@ mod tests {
     fn test_validate_url_localhost_blocked() {
         // Note: This test may fail if DNS is not available or if "localhost" doesn't resolve
         // In most systems, "localhost" resolves to 127.0.0.1 which should be blocked
-        let result = validate_url("http://localhost/file.st", false);
+        let result = validate_url("http://localhost/file.hxz", false);
         // This might resolve to 127.0.0.1 and be blocked, or fail DNS resolution
         // Either way, it should not succeed in default configuration
         assert!(
@@ -539,7 +539,7 @@ mod tests {
     #[test]
     fn test_validate_url_brackets_in_domain() {
         // Test the bracket-stripping logic for domains
-        let result = validate_url("http://example.com/file.st", false);
+        let result = validate_url("http://example.com/file.hxz", false);
         assert!(result.is_ok());
     }
 }

@@ -8,7 +8,7 @@
 //!
 //! # The Zero-Copy Problem
 //!
-//! When loading data from Strata snapshots into Python for ML training, the naive
+//! When loading data from Hexz snapshots into Python for ML training, the naive
 //! approach incurs multiple expensive copies:
 //!
 //! ```text
@@ -130,10 +130,10 @@
 //!
 //! ```rust,ignore
 //! use pyo3::prelude::*;
-//! use strata_loader::tensor::numpy::{acquire_writable_buffer, copy_to_buffer};
+//! use hexz_loader::tensor::numpy::{acquire_writable_buffer, copy_to_buffer};
 //!
 //! #[pymethods]
-//! impl StrataReader {
+//! impl Reader {
 //!     fn read_into(&self, buffer: &Bound<'_, PyAny>) -> PyResult<usize> {
 //!         // Acquire writable buffer view from NumPy array
 //!         let buf_info = acquire_writable_buffer(buffer)?;

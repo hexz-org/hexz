@@ -123,7 +123,7 @@
 //! Run CDC on a representative sample of your data to estimate the change rate:
 //!
 //! ```no_run
-//! use strata_core::algo::dedup::{cdc, dcam::DedupeParams};
+//! use hexz_core::algo::dedup::{cdc, dcam::DedupeParams};
 //! use std::io::Cursor;
 //!
 //! // Use baseline parameters for initial analysis
@@ -144,7 +144,7 @@
 //! Convert the dry-run results into a change rate:
 //!
 //! ```
-//! use strata_core::algo::dedup::dcam::{DedupeParams, calculate_c};
+//! use hexz_core::algo::dedup::dcam::{DedupeParams, calculate_c};
 //!
 //! let baseline = DedupeParams::lbfs_baseline();
 //! let unique_bytes = 400_000_000;  // From dry run
@@ -159,7 +159,7 @@
 //! Test different parameter sets to find the optimal balance:
 //!
 //! ```
-//! use strata_core::algo::dedup::dcam::{DedupeParams, predict_ratio, expected_chunk_length};
+//! use hexz_core::algo::dedup::dcam::{DedupeParams, predict_ratio, expected_chunk_length};
 //!
 //! let file_size = 1_000_000_000; // 1GB
 //! let c = 0.15; // From step 2
@@ -260,7 +260,7 @@
 //! ## Complete Optimization Workflow
 //!
 //! ```
-//! use strata_core::algo::dedup::dcam::{DedupeParams, predict_ratio, calculate_c};
+//! use hexz_core::algo::dedup::dcam::{DedupeParams, predict_ratio, calculate_c};
 //!
 //! // Step 1: Dry-run results (from cdc::analyze_stream)
 //! let file_size = 1_000_000_000; // 1GB
@@ -292,7 +292,7 @@
 //! ## Sensitivity Analysis
 //!
 //! ```
-//! use strata_core::algo::dedup::dcam::{DedupeParams, predict_ratio};
+//! use hexz_core::algo::dedup::dcam::{DedupeParams, predict_ratio};
 //!
 //! let file_size = 1_000_000_000;
 //! let params = DedupeParams::lbfs_baseline();
@@ -432,7 +432,7 @@
 /// ## Creating Custom Parameters
 ///
 /// ```
-/// use strata_core::algo::dedup::dcam::DedupeParams;
+/// use hexz_core::algo::dedup::dcam::DedupeParams;
 ///
 /// // High-performance configuration (larger chunks)
 /// let high_perf = DedupeParams {
@@ -456,7 +456,7 @@
 /// ## Comparing Parameter Sets
 ///
 /// ```
-/// use strata_core::algo::dedup::dcam::{DedupeParams, expected_chunk_length};
+/// use hexz_core::algo::dedup::dcam::{DedupeParams, expected_chunk_length};
 ///
 /// let baseline = DedupeParams::lbfs_baseline();
 /// let custom = DedupeParams { f: 14, ..baseline };
@@ -586,7 +586,7 @@ impl DedupeParams {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::algo::dedup::dcam::{DedupeParams, expected_chunk_length};
+    /// use hexz_core::algo::dedup::dcam::{DedupeParams, expected_chunk_length};
     ///
     /// let params = DedupeParams::lbfs_baseline();
     /// assert_eq!(params.f, 13);
@@ -641,7 +641,7 @@ impl DedupeParams {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::algo::dedup::dcam::DedupeParams;
+    /// use hexz_core::algo::dedup::dcam::DedupeParams;
     ///
     /// let params = DedupeParams::lbfs_baseline(); // f=13
     /// let p = params.p();
@@ -654,7 +654,7 @@ impl DedupeParams {
     /// ## Comparing Different Fingerprint Sizes
     ///
     /// ```
-    /// use strata_core::algo::dedup::dcam::DedupeParams;
+    /// use hexz_core::algo::dedup::dcam::DedupeParams;
     ///
     /// for f in 12..=15 {
     ///     let params = DedupeParams { f, ..DedupeParams::lbfs_baseline() };
@@ -742,7 +742,7 @@ impl DedupeParams {
 /// ## Basic Usage
 ///
 /// ```
-/// use strata_core::algo::dedup::dcam::{DedupeParams, expected_chunk_length};
+/// use hexz_core::algo::dedup::dcam::{DedupeParams, expected_chunk_length};
 ///
 /// let params = DedupeParams::lbfs_baseline(); // f=13, m=2KB, z=64KB
 /// let avg_len = expected_chunk_length(&params);
@@ -754,7 +754,7 @@ impl DedupeParams {
 /// ## Comparing Different Fingerprint Sizes
 ///
 /// ```
-/// use strata_core::algo::dedup::dcam::{DedupeParams, expected_chunk_length};
+/// use hexz_core::algo::dedup::dcam::{DedupeParams, expected_chunk_length};
 ///
 /// let baseline = DedupeParams::lbfs_baseline();
 ///
@@ -770,7 +770,7 @@ impl DedupeParams {
 /// ## Effect of Min/Max Constraints
 ///
 /// ```
-/// use strata_core::algo::dedup::dcam::{DedupeParams, expected_chunk_length};
+/// use hexz_core::algo::dedup::dcam::{DedupeParams, expected_chunk_length};
 ///
 /// let base = DedupeParams::lbfs_baseline();
 ///
@@ -913,7 +913,7 @@ pub fn expected_chunk_length(params: &DedupeParams) -> f64 {
 /// ## Basic Usage
 ///
 /// ```
-/// use strata_core::algo::dedup::dcam::{DedupeParams, expected_duplicate_bytes, expected_chunk_length};
+/// use hexz_core::algo::dedup::dcam::{DedupeParams, expected_duplicate_bytes, expected_chunk_length};
 ///
 /// let params = DedupeParams::lbfs_baseline();
 ///
@@ -934,7 +934,7 @@ pub fn expected_chunk_length(params: &DedupeParams) -> f64 {
 /// ## Change Rate Sensitivity Analysis
 ///
 /// ```
-/// use strata_core::algo::dedup::dcam::{DedupeParams, expected_duplicate_bytes, expected_chunk_length};
+/// use hexz_core::algo::dedup::dcam::{DedupeParams, expected_duplicate_bytes, expected_chunk_length};
 ///
 /// let params = DedupeParams::lbfs_baseline();
 /// let avg_chunk = expected_chunk_length(&params);
@@ -951,7 +951,7 @@ pub fn expected_chunk_length(params: &DedupeParams) -> f64 {
 /// ## Comparing Chunk Sizes
 ///
 /// ```
-/// use strata_core::algo::dedup::dcam::{DedupeParams, expected_duplicate_bytes, expected_chunk_length};
+/// use hexz_core::algo::dedup::dcam::{DedupeParams, expected_duplicate_bytes, expected_chunk_length};
 ///
 /// let c = 0.10; // 10% change rate
 ///
@@ -1137,7 +1137,7 @@ pub fn expected_duplicate_bytes(c: f64, params: &DedupeParams) -> f64 {
 /// ## Basic Prediction
 ///
 /// ```
-/// use strata_core::algo::dedup::dcam::{DedupeParams, predict_ratio, calculate_c};
+/// use hexz_core::algo::dedup::dcam::{DedupeParams, predict_ratio, calculate_c};
 ///
 /// let file_size = 1_000_000_000; // 1GB
 /// let unique_bytes = 400_000_000; // 400MB unique (from dry run)
@@ -1154,7 +1154,7 @@ pub fn expected_duplicate_bytes(c: f64, params: &DedupeParams) -> f64 {
 /// ## Parameter Optimization
 ///
 /// ```
-/// use strata_core::algo::dedup::dcam::{DedupeParams, predict_ratio, expected_chunk_length};
+/// use hexz_core::algo::dedup::dcam::{DedupeParams, predict_ratio, expected_chunk_length};
 ///
 /// let file_size = 1_000_000_000;
 /// let c = 0.15; // From dry-run analysis
@@ -1179,7 +1179,7 @@ pub fn expected_duplicate_bytes(c: f64, params: &DedupeParams) -> f64 {
 /// ## Breakeven Analysis
 ///
 /// ```
-/// use strata_core::algo::dedup::dcam::{DedupeParams, predict_ratio};
+/// use hexz_core::algo::dedup::dcam::{DedupeParams, predict_ratio};
 ///
 /// let file_size = 1_000_000_000;
 /// let params = DedupeParams::lbfs_baseline();
@@ -1203,7 +1203,7 @@ pub fn expected_duplicate_bytes(c: f64, params: &DedupeParams) -> f64 {
 /// ## Sensitivity to Metadata Overhead
 ///
 /// ```
-/// use strata_core::algo::dedup::dcam::{DedupeParams, predict_ratio};
+/// use hexz_core::algo::dedup::dcam::{DedupeParams, predict_ratio};
 ///
 /// let file_size = 1_000_000_000;
 /// let c = 0.20;
@@ -1358,7 +1358,7 @@ pub fn predict_ratio(file_size: u64, c: f64, params: &DedupeParams) -> f64 {
 /// ## Step 1: Run CDC Analysis
 ///
 /// ```no_run
-/// use strata_core::algo::dedup::{cdc, dcam::DedupeParams};
+/// use hexz_core::algo::dedup::{cdc, dcam::DedupeParams};
 /// use std::io::Cursor;
 ///
 /// let baseline = DedupeParams::lbfs_baseline();
@@ -1373,7 +1373,7 @@ pub fn predict_ratio(file_size: u64, c: f64, params: &DedupeParams) -> f64 {
 /// ## Step 2: Calculate Change Rate
 ///
 /// ```
-/// use strata_core::algo::dedup::dcam::{DedupeParams, calculate_c};
+/// use hexz_core::algo::dedup::dcam::{DedupeParams, calculate_c};
 ///
 /// let file_size = 1_000_000_000;  // 1GB
 /// let unique_bytes = 300_000_000; // 300MB unique (from step 1)
@@ -1386,7 +1386,7 @@ pub fn predict_ratio(file_size: u64, c: f64, params: &DedupeParams) -> f64 {
 /// ## Step 3: Use for Optimization
 ///
 /// ```
-/// use strata_core::algo::dedup::dcam::{DedupeParams, predict_ratio};
+/// use hexz_core::algo::dedup::dcam::{DedupeParams, predict_ratio};
 ///
 /// let c = 0.15; // From step 2
 /// let file_size = 1_000_000_000;
@@ -1404,7 +1404,7 @@ pub fn predict_ratio(file_size: u64, c: f64, params: &DedupeParams) -> f64 {
 /// ## Basic Usage
 ///
 /// ```
-/// use strata_core::algo::dedup::dcam::{DedupeParams, calculate_c};
+/// use hexz_core::algo::dedup::dcam::{DedupeParams, calculate_c};
 ///
 /// let file_size = 1_000_000_000;  // 1GB
 /// let unique_bytes = 300_000_000; // 300MB unique
@@ -1429,7 +1429,7 @@ pub fn predict_ratio(file_size: u64, c: f64, params: &DedupeParams) -> f64 {
 /// ## Sample Size Considerations
 ///
 /// ```
-/// use strata_core::algo::dedup::dcam::{DedupeParams, calculate_c};
+/// use hexz_core::algo::dedup::dcam::{DedupeParams, calculate_c};
 ///
 /// let full_size: u64 = 10_000_000_000; // 10GB total
 /// let params = DedupeParams::lbfs_baseline();
@@ -1452,7 +1452,7 @@ pub fn predict_ratio(file_size: u64, c: f64, params: &DedupeParams) -> f64 {
 /// ## Validating Estimates
 ///
 /// ```
-/// use strata_core::algo::dedup::dcam::{DedupeParams, calculate_c, predict_ratio};
+/// use hexz_core::algo::dedup::dcam::{DedupeParams, calculate_c, predict_ratio};
 ///
 /// let file_size = 1_000_000_000;
 /// let unique_bytes = 400_000_000; // From dry run

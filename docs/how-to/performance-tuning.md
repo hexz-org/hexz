@@ -1,10 +1,10 @@
 # Performance Tuning Guide
 
-**Goal**: Maximize Strata performance for your specific workload.
+**Goal**: Maximize Hexz performance for your specific workload.
 
 ## Prerequisites
 
-- Strata installed and working
+- Hexz installed and working
 - Basic performance measurement tools (time, htop, iostat)
 
 ## Performance Bottlenecks
@@ -62,7 +62,7 @@ working_set_size = dataset_size * 0.4
 # Recommended cache size: 50-100% of working set
 cache_size = int(working_set_size * 0.5)
 
-dataset = strata.open(path, cache_size=cache_size)
+dataset = hexz.open(path, cache_size=cache_size)
 ```
 
 **Memory-constrained systems**:
@@ -73,7 +73,7 @@ import psutil
 available_ram = psutil.virtual_memory().available
 cache_size = int(available_ram * 0.25)
 
-dataset = strata.open(path, cache_size=cache_size)
+dataset = hexz.open(path, cache_size=cache_size)
 ```
 
 ## Compression Algorithm Selection
@@ -91,7 +91,7 @@ Choose based on access pattern:
 # Current: Zstd level 9 (high compression, slower)
 # Change to: LZ4 (fast decompression)
 
-strata data pack \
+hexz data pack \
   --disk original.st \
   --output optimized.st \
   --compression lz4
@@ -111,13 +111,13 @@ Larger blocks compress better but slower random access.
 **Repack with optimal block size**:
 ```bash
 # For random access workload
-strata data pack \
+hexz data pack \
   --disk data/ \
   --output fast-access.st \
   --block-size 16384  # 16KB
 
 # For sequential streaming
-strata data pack \
+hexz data pack \
   --disk data/ \
   --output high-compression.st \
   --block-size 262144  # 256KB
@@ -136,8 +136,8 @@ location = s3.get_bucket_location(Bucket='my-bucket')
 print(f"Bucket region: {location['LocationConstraint']}")
 
 # Use matching region
-dataset = strata.open(
-    "s3://my-bucket/dataset.st",
+dataset = hexz.open(
+    "s3://my-bucket/dataset.hxz",
     s3_region=location['LocationConstraint']
 )
 ```
@@ -145,8 +145,8 @@ dataset = strata.open(
 ### Connection Timeout Tuning
 
 ```python
-dataset = strata.open(
-    "s3://bucket/dataset.st",
+dataset = hexz.open(
+    "s3://bucket/dataset.hxz",
     connect_timeout=15,  # Increase if network is slow
     read_timeout=60,     # Increase for large block reads
     retry_attempts=5     # Retry on transient failures
@@ -168,10 +168,10 @@ aws s3api put-bucket-accelerate-configuration \
 Persist cache to disk for faster subsequent epochs:
 
 ```python
-dataset = strata.open(
-    "s3://bucket/dataset.st",
+dataset = hexz.open(
+    "s3://bucket/dataset.hxz",
     cache_size=2 * 1024**3,  # 2GB in-memory cache
-    cache_dir="/nvme/strata-cache"  # Fast local disk
+    cache_dir="/nvme/hexz-cache"  # Fast local disk
 )
 ```
 
@@ -215,13 +215,13 @@ iftop
 vmstat 1
 ```
 
-### Strata Metrics
+### Hexz Metrics
 
 ```python
-import strata
+import hexz
 import time
 
-reader = strata.open("dataset.st")
+reader = hexz.open("dataset.hxz")
 
 # Measure read latency
 start = time.time()
@@ -253,7 +253,7 @@ print(f"Throughput: {throughput:.1f} MB/s")
 ### For VM Boot
 
 **CPU**: 4+ cores
-**RAM**: 8GB+ for VMs, 2GB for Strata cache
+**RAM**: 8GB+ for VMs, 2GB for Hexz cache
 **Storage**: SSD strongly recommended
 **KVM**: Hardware virtualization support
 
@@ -291,8 +291,8 @@ iftop  # Watch network
 **Step 2: Check configuration**
 ```python
 # Print current configuration
-import strata
-reader = strata.open("dataset.st")
+import hexz
+reader = hexz.open("dataset.hxz")
 print(f"Cache size: {reader.cache_size / 1024**3:.1f} GB")
 print(f"Cache hit rate: {reader.cache_hits / (reader.cache_hits + reader.cache_misses):.1%}")
 ```

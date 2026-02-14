@@ -1,6 +1,6 @@
 //! High-concurrency sharded LRU cache for decompressed snapshot blocks.
 //!
-//! This module implements the L1 block cache layer that sits between `StrataFile` and
+//! This module implements the L1 block cache layer that sits between `File` and
 //! the storage backend, serving as a critical performance optimization by caching
 //! decompressed blocks in memory. By avoiding repeated decompression and backend I/O,
 //! the cache can reduce read latency by 10-100× for workloads with temporal locality.
@@ -204,8 +204,8 @@
 //! ## Basic Usage
 //!
 //! ```
-//! use strata_core::cache::lru::BlockCache;
-//! use strata_core::api::stratafile::SnapshotStream;
+//! use hexz_core::cache::lru::BlockCache;
+//! use hexz_core::api::file::SnapshotStream;
 //! use bytes::Bytes;
 //!
 //! // Create cache with 1000-entry capacity
@@ -226,7 +226,7 @@
 //! ## Memory-Constrained Configuration
 //!
 //! ```
-//! use strata_core::cache::lru::BlockCache;
+//! use hexz_core::cache::lru::BlockCache;
 //!
 //! // Embedded system: 16 MiB cache budget, 64 KiB blocks
 //! let capacity = (16 * 1024 * 1024) / (64 * 1024); // 256 entries
@@ -238,7 +238,7 @@
 //! ## High-Concurrency Configuration
 //!
 //! ```
-//! use strata_core::cache::lru::BlockCache;
+//! use hexz_core::cache::lru::BlockCache;
 //! use std::sync::Arc;
 //!
 //! // Server: 8 GB cache budget, 64 KiB blocks, 32 threads
@@ -250,7 +250,7 @@
 //!     let cache_clone = Arc::clone(&cache);
 //!     std::thread::spawn(move || {
 //!         // Concurrent access (uses sharding for parallelism)
-//!         cache_clone.get(strata_core::api::stratafile::SnapshotStream::Disk, 0);
+//!         cache_clone.get(hexz_core::api::file::SnapshotStream::Disk, 0);
 //!     });
 //! }
 //! ```
@@ -258,8 +258,8 @@
 //! ## Prefetch Integration
 //!
 //! ```
-//! # use strata_core::cache::lru::BlockCache;
-//! # use strata_core::api::stratafile::SnapshotStream;
+//! # use hexz_core::cache::lru::BlockCache;
+//! # use hexz_core::api::file::SnapshotStream;
 //! # use bytes::Bytes;
 //! let cache = BlockCache::with_capacity(1000);
 //!
@@ -277,7 +277,7 @@
 //! }
 //! ```
 
-use crate::api::stratafile::SnapshotStream;
+use crate::api::file::SnapshotStream;
 use bytes::Bytes;
 use lru::LruCache;
 use std::num::NonZeroUsize;
@@ -295,7 +295,7 @@ use std::sync::Mutex;
 /// - Provides ~70-85% hit rate for typical Zipfian access distributions
 ///
 /// Applications should override this via `BlockCache::with_capacity()` or
-/// `StrataFile::with_options()` based on available memory and workload characteristics.
+/// `File::with_options()` based on available memory and workload characteristics.
 const DEFAULT_L1_CAPACITY: usize = 1000;
 
 /// Default capacity for the Index Page cache in number of entries.
@@ -435,7 +435,7 @@ impl BlockCache {
     /// ## Default Configuration
     ///
     /// ```
-    /// use strata_core::cache::lru::BlockCache;
+    /// use hexz_core::cache::lru::BlockCache;
     ///
     /// // Typical server: 1000 blocks × 64 KiB = 64 MB cache
     /// let cache = BlockCache::with_capacity(1000);
@@ -444,7 +444,7 @@ impl BlockCache {
     /// ## Memory-Constrained System
     ///
     /// ```
-    /// use strata_core::cache::lru::BlockCache;
+    /// use hexz_core::cache::lru::BlockCache;
     ///
     /// // Embedded device: 16 MiB budget, 64 KiB blocks → 256 entries
     /// let budget_mb = 16;
@@ -458,7 +458,7 @@ impl BlockCache {
     /// ## High-Capacity System
     ///
     /// ```
-    /// use strata_core::cache::lru::BlockCache;
+    /// use hexz_core::cache::lru::BlockCache;
     ///
     /// // Server: 8 GB budget, 64 KiB blocks → 131072 entries
     /// let budget_gb = 8;
@@ -473,7 +473,7 @@ impl BlockCache {
     /// ## Disabled Cache
     ///
     /// ```
-    /// use strata_core::cache::lru::BlockCache;
+    /// use hexz_core::cache::lru::BlockCache;
     ///
     /// // Disable caching (useful for testing or streaming workloads)
     /// let cache = BlockCache::with_capacity(0);
@@ -638,8 +638,8 @@ impl BlockCache {
     /// ## Typical Usage
     ///
     /// ```
-    /// use strata_core::cache::lru::BlockCache;
-    /// use strata_core::api::stratafile::SnapshotStream;
+    /// use hexz_core::cache::lru::BlockCache;
+    /// use hexz_core::api::file::SnapshotStream;
     /// use bytes::Bytes;
     ///
     /// let cache = BlockCache::with_capacity(1000);
@@ -660,8 +660,8 @@ impl BlockCache {
     /// ## Stream Isolation
     ///
     /// ```
-    /// # use strata_core::cache::lru::BlockCache;
-    /// # use strata_core::api::stratafile::SnapshotStream;
+    /// # use hexz_core::cache::lru::BlockCache;
+    /// # use hexz_core::api::file::SnapshotStream;
     /// # use bytes::Bytes;
     /// let cache = BlockCache::with_capacity(1000);
     ///
@@ -680,8 +680,8 @@ impl BlockCache {
     /// ## Disabled Cache
     ///
     /// ```
-    /// # use strata_core::cache::lru::BlockCache;
-    /// # use strata_core::api::stratafile::SnapshotStream;
+    /// # use hexz_core::cache::lru::BlockCache;
+    /// # use hexz_core::api::file::SnapshotStream;
     /// let cache = BlockCache::with_capacity(0);
     ///
     /// // All lookups return None (cache disabled)
@@ -746,7 +746,7 @@ impl BlockCache {
     /// 1. **Data integrity**: `data` is the correct decompressed content for `(stream, block)`
     /// 2. **Consistency**: If a block is updated in the backend, the cache entry must be
     ///    invalidated (this cache does **not** implement invalidation; snapshots are immutable)
-    /// 3. **Size matching**: `data.len()` should match `block_size` (enforced by `StrataFile`,
+    /// 3. **Size matching**: `data.len()` should match `block_size` (enforced by `File`,
     ///    not by this cache)
     ///
     /// Violating these requirements can cause data corruption or incorrect reads.
@@ -765,8 +765,8 @@ impl BlockCache {
     /// ## Basic Insertion
     ///
     /// ```
-    /// use strata_core::cache::lru::BlockCache;
-    /// use strata_core::api::stratafile::SnapshotStream;
+    /// use hexz_core::cache::lru::BlockCache;
+    /// use hexz_core::api::file::SnapshotStream;
     /// use bytes::Bytes;
     ///
     /// let cache = BlockCache::with_capacity(1000);
@@ -782,8 +782,8 @@ impl BlockCache {
     /// ## Update Existing Entry
     ///
     /// ```
-    /// # use strata_core::cache::lru::BlockCache;
-    /// # use strata_core::api::stratafile::SnapshotStream;
+    /// # use hexz_core::cache::lru::BlockCache;
+    /// # use hexz_core::api::file::SnapshotStream;
     /// # use bytes::Bytes;
     /// let cache = BlockCache::with_capacity(1000);
     ///
@@ -802,8 +802,8 @@ impl BlockCache {
     /// ## Eviction on Full Cache
     ///
     /// ```
-    /// # use strata_core::cache::lru::BlockCache;
-    /// # use strata_core::api::stratafile::SnapshotStream;
+    /// # use hexz_core::cache::lru::BlockCache;
+    /// # use hexz_core::api::file::SnapshotStream;
     /// # use bytes::Bytes;
     /// let cache = BlockCache::with_capacity(2); // Tiny cache (single shard, 2 entries)
     ///
@@ -827,8 +827,8 @@ impl BlockCache {
     /// ## Disabled Cache (No-Op)
     ///
     /// ```
-    /// # use strata_core::cache::lru::BlockCache;
-    /// # use strata_core::api::stratafile::SnapshotStream;
+    /// # use hexz_core::cache::lru::BlockCache;
+    /// # use hexz_core::api::file::SnapshotStream;
     /// # use bytes::Bytes;
     /// let cache = BlockCache::with_capacity(0); // Cache disabled
     ///
@@ -872,7 +872,7 @@ impl Default for BlockCache {
     /// # Examples
     ///
     /// ```
-    /// use strata_core::cache::lru::BlockCache;
+    /// use hexz_core::cache::lru::BlockCache;
     ///
     /// // Use default capacity (1000 entries ≈ 64 MB with 64 KiB blocks)
     /// let cache = BlockCache::default();
@@ -889,7 +889,7 @@ impl Default for BlockCache {
 ///
 /// Index pages are metadata structures that map logical block indices to physical
 /// storage offsets. This function provides a compile-time default capacity (128 pages)
-/// for index page caches used by `StrataFile`.
+/// for index page caches used by `File`.
 ///
 /// # Capacity Details
 ///
@@ -935,7 +935,7 @@ impl Default for BlockCache {
 /// # Examples
 ///
 /// ```
-/// use strata_core::cache::lru::default_page_cache_size;
+/// use hexz_core::cache::lru::default_page_cache_size;
 /// use lru::LruCache;
 ///
 /// // Use default capacity for index page cache
@@ -951,7 +951,7 @@ pub fn default_page_cache_size() -> NonZeroUsize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::stratafile::SnapshotStream;
+    use crate::api::file::SnapshotStream;
 
     #[test]
     fn test_cache_with_zero_capacity() {

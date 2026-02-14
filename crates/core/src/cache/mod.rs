@@ -10,7 +10,7 @@
 //!
 //! ```text
 //! ┌──────────────┐
-//! │  StrataFile  │ Read API
+//! │  File  │ Read API
 //! └──────┬───────┘
 //!        │
 //! ┌──────┴────────────────────┐
@@ -65,6 +65,6 @@ pub mod prefetch;
 
 /// LRU cache implementation for decompressed data and index pages.
 ///
-/// Maintains sharded LRU structures used by `StrataFile` for efficient
+/// Maintains sharded LRU structures used by `File` for efficient
 /// concurrent access and cache eviction.
 pub mod lru;

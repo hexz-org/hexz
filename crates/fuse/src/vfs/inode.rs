@@ -1,7 +1,7 @@
 //! FUSE inode numbering and namespace management.
 //!
 //! This module defines the **inode numbering scheme** and **directory layout**
-//! for the Strata FUSE adapter. It provides the mapping between:
+//! for the Hexz FUSE adapter. It provides the mapping between:
 //! - Logical inode numbers (1, 2, 3)
 //! - Snapshot streams (Disk, Memory)
 //! - Directory entry names ("disk", "memory")
@@ -12,7 +12,7 @@
 //!
 //! # Inode Numbering Scheme
 //!
-//! Strata uses a **fixed inode layout** with only three possible inodes:
+//! Hexz uses a **fixed inode layout** with only three possible inodes:
 //!
 //! | Inode | Type      | Name     | Backing         | Purpose                    |
 //! |-------|-----------|----------|-----------------|----------------------------|
@@ -62,16 +62,16 @@
 //! ## Constructing an InodeMap
 //!
 //! ```no_run
-//! use strata_core::StrataFile;
-//! use strata_core::store::local::FileBackend;
-//! use strata_core::algo::compression::lz4::Lz4Compressor;
-//! use strata_fuse::vfs::InodeMap;
+//! use hexz_core::File;
+//! use hexz_core::store::local::FileBackend;
+//! use hexz_core::algo::compression::lz4::Lz4Compressor;
+//! use hexz_fuse::vfs::InodeMap;
 //! use std::sync::Arc;
 //!
 //! # fn main() -> anyhow::Result<()> {
-//! let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+//! let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
 //! let compressor = Box::new(Lz4Compressor::new());
-//! let snap = StrataFile::new(backend, compressor, None)?;
+//! let snap = File::new(backend, compressor, None)?;
 //! let inode_map = InodeMap::new(&snap, 1000, 1000);
 //!
 //! // Query available streams
@@ -85,15 +85,15 @@
 //! ## Resolving Names to Inodes
 //!
 //! ```no_run
-//! # use strata_core::StrataFile;
-//! # use strata_core::store::local::FileBackend;
-//! # use strata_core::algo::compression::lz4::Lz4Compressor;
-//! # use strata_fuse::vfs::InodeMap;
+//! # use hexz_core::File;
+//! # use hexz_core::store::local::FileBackend;
+//! # use hexz_core::algo::compression::lz4::Lz4Compressor;
+//! # use hexz_fuse::vfs::InodeMap;
 //! # use std::sync::Arc;
 //! # fn main() -> anyhow::Result<()> {
-//! # let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+//! # let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
 //! # let compressor = Box::new(Lz4Compressor::new());
-//! # let snap = StrataFile::new(backend, compressor, None)?;
+//! # let snap = File::new(backend, compressor, None)?;
 //! # let inode_map = InodeMap::new(&snap, 1000, 1000);
 //! // Lookup "disk" under root
 //! if let Some(ino) = inode_map.lookup(1, "disk".as_ref()) {
@@ -110,13 +110,13 @@
 //! ```
 
 use fuser::FileType;
-use strata_core::{SnapshotStream, StrataFile};
+use hexz_core::{File, SnapshotStream};
 
 use super::attr;
 
 /// Logical inode identifier used by the FUSE adapter.
 ///
-/// Inode numbers are 64-bit integers assigned by the filesystem. In Strata,
+/// Inode numbers are 64-bit integers assigned by the filesystem. In Hexz,
 /// they follow a fixed scheme:
 /// - 1: Root directory
 /// - 2: Disk file
@@ -136,9 +136,9 @@ use super::attr;
 /// is critical for correct path resolution.
 pub type Inode = u64;
 
-/// Fixed inode number assignments for the Strata FUSE namespace.
+/// Fixed inode number assignments for the Hexz FUSE namespace.
 ///
-/// This enum encodes the three possible inodes in the Strata filesystem. The
+/// This enum encodes the three possible inodes in the Hexz filesystem. The
 /// `#[repr(u64)]` attribute ensures that each variant has a specific numeric
 /// value that matches FUSE inode numbers.
 ///
@@ -188,7 +188,7 @@ impl InodeType {
     /// # Examples
     ///
     /// ```
-    /// use strata_fuse::vfs::InodeType;
+    /// use hexz_fuse::vfs::InodeType;
     ///
     /// assert_eq!(InodeType::from_u64(1), Some(InodeType::Root));
     /// assert_eq!(InodeType::from_u64(2), Some(InodeType::Disk));
@@ -227,7 +227,7 @@ impl InodeType {
 /// # Examples
 ///
 /// ```
-/// use strata_fuse::vfs::DirEntry;
+/// use hexz_fuse::vfs::DirEntry;
 /// use fuser::FileType;
 ///
 /// let entry = DirEntry {
@@ -277,8 +277,8 @@ pub struct DirEntry {
 /// # Memory Footprint
 ///
 /// - Size: 26 bytes (2 bools + 2 u64 + 2 u32, with padding)
-/// - Lifetime: Same as FUSE mount (created in `Strata::new`, dropped on unmount)
-/// - Copies: Typically just one per mount (stored in `Strata` struct)
+/// - Lifetime: Same as FUSE mount (created in `Hexz::new`, dropped on unmount)
+/// - Copies: Typically just one per mount (stored in `Hexz` struct)
 pub struct InodeMap {
     has_disk: bool,
     has_mem: bool,
@@ -311,29 +311,29 @@ impl InodeMap {
     ///
     /// # Returns
     ///
-    /// An `InodeMap` ready for use in `Strata::new`. This map is cheap to
+    /// An `InodeMap` ready for use in `Hexz::new`. This map is cheap to
     /// clone (26 bytes) if needed.
     ///
     /// # Examples
     ///
     /// ```no_run
-    /// use strata_core::StrataFile;
-    /// use strata_core::store::local::FileBackend;
-    /// use strata_core::algo::compression::lz4::Lz4Compressor;
-    /// use strata_fuse::vfs::InodeMap;
+    /// use hexz_core::File;
+    /// use hexz_core::store::local::FileBackend;
+    /// use hexz_core::algo::compression::lz4::Lz4Compressor;
+    /// use hexz_fuse::vfs::InodeMap;
     /// use std::sync::Arc;
     ///
     /// # fn main() -> anyhow::Result<()> {
-    /// let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+    /// let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
     /// let compressor = Box::new(Lz4Compressor::new());
-    /// let snap = StrataFile::new(backend, compressor, None)?;
+    /// let snap = File::new(backend, compressor, None)?;
     /// let inode_map = InodeMap::new(&snap, 1000, 1000);
     ///
     /// // Now inode_map can be used for lookups and attribute synthesis
     /// # Ok(())
     /// # }
     /// ```
-    pub fn new(snap: &StrataFile, uid: u32, gid: u32) -> Self {
+    pub fn new(snap: &File, uid: u32, gid: u32) -> Self {
         Self {
             has_disk: snap.header.features.has_disk,
             has_mem: snap.header.features.has_memory,
@@ -370,15 +370,15 @@ impl InodeMap {
     /// # Examples
     ///
     /// ```no_run
-    /// # use strata_core::StrataFile;
-    /// # use strata_core::store::local::FileBackend;
-    /// # use strata_core::algo::compression::lz4::Lz4Compressor;
-    /// # use strata_fuse::vfs::InodeMap;
+    /// # use hexz_core::File;
+    /// # use hexz_core::store::local::FileBackend;
+    /// # use hexz_core::algo::compression::lz4::Lz4Compressor;
+    /// # use hexz_fuse::vfs::InodeMap;
     /// # use std::sync::Arc;
     /// # fn main() -> anyhow::Result<()> {
-    /// # let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+    /// # let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
     /// # let compressor = Box::new(Lz4Compressor::new());
-    /// # let snap = StrataFile::new(backend, compressor, None)?;
+    /// # let snap = File::new(backend, compressor, None)?;
     /// # let map = InodeMap::new(&snap, 1000, 1000);
     /// // Valid lookup
     /// assert_eq!(map.lookup(1, "disk".as_ref()), Some(2));
@@ -438,15 +438,15 @@ impl InodeMap {
     /// # Examples
     ///
     /// ```no_run
-    /// # use strata_core::StrataFile;
-    /// # use strata_core::store::local::FileBackend;
-    /// # use strata_core::algo::compression::lz4::Lz4Compressor;
-    /// # use strata_fuse::vfs::InodeMap;
+    /// # use hexz_core::File;
+    /// # use hexz_core::store::local::FileBackend;
+    /// # use hexz_core::algo::compression::lz4::Lz4Compressor;
+    /// # use hexz_fuse::vfs::InodeMap;
     /// # use std::sync::Arc;
     /// # fn main() -> anyhow::Result<()> {
-    /// # let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+    /// # let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
     /// # let compressor = Box::new(Lz4Compressor::new());
-    /// # let snap = StrataFile::new(backend, compressor, None)?;
+    /// # let snap = File::new(backend, compressor, None)?;
     /// # let map = InodeMap::new(&snap, 1000, 1000);
     /// // Get attributes for disk inode
     /// let attr = map.getattr(2);
@@ -494,15 +494,15 @@ impl InodeMap {
     /// # Examples
     ///
     /// ```no_run
-    /// # use strata_core::StrataFile;
-    /// # use strata_core::store::local::FileBackend;
-    /// # use strata_core::algo::compression::lz4::Lz4Compressor;
-    /// # use strata_fuse::vfs::InodeMap;
+    /// # use hexz_core::File;
+    /// # use hexz_core::store::local::FileBackend;
+    /// # use hexz_core::algo::compression::lz4::Lz4Compressor;
+    /// # use hexz_fuse::vfs::InodeMap;
     /// # use std::sync::Arc;
     /// # fn main() -> anyhow::Result<()> {
-    /// # let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+    /// # let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
     /// # let compressor = Box::new(Lz4Compressor::new());
-    /// # let snap = StrataFile::new(backend, compressor, None)?;
+    /// # let snap = File::new(backend, compressor, None)?;
     /// # let map = InodeMap::new(&snap, 1000, 1000);
     /// let entries = map.readdir();
     ///
@@ -580,16 +580,16 @@ impl InodeMap {
     /// # Examples
     ///
     /// ```no_run
-    /// # use strata_core::StrataFile;
-    /// # use strata_core::store::local::FileBackend;
-    /// # use strata_core::algo::compression::lz4::Lz4Compressor;
-    /// # use strata_core::SnapshotStream;
-    /// # use strata_fuse::vfs::InodeMap;
+    /// # use hexz_core::File;
+    /// # use hexz_core::store::local::FileBackend;
+    /// # use hexz_core::algo::compression::lz4::Lz4Compressor;
+    /// # use hexz_core::SnapshotStream;
+    /// # use hexz_fuse::vfs::InodeMap;
     /// # use std::sync::Arc;
     /// # fn main() -> anyhow::Result<()> {
-    /// # let backend = Arc::new(FileBackend::new("snapshot.st".as_ref())?);
+    /// # let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
     /// # let compressor = Box::new(Lz4Compressor::new());
-    /// # let snap = StrataFile::new(backend, compressor, None)?;
+    /// # let snap = File::new(backend, compressor, None)?;
     /// # let map = InodeMap::new(&snap, 1000, 1000);
     /// // Valid stream mapping
     /// assert_eq!(map.inode_to_stream(2), Some(SnapshotStream::Disk));

@@ -1,7 +1,7 @@
 //! Network Block Device (NBD) protocol server implementation.
 //!
 //! This module implements the NBD protocol (version 3.0+, fixed newstyle negotiation)
-//! to expose Strata snapshots as block devices over TCP. Clients can mount the snapshot
+//! to expose Hexz snapshots as block devices over TCP. Clients can mount the snapshot
 //! using standard NBD client tools like `nbd-client` (Linux) or connect directly via
 //! the NBD protocol.
 //!
@@ -41,15 +41,15 @@
 //!
 //! ```no_run
 //! # use std::sync::Arc;
-//! # use strata_core::StrataFile;
-//! # use strata_server::nbd::handle_client;
+//! # use hexz_core::File;
+//! # use hexz_server::nbd::handle_client;
 //! # use tokio::net::TcpListener;
 //! # #[tokio::main]
 //! # async fn main() -> anyhow::Result<()> {
-//! // Server-side (in strata-server)
+//! // Server-side (in hexz-server)
 //! let listener = TcpListener::bind("127.0.0.1:10809").await?;
-//! // ... load snapshot into Arc<StrataFile> ...
-//! # let snap: Arc<StrataFile> = Arc::new(todo!());
+//! // ... load snapshot into Arc<File> ...
+//! # let snap: Arc<File> = Arc::new(todo!());
 //!
 //! loop {
 //!     let (socket, _) = listener.accept().await?;
@@ -78,8 +78,8 @@
 //! ```
 
 use anyhow::Result;
+use hexz_core::{File, SnapshotStream};
 use std::sync::Arc;
-use strata_core::{SnapshotStream, StrataFile};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -133,7 +133,7 @@ const NBD_REPLY_MAGIC: u32 = 0x67446698;
 /// # Arguments
 ///
 /// - `socket`: TCP connection to the NBD client
-/// - `snap`: Shared reference to the Strata snapshot file
+/// - `snap`: Shared reference to the Hexz snapshot file
 ///
 /// # Returns
 ///
@@ -146,7 +146,7 @@ const NBD_REPLY_MAGIC: u32 = 0x67446698;
 /// - The client sends invalid magic values or malformed requests
 /// - Socket I/O fails (connection reset, timeout, etc.)
 /// - The snapshot cannot be read (decompression errors, backend failures)
-pub async fn handle_client(mut socket: TcpStream, snap: Arc<StrataFile>) -> Result<()> {
+pub async fn handle_client(mut socket: TcpStream, snap: Arc<File>) -> Result<()> {
     // --- Handshake (Fixed Newstyle) ---
 
     // 1. Send Init Pass

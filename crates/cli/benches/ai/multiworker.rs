@@ -5,16 +5,16 @@
 //! by overlapping data loading with model computation.
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use hexz_core::api::file::SnapshotStream;
 use std::sync::{Arc, Barrier};
 use std::thread;
-use strata_core::api::stratafile::SnapshotStream;
 
 #[path = "common.rs"]
 mod common;
 
 /// Benchmarks throughput scaling with multiple worker threads.
 ///
-/// Tests how well Strata's read path scales when multiple threads are
+/// Tests how well Hexz's read path scales when multiple threads are
 /// reading different parts of the dataset simultaneously. Ideal for
 /// multi-GPU training scenarios.
 fn bench_worker_scaling(c: &mut Criterion) {

@@ -1,6 +1,6 @@
 # Compression Strategy
 
-This document explains Strata's approach to compression and the rationale behind design choices.
+This document explains Hexz's approach to compression and the rationale behind design choices.
 
 ## The Compression Problem
 
@@ -17,11 +17,11 @@ Traditional compression formats force a choice:
 - Storage costs multiply
 - Bandwidth usage increases
 
-Strata needs both: compression for efficiency AND random access for performance.
+Hexz needs both: compression for efficiency AND random access for performance.
 
 ## Block-Level Compression Approach
 
-Strata divides data into fixed-size blocks and compresses each independently.
+Hexz divides data into fixed-size blocks and compresses each independently.
 
 ### How It Works
 
@@ -53,7 +53,7 @@ To read bytes 200000-200100:
 
 ## Algorithm Selection
 
-Strata supports two compression algorithms with different trade-offs.
+Hexz supports two compression algorithms with different trade-offs.
 
 ### LZ4
 

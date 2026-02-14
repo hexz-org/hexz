@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────────────────────
-# Strata — Local MinIO (S3-compatible) server for testing
+# Hexz — Local MinIO (S3-compatible) server for testing
 # ──────────────────────────────────────────────────────────────────────────────
 # Usage:  ./scripts/run_minio.sh [start|stop|status]
 #
@@ -13,13 +13,13 @@
 
 set -euo pipefail
 
-CONTAINER_NAME="strata-minio"
+CONTAINER_NAME="hexz-minio"
 MINIO_PORT="${MINIO_PORT:-9000}"
 MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-9001}"
 MINIO_ROOT_USER="${MINIO_ROOT_USER:-minioadmin}"
 MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-minioadmin}"
-BUCKET_NAME="${BUCKET_NAME:-strata-test}"
-DATA_DIR="${MINIO_DATA_DIR:-/tmp/strata-minio-data}"
+BUCKET_NAME="${BUCKET_NAME:-hexz-test}"
+DATA_DIR="${MINIO_DATA_DIR:-/tmp/hexz-minio-data}"
 
 info()  { printf '\033[36m[minio]\033[0m %s\n' "$*"; }
 ok()    { printf '\033[32m[minio]\033[0m %s\n' "$*"; }
@@ -58,9 +58,9 @@ start() {
 
     # Create test bucket
     if command -v mc &>/dev/null; then
-        mc alias set strata-local "http://localhost:${MINIO_PORT}" \
+        mc alias set hexz-local "http://localhost:${MINIO_PORT}" \
             "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" 2>/dev/null
-        mc mb "strata-local/${BUCKET_NAME}" 2>/dev/null || true
+        mc mb "hexz-local/${BUCKET_NAME}" 2>/dev/null || true
         ok "Test bucket '${BUCKET_NAME}' ready"
     else
         info "Install 'mc' (MinIO Client) to auto-create buckets"

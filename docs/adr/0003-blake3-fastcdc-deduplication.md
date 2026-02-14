@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-Deduplication is critical for Strata's target workloads:
+Deduplication is critical for Hexz's target workloads:
 
 **ML Datasets**:
 - Duplicate images across train/val/test splits

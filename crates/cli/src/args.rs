@@ -1,7 +1,7 @@
-//! Command-line argument definitions for the Strata CLI.
+//! Command-line argument definitions for the Hexz CLI.
 //!
 //! This module defines all Clap argument structures using a nested "Noun-Verb"
-//! command hierarchy (e.g., `strata data pack`, `strata vm boot`).
+//! command hierarchy (e.g., `hexz data pack`, `hexz vm boot`).
 //!
 //! **Design principle:** Arguments are defined separately from handlers to keep
 //! CLI structure clear and testable. The actual command implementations live in
@@ -10,9 +10,9 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-/// Strata - High-performance snapshot and streaming engine
+/// Hexz - High-performance snapshot and streaming engine
 #[derive(Parser)]
-#[command(name = "strata", version, about, long_about = None)]
+#[command(name = "hexz", version, about, long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -36,7 +36,7 @@ pub enum Commands {
 
 #[derive(Subcommand)]
 pub enum DataCommands {
-    /// Pack data into a Strata archive
+    /// Pack data into a Hexz archive
     Pack {
         /// Path to disk image to pack
         #[arg(long)]
@@ -46,7 +46,7 @@ pub enum DataCommands {
         #[arg(long)]
         memory: Option<PathBuf>,
 
-        /// Output archive path (.st)
+        /// Output archive path (.hxz)
         #[arg(short, long)]
         output: PathBuf,
 

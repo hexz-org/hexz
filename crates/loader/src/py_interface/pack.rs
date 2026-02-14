@@ -1,14 +1,14 @@
-//! High-level Python packing function for creating Strata snapshots.
+//! High-level Python packing function for creating Hexz snapshots.
 //!
 //! This module provides the `pack()` function, a convenient high-level API for creating
-//! Strata snapshot files from disk images and memory dumps. It wraps the core
-//! `strata_core::ops::pack::pack_snapshot` function with Python bindings.
+//! Hexz snapshot files from disk images and memory dumps. It wraps the core
+//! `hexz_core::ops::pack::pack_snapshot` function with Python bindings.
 //!
 //! # Overview
 //!
 //! The `pack()` function is the recommended way to create snapshots from Python when you
 //! need a simple, high-level interface. For more control over the packing process
-//! (e.g., streaming inputs, overlay merging, custom metadata), use `StrataBuilder` instead.
+//! (e.g., streaming inputs, overlay merging, custom metadata), use `Builder` instead.
 //!
 //! # Key Features
 //!
@@ -24,10 +24,10 @@
 //! ## Basic Snapshot Creation
 //!
 //! ```python
-//! from strata import pack
+//! from hexz import pack
 //!
 //! # Pack a disk image with default settings (LZ4, 64 KiB blocks)
-//! pack(output="snapshot.st", disk="disk.img")
+//! pack(output="snapshot.hxz", disk="disk.img")
 //! ```
 //!
 //! ## VM Snapshot with Disk and Memory
@@ -35,7 +35,7 @@
 //! ```python
 //! # Pack both disk and memory for full VM checkpoint
 //! pack(
-//!     output="vm-checkpoint.st",
+//!     output="vm-checkpoint.hxz",
 //!     disk="disk.img",
 //!     memory="memory.dump"
 //! )
@@ -46,7 +46,7 @@
 //! ```python
 //! # Use Zstandard for maximum compression ratio
 //! pack(
-//!     output="snapshot.st",
+//!     output="snapshot.hxz",
 //!     disk="disk.img",
 //!     compression="zstd",
 //!     block_size=131072  # 128 KiB blocks for better compression
@@ -58,7 +58,7 @@
 //! ```python
 //! # Create encrypted snapshot (AES-256-GCM)
 //! pack(
-//!     output="encrypted.st",
+//!     output="encrypted.hxz",
 //!     disk="disk.img",
 //!     encrypt=True,
 //!     password="my-secure-password"
@@ -70,7 +70,7 @@
 //! ```python
 //! # Enable CDC for better deduplication across similar files
 //! pack(
-//!     output="snapshot.st",
+//!     output="snapshot.hxz",
 //!     disk="disk.img",
 //!     cdc=True,
 //!     min_chunk=16384,   # 16 KiB minimum
@@ -79,14 +79,14 @@
 //! )
 //! ```
 //!
-//! # Comparison with StrataBuilder
+//! # Comparison with Builder
 //!
 //! Use `pack()` when:
 //! - You have simple inputs (disk/memory files)
 //! - You want a one-line solution
 //! - You don't need custom metadata or overlay merging
 //!
-//! Use `StrataBuilder` when:
+//! Use `Builder` when:
 //! - You need to merge overlays
 //! - You want to add custom metadata
 //! - You need fine-grained control over the packing process
@@ -106,12 +106,12 @@
 //! - **Encryption**: Adds ~5-10% overhead. Encrypted snapshots cannot be deduplicated
 //!   across runs due to random IVs.
 
+use hexz_core::ops::pack::{PackConfig, pack_snapshot};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::path::PathBuf;
-use strata_core::ops::pack::{PackConfig, pack_snapshot};
 
-/// Pack disk and/or memory images into a Strata snapshot file.
+/// Pack disk and/or memory images into a Hexz snapshot file.
 ///
 /// This high-level function creates a compressed snapshot from disk images and/or memory
 /// dumps with optional encryption, deduplication, and content-defined chunking. It releases
@@ -155,21 +155,21 @@ use strata_core::ops::pack::{PackConfig, pack_snapshot};
 /// # Python Examples
 ///
 /// ```python
-/// from strata import pack
+/// from hexz import pack
 ///
 /// # Basic disk snapshot with defaults
-/// pack(output="snapshot.st", disk="disk.img")
+/// pack(output="snapshot.hxz", disk="disk.img")
 ///
 /// # Full VM checkpoint with disk and memory
 /// pack(
-///     output="vm.st",
+///     output="vm.hxz",
 ///     disk="disk.img",
 ///     memory="memory.dump"
 /// )
 ///
 /// # High compression with Zstandard
 /// pack(
-///     output="compressed.st",
+///     output="compressed.hxz",
 ///     disk="disk.img",
 ///     compression="zstd",
 ///     block_size=131072  # 128 KiB blocks
@@ -177,7 +177,7 @@ use strata_core::ops::pack::{PackConfig, pack_snapshot};
 ///
 /// # Encrypted snapshot
 /// pack(
-///     output="secure.st",
+///     output="secure.hxz",
 ///     disk="disk.img",
 ///     encrypt=True,
 ///     password="my-password"
@@ -185,7 +185,7 @@ use strata_core::ops::pack::{PackConfig, pack_snapshot};
 ///
 /// # CDC for deduplication
 /// pack(
-///     output="deduped.st",
+///     output="deduped.hxz",
 ///     disk="disk.img",
 ///     cdc=True,
 ///     min_chunk=32768,

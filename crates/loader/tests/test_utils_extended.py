@@ -1,18 +1,18 @@
-"""Extended tests for strata.utils module to improve coverage from 86% to 92%+."""
+"""Extended tests for hexz.utils module to improve coverage from 86% to 92%+."""
 
 import pytest
 import os
 import tempfile
 import shutil
-import strata
-from strata import utils, crypto
-from strata.utils import Metadata, AnalysisReport, merge_overlay, analyze
+import hexz
+from hexz import utils, crypto
+from hexz.utils import Metadata, AnalysisReport, merge_overlay, analyze
 
 
 @pytest.fixture
 def temp_dir():
     """Create temporary directory for test files."""
-    d = tempfile.mkdtemp(prefix="strata_utils_test_")
+    d = tempfile.mkdtemp(prefix="hexz_utils_test_")
     yield d
     shutil.rmtree(d, ignore_errors=True)
 
@@ -31,8 +31,8 @@ def sample_data_file(temp_dir):
 @pytest.fixture
 def sample_snapshot(temp_dir, sample_data_file):
     """Create a sample snapshot."""
-    snap_path = os.path.join(temp_dir, "test.st")
-    with strata.open(snap_path, mode="w", compression="lz4") as w:
+    snap_path = os.path.join(temp_dir, "test.hxz")
+    with hexz.open(snap_path, mode="w", compression="lz4") as w:
         w.add(sample_data_file)
     return snap_path
 
@@ -49,14 +49,14 @@ def signed_snapshot(temp_dir, sample_snapshot):
 
 def test_metadata_is_compatible_property(sample_snapshot):
     """Test the is_compatible property."""
-    meta = strata.inspect(sample_snapshot)
+    meta = hexz.inspect(sample_snapshot)
     assert isinstance(meta.is_compatible, bool)
     assert meta.is_compatible is True
 
 
 def test_metadata_compatibility_status_property(sample_snapshot):
     """Test the compatibility_status property."""
-    meta = strata.inspect(sample_snapshot)
+    meta = hexz.inspect(sample_snapshot)
     status = meta.compatibility_status
     assert isinstance(status, str)
     assert status in ["full", "degraded", "incompatible", "unknown"]
@@ -64,7 +64,7 @@ def test_metadata_compatibility_status_property(sample_snapshot):
 
 def test_metadata_compatibility_message_property(sample_snapshot):
     """Test the compatibility_message property."""
-    meta = strata.inspect(sample_snapshot)
+    meta = hexz.inspect(sample_snapshot)
     message = meta.compatibility_message
     assert isinstance(message, str)
     assert len(message) > 0
@@ -72,7 +72,7 @@ def test_metadata_compatibility_message_property(sample_snapshot):
 
 def test_metadata_repr(sample_snapshot):
     """Test Metadata __repr__ method."""
-    meta = strata.inspect(sample_snapshot)
+    meta = hexz.inspect(sample_snapshot)
     repr_str = repr(meta)
     assert "Metadata" in repr_str
     assert "version=" in repr_str
@@ -81,21 +81,21 @@ def test_metadata_repr(sample_snapshot):
 
 def test_metadata_str_without_path(temp_dir, sample_data_file):
     """Test Metadata __str__ when created without path field."""
-    snap_path = os.path.join(temp_dir, "nopath.st")
-    with strata.open(snap_path, mode="w") as w:
+    snap_path = os.path.join(temp_dir, "nopath.hxz")
+    with hexz.open(snap_path, mode="w") as w:
         w.add(sample_data_file)
 
-    raw_meta = strata.strata_loader.inspect(str(snap_path))
+    raw_meta = hexz.hexz_loader.inspect(str(snap_path))
     meta = Metadata(raw_meta)
 
     str_output = str(meta)
-    assert "Strata Snapshot" in str_output
+    assert "Hexz Snapshot" in str_output
     assert "Version:" in str_output
 
 
 def test_metadata_str_with_memory(temp_dir):
     """Test Metadata __str__ when snapshot has memory data."""
-    snap_path = os.path.join(temp_dir, "withmem.st")
+    snap_path = os.path.join(temp_dir, "withmem.hxz")
     disk_path = os.path.join(temp_dir, "disk.bin")
     mem_path = os.path.join(temp_dir, "mem.bin")
 
@@ -104,11 +104,11 @@ def test_metadata_str_with_memory(temp_dir):
     with open(mem_path, "wb") as f:
         f.write(b"\xaa" * 1024)
 
-    with strata.open(snap_path, mode="w") as w:
+    with hexz.open(snap_path, mode="w") as w:
         w.add_file(disk_path, kind="disk")
         w.add_file(mem_path, kind="memory")
 
-    meta = strata.inspect(snap_path)
+    meta = hexz.inspect(snap_path)
     str_output = str(meta)
 
     if meta.has_memory:
@@ -117,7 +117,7 @@ def test_metadata_str_with_memory(temp_dir):
 
 def test_metadata_getitem_access(sample_snapshot):
     """Test dict-like access to metadata."""
-    meta = strata.inspect(sample_snapshot)
+    meta = hexz.inspect(sample_snapshot)
     version = meta["version"]
     assert isinstance(version, int)
 
@@ -139,13 +139,13 @@ def test_metadata_diff_with_overlay_file(temp_dir, sample_snapshot):
 
 def test_metadata_diff_with_two_snapshots(temp_dir, sample_data_file):
     """Test Metadata.diff comparing two snapshots."""
-    snap1 = os.path.join(temp_dir, "snap1.st")
-    snap2 = os.path.join(temp_dir, "snap2.st")
+    snap1 = os.path.join(temp_dir, "snap1.hxz")
+    snap2 = os.path.join(temp_dir, "snap2.hxz")
 
-    with strata.open(snap1, mode="w", compression="lz4") as w:
+    with hexz.open(snap1, mode="w", compression="lz4") as w:
         w.add(sample_data_file)
 
-    with strata.open(snap2, mode="w", compression="zstd") as w:
+    with hexz.open(snap2, mode="w", compression="zstd") as w:
         w.add(sample_data_file)
 
     diff_info = Metadata.diff(snap1, snap2)
@@ -159,7 +159,7 @@ def test_merge_overlay_function(temp_dir, sample_snapshot):
     """Test merge_overlay function from utils."""
     overlay_path = os.path.join(temp_dir, "overlay.bin")
     meta_path = os.path.join(temp_dir, "overlay.meta")
-    output_path = os.path.join(temp_dir, "merged.st")
+    output_path = os.path.join(temp_dir, "merged.hxz")
 
     with open(overlay_path, "wb") as f:
         f.write(b"X" * 4096)
@@ -171,7 +171,7 @@ def test_merge_overlay_function(temp_dir, sample_snapshot):
 
     assert os.path.exists(output_path)
 
-    reader = strata.open(output_path)
+    reader = hexz.open(output_path)
     assert reader.read(1, offset=0) == b"X"
 
 
@@ -179,7 +179,7 @@ def test_merge_overlay_thin_snapshot(temp_dir, sample_snapshot):
     """Test merge_overlay with thin=True parameter."""
     overlay_path = os.path.join(temp_dir, "thin_overlay.bin")
     meta_path = os.path.join(temp_dir, "thin_overlay.meta")
-    output_path = os.path.join(temp_dir, "thin.st")
+    output_path = os.path.join(temp_dir, "thin.hxz")
 
     open(overlay_path, "wb").close()
     open(meta_path, "wb").close()
@@ -188,7 +188,7 @@ def test_merge_overlay_thin_snapshot(temp_dir, sample_snapshot):
 
     assert os.path.exists(output_path)
 
-    meta = strata.inspect(output_path)
+    meta = hexz.inspect(output_path)
     assert "parent_path" in meta._data
 
 
@@ -231,26 +231,26 @@ def test_analyze_function(sample_data_file):
 
 def test_verify_with_structure_only(sample_snapshot):
     """Test verify with structure=True, checksum=False."""
-    result = strata.verify(sample_snapshot, structure=True, checksum=False)
+    result = hexz.verify(sample_snapshot, structure=True, checksum=False)
     assert result is True
 
 
 def test_verify_with_checksum_only(sample_snapshot):
     """Test verify with checksum=True, structure=False."""
-    result = strata.verify(sample_snapshot, checksum=True, structure=False)
+    result = hexz.verify(sample_snapshot, checksum=True, structure=False)
     assert result is True
 
 
 def test_verify_with_both_checks(sample_snapshot):
     """Test verify with both structure and checksum."""
-    result = strata.verify(sample_snapshot, structure=True, checksum=True)
+    result = hexz.verify(sample_snapshot, structure=True, checksum=True)
     assert result is True
 
 
 def test_verify_with_signature(signed_snapshot):
     """Test verify with public_key parameter (signature verification)."""
     snapshot_path, public_key = signed_snapshot
-    result = strata.verify(snapshot_path, public_key=public_key)
+    result = hexz.verify(snapshot_path, public_key=public_key)
     assert result is True
 
 
@@ -262,13 +262,13 @@ def test_verify_with_wrong_signature_fails(signed_snapshot, temp_dir):
     wrong_public = os.path.join(temp_dir, "wrong.pub")
     crypto.keygen(wrong_private, wrong_public)
 
-    result = strata.verify(snapshot_path, public_key=wrong_public)
+    result = hexz.verify(snapshot_path, public_key=wrong_public)
     assert result is False
 
 
 def test_verify_corrupted_file_fails(temp_dir, sample_snapshot):
     """Test verify returns False for corrupted file."""
-    corrupted = os.path.join(temp_dir, "corrupted.st")
+    corrupted = os.path.join(temp_dir, "corrupted.hxz")
 
     with open(sample_snapshot, "rb") as src:
         data = bytearray(src.read())
@@ -280,14 +280,14 @@ def test_verify_corrupted_file_fails(temp_dir, sample_snapshot):
         dst.write(data)
 
     # Just run the code path; result depends on corruption location
-    result = strata.verify(corrupted, checksum=True, structure=True)
+    result = hexz.verify(corrupted, checksum=True, structure=True)
     assert isinstance(result, bool)
 
 
 def test_verify_with_all_parameters(signed_snapshot):
     """Test verify with all parameters specified."""
     snapshot_path, public_key = signed_snapshot
-    result = strata.verify(
+    result = hexz.verify(
         snapshot_path, checksum=True, structure=True, public_key=public_key
     )
     assert result is True
@@ -295,17 +295,17 @@ def test_verify_with_all_parameters(signed_snapshot):
 
 def test_verify_nonexistent_file_returns_false(temp_dir):
     """Test verify returns False for nonexistent file."""
-    nonexistent = os.path.join(temp_dir, "does_not_exist.st")
-    result = strata.verify(nonexistent)
+    nonexistent = os.path.join(temp_dir, "does_not_exist.hxz")
+    result = hexz.verify(nonexistent)
     assert result is False
 
 
 def test_metadata_print_method(sample_snapshot, capsys):
     """Test Metadata.print() method."""
-    meta = strata.inspect(sample_snapshot)
+    meta = hexz.inspect(sample_snapshot)
     meta.print()
     captured = capsys.readouterr()
-    assert "Strata Snapshot" in captured.out
+    assert "Hexz Snapshot" in captured.out
     assert "Version:" in captured.out
 
 
@@ -321,7 +321,7 @@ def test_format_version_constants():
 
 def test_metadata_all_properties(sample_snapshot):
     """Test all Metadata properties for coverage."""
-    meta = strata.inspect(sample_snapshot)
+    meta = hexz.inspect(sample_snapshot)
     _ = meta.version
     _ = meta.compression
     _ = meta.disk_size
@@ -344,9 +344,9 @@ def test_inspect_with_pathlike(temp_dir, sample_data_file):
     """Test inspect with Path object."""
     from pathlib import Path
 
-    snap_path = Path(temp_dir) / "pathlike.st"
-    with strata.open(str(snap_path), mode="w") as w:
+    snap_path = Path(temp_dir) / "pathlike.hxz"
+    with hexz.open(str(snap_path), mode="w") as w:
         w.add(sample_data_file)
 
-    meta = strata.inspect(snap_path)
+    meta = hexz.inspect(snap_path)
     assert meta.version > 0

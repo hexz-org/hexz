@@ -1,6 +1,6 @@
-//! Python class for building Strata snapshots.
+//! Python class for building Hexz snapshots.
 //!
-//! Provides the low-level `StrataBuilder` that can create archives from
+//! Provides the low-level `Builder` that can create archives from
 //! disk images, memory dumps, and overlay merges.
 //!
 //! # Python Usage Examples
@@ -8,10 +8,10 @@
 //! ## Basic Snapshot Creation
 //!
 //! ```python
-//! from strata import StrataBuilder
+//! from hexz import Builder
 //!
 //! # Create a new snapshot with LZ4 compression
-//! builder = StrataBuilder("output.st", compression="lz4")
+//! builder = Builder("output.hxz", compression="lz4")
 //! builder.add_disk_file("disk.img")
 //! builder.finalize()
 //! ```
@@ -19,10 +19,10 @@
 //! ## Full VM Snapshot with Memory
 //!
 //! ```python
-//! from strata import StrataBuilder
+//! from hexz import Builder
 //!
 //! # Create snapshot with both disk and memory
-//! builder = StrataBuilder("vm-snapshot.st", compression="zstd", compression_level=5)
+//! builder = Builder("vm-snapshot.hxz", compression="zstd", compression_level=5)
 //! builder.add_disk_file("disk.img")
 //! builder.add_memory_file("memory.dump")
 //! builder.finalize()
@@ -31,11 +31,11 @@
 //! ## Content-Defined Chunking (CDC)
 //!
 //! ```python
-//! from strata import StrataBuilder
+//! from hexz import Builder
 //!
 //! # Enable CDC for better deduplication
-//! builder = StrataBuilder(
-//!     "snapshot.st",
+//! builder = Builder(
+//!     "snapshot.hxz",
 //!     compression="zstd",
 //!     cdc=True,
 //!     min_chunk=16384,   # 16 KiB
@@ -49,12 +49,12 @@
 //! ## Overlay Merge (Thin Snapshots)
 //!
 //! ```python
-//! from strata import StrataBuilder
+//! from hexz import Builder
 //!
 //! # Merge overlay changes into a new thin snapshot
-//! builder = StrataBuilder("merged.st", compression="lz4")
+//! builder = Builder("merged.hxz", compression="lz4")
 //! builder.merge_overlay(
-//!     base_path="base-snapshot.st",
+//!     base_path="base-snapshot.hxz",
 //!     overlay_path="overlay.img",
 //!     thin=True  # Create thin snapshot referencing base
 //! )
@@ -64,11 +64,11 @@
 //! ## Custom Metadata
 //!
 //! ```python
-//! from strata import StrataBuilder
+//! from hexz import Builder
 //! import json
 //!
 //! # Add custom metadata to snapshot
-//! builder = StrataBuilder("snapshot.st")
+//! builder = Builder("snapshot.hxz")
 //! metadata = {
 //!     "vm_name": "production-db",
 //!     "created_by": "backup-script",
@@ -79,6 +79,17 @@
 //! builder.finalize()
 //! ```
 
+use hexz_common::constants::{BLOCK_OFFSET_PARENT, DEFAULT_ZSTD_LEVEL};
+use hexz_core::File as HexzFile;
+use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
+use hexz_core::algo::dedup::{cdc::StreamChunker, dcam::DedupeParams};
+use hexz_core::api::file::SnapshotStream;
+use hexz_core::format::{
+    header::{CompressionType, FeatureFlags, Header},
+    index::{BlockInfo, ENTRIES_PER_PAGE, IndexPage, MasterIndex, PageEntry},
+    magic::{FORMAT_VERSION, HEADER_SIZE, MAGIC_BYTES},
+};
+use hexz_core::store::local::FileBackend;
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use sha2::{Digest, Sha256};
@@ -87,17 +98,6 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
-use strata_common::constants::{BLOCK_OFFSET_PARENT, DEFAULT_ZSTD_LEVEL};
-use strata_core::StrataFile;
-use strata_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
-use strata_core::algo::dedup::{cdc::StreamChunker, dcam::DedupeParams};
-use strata_core::api::stratafile::SnapshotStream;
-use strata_core::format::{
-    header::{CompressionType, FeatureFlags, StrataHeader},
-    index::{BlockInfo, ENTRIES_PER_PAGE, IndexPage, MasterIndex, PageEntry},
-    magic::{FORMAT_VERSION, HEADER_SIZE, MAGIC_BYTES},
-};
-use strata_core::store::local::FileBackend;
 
 /// Result tuple returned by the thread-safe block processing closure.
 /// Contains: (generated pages, new file offset, output file handle, number of blocks added, updated dedup map)
@@ -138,8 +138,8 @@ impl<R: Read> Iterator for FixedChunker<R> {
     }
 }
 
-#[pyclass(module = "strata.strata_loader")]
-pub struct StrataBuilder {
+#[pyclass(module = "hexz.hexz_loader")]
+pub struct Builder {
     block_size: u32,
     compression: String,
     compression_level: Option<i32>,
@@ -158,7 +158,7 @@ pub struct StrataBuilder {
     metadata: Vec<u8>,
 }
 
-/// Python interface for building Strata snapshot files.
+/// Python interface for building Hexz snapshot files.
 ///
 /// This class provides a low-level API for creating `.st` snapshot files from
 /// disk images, memory dumps, or overlay files. It supports various compression
@@ -166,7 +166,7 @@ pub struct StrataBuilder {
 ///
 /// # Workflow
 ///
-/// 1. Create a `StrataBuilder` instance with desired compression settings
+/// 1. Create a `Builder` instance with desired compression settings
 /// 2. Add disk and/or memory files using `add_disk_file()` and `add_memory_file()`
 /// 3. Optionally merge overlay files with `merge_overlay()`
 /// 4. Call `finalize()` to write the index and header
@@ -178,7 +178,7 @@ pub struct StrataBuilder {
 /// - CDC chunking improves deduplication at the cost of metadata size
 /// - Progress tracking is handled by the caller via callbacks (CLI layer)
 #[pymethods]
-impl StrataBuilder {
+impl Builder {
     /// Create a new snapshot builder.
     ///
     /// # Arguments
@@ -197,19 +197,19 @@ impl StrataBuilder {
     ///
     /// ```python
     /// # Basic usage with defaults
-    /// builder = StrataBuilder("output.st")
+    /// builder = Builder("output.hxz")
     ///
     /// # Custom compression settings
-    /// builder = StrataBuilder(
-    ///     "output.st",
+    /// builder = Builder(
+    ///     "output.hxz",
     ///     compression="zstd",
     ///     compression_level=5,
     ///     block_size=131072  # 128 KiB blocks
     /// )
     ///
     /// # Enable CDC for better deduplication
-    /// builder = StrataBuilder(
-    ///     "output.st",
+    /// builder = Builder(
+    ///     "output.hxz",
     ///     cdc=True,
     ///     min_chunk=32768,
     ///     avg_chunk=65536,
@@ -237,7 +237,7 @@ impl StrataBuilder {
         f.write_all(&[0u8; HEADER_SIZE])
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
-        Ok(StrataBuilder {
+        Ok(Builder {
             block_size,
             compression: compression.to_string(),
             compression_level,
@@ -260,7 +260,7 @@ impl StrataBuilder {
     /// Set custom metadata to be embedded in the snapshot.
     ///
     /// The metadata is stored as an opaque byte array in the snapshot and can be
-    /// retrieved later using `StrataReader.metadata()`. Typical use cases include
+    /// retrieved later using `Reader.metadata()`. Typical use cases include
     /// storing JSON-encoded configuration, tags, or provenance information.
     ///
     /// # Python Example
@@ -268,7 +268,7 @@ impl StrataBuilder {
     /// ```python
     /// import json
     ///
-    /// builder = StrataBuilder("snapshot.st")
+    /// builder = Builder("snapshot.hxz")
     /// metadata = {"vm_name": "web-server", "version": "1.0"}
     /// builder.set_metadata(json.dumps(metadata).encode())
     /// ```
@@ -284,7 +284,7 @@ impl StrataBuilder {
     /// # Python Example
     ///
     /// ```python
-    /// builder = StrataBuilder("snapshot.st")
+    /// builder = Builder("snapshot.hxz")
     /// builder.add_disk_file("disk.img")
     /// print(f"Bytes written: {builder.get_bytes_written()}")
     /// ```
@@ -306,7 +306,7 @@ impl StrataBuilder {
     /// # Python Example
     ///
     /// ```python
-    /// builder = StrataBuilder("snapshot.st")
+    /// builder = Builder("snapshot.hxz")
     /// builder.add_disk_file("/path/to/disk.img")
     /// builder.finalize()
     /// ```
@@ -329,7 +329,7 @@ impl StrataBuilder {
     ///
     /// ```python
     /// # Create a full VM snapshot with disk and memory
-    /// builder = StrataBuilder("vm-snapshot.st")
+    /// builder = Builder("vm-snapshot.hxz")
     /// builder.add_disk_file("disk.img")
     /// builder.add_memory_file("memory.dump")
     /// builder.finalize()
@@ -363,18 +363,18 @@ impl StrataBuilder {
     ///
     /// ```python
     /// # Merge overlay changes into a thin snapshot
-    /// builder = StrataBuilder("merged.st")
+    /// builder = Builder("merged.hxz")
     /// builder.merge_overlay(
-    ///     base_path="base-snapshot.st",
+    ///     base_path="base-snapshot.hxz",
     ///     overlay_path="overlay.img",
     ///     thin=True
     /// )
     /// builder.finalize()
     ///
     /// # Create a standalone thick snapshot
-    /// builder = StrataBuilder("standalone.st")
+    /// builder = Builder("standalone.hxz")
     /// builder.merge_overlay(
-    ///     base_path="base-snapshot.st",
+    ///     base_path="base-snapshot.hxz",
     ///     overlay_path="overlay.img",
     ///     thin=False
     /// )
@@ -416,7 +416,7 @@ impl StrataBuilder {
             FileBackend::new(&abs_base_path).map_err(|e| PyIOError::new_err(e.to_string()))?,
         );
         let read_compressor = Box::new(Lz4Compressor::new());
-        let base_snap = StrataFile::new(backend, read_compressor, None)
+        let base_snap = HexzFile::new(backend, read_compressor, None)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
         let base_size = base_snap.size(SnapshotStream::Disk);
@@ -648,7 +648,7 @@ impl StrataBuilder {
     /// # Python Example
     ///
     /// ```python
-    /// builder = StrataBuilder("snapshot.st")
+    /// builder = Builder("snapshot.hxz")
     /// builder.add_disk_file("disk.img")
     /// builder.finalize()
     /// print("Snapshot created successfully")
@@ -683,7 +683,7 @@ impl StrataBuilder {
             _ => CompressionType::Lz4,
         };
 
-        let header = StrataHeader {
+        let header = Header {
             magic: *MAGIC_BYTES,
             version: FORMAT_VERSION,
             block_size: self.block_size,
@@ -715,7 +715,7 @@ impl StrataBuilder {
     }
 }
 
-impl StrataBuilder {
+impl Builder {
     fn process_stream(&mut self, py: Python, path: String, is_disk: bool) -> PyResult<()> {
         let block_size = self.block_size as usize;
         let comp_str = self.compression.clone();

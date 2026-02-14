@@ -1,6 +1,6 @@
 //! Virtual filesystem abstractions for FUSE.
 //!
-//! This module implements the virtual filesystem layer that maps Strata snapshots
+//! This module implements the virtual filesystem layer that maps Hexz snapshots
 //! to POSIX-style inodes, attributes, and directory entries. It also manages the
 //! overlay file for copy-on-write semantics.
 //!
@@ -16,8 +16,8 @@
 //!
 //! ```text
 //! Root Directory (inode 1)
-//! ├── disk (inode 2) → StrataFile::read_at(Disk, ...)
-//! └── memory (inode 3) → StrataFile::read_at(Memory, ...)
+//! ├── disk (inode 2) → File::read_at(Disk, ...)
+//! └── memory (inode 3) → File::read_at(Memory, ...)
 //! ```
 //!
 //! This design:

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# QEMU VM Test Script for Strata
+# QEMU VM Test Script for Hexz
 #
 # This script automates the process of creating a minimal bootable VM,
-# converting it to a Strata snapshot, and booting it via FUSE.
+# converting it to a Hexz snapshot, and booting it via FUSE.
 
 set -e
 
@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/common.sh"
 
 PROJECT_ROOT="$(get_project_root)"
-BIN="${BIN:-$PROJECT_ROOT/target/release/strata}"
+BIN="${BIN:-$PROJECT_ROOT/target/release/hexz}"
 WORK_DIR="${WORK_DIR:-vm_test_work}"
 MOUNT_DIR="${MOUNT_DIR:-$WORK_DIR/mnt}"
 
@@ -28,7 +28,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-info "=== Strata VM Test ==="
+info "=== Hexz VM Test ==="
 info "BIN=$BIN"
 info "WORK_DIR=$WORK_DIR"
 
@@ -46,7 +46,7 @@ INITRAMFS_URL="https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/netbo
 
 # Paths
 IMAGE_RAW="${WORK_DIR}/disk.raw"
-IMAGE_SNAP="${WORK_DIR}/disk.st"
+IMAGE_SNAP="${WORK_DIR}/disk.hxz"
 
 mkdir -p "${WORK_DIR}"
 mkdir -p "${MOUNT_DIR}"
@@ -65,7 +65,7 @@ fi
 # Create Dummy Disk Image
 if [[ ! -f "${IMAGE_RAW}" ]]; then
     info "Creating 200MB compressible raw disk image..."
-    yes "This is a test of Strata compression speed. We want some repeated text that compresses well." | \
+    yes "This is a test of Hexz compression speed. We want some repeated text that compresses well." | \
         dd of="${IMAGE_RAW}" bs=1M count=200 status=progress iflag=fullblock 2>/dev/null
 fi
 
@@ -107,11 +107,11 @@ EOF
     rm -rf "${WORK_DIR}/initramfs_build"
 fi
 
-# Build Strata
+# Build Hexz
 ensure_build "$BIN"
 
 # Create Snapshot
-info "Converting Raw Image to Strata Snapshot..."
+info "Converting Raw Image to Hexz Snapshot..."
 if [[ -f "${IMAGE_SNAP}" ]]; then rm "${IMAGE_SNAP}"; fi
 $BIN data pack --disk "${IMAGE_RAW}" --output "${IMAGE_SNAP}"
 

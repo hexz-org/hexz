@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-Common issues and their solutions for Strata.
+Common issues and their solutions for Hexz.
 
 ## Installation Issues
 
@@ -18,11 +18,11 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source $HOME/.cargo/env
 ```
 
-### "Python package 'strata' not found"
+### "Python package 'hexz' not found"
 
 **Error**:
 ```python
-ModuleNotFoundError: No module named 'strata'
+ModuleNotFoundError: No module named 'hexz'
 ```
 
 **Solutions**:
@@ -88,11 +88,11 @@ print(f"10 batches in {elapsed:.2f}s")
 1. Increase `num_workers`: Try 4-8 workers
 2. Increase cache size:
    ```python
-   dataset = strata.open(path, cache_size=1024*1024*1024)  # 1GB
+   dataset = hexz.open(path, cache_size=1024*1024*1024)  # 1GB
    ```
 3. Enable disk cache for multi-epoch:
    ```python
-   dataset = strata.open(path, cache_dir="/tmp/strata-cache")
+   dataset = hexz.open(path, cache_dir="/tmp/hexz-cache")
    ```
 4. Check S3 region matches bucket region
 
@@ -108,7 +108,7 @@ ConnectionError: Connection timeout
 **Solutions**:
 1. Increase timeout:
    ```python
-   dataset = strata.open(path, connect_timeout=30, read_timeout=60)
+   dataset = hexz.open(path, connect_timeout=30, read_timeout=60)
    ```
 2. Check network: `curl https://s3.amazonaws.com`
 3. Verify bucket region: `aws s3api get-bucket-location --bucket BUCKET`
@@ -159,9 +159,9 @@ Error: Parent snapshot not found: /old/path/base.st
 1. Restore parent to original location
 2. Convert to standalone snapshot:
    ```bash
-   strata vm mount thin.st /mnt --overlay full.img
+   hexz vm mount thin.st /mnt --overlay full.img
    sudo umount /mnt
-   strata vm commit --base thin.st --overlay full.img --output standalone.st
+   hexz vm commit --base thin.st --overlay full.img --output standalone.st
    ```
 
 ## Compression/Packing Issues
@@ -176,11 +176,11 @@ fatal runtime error: out of memory
 **Solutions**:
 1. Reduce block size:
    ```bash
-   strata data pack --disk data/ --output out.st --block-size 16384
+   hexz data pack --disk data/ --output out.st --block-size 16384
    ```
 2. Disable CDC (uses less memory):
    ```bash
-   strata data pack --disk data/ --output out.st  # No --cdc flag
+   hexz data pack --disk data/ --output out.st  # No --cdc flag
    ```
 3. Pack in smaller batches
 
@@ -194,7 +194,7 @@ CorruptionError: Checksum mismatch
 **Diagnostics**:
 ```bash
 # Verify snapshot integrity
-strata data info snapshot.st
+hexz data info snapshot.st
 ```
 
 **Causes**:
@@ -221,7 +221,7 @@ strata data info snapshot.st
 1. Reduce workers: `num_workers=4` instead of 8
 2. Use LZ4 for hot data:
    ```bash
-   strata data pack --disk data/ --output out.st --compression lz4
+   hexz data pack --disk data/ --output out.st --compression lz4
    ```
 
 ### High memory usage
@@ -242,20 +242,20 @@ strata data info snapshot.st
 
 **Still stuck?**
 
-1. Run diagnostics: `strata sys doctor`
+1. Run diagnostics: `hexz sys doctor`
 2. Enable verbose logging:
    ```bash
-   strata -vvv data pack ...  # CLI
+   hexz -vvv data pack ...  # CLI
    ```
    ```python
    import logging
    logging.basicConfig(level=logging.DEBUG)  # Python
    ```
-3. Check [GitHub Issues](https://github.com/Alethic-Systems/strata/issues)
+3. Check [GitHub Issues](https://github.com/Alethic-Systems/hexz/issues)
 4. Open a new issue with:
    - Error message (full output)
    - OS and version
-   - Strata version: `strata --version`
+   - Hexz version: `hexz --version`
    - Steps to reproduce
 
 ## See Also

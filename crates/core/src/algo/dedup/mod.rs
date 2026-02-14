@@ -17,7 +17,7 @@
 //!
 //! ## FastCDC Algorithm
 //!
-//! Strata uses **FastCDC**, which combines:
+//! Hexz uses **FastCDC**, which combines:
 //! - **Gear hash**: Fast rolling hash (no modulo, just bit masks)
 //! - **Normalized chunking**: Maintains target size better than basic CDC
 //! - **Min/max enforcement**: Prevents pathologically small/large chunks
@@ -32,7 +32,7 @@
 //! 3. Testing parameter combinations analytically
 //! 4. Recommending optimal min/avg/max chunk sizes
 //!
-//! **Usage:** Run `strata data analyze` before creating archives to find optimal
+//! **Usage:** Run `hexz data analyze` before creating archives to find optimal
 //! parameters for your dataset.
 //!
 //! # Trade-offs

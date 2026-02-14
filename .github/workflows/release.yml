@@ -88,11 +88,11 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libfuse-dev pkg-config
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }} --package strata
+        run: cargo build --release --target ${{ matrix.target }} --package hexz
       - name: Archive
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/strata dist/strata-${{ matrix.target }}
+          cp target/${{ matrix.target }}/release/hexz dist/hexz-${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
           name: binary-${{ matrix.target }}

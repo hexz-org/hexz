@@ -7,8 +7,8 @@
 //! - URL validation and security checks
 //! - Concurrent access patterns
 
-use strata_core::store::http::HttpBackend;
-use strata_core::store::StorageBackend;
+use hexz_core::store::http::HttpBackend;
+use hexz_core::store::StorageBackend;
 use wiremock::{
     Mock, MockServer, ResponseTemplate,
     matchers::{method, path, header},

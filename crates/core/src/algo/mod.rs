@@ -1,6 +1,6 @@
 //! Algorithms for compression, encryption, hashing, and deduplication.
 //!
-//! This module provides the algorithmic foundation for Strata's snapshot format,
+//! This module provides the algorithmic foundation for Hexz's snapshot format,
 //! organizing all cryptographic and data reduction primitives behind pluggable
 //! traits. Each submodule defines an abstract interface and concrete implementations
 //! that can be swapped independently without affecting higher layers.
@@ -55,8 +55,8 @@
 //! # Usage Example
 //!
 //! ```no_run
-//! # use strata_core::algo::compression::{Compressor, lz4::Lz4Compressor};
-//! # use strata_core::algo::encryption::{Encryptor, aes_gcm::AesGcmEncryptor};
+//! # use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor};
+//! # use hexz_core::algo::encryption::{Encryptor, aes_gcm::AesGcmEncryptor};
 //! // Compress and encrypt a block
 //! let compressor = Lz4Compressor::new();
 //! let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000);
@@ -64,7 +64,7 @@
 //! let data = b"Block data to compress and encrypt";
 //! let compressed = compressor.compress(data)?;
 //! let encrypted = encryptor.encrypt(&compressed, 0)?;
-//! # Ok::<(), strata_common::StrataError>(())
+//! # Ok::<(), hexz_common::Error>(())
 //! ```
 
 /// Block compression codecs (LZ4, Zstd).

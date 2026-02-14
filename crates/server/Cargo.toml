@@ -1,15 +1,15 @@
 [package]
-name = "strata-server"
+name = "hexz-server"
 version = "0.1.0-alpha"
 edition = "2024"
 authors = ["Will McCallion"]
 license = "Apache-2.0"
-repository = "https://github.com/willmccallion/strata"
-description = "HTTP server for streaming Strata data blocks"
+repository = "https://github.com/willmccallion/hexz"
+description = "HTTP server for streaming Hexz data blocks"
 
 [dependencies]
-strata-core.workspace = true
-strata-common.workspace = true
+hexz-core.workspace = true
+hexz-common.workspace = true
 axum = "0.7"
 tokio = { workspace = true, features = ["net", "io-util"] }
 tower = "0.4"

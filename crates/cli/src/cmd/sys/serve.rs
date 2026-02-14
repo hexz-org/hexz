@@ -1,6 +1,6 @@
-//! HTTP server for exposing Strata snapshots over network protocols.
+//! HTTP server for exposing Hexz snapshots over network protocols.
 //!
-//! This command starts a server that exposes Strata snapshot data over various
+//! This command starts a server that exposes Hexz snapshot data over various
 //! network protocols (HTTP, NBD, S3), enabling remote access without local
 //! snapshot files. Supports daemon mode for background operation and is designed
 //! for high-performance remote snapshot access.
@@ -49,7 +49,7 @@
 //! **Client Usage:**
 //! ```bash
 //! # Start NBD server
-//! strata serve snapshot.st --nbd --port 10809
+//! hexz serve snapshot.st --nbd --port 10809
 //!
 //! # Connect from client
 //! sudo nbd-client server-ip 10809 /dev/nbd0
@@ -74,7 +74,7 @@
 //!
 //! **Daemon Mode:**
 //! - Detaches from terminal and runs in background
-//! - Logs redirected to `/tmp/strata-serve.log` and `/tmp/strata-serve.err`
+//! - Logs redirected to `/tmp/hexz-serve.log` and `/tmp/hexz-serve.err`
 //! - Working directory: Current directory (not `/`)
 //! - No PID file created (use systemd or similar for management)
 //!
@@ -121,42 +121,42 @@
 //!
 //! ```bash
 //! # Start HTTP server on port 8080
-//! strata serve snapshot.st --port 8080
+//! hexz serve snapshot.st --port 8080
 //!
 //! # Start as daemon (background process)
-//! strata serve snapshot.st --port 8080 --daemon
+//! hexz serve snapshot.st --port 8080 --daemon
 //!
 //! # Start NBD server
-//! strata serve snapshot.st --nbd --port 10809
+//! hexz serve snapshot.st --nbd --port 10809
 //!
 //! # Access from remote client
 //! curl -H "Range: bytes=0-1024" http://server:8080/disk
 //!
 //! # Mount via HTTP backend
-//! strata mount http://server:8080 /mnt
+//! hexz mount http://server:8080 /mnt
 //! ```
 
 use anyhow::Result;
 use daemonize::Daemonize;
+use hexz_common::constants::DEFAULT_ZSTD_LEVEL;
+use hexz_core::File as HexzFile;
+use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
+use hexz_core::format::header::CompressionType;
+use hexz_core::format::magic::HEADER_SIZE;
+use hexz_core::store::StorageBackend;
+use hexz_core::store::local::FileBackend;
 use std::fs::File;
 use std::sync::Arc;
-use strata_common::constants::DEFAULT_ZSTD_LEVEL;
-use strata_core::StrataFile;
-use strata_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
-use strata_core::format::header::CompressionType;
-use strata_core::format::magic::HEADER_SIZE;
-use strata_core::store::StorageBackend;
-use strata_core::store::local::FileBackend;
 
 /// Executes the serve command to start a network server.
 ///
-/// Opens a Strata snapshot and starts a server that exposes it over HTTP, NBD,
+/// Opens a Hexz snapshot and starts a server that exposes it over HTTP, NBD,
 /// or S3 protocol. The server runs until interrupted (Ctrl+C) or, in daemon mode,
 /// until explicitly killed.
 ///
 /// # Arguments
 ///
-/// * `strata_path` - Path to the `.st` snapshot file to serve
+/// * `hexz_path` - Path to the `.st` snapshot file to serve
 /// * `port` - TCP port to bind to
 /// * `daemon` - If true, daemonize the process and run in background
 /// * `nbd` - If true, use NBD protocol; otherwise use HTTP
@@ -166,8 +166,8 @@ use strata_core::store::local::FileBackend;
 ///
 /// 1. **Daemonization** (if requested):
 ///    - Detach from terminal
-///    - Redirect stdout to `/tmp/strata-serve.log`
-///    - Redirect stderr to `/tmp/strata-serve.err`
+///    - Redirect stdout to `/tmp/hexz-serve.log`
+///    - Redirect stderr to `/tmp/hexz-serve.err`
 ///
 /// 2. **Snapshot Loading**:
 ///    - Open snapshot file via `FileBackend`
@@ -187,9 +187,9 @@ use strata_core::store::local::FileBackend;
 ///
 /// # Protocol Selection
 ///
-/// - If `nbd=true`: Start NBD server via `strata_server::serve_nbd()`
+/// - If `nbd=true`: Start NBD server via `hexz_server::serve_nbd()`
 /// - If `s3=true`: Reserved for future S3 gateway (currently prints error)
-/// - Otherwise: Start HTTP server via `strata_server::serve_http()`
+/// - Otherwise: Start HTTP server via `hexz_server::serve_http()`
 ///
 /// # Errors
 ///
@@ -203,11 +203,11 @@ use strata_core::store::local::FileBackend;
 /// # Examples
 ///
 /// ```no_run
-/// use strata_cli::cmd::sys::serve;
+/// use hexz_cli::cmd::sys::serve;
 ///
 /// // Start HTTP server on port 8080
 /// serve::run(
-///     "snapshot.st".to_string(),
+///     "snapshot.hxz".to_string(),
 ///     8080,
 ///     false, // not daemon
 ///     false, // HTTP mode
@@ -216,7 +216,7 @@ use strata_core::store::local::FileBackend;
 ///
 /// // Start NBD server as daemon
 /// serve::run(
-///     "snapshot.st".to_string(),
+///     "snapshot.hxz".to_string(),
 ///     10809,
 ///     true,  // daemon mode
 ///     true,  // NBD mode
@@ -224,11 +224,11 @@ use strata_core::store::local::FileBackend;
 /// )?;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
-pub fn run(strata_path: String, port: u16, daemon: bool, nbd: bool, s3: bool) -> Result<()> {
+pub fn run(hexz_path: String, port: u16, daemon: bool, nbd: bool, s3: bool) -> Result<()> {
     if daemon {
-        let stdout = File::create("/tmp/strata-serve.log")
+        let stdout = File::create("/tmp/hexz-serve.log")
             .unwrap_or_else(|_| File::create("/dev/null").unwrap());
-        let stderr = File::create("/tmp/strata-serve.err")
+        let stderr = File::create("/tmp/hexz-serve.err")
             .unwrap_or_else(|_| File::create("/dev/null").unwrap());
 
         Daemonize::new()
@@ -237,18 +237,17 @@ pub fn run(strata_path: String, port: u16, daemon: bool, nbd: bool, s3: bool) ->
             .stderr(stderr)
             .start()?;
     } else {
-        println!("Starting Strata server on port {}", port);
+        println!("Starting Hexz server on port {}", port);
     }
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?
         .block_on(async {
-            let backend = Arc::new(FileBackend::new(std::path::Path::new(&strata_path))?);
+            let backend = Arc::new(FileBackend::new(std::path::Path::new(&hexz_path))?);
 
             let header_bytes = backend.read_exact(0, HEADER_SIZE)?;
-            let header: strata_core::format::header::StrataHeader =
-                bincode::deserialize(&header_bytes)?;
+            let header: hexz_core::format::header::Header = bincode::deserialize(&header_bytes)?;
 
             let dictionary = if let (Some(offset), Some(length)) =
                 (header.dictionary_offset, header.dictionary_length)
@@ -265,15 +264,15 @@ pub fn run(strata_path: String, port: u16, daemon: bool, nbd: bool, s3: bool) ->
                 }
             };
 
-            let snap = StrataFile::new(backend, compressor, None)?;
+            let snap = HexzFile::new(backend, compressor, None)?;
 
             if nbd {
-                strata_server::serve_nbd(snap, port).await
+                hexz_server::serve_nbd(snap, port).await
             } else if s3 {
                 eprintln!("Error: S3 gateway feature is not yet implemented.");
                 Ok(())
             } else {
-                strata_server::serve_http(snap, port).await
+                hexz_server::serve_http(snap, port).await
             }
         })
 }

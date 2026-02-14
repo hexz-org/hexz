@@ -1,8 +1,8 @@
-# Strata Examples
+# Hexz Examples
 
-This directory contains modular examples demonstrating key features of the Strata Python API. **All commands assume you are in the repository root** and have run **`make develop`** at least once (see the main [README](../README.md) and **`make help`**).
+This directory contains modular examples demonstrating key features of the Hexz Python API. **All commands assume you are in the repository root** and have run **`make develop`** at least once (see the main [README](../README.md) and **`make help`**).
 
-**Reading from snapshots:** Use a single `read()` API. Open with `strata.open(path)` to get a `Reader`, then:
+**Reading from snapshots:** Use a single `read()` API. Open with `hexz.open(path)` to get a `Reader`, then:
 - `reader.read(n)` — read `n` bytes from current position (advances cursor).
 - `reader.read(n, offset=k)` — read `n` bytes at offset `k` (cursor unchanged).
 - `reader.read(buffer=buf)` — fill a buffer from cursor; `reader.read(buffer=buf, offset=k)` for offset.
@@ -21,13 +21,13 @@ See [docs/quickstart.md](../docs/quickstart.md) for the full 5-minute guide (ins
 
 ## 1. Machine Learning Training (`examples/ml_training/`)
 
-Demonstrates how to use `strata.Dataset` with PyTorch for high-performance training loops.
+Demonstrates how to use `hexz.Dataset` with PyTorch for high-performance training loops.
 
 - **Files:**
-  - `create_dataset.py`: Generates a dummy dataset (`dataset.st`) with variable-length items and an index file (`dataset.idx`).
-  - `train.py`: Loads the dataset using `strata.Dataset` (with caching & prefetching) and iterates via `torch.utils.data.DataLoader`.
+  - `create_dataset.py`: Generates a dummy dataset (`dataset.hxz`) with variable-length items and an index file (`dataset.idx`).
+  - `train.py`: Loads the dataset using `hexz.Dataset` (with caching & prefetching) and iterates via `torch.utils.data.DataLoader`.
 
-- **Requires:** Strata from repo root (**`make develop`**); PyTorch (`pip install torch` or from `crates/loader`: `pip install -e ".[torch]"`).
+- **Requires:** Hexz from repo root (**`make develop`**); PyTorch (`pip install torch` or from `crates/loader`: `pip install -e ".[torch]"`).
 
 - **Run (from repo root):**
   ```bash
@@ -51,7 +51,7 @@ Benchmarks different build profiles (`ml`, `eda`, `archival`) on real data.
 
 ## 3. Advanced Build Configuration (`examples/advanced_build/`)
 
-Demonstrates `strata.build` with custom overrides for fine-tuned control.
+Demonstrates `hexz.build` with custom overrides for fine-tuned control.
 
 - **Files:**
   - `build_with_profiles.py`: Builds a snapshot using the `archival` profile but overrides `block_size` and verifies metadata.

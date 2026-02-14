@@ -1,7 +1,7 @@
 //! FUSE file attribute synthesis and permission handling.
 //!
 //! This module provides utilities for constructing `FileAttr` structures that
-//! represent inodes to the FUSE kernel. Since the Strata filesystem is
+//! represent inodes to the FUSE kernel. Since the Hexz filesystem is
 //! minimal and snapshot-based, attributes are **synthesized** rather than
 //! stored on disk. This module centralizes the logic for computing permissions,
 //! timestamps, block counts, and file types from inode numbers and logical sizes.
@@ -9,7 +9,7 @@
 //! # Attribute Synthesis Strategy
 //!
 //! Unlike traditional filesystems that store metadata in inodes on disk,
-//! Strata generates attributes on demand:
+//! Hexz generates attributes on demand:
 //! - **Permissions**: Fixed values (0755 for root, 0644 for files) for simplicity
 //! - **Timestamps**: All set to Unix epoch (no modification tracking needed)
 //! - **UID/GID**: Set at mount time and applied uniformly to all inodes
@@ -61,7 +61,7 @@
 //! ## Synthesizing Root Directory Attributes
 //!
 //! ```
-//! use strata_fuse::vfs::attr::make_attr;
+//! use hexz_fuse::vfs::attr::make_attr;
 //!
 //! let attr = make_attr(1, 0, 1000, 1000);
 //! assert_eq!(attr.kind, fuser::FileType::Directory);
@@ -72,7 +72,7 @@
 //! ## Synthesizing Disk File Attributes
 //!
 //! ```
-//! use strata_fuse::vfs::attr::make_attr;
+//! use hexz_fuse::vfs::attr::make_attr;
 //!
 //! let attr = make_attr(2, 10 * 1024 * 1024 * 1024, 1000, 1000); // 10 GiB disk
 //! assert_eq!(attr.kind, fuser::FileType::RegularFile);
@@ -165,7 +165,7 @@ pub const FUSE_BLOCK_SIZE: u32 = 512;
 /// # Examples
 ///
 /// ```
-/// use strata_fuse::vfs::attr::make_attr;
+/// use hexz_fuse::vfs::attr::make_attr;
 ///
 /// // Root directory
 /// let root = make_attr(1, 0, 1000, 1000);

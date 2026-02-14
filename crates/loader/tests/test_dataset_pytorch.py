@@ -2,7 +2,7 @@
 
 import pytest
 import struct
-import strata
+import hexz
 
 # Check if PyTorch is available
 try:
@@ -17,7 +17,7 @@ except ImportError:
 @pytest.fixture
 def fixed_size_snapshot(tmp_path):
     """Create a snapshot with fixed-size items (100 items of 1KB each)."""
-    snap_path = tmp_path / "fixed.st"
+    snap_path = tmp_path / "fixed.hxz"
     data_file = tmp_path / "data.bin"
 
     # Create 100 items of 1KB each
@@ -27,7 +27,7 @@ def fixed_size_snapshot(tmp_path):
             f.write(item)
 
     # Pack it
-    with strata.open(str(snap_path), mode="w") as writer:
+    with hexz.open(str(snap_path), mode="w") as writer:
         writer.add(str(data_file))
 
     return str(snap_path)
@@ -36,7 +36,7 @@ def fixed_size_snapshot(tmp_path):
 @pytest.fixture
 def variable_size_snapshot(tmp_path):
     """Create snapshot with variable-size items and index."""
-    snap_path = tmp_path / "variable.st"
+    snap_path = tmp_path / "variable.hxz"
     index_path = tmp_path / "variable.idx"
     data_file = tmp_path / "data.bin"
 
@@ -57,7 +57,7 @@ def variable_size_snapshot(tmp_path):
             f.write(struct.pack("<QQ", offset, size))
 
     # Pack snapshot
-    with strata.open(str(snap_path), mode="w") as writer:
+    with hexz.open(str(snap_path), mode="w") as writer:
         writer.add(str(data_file))
 
     return str(snap_path), str(index_path)
@@ -79,24 +79,24 @@ def test_dataset_import_error_without_torch(monkeypatch, fixed_size_snapshot):
     monkeypatch.setitem(sys.modules, "torch.utils.data", None)
 
     # Need to reload the module to trigger the import check
-    import strata.dataset
+    import hexz.dataset
 
     # Temporarily set HAS_TORCH to False
-    original_has_torch = strata.dataset.HAS_TORCH
-    strata.dataset.HAS_TORCH = False
+    original_has_torch = hexz.dataset.HAS_TORCH
+    hexz.dataset.HAS_TORCH = False
 
     try:
         with pytest.raises(ImportError, match="PyTorch is required"):
-            strata.Dataset(fixed_size_snapshot, item_size=1024)
+            hexz.Dataset(fixed_size_snapshot, item_size=1024)
     finally:
         # Restore
-        strata.dataset.HAS_TORCH = original_has_torch
+        hexz.dataset.HAS_TORCH = original_has_torch
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_dataset_basic(fixed_size_snapshot):
     """Test basic Dataset functionality."""
-    dataset = strata.Dataset(fixed_size_snapshot, item_size=1024)
+    dataset = hexz.Dataset(fixed_size_snapshot, item_size=1024)
 
     # Check length
     assert len(dataset) == 100
@@ -114,14 +114,14 @@ def test_dataset_basic(fixed_size_snapshot):
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_dataset_validation_error(fixed_size_snapshot):
     """Test that Dataset raises ValidationError without item_size or index_file."""
-    with pytest.raises(strata.ValidationError, match="Either item_size or index_file"):
-        strata.Dataset(fixed_size_snapshot)
+    with pytest.raises(hexz.ValidationError, match="Either item_size or index_file"):
+        hexz.Dataset(fixed_size_snapshot)
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_dataset_different_indices(fixed_size_snapshot):
     """Test accessing different indices."""
-    dataset = strata.Dataset(fixed_size_snapshot, item_size=1024)
+    dataset = hexz.Dataset(fixed_size_snapshot, item_size=1024)
 
     # Access multiple items
     item0 = dataset[0]
@@ -136,7 +136,7 @@ def test_dataset_different_indices(fixed_size_snapshot):
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_dataset_with_cache(fixed_size_snapshot):
     """Test Dataset with caching enabled."""
-    dataset = strata.Dataset(fixed_size_snapshot, item_size=1024, cache_size_mb=10)
+    dataset = hexz.Dataset(fixed_size_snapshot, item_size=1024, cache_size_mb=10)
 
     # First access (cache miss)
     item1 = dataset[5]
@@ -156,7 +156,7 @@ def test_dataset_with_cache(fixed_size_snapshot):
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_dataset_cache_disabled(fixed_size_snapshot):
     """Test Dataset with caching disabled."""
-    dataset = strata.Dataset(fixed_size_snapshot, item_size=1024, cache_size_mb=0)
+    dataset = hexz.Dataset(fixed_size_snapshot, item_size=1024, cache_size_mb=0)
 
     # Access items
     _ = dataset[0]
@@ -170,7 +170,7 @@ def test_dataset_cache_disabled(fixed_size_snapshot):
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_dataset_with_prefetching(fixed_size_snapshot):
     """Test Dataset with prefetching."""
-    dataset = strata.Dataset(
+    dataset = hexz.Dataset(
         fixed_size_snapshot, item_size=1024, prefetch_factor=2, num_workers=2
     )
 
@@ -185,7 +185,7 @@ def test_dataset_with_prefetching(fixed_size_snapshot):
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_dataset_shuffling(fixed_size_snapshot):
     """Test Dataset with shuffling."""
-    dataset = strata.Dataset(fixed_size_snapshot, item_size=1024, shuffle=True, seed=42)
+    dataset = hexz.Dataset(fixed_size_snapshot, item_size=1024, shuffle=True, seed=42)
 
     # Get first 10 indices
     indices_epoch0 = []
@@ -198,9 +198,7 @@ def test_dataset_shuffling(fixed_size_snapshot):
     assert indices_epoch0 != list(range(10))
 
     # Create another dataset with same seed
-    dataset2 = strata.Dataset(
-        fixed_size_snapshot, item_size=1024, shuffle=True, seed=42
-    )
+    dataset2 = hexz.Dataset(fixed_size_snapshot, item_size=1024, shuffle=True, seed=42)
 
     indices_epoch0_again = []
     for i in range(10):
@@ -214,7 +212,7 @@ def test_dataset_shuffling(fixed_size_snapshot):
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_dataset_set_epoch(fixed_size_snapshot):
     """Test set_epoch for DDP shuffling."""
-    dataset = strata.Dataset(fixed_size_snapshot, item_size=1024, shuffle=True, seed=42)
+    dataset = hexz.Dataset(fixed_size_snapshot, item_size=1024, shuffle=True, seed=42)
 
     # Get first item in epoch 0
     _ = int(dataset[0][0])
@@ -232,7 +230,7 @@ def test_dataset_set_epoch(fixed_size_snapshot):
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_dataset_output_format_bytes(fixed_size_snapshot):
     """Test Dataset with bytes output format."""
-    dataset = strata.Dataset(fixed_size_snapshot, item_size=1024, output_format="bytes")
+    dataset = hexz.Dataset(fixed_size_snapshot, item_size=1024, output_format="bytes")
 
     item = dataset[0]
     assert isinstance(item, bytes)
@@ -244,7 +242,7 @@ def test_dataset_output_format_numpy(fixed_size_snapshot):
     """Test Dataset with numpy output format."""
     import numpy as np
 
-    dataset = strata.Dataset(fixed_size_snapshot, item_size=1024, output_format="numpy")
+    dataset = hexz.Dataset(fixed_size_snapshot, item_size=1024, output_format="numpy")
 
     item = dataset[0]
     assert isinstance(item, np.ndarray)
@@ -255,9 +253,7 @@ def test_dataset_output_format_numpy(fixed_size_snapshot):
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_dataset_output_format_tensor(fixed_size_snapshot):
     """Test Dataset with tensor output format."""
-    dataset = strata.Dataset(
-        fixed_size_snapshot, item_size=1024, output_format="tensor"
-    )
+    dataset = hexz.Dataset(fixed_size_snapshot, item_size=1024, output_format="tensor")
 
     item = dataset[0]
     assert isinstance(item, torch.Tensor)
@@ -273,7 +269,7 @@ def test_dataset_with_transform(fixed_size_snapshot):
         # Simple transform: multiply by 2
         return x * 2
 
-    dataset = strata.Dataset(
+    dataset = hexz.Dataset(
         fixed_size_snapshot, item_size=1024, transform=transform, output_format="tensor"
     )
 
@@ -289,7 +285,7 @@ def test_dataset_with_transform(fixed_size_snapshot):
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_dataset_with_dataloader(fixed_size_snapshot):
     """Test Dataset with PyTorch DataLoader."""
-    dataset = strata.Dataset(fixed_size_snapshot, item_size=1024)
+    dataset = hexz.Dataset(fixed_size_snapshot, item_size=1024)
 
     dataloader = DataLoader(dataset, batch_size=10, shuffle=False)
 
@@ -302,7 +298,7 @@ def test_dataset_variable_length(variable_size_snapshot):
     """Test Dataset with variable-length items."""
     snap_path, index_path = variable_size_snapshot
 
-    dataset = strata.Dataset(snap_path, index_file=index_path, output_format="bytes")
+    dataset = hexz.Dataset(snap_path, index_file=index_path, output_format="bytes")
 
     # Check length
     assert len(dataset) == 50
@@ -318,7 +314,7 @@ def test_dataset_variable_length(variable_size_snapshot):
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_dataset_repr(fixed_size_snapshot):
     """Test Dataset __repr__."""
-    dataset = strata.Dataset(fixed_size_snapshot, item_size=1024, cache_size_mb=10)
+    dataset = hexz.Dataset(fixed_size_snapshot, item_size=1024, cache_size_mb=10)
 
     # Access an item to populate cache
     _ = dataset[0]
@@ -331,7 +327,7 @@ def test_dataset_repr(fixed_size_snapshot):
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_dataset_zero_copy(fixed_size_snapshot):
     """Test Dataset with zero_copy option."""
-    dataset = strata.Dataset(
+    dataset = hexz.Dataset(
         fixed_size_snapshot, item_size=1024, zero_copy=True, output_format="numpy"
     )
 
@@ -343,7 +339,7 @@ def test_dataset_zero_copy(fixed_size_snapshot):
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_dataset_del(fixed_size_snapshot):
     """Test Dataset cleanup via __del__."""
-    dataset = strata.Dataset(
+    dataset = hexz.Dataset(
         fixed_size_snapshot, item_size=1024, prefetch_factor=2, num_workers=2
     )
 

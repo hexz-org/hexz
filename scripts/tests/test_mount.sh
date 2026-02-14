@@ -11,11 +11,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/common.sh"
 
 PROJECT_ROOT="$(get_project_root)"
-BIN="${BIN:-$PROJECT_ROOT/target/release/strata}"
+BIN="${BIN:-$PROJECT_ROOT/target/release/hexz}"
 
 # Constants
 SRC_DATA="mount_test.data"
-SNAP_FILE="mount_test.st"
+SNAP_FILE="mount_test.hxz"
 MOUNT_DIR="mnt_test_point"
 
 # Cleanup trap
@@ -36,7 +36,7 @@ info ">>> Starting FUSE Mount Test"
 
 # Setup
 info "Creating test data..."
-echo "Hello Strata World" > "$SRC_DATA"
+echo "Hello Hexz World" > "$SRC_DATA"
 mkdir -p "$MOUNT_DIR"
 
 # Build
@@ -60,7 +60,7 @@ fi
 info "Verifying content..."
 # Note: In the new structure, the file is exposed as 'disk' inside the mount
 CONTENT=$(cat "$MOUNT_DIR/disk")
-EXPECTED="Hello Strata World"
+EXPECTED="Hello Hexz World"
 
 if [[ "$CONTENT" != "$EXPECTED" ]]; then
     info "Expected: $EXPECTED"

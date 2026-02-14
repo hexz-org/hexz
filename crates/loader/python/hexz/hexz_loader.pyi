@@ -1,7 +1,7 @@
 from typing import Optional, Dict, Any, Tuple
 
-class StrataReader:
-    """Synchronous reader for Strata snapshots.
+class Reader:
+    """Synchronous reader for Hexz snapshots.
 
     Supports local files, HTTP/HTTPS URLs, and S3 URIs.
     Implements the Python buffer protocol for zero-copy reads.
@@ -30,11 +30,11 @@ class StrataReader:
     def writable(self) -> bool: ...
     def flush(self) -> None: ...
     def close(self) -> None: ...
-    def __enter__(self) -> "StrataReader": ...
+    def __enter__(self) -> "Reader": ...
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None: ...
 
-class AsyncStrataReader:
-    """Asynchronous reader for Strata snapshots.
+class AsyncReader:
+    """Asynchronous reader for Hexz snapshots.
 
     Compatible with asyncio. Supports local files, HTTP/HTTPS, and S3.
     """
@@ -45,18 +45,18 @@ class AsyncStrataReader:
         s3_region: Optional[str] = None,
         endpoint_url: Optional[str] = None,
         allow_restricted: bool = False,
-    ) -> "AsyncStrataReader": ...
+    ) -> "AsyncReader": ...
     def size(self) -> int: ...
     async def read(
         self, size: Optional[int] = None, offset: Optional[int] = None
     ) -> bytes: ...
     async def seek(self, offset: int, whence: int = 0) -> int: ...
     def tell(self) -> int: ...
-    async def __aenter__(self) -> "AsyncStrataReader": ...
+    async def __aenter__(self) -> "AsyncReader": ...
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None: ...
 
-class StrataBuilder:
-    """Low-level snapshot builder for creating Strata archives from Python."""
+class Builder:
+    """Low-level snapshot builder for creating Hexz archives from Python."""
 
     def __init__(
         self, output_path: str, block_size: int = 65536, compression: str = "lz4"
@@ -81,7 +81,7 @@ def pack(
     avg_chunk: int = 65536,
     max_chunk: int = 131072,
 ) -> None:
-    """Pack disk and/or memory images into a Strata archive."""
+    """Pack disk and/or memory images into a Hexz archive."""
     ...
 
 def inspect(path: str) -> Dict[str, Any]: ...

@@ -1,7 +1,7 @@
 //! BLAKE3 cryptographic hash function for content addressing and deduplication.
 //!
 //! This module provides a high-performance implementation of the BLAKE3 hash function,
-//! designed for Strata's content-defined chunking and deduplication system. BLAKE3
+//! designed for Hexz's content-defined chunking and deduplication system. BLAKE3
 //! serves dual purposes: generating unique fingerprints for chunk deduplication and
 //! providing cryptographic integrity verification for stored blocks.
 //!
@@ -53,7 +53,7 @@
 //! | 8       | ~21000 MB/s       | 82%                |
 //! | 16      | ~35000 MB/s       | 68% (memory bound) |
 //!
-//! In Strata, hashing is typically single-threaded per chunk but parallelized across
+//! In Hexz, hashing is typically single-threaded per chunk but parallelized across
 //! chunks during packing operations, effectively leveraging this scaling.
 //!
 //! # Security Properties
@@ -68,7 +68,7 @@
 //! - **Practical security**: With 1 trillion chunks, P(collision) ≈ 10^-48 (negligible)
 //! - **Attack resistance**: No known collision attacks faster than brute force
 //!
-//! For Strata's deduplication, collision resistance prevents:
+//! For Hexz's deduplication, collision resistance prevents:
 //! - **Accidental data loss**: Different chunks incorrectly treated as duplicates
 //! - **Malicious attacks**: Adversary crafting colliding chunks to corrupt snapshots
 //!
@@ -182,7 +182,7 @@
 //! | Hardware support     | Software     | CPU (SHA-NI) | SHA-256 wins      |
 //!
 //! **Conclusion**: BLAKE3's software performance vastly exceeds SHA-256, even with SHA-256's
-//! hardware acceleration. For Strata's software-only implementation, BLAKE3 is superior.
+//! hardware acceleration. For Hexz's software-only implementation, BLAKE3 is superior.
 //!
 //! ## BLAKE3 vs BLAKE2b
 //!
@@ -193,7 +193,7 @@
 //! | Output flexibility   | XOF (any)    | Fixed 64B    | BLAKE3 wins       |
 //! | Security             | 128/256-bit  | 128/256-bit  | Equal             |
 //!
-//! **Conclusion**: BLAKE3 is strictly better than BLAKE2 for Strata's use case.
+//! **Conclusion**: BLAKE3 is strictly better than BLAKE2 for Hexz's use case.
 //!
 //! ## BLAKE3 vs xxHash (Non-Cryptographic)
 //!
@@ -220,7 +220,7 @@
 //! | Disk write (SSD)  | ~500 MB/s    | Depends     |
 //! | Network (1GbE)    | ~125 MB/s    | Yes         |
 //!
-//! **Implication**: In typical Strata workflows, compression or I/O is the bottleneck,
+//! **Implication**: In typical Hexz workflows, compression or I/O is the bottleneck,
 //! not hashing. BLAKE3's performance ensures it adds negligible overhead to packing.
 //!
 //! **Exception**: When packing already-compressed data (JPEG, video, encrypted files) with
@@ -249,7 +249,7 @@
 //! ## Basic Hashing
 //!
 //! ```text
-//! use strata_core::algo::hashing::{ContentHasher, blake3::Blake3Hasher};
+//! use hexz_core::algo::hashing::{ContentHasher, blake3::Blake3Hasher};
 //!
 //! let hasher = Blake3Hasher::new();
 //! let data = b"Compressed chunk data";
@@ -262,7 +262,7 @@
 //! ## Deduplication Workflow
 //!
 //! ```text
-//! use strata_core::algo::hashing::{ContentHasher, blake3::Blake3Hasher};
+//! use hexz_core::algo::hashing::{ContentHasher, blake3::Blake3Hasher};
 //! use std::collections::HashMap;
 //!
 //! let hasher = Blake3Hasher::new();
@@ -289,7 +289,7 @@
 //! ## Incremental Hashing (Large Inputs)
 //!
 //! ```text
-//! use strata_core::algo::hashing::blake3::Blake3Hasher;
+//! use hexz_core::algo::hashing::blake3::Blake3Hasher;
 //!
 //! let mut hasher = Blake3Hasher::new();
 //!
@@ -302,7 +302,7 @@
 //! println!("File hash: {}", hex::encode(&hash));
 //! ```
 //!
-//! # Architectural Integration in Strata
+//! # Architectural Integration in Hexz
 //!
 //! BLAKE3 integrates at multiple layers:
 //!
@@ -342,4 +342,4 @@
 //! - **Official implementation**: <https://github.com/BLAKE3-team/BLAKE3>
 //! - **Rust crate**: <https://crates.io/crates/blake3>
 //! - **Performance analysis**: <https://github.com/BLAKE3-team/BLAKE3/blob/master/b3sum/README.md>
-//! - **Strata ADR-0003**: BLAKE3 and FastCDC deduplication decision rationale
+//! - **Hexz ADR-0003**: BLAKE3 and FastCDC deduplication decision rationale

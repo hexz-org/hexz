@@ -1,6 +1,6 @@
-# Strata Integration Test Suite
+# Hexz Integration Test Suite
 
-This directory contains workspace-level integration tests that verify the entire Strata stack end-to-end.
+This directory contains workspace-level integration tests that verify the entire Hexz stack end-to-end.
 
 ## Test Organization
 

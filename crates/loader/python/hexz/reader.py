@@ -1,13 +1,13 @@
-"""Pythonic reader interface for Strata snapshots.
+"""Pythonic reader interface for Hexz snapshots.
 
 This module provides the high-level Reader and AsyncReader classes that wrap
-the Rust-implemented StrataReader with a more pythonic interface.
+the Rust-implemented Reader with a more pythonic interface.
 """
 
 from typing import TYPE_CHECKING, Optional, Any, Dict, Union, Iterator
 import re
 
-from . import strata_loader
+from . import hexz_loader
 from .typing import PathLike
 from .utils import Metadata
 
@@ -69,13 +69,13 @@ def _parse_cache_size(size_str: str) -> int:
 
 
 class Reader:
-    """High-level reader for Strata snapshots with pythonic interface.
+    """High-level reader for Hexz snapshots with pythonic interface.
 
     Provides a file-like interface with additional random access capabilities.
     Supports context managers, pickle serialization, and slice notation.
 
     Example:
-        >>> with strata.Reader("dataset.st") as reader:
+        >>> with hexz.Reader("dataset.hxz") as reader:
         ...     data = reader.read(4096)
         ...     # Zero-copy into buffer
         ...     buf = bytearray(4096)
@@ -95,7 +95,7 @@ class Reader:
         endpoint_url: Optional[str] = None,
         allow_restricted: bool = False,
     ):
-        """Open a Strata snapshot for reading.
+        """Open a Hexz snapshot for reading.
 
         Args:
             path: Path or URL to the snapshot file
@@ -115,7 +115,7 @@ class Reader:
         # Default to 4 blocks of prefetch when enabled
         prefetch_count = 4 if prefetch else 0
 
-        self._reader = strata_loader.StrataReader(
+        self._reader = hexz_loader.Reader(
             self._path,
             s3_region=s3_region,
             endpoint_url=endpoint_url,
@@ -224,7 +224,7 @@ class Reader:
             AnalysisReport with dedup ratio and savings information
 
         Example:
-            >>> with strata.open("snapshot.st") as reader:
+            >>> with hexz.open("snapshot.hxz") as reader:
             ...     report = reader.analyze()
             ...     print(f"Dedup savings: {report.savings_percent:.1f}%")
         """
@@ -232,9 +232,9 @@ class Reader:
         import os
 
         # Use the Rust analyze function on the path
-        from . import strata_loader
+        from . import hexz_loader
 
-        raw_report = strata_loader.analyze(self._path)
+        raw_report = hexz_loader.analyze(self._path)
         # Add total_bytes from file size
         file_size = os.path.getsize(self._path)
         raw_report["total_bytes"] = float(file_size)
@@ -301,7 +301,7 @@ class Reader:
     def __setstate__(self, state: Dict[str, Any]) -> None:
         """Support for pickle deserialization."""
         self._path = state["path"]
-        self._reader = strata_loader.StrataReader(self._path)
+        self._reader = hexz_loader.Reader(self._path)
         self._reader.seek(state.get("position", 0), 0)
 
     def __repr__(self) -> str:
@@ -309,12 +309,12 @@ class Reader:
 
 
 class AsyncReader:
-    """Async reader for Strata snapshots.
+    """Async reader for Hexz snapshots.
 
     Use as an async context manager; the snapshot is opened when you enter the context.
 
     Example:
-        >>> async with strata.AsyncReader("dataset.st") as reader:
+        >>> async with hexz.AsyncReader("dataset.hxz") as reader:
         ...     data = await reader.read(4096)
         ...     chunk = await reader.read(100, offset=0)
     """
@@ -350,8 +350,8 @@ class AsyncReader:
         self._reader: Optional[Any] = None
 
     async def __aenter__(self) -> "AsyncReader":
-        """Open the snapshot; use as async with strata.AsyncReader(path) as reader."""
-        self._reader = await strata_loader.AsyncStrataReader.create(
+        """Open the snapshot; use as async with hexz.AsyncReader(path) as reader."""
+        self._reader = await hexz_loader.AsyncReader.create(
             self._path,
             s3_region=self._s3_region,
             endpoint_url=self._endpoint_url,
@@ -368,7 +368,7 @@ class AsyncReader:
     def _ensure_open(self) -> None:
         if self._reader is None:
             raise RuntimeError(
-                "AsyncReader must be used as async with strata.AsyncReader(path) as reader"
+                "AsyncReader must be used as async with hexz.AsyncReader(path) as reader"
             )
 
     def size(self) -> int:

@@ -9,8 +9,8 @@
 //! These benchmarks mirror real PyTorch/TensorFlow training loops.
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use hexz_core::api::file::SnapshotStream;
 use std::sync::Arc;
-use strata_core::api::stratafile::SnapshotStream;
 
 #[path = "common.rs"]
 mod common;

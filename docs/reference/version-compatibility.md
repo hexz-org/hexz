@@ -1,20 +1,20 @@
 # Version Compatibility
 
-Compatibility matrix for Strata with dependencies and platforms.
+Compatibility matrix for Hexz with dependencies and platforms.
 
-## Strata Versions
+## Hexz Versions
 
 Current version: 0.1.0-alpha
 
 ## Python Version Support
 
-| Strata Version | Python Versions | Notes |
+| Hexz Version | Python Versions | Notes |
 |----------------|----------------|-------|
 | 0.1.x | 3.8, 3.9, 3.10, 3.11, 3.12 | Minimum 3.8 required |
 
 ## PyTorch Compatibility
 
-| Strata Version | PyTorch Versions | Notes |
+| Hexz Version | PyTorch Versions | Notes |
 |----------------|-----------------|-------|
 | 0.1.x | 1.12+ | Tested with 1.12, 1.13, 2.0, 2.1 |
 
@@ -22,7 +22,7 @@ DataLoader features require PyTorch 1.12 or later for proper multi-worker suppor
 
 ## NumPy Compatibility
 
-| Strata Version | NumPy Versions | Notes |
+| Hexz Version | NumPy Versions | Notes |
 |----------------|---------------|-------|
 | 0.1.x | 1.19+ | Zero-copy buffer protocol support |
 
@@ -48,7 +48,7 @@ DataLoader features require PyTorch 1.12 or later for proper multi-worker suppor
 
 For building from source:
 
-| Strata Version | Minimum Rust Version | Notes |
+| Hexz Version | Minimum Rust Version | Notes |
 |----------------|---------------------|-------|
 | 0.1.x | 1.70+ | Stable channel required |
 
@@ -74,13 +74,13 @@ For building from source:
 
 ## File Format Compatibility
 
-| Format Version | Strata Versions | Status |
+| Format Version | Hexz Versions | Status |
 |----------------|----------------|--------|
 | v1 | 0.1.x | Current |
 
-**Forward Compatibility**: Newer Strata versions can read older format versions.
+**Forward Compatibility**: Newer Hexz versions can read older format versions.
 
-**Backward Compatibility**: Older Strata versions cannot read newer format versions.
+**Backward Compatibility**: Older Hexz versions cannot read newer format versions.
 
 ## S3 Compatibility
 
@@ -117,29 +117,29 @@ Re-pack snapshots with new version:
 
 ```bash
 # Extract old snapshot
-strata data info old.st  # Check format version
+hexz data info old.st  # Check format version
 
 # If format incompatible, repack
-strata data pack --disk old.st --output new.st
+hexz data pack --disk old.st --output new.st
 ```
 
 ### Python Package
 
 ```bash
-pip install --upgrade strata
+pip install --upgrade hexz
 ```
 
 ### CLI
 
 ```bash
-cd strata
+cd hexz
 git pull
 make rust
 ```
 
 ## Testing Matrix
 
-Strata is tested on:
+Hexz is tested on:
 
 - Linux: Ubuntu 20.04, 22.04, Fedora 38, Arch Linux
 - macOS: 12 (Monterey), 13 (Ventura), 14 (Sonoma)
@@ -170,9 +170,9 @@ Strata is tested on:
 If you encounter compatibility issues:
 
 1. Check this document for known limitations
-2. Verify versions: `strata --version`, `python --version`
+2. Verify versions: `hexz --version`, `python --version`
 3. Open issue with:
-   - Strata version
+   - Hexz version
    - Python version
    - Operating system and version
    - CPU architecture
@@ -189,6 +189,6 @@ Planned support:
 
 ## See Also
 
-- [How-To: Install Strata](../how-to/cli-usage/install-strata.md)
+- [How-To: Install Hexz](../how-to/cli-usage/install-hexz.md)
 - [Reference: Python API](python-api.md)
 - [Reference: CLI Commands](cli-reference.md)

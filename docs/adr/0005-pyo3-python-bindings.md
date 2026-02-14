@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-Strata's primary use case is streaming data to PyTorch for ML training. The core engine is written in Rust (see ADR-0001), but Python is the dominant language in ML engineering. We need Python bindings that:
+Hexz's primary use case is streaming data to PyTorch for ML training. The core engine is written in Rust (see ADR-0001), but Python is the dominant language in ML engineering. We need Python bindings that:
 
 **Performance Requirements**:
 - Zero-copy data transfer to NumPy/PyTorch tensors
@@ -52,7 +52,7 @@ We will use **PyO3** for Python bindings, packaged with **Maturin** for distribu
 - `#[pyfunction]` for module functions
 - Exception mapping from Rust `Result` to Python exceptions
 
-**Python Layer** (`crates/loader/python/strata/`):
+**Python Layer** (`crates/loader/python/hexz/`):
 - High-level wrappers for ergonomics
 - PyTorch `Dataset` integration
 - Type stubs (`.pyi`) for static analysis
@@ -80,11 +80,11 @@ fn read_range(&self, py: Python, offset: u64, length: usize) -> PyResult<Vec<u8>
 
 **Exception Mapping**:
 ```rust
-impl From<StrataError> for PyErr {
-    fn from(err: StrataError) -> Self {
+impl From<Error> for PyErr {
+    fn from(err: Error) -> Self {
         match err {
-            StrataError::Io(e) => PyIOError::new_err(e.to_string()),
-            StrataError::Corruption => PyValueError::new_err("Corrupted snapshot"),
+            Error::Io(e) => PyIOError::new_err(e.to_string()),
+            Error::Corruption => PyValueError::new_err("Corrupted snapshot"),
             // ...
         }
     }
@@ -95,7 +95,7 @@ impl From<StrataError> for PyErr {
 
 - **Maturin**: Build tool that creates PEP 517 compliant wheels
 - **GitHub Actions**: Build wheels for `manylinux`, macOS (x86/ARM), Windows
-- **PyPI Upload**: Users install via `pip install strata`
+- **PyPI Upload**: Users install via `pip install hexz`
 - **Source Distribution**: Includes `pyproject.toml` for `pip install -e .`
 
 ## Consequences
@@ -130,8 +130,8 @@ impl From<StrataError> for PyErr {
 
 **Simple Read**:
 ```python
-import strata
-with strata.open("dataset.st") as reader:
+import hexz
+with hexz.open("dataset.hxz") as reader:
     data = reader.read(4096)  # Returns bytes
 ```
 
@@ -144,9 +144,9 @@ reader.read(buffer=buffer)  # Fills buffer directly
 
 **PyTorch Dataset**:
 ```python
-class StrataDataset(torch.utils.data.Dataset):
+class Dataset(torch.utils.data.Dataset):
     def __init__(self, path):
-        self.reader = strata.open(path)
+        self.reader = hexz.open(path)
 
     def __getitem__(self, idx):
         # GIL released during read

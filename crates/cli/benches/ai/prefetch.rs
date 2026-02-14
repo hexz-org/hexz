@@ -5,8 +5,8 @@
 //! access patterns common in ML training (e.g., reading consecutive mini-batches).
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use hexz_core::api::file::SnapshotStream;
 use std::sync::Arc;
-use strata_core::api::stratafile::SnapshotStream;
 
 #[path = "common.rs"]
 mod common;

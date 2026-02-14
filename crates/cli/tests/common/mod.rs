@@ -16,7 +16,7 @@ pub struct TestEnv {
 impl TestEnv {
     pub fn new() -> Self {
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let snapshot_path = temp_dir.path().join("test.strata");
+        let snapshot_path = temp_dir.path().join("test.hexz");
         let output_path = temp_dir.path().join("output");
         fs::create_dir_all(&output_path).expect("Failed to create output dir");
 

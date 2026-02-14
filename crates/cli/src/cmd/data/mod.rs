@@ -1,6 +1,6 @@
 //! Data operation commands for archive management.
 //!
-//! This module provides commands for creating, inspecting, and analyzing Strata
+//! This module provides commands for creating, inspecting, and analyzing Hexz
 //! archives. Archives (`.st` files) are the primary storage format for snapshots,
 //! containing compressed, deduplicated, and optionally encrypted data.
 //!
@@ -16,14 +16,14 @@
 //!
 //! ```bash
 //! # 1. Analyze optimal parameters
-//! strata data analyze disk.img
+//! hexz data analyze disk.img
 //!
 //! # 2. Pack with optimized settings
-//! strata data pack --disk disk.img --output snapshot.st --cdc \
+//! hexz data pack --disk disk.img --output snapshot.st --cdc \
 //!   --min-chunk 8192 --avg-chunk 32768
 //!
 //! # 3. Inspect the result
-//! strata data info snapshot.st --json
+//! hexz data info snapshot.st --json
 //! ```
 //!
 //! # Archive Format

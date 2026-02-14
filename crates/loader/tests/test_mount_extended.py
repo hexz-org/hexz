@@ -1,19 +1,19 @@
-"""Extended tests for strata.mount module to improve coverage from 25% to 80%+."""
+"""Extended tests for hexz.mount module to improve coverage from 25% to 80%+."""
 
 import pytest
 import os
 import tempfile
 import shutil
 import subprocess
-import strata
-from strata.mount import _MountPoint
-from strata.exceptions import MountError
+import hexz
+from hexz.mount import _MountPoint
+from hexz.exceptions import MountError
 
 
 @pytest.fixture
 def temp_dir():
     """Create temporary directory for test files."""
-    d = tempfile.mkdtemp(prefix="strata_mount_test_")
+    d = tempfile.mkdtemp(prefix="hexz_mount_test_")
     yield d
     shutil.rmtree(d, ignore_errors=True)
 
@@ -22,13 +22,13 @@ def temp_dir():
 def sample_snapshot(temp_dir):
     """Create a sample snapshot for mounting tests."""
     data_path = os.path.join(temp_dir, "data.bin")
-    snap_path = os.path.join(temp_dir, "test.st")
+    snap_path = os.path.join(temp_dir, "test.hxz")
 
     # Create 1MB of test data
     with open(data_path, "wb") as f:
         f.write(bytes([i % 256 for i in range(1024 * 1024)]))
 
-    with strata.open(snap_path, mode="w", compression="lz4") as w:
+    with hexz.open(snap_path, mode="w", compression="lz4") as w:
         w.add(data_path)
 
     return snap_path
@@ -37,8 +37,8 @@ def sample_snapshot(temp_dir):
 def test_mountpoint_path_property(sample_snapshot):
     """Test the path property of _MountPoint."""
     # Skip if binary not available
-    if not shutil.which("strata"):
-        pytest.skip("strata binary not found")
+    if not shutil.which("hexz"):
+        pytest.skip("hexz binary not found")
 
     mp = _MountPoint(sample_snapshot)
     # Before entering context, mount_point might be None
@@ -54,32 +54,32 @@ def test_mountpoint_path_property(sample_snapshot):
 
 def test_find_binary_in_path(sample_snapshot, temp_dir):
     """Test _find_binary when binary is in PATH."""
-    if not shutil.which("strata"):
-        pytest.skip("strata binary not found")
+    if not shutil.which("hexz"):
+        pytest.skip("hexz binary not found")
 
-    mp = _MountPoint(sample_snapshot, binary="strata")
+    mp = _MountPoint(sample_snapshot, binary="hexz")
 
     try:
         binary_path = mp._find_binary()
         assert binary_path is not None
         assert os.path.exists(binary_path) or shutil.which(binary_path)
     except FileNotFoundError:
-        pytest.skip("strata binary not in PATH")
+        pytest.skip("hexz binary not in PATH")
 
 
 def test_find_binary_local_target_release(sample_snapshot):
-    """Test _find_binary finds local target/release/strata."""
-    # This tests the logic that searches parent directories for target/release/strata
+    """Test _find_binary finds local target/release/hexz."""
+    # This tests the logic that searches parent directories for target/release/hexz
     mp = _MountPoint(sample_snapshot, binary="nonexistent_binary_name")
 
-    # If we're in the strata project, it should find target/release/strata
+    # If we're in the hexz project, it should find target/release/hexz
     # Otherwise it should raise FileNotFoundError
     try:
         binary_path = mp._find_binary()
         # If found, verify it's the local build
         assert "target" in binary_path and "release" in binary_path
     except FileNotFoundError as e:
-        # Expected if not in strata project directory
+        # Expected if not in hexz project directory
         assert "Could not find" in str(e)
 
 
@@ -102,13 +102,13 @@ def test_find_binary_not_found_raises_error(sample_snapshot, monkeypatch):
 
 def test_mount_with_custom_mount_point(sample_snapshot, temp_dir):
     """Test mounting with a custom mount point directory."""
-    if not shutil.which("strata"):
-        pytest.skip("strata binary not found")
+    if not shutil.which("hexz"):
+        pytest.skip("hexz binary not found")
 
     custom_mount = os.path.join(temp_dir, "custom_mount")
 
     try:
-        with strata.mount(sample_snapshot, mount_point=custom_mount) as mp:
+        with hexz.mount(sample_snapshot, mount_point=custom_mount) as mp:
             assert mp.path == os.path.abspath(custom_mount)
             assert os.path.exists(custom_mount)
             assert os.path.exists(os.path.join(custom_mount, "disk"))
@@ -118,8 +118,8 @@ def test_mount_with_custom_mount_point(sample_snapshot, temp_dir):
 
 def test_mount_creates_custom_directory_if_not_exists(sample_snapshot, temp_dir):
     """Test that mount creates the custom mount point if it doesn't exist."""
-    if not shutil.which("strata"):
-        pytest.skip("strata binary not found")
+    if not shutil.which("hexz"):
+        pytest.skip("hexz binary not found")
 
     custom_mount = os.path.join(temp_dir, "new_dir", "mount_here")
     assert not os.path.exists(custom_mount)
@@ -135,11 +135,11 @@ def test_mount_creates_custom_directory_if_not_exists(sample_snapshot, temp_dir)
 
 def test_mount_with_temp_directory(sample_snapshot):
     """Test mounting with automatic temporary directory creation."""
-    if not shutil.which("strata"):
-        pytest.skip("strata binary not found")
+    if not shutil.which("hexz"):
+        pytest.skip("hexz binary not found")
 
     try:
-        with strata.mount(sample_snapshot) as mp:
+        with hexz.mount(sample_snapshot) as mp:
             # Should create a temp directory
             assert mp.path is not None
             assert os.path.exists(mp.path)
@@ -152,8 +152,8 @@ def test_mount_with_temp_directory(sample_snapshot):
 
 def test_mount_timeout_error(sample_snapshot, temp_dir, monkeypatch):
     """Test that mount raises MountError on timeout."""
-    if not shutil.which("strata"):
-        pytest.skip("strata binary not found")
+    if not shutil.which("hexz"):
+        pytest.skip("hexz binary not found")
 
     # This test is tricky - we need to simulate a timeout
     # We can mock time.time to always return increasing values
@@ -190,7 +190,7 @@ def test_mount_timeout_error(sample_snapshot, temp_dir, monkeypatch):
     monkeypatch.setattr("subprocess.Popen", lambda *args, **kwargs: MockPopen())
 
     with pytest.raises(MountError) as exc_info:
-        with strata.mount(sample_snapshot):
+        with hexz.mount(sample_snapshot):
             pass
 
     assert "Timed out" in str(exc_info.value) or "Mount failed" in str(exc_info.value)
@@ -198,8 +198,8 @@ def test_mount_timeout_error(sample_snapshot, temp_dir, monkeypatch):
 
 def test_mount_process_dies_early(sample_snapshot, temp_dir, monkeypatch):
     """Test that mount raises MountError if process dies before mount ready."""
-    if not shutil.which("strata"):
-        pytest.skip("strata binary not found")
+    if not shutil.which("hexz"):
+        pytest.skip("hexz binary not found")
 
     class MockPopen:
         def __init__(self, *args, **kwargs):
@@ -220,7 +220,7 @@ def test_mount_process_dies_early(sample_snapshot, temp_dir, monkeypatch):
     monkeypatch.setattr("subprocess.Popen", lambda *args, **kwargs: MockPopen())
 
     with pytest.raises(MountError) as exc_info:
-        with strata.mount(sample_snapshot):
+        with hexz.mount(sample_snapshot):
             pass
 
     assert "Mount failed" in str(exc_info.value)
@@ -228,8 +228,8 @@ def test_mount_process_dies_early(sample_snapshot, temp_dir, monkeypatch):
 
 def test_unmount_with_fusermount(sample_snapshot, temp_dir, monkeypatch):
     """Test unmount uses fusermount when available (Linux)."""
-    if not shutil.which("strata"):
-        pytest.skip("strata binary not found")
+    if not shutil.which("hexz"):
+        pytest.skip("hexz binary not found")
 
     fusermount_called = []
     original_run = subprocess.run
@@ -260,8 +260,8 @@ def test_unmount_with_fusermount(sample_snapshot, temp_dir, monkeypatch):
 
 def test_unmount_with_umount_fallback(sample_snapshot, temp_dir, monkeypatch):
     """Test unmount falls back to umount when fusermount not available."""
-    if not shutil.which("strata"):
-        pytest.skip("strata binary not found")
+    if not shutil.which("hexz"):
+        pytest.skip("hexz binary not found")
 
     umount_called = []
     original_run = subprocess.run
@@ -291,8 +291,8 @@ def test_unmount_with_umount_fallback(sample_snapshot, temp_dir, monkeypatch):
 
 def test_unmount_terminates_process(sample_snapshot, monkeypatch):
     """Test that unmount terminates the mount process."""
-    if not shutil.which("strata"):
-        pytest.skip("strata binary not found")
+    if not shutil.which("hexz"):
+        pytest.skip("hexz binary not found")
 
     terminated = []
     killed = []
@@ -326,7 +326,7 @@ def test_unmount_terminates_process(sample_snapshot, monkeypatch):
     monkeypatch.setattr("os.path.exists", lambda p: False if "disk" in p else True)
 
     try:
-        with strata.mount(sample_snapshot):
+        with hexz.mount(sample_snapshot):
             pass
     except (MountError, TimeoutError):
         pass  # Expected
@@ -337,14 +337,14 @@ def test_unmount_terminates_process(sample_snapshot, monkeypatch):
 
 def test_mount_function_parameters(sample_snapshot, temp_dir):
     """Test mount function with various parameter combinations."""
-    if not shutil.which("strata"):
-        pytest.skip("strata binary not found")
+    if not shutil.which("hexz"):
+        pytest.skip("hexz binary not found")
 
     from pathlib import Path
 
     # Test with Path objects
     try:
-        with strata.mount(Path(sample_snapshot)) as mp:
+        with hexz.mount(Path(sample_snapshot)) as mp:
             assert mp.path is not None
     except (MountError, TimeoutError, subprocess.CalledProcessError):
         pytest.skip("Mount operation not supported in test environment")
@@ -352,15 +352,15 @@ def test_mount_function_parameters(sample_snapshot, temp_dir):
 
 def test_mount_with_custom_binary_path(sample_snapshot, temp_dir):
     """Test mount with custom binary parameter."""
-    if not shutil.which("strata"):
-        pytest.skip("strata binary not found")
+    if not shutil.which("hexz"):
+        pytest.skip("hexz binary not found")
 
-    binary_path = shutil.which("strata")
+    binary_path = shutil.which("hexz")
     if not binary_path:
-        pytest.skip("strata binary not found")
+        pytest.skip("hexz binary not found")
 
     try:
-        with strata.mount(sample_snapshot, binary=binary_path) as mp:
+        with hexz.mount(sample_snapshot, binary=binary_path) as mp:
             assert mp.path is not None
     except (MountError, TimeoutError, subprocess.CalledProcessError):
         pytest.skip("Mount operation not supported in test environment")
@@ -368,8 +368,8 @@ def test_mount_with_custom_binary_path(sample_snapshot, temp_dir):
 
 def test_mount_exception_cleanup(sample_snapshot, temp_dir, monkeypatch):
     """Test that resources are cleaned up when mount fails."""
-    if not shutil.which("strata"):
-        pytest.skip("strata binary not found")
+    if not shutil.which("hexz"):
+        pytest.skip("hexz binary not found")
 
     # Force a failure by making the binary not found
     def mock_which(binary):

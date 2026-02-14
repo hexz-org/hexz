@@ -1,9 +1,9 @@
-"""Extended tests for strata.exceptions module."""
+"""Extended tests for hexz.exceptions module."""
 
 import pytest
-from strata.exceptions import (
-    StrataError,
-    IOError as StrataIOError,
+from hexz.exceptions import (
+    Error,
+    IOError as IOError,
     NetworkError,
     MountError,
     CompressionError,
@@ -19,55 +19,55 @@ from strata.exceptions import (
 class TestExceptionHierarchy:
     """Test the exception inheritance chain."""
 
-    def test_strata_error_is_exception(self):
-        assert issubclass(StrataError, Exception)
+    def test_hexz_error_is_exception(self):
+        assert issubclass(Error, Exception)
 
-    def test_io_error_inherits_strata_error(self):
-        assert issubclass(StrataIOError, StrataError)
+    def test_io_error_inherits_hexz_error(self):
+        assert issubclass(IOError, Error)
 
     def test_io_error_inherits_os_error(self):
-        assert issubclass(StrataIOError, OSError)
+        assert issubclass(IOError, OSError)
 
     def test_network_error_inherits_io_error(self):
-        assert issubclass(NetworkError, StrataIOError)
+        assert issubclass(NetworkError, IOError)
 
-    def test_mount_error_inherits_strata_error(self):
-        assert issubclass(MountError, StrataError)
+    def test_mount_error_inherits_hexz_error(self):
+        assert issubclass(MountError, Error)
 
-    def test_compression_error_inherits_strata_error(self):
-        assert issubclass(CompressionError, StrataError)
+    def test_compression_error_inherits_hexz_error(self):
+        assert issubclass(CompressionError, Error)
 
-    def test_validation_error_inherits_strata_error(self):
-        assert issubclass(ValidationError, StrataError)
+    def test_validation_error_inherits_hexz_error(self):
+        assert issubclass(ValidationError, Error)
 
-    def test_format_error_inherits_strata_error(self):
-        assert issubclass(FormatError, StrataError)
+    def test_format_error_inherits_hexz_error(self):
+        assert issubclass(FormatError, Error)
 
-    def test_encryption_error_inherits_strata_error(self):
-        assert issubclass(EncryptionError, StrataError)
+    def test_encryption_error_inherits_hexz_error(self):
+        assert issubclass(EncryptionError, Error)
 
-    def test_signature_error_inherits_strata_error(self):
-        assert issubclass(SignatureError, StrataError)
+    def test_signature_error_inherits_hexz_error(self):
+        assert issubclass(SignatureError, Error)
 
-    def test_cache_error_inherits_strata_error(self):
-        assert issubclass(CacheError, StrataError)
+    def test_cache_error_inherits_hexz_error(self):
+        assert issubclass(CacheError, Error)
 
     def test_version_error_inherits_format_error(self):
         assert issubclass(VersionError, FormatError)
 
-    def test_version_error_inherits_strata_error(self):
-        assert issubclass(VersionError, StrataError)
+    def test_version_error_inherits_hexz_error(self):
+        assert issubclass(VersionError, Error)
 
 
 class TestExceptionInstantiation:
     """Test that all exceptions can be raised and caught."""
 
-    def test_strata_error_message(self):
-        err = StrataError("test error")
+    def test_hexz_error_message(self):
+        err = Error("test error")
         assert str(err) == "test error"
 
     def test_io_error_message(self):
-        err = StrataIOError("disk full")
+        err = IOError("disk full")
         assert str(err) == "disk full"
 
     def test_network_error_message(self):
@@ -128,29 +128,29 @@ class TestExceptionCatching:
     """Test catching exceptions at various levels of the hierarchy."""
 
     def test_catch_network_as_io(self):
-        with pytest.raises(StrataIOError):
+        with pytest.raises(IOError):
             raise NetworkError("timeout")
 
-    def test_catch_network_as_strata(self):
-        with pytest.raises(StrataError):
+    def test_catch_network_as_hexz(self):
+        with pytest.raises(Error):
             raise NetworkError("timeout")
 
     def test_catch_io_as_os_error(self):
         with pytest.raises(OSError):
-            raise StrataIOError("disk error")
+            raise IOError("disk error")
 
     def test_catch_version_as_format(self):
         with pytest.raises(FormatError):
             raise VersionError("too new", file_version=99)
 
-    def test_catch_version_as_strata(self):
-        with pytest.raises(StrataError):
+    def test_catch_version_as_hexz(self):
+        with pytest.raises(Error):
             raise VersionError("too new")
 
-    def test_catch_all_strata_errors(self):
+    def test_catch_all_hexz_errors(self):
         exceptions = [
-            StrataError("base"),
-            StrataIOError("io"),
+            Error("base"),
+            IOError("io"),
             NetworkError("net"),
             MountError("mount"),
             CompressionError("comp"),
@@ -162,5 +162,5 @@ class TestExceptionCatching:
             VersionError("ver"),
         ]
         for exc in exceptions:
-            with pytest.raises(StrataError):
+            with pytest.raises(Error):
                 raise exc

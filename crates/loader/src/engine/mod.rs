@@ -1,7 +1,7 @@
-//! Pure Rust engine abstraction layer for Strata snapshot access.
+//! Pure Rust engine abstraction layer for Hexz snapshot access.
 //!
 //! This module provides a storage-backend-agnostic interface for opening, configuring,
-//! and reading Strata snapshot files. It serves as a dependency-free foundation that
+//! and reading Hexz snapshot files. It serves as a dependency-free foundation that
 //! can be consumed by Python bindings (via PyO3), standalone Rust applications, or
 //! other language FFI layers without requiring Python runtime dependencies.
 //!
@@ -24,7 +24,7 @@
 //!                │
 //!                v
 //! ┌─────────────────────────────────────┐
-//! │        strata-core::StrataFile      │  ← Core I/O + compression
+//! │        hexz-core::File      │  ← Core I/O + compression
 //! └──────────────┬──────────────────────┘
 //!                │
 //!                v
@@ -60,7 +60,7 @@
 //! A typical ML data loading pipeline uses this module as follows:
 //!
 //! 1. **Open Snapshot**: Call [`open_snapshot`] with an [`OpenConfig`] to obtain
-//!    an `Arc<StrataFile>` handle.
+//!    an `Arc<File>` handle.
 //! 2. **Configure Iteration**: Use [`iterator::IterConfig`] to set block size,
 //!    prefetch count, and target stream (Disk vs. Memory).
 //! 3. **Shuffle (Optional)**: Generate randomized indices via [`shuffle::shuffled_indices`]
@@ -71,11 +71,11 @@
 //! ## Example: Sequential Reading
 //!
 //! ```rust,no_run
-//! use strata_loader::engine::{OpenConfig, open_snapshot, iterator::{IterConfig, SnapshotIterator}};
-//! use strata_core::api::stratafile::SnapshotStream;
+//! use hexz_loader::engine::{OpenConfig, open_snapshot, iterator::{IterConfig, SnapshotIterator}};
+//! use hexz_core::api::file::SnapshotStream;
 //!
 //! let config = OpenConfig {
-//!     path: "/data/snapshot.st".to_string(),
+//!     path: "/data/snapshot.hxz".to_string(),
 //!     s3_region: None,
 //!     endpoint_url: None,
 //!     allow_restricted: false,
@@ -101,11 +101,11 @@
 //! ## Example: Shuffled Random Access
 //!
 //! ```rust,no_run
-//! use strata_loader::engine::{OpenConfig, open_snapshot, shuffle::shuffled_indices, stream_size};
-//! use strata_core::api::stratafile::SnapshotStream;
+//! use hexz_loader::engine::{OpenConfig, open_snapshot, shuffle::shuffled_indices, stream_size};
+//! use hexz_core::api::file::SnapshotStream;
 //!
 //! let config = OpenConfig {
-//!     path: "s3://my-bucket/snapshot.st".to_string(),
+//!     path: "s3://my-bucket/snapshot.hxz".to_string(),
 //!     s3_region: Some("us-west-2".to_string()),
 //!     endpoint_url: None,
 //!     allow_restricted: false,
@@ -123,7 +123,7 @@
 //!
 //! for idx in indices.iter().take(100) {
 //!     let offset = (*idx as u64) * sample_size;
-//!     let data = strata_loader::engine::read_stream(&snap, SnapshotStream::Disk, offset, sample_size as usize)
+//!     let data = hexz_loader::engine::read_stream(&snap, SnapshotStream::Disk, offset, sample_size as usize)
 //!         .expect("Read failed");
 //!     // Process shuffled sample...
 //! }
@@ -150,21 +150,21 @@
 //!
 //! # Thread Safety
 //!
-//! All functions in this module are thread-safe. The underlying `StrataFile` is
+//! All functions in this module are thread-safe. The underlying `File` is
 //! `Send + Sync`, and the engine layer uses `Arc` to enable shared ownership across
 //! threads. This allows parallel data loading with per-thread iterators.
 
 pub mod iterator;
 pub mod shuffle;
 
+use hexz_common::constants::DEFAULT_ZSTD_LEVEL;
+use hexz_core::File;
+use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
+use hexz_core::api::file::SnapshotStream;
+use hexz_core::format::header::{CompressionType, Header};
+use hexz_core::format::magic::HEADER_SIZE;
+use hexz_core::store::StorageBackend;
 use std::sync::Arc;
-use strata_common::constants::DEFAULT_ZSTD_LEVEL;
-use strata_core::StrataFile;
-use strata_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
-use strata_core::api::stratafile::SnapshotStream;
-use strata_core::format::header::{CompressionType, StrataHeader};
-use strata_core::format::magic::HEADER_SIZE;
-use strata_core::store::StorageBackend;
 
 /// Errors that can occur when opening or reading snapshots.
 ///
@@ -191,8 +191,8 @@ pub enum OpenError {
     /// The snapshot header is malformed, corrupt, or from an unsupported version.
     ///
     /// This typically indicates:
-    /// - The file is not a valid Strata snapshot
-    /// - The snapshot was created by an incompatible version of Strata
+    /// - The file is not a valid Hexz snapshot
+    /// - The snapshot was created by an incompatible version of Hexz
     /// - Data corruption occurred during storage or transfer
     InvalidHeader(String),
 
@@ -218,7 +218,7 @@ impl std::fmt::Display for OpenError {
 
 impl std::error::Error for OpenError {}
 
-/// Configuration for opening a Strata snapshot from any supported backend.
+/// Configuration for opening a Hexz snapshot from any supported backend.
 ///
 /// This struct aggregates all parameters required to locate, authenticate, and
 /// optimize access to a snapshot, whether it resides on a local disk, remote
@@ -254,10 +254,10 @@ impl std::error::Error for OpenError {}
 /// ## Local File with Default Settings
 ///
 /// ```rust
-/// use strata_loader::engine::OpenConfig;
+/// use hexz_loader::engine::OpenConfig;
 ///
 /// let config = OpenConfig {
-///     path: "/mnt/data/snapshot.st".to_string(),
+///     path: "/mnt/data/snapshot.hxz".to_string(),
 ///     s3_region: None,
 ///     endpoint_url: None,
 ///     allow_restricted: false,
@@ -269,10 +269,10 @@ impl std::error::Error for OpenError {}
 /// ## S3 with Prefetching and Large Cache
 ///
 /// ```rust
-/// use strata_loader::engine::OpenConfig;
+/// use hexz_loader::engine::OpenConfig;
 ///
 /// let config = OpenConfig {
-///     path: "s3://ml-datasets/imagenet-2024/snapshot.st".to_string(),
+///     path: "s3://ml-datasets/imagenet-2024/snapshot.hxz".to_string(),
 ///     s3_region: Some("eu-west-1".to_string()),
 ///     endpoint_url: None,
 ///     allow_restricted: false,
@@ -284,10 +284,10 @@ impl std::error::Error for OpenError {}
 /// ## MinIO (S3-Compatible) with Custom Endpoint
 ///
 /// ```rust
-/// use strata_loader::engine::OpenConfig;
+/// use hexz_loader::engine::OpenConfig;
 ///
 /// let config = OpenConfig {
-///     path: "s3://my-bucket/data.st".to_string(),
+///     path: "s3://my-bucket/data.hxz".to_string(),
 ///     s3_region: Some("us-east-1".to_string()),  // MinIO ignores region but field is required
 ///     endpoint_url: Some("https://minio.internal.company.com".to_string()),
 ///     allow_restricted: true,  // internal network access required
@@ -373,7 +373,7 @@ pub struct OpenConfig {
     /// - **Random access**: Large cache (32-128MB) beneficial, high reuse likelihood
     /// - **Shuffled ML training**: Medium cache (16-32MB), moderate reuse within epochs
     ///
-    /// **Default Behavior**: If `None`, uses strata-core's default (~1024 blocks,
+    /// **Default Behavior**: If `None`, uses hexz-core's default (~1024 blocks,
     /// ~4MB effective for 4KB block size).
     ///
     /// **Cache Eviction**: Least Recently Used (LRU) policy. When full, the oldest
@@ -381,7 +381,7 @@ pub struct OpenConfig {
     pub cache_capacity_bytes: Option<usize>,
 }
 
-/// Opens a Strata snapshot from any supported backend.
+/// Opens a Hexz snapshot from any supported backend.
 ///
 /// This function is the primary entry point for accessing snapshot data. It performs
 /// the following steps:
@@ -397,7 +397,7 @@ pub struct OpenConfig {
 /// 5. **Cache Configuration**: Sets up the block cache and prefetch pipeline using
 ///    the provided `prefetch_count` and `cache_capacity_bytes`.
 ///
-/// The returned `Arc<StrataFile>` is thread-safe and can be cloned cheaply to share
+/// The returned `Arc<File>` is thread-safe and can be cloned cheaply to share
 /// across threads without duplicating the underlying cache or network connections.
 ///
 /// # Parameters
@@ -406,7 +406,7 @@ pub struct OpenConfig {
 ///
 /// # Returns
 ///
-/// - `Ok(Arc<StrataFile>)`: A reference-counted handle to the opened snapshot.
+/// - `Ok(Arc<File>)`: A reference-counted handle to the opened snapshot.
 /// - `Err(OpenError)`: Failure during backend initialization, header parsing, or validation.
 ///
 /// # Errors
@@ -421,10 +421,10 @@ pub struct OpenConfig {
 /// ## Opening a Local Snapshot
 ///
 /// ```rust,no_run
-/// use strata_loader::engine::{OpenConfig, open_snapshot};
+/// use hexz_loader::engine::{OpenConfig, open_snapshot};
 ///
 /// let config = OpenConfig {
-///     path: "/data/mnist-train.st".to_string(),
+///     path: "/data/mnist-train.hxz".to_string(),
 ///     s3_region: None,
 ///     endpoint_url: None,
 ///     allow_restricted: false,
@@ -439,10 +439,10 @@ pub struct OpenConfig {
 /// ## Opening an S3 Snapshot with Prefetching
 ///
 /// ```rust,no_run
-/// use strata_loader::engine::{OpenConfig, open_snapshot};
+/// use hexz_loader::engine::{OpenConfig, open_snapshot};
 ///
 /// let config = OpenConfig {
-///     path: "s3://ml-datasets/coco-2024/train.st".to_string(),
+///     path: "s3://ml-datasets/coco-2024/train.hxz".to_string(),
 ///     s3_region: Some("us-west-2".to_string()),
 ///     endpoint_url: None,
 ///     allow_restricted: false,
@@ -456,10 +456,10 @@ pub struct OpenConfig {
 /// ## Opening from HTTP with SSRF Protection
 ///
 /// ```rust,no_run
-/// use strata_loader::engine::{OpenConfig, open_snapshot};
+/// use hexz_loader::engine::{OpenConfig, open_snapshot};
 ///
 /// let config = OpenConfig {
-///     path: "https://datasets.example.com/public/data.st".to_string(),
+///     path: "https://datasets.example.com/public/data.hxz".to_string(),
 ///     s3_region: None,
 ///     endpoint_url: None,
 ///     allow_restricted: false,  // Blocks connections to 10.0.0.0/8, etc.
@@ -484,53 +484,51 @@ pub struct OpenConfig {
 ///
 /// # Thread Safety
 ///
-/// The returned `Arc<StrataFile>` is `Send + Sync`. Multiple threads can safely
+/// The returned `Arc<File>` is `Send + Sync`. Multiple threads can safely
 /// clone the `Arc` and issue concurrent reads. The internal cache and prefetch
 /// pipeline are protected by locks and designed for high concurrency.
 ///
 /// # Implementation Details
 ///
-/// This function uses `strata_core::StrataFile::with_cache` to enable advanced
+/// This function uses `hexz_core::File::with_cache` to enable advanced
 /// features like prefetching and custom cache sizes. The alternative
-/// `StrataFile::new` would use default settings without prefetch support.
-pub fn open_snapshot(config: OpenConfig) -> Result<Arc<StrataFile>, OpenError> {
-    let backend: Arc<dyn StorageBackend> =
-        if config.path.starts_with("http://") || config.path.starts_with("https://") {
-            Arc::new(
-                strata_core::store::http::HttpBackend::new(
-                    config.path.clone(),
-                    config.allow_restricted,
-                )
+/// `File::new` would use default settings without prefetch support.
+pub fn open_snapshot(config: OpenConfig) -> Result<Arc<File>, OpenError> {
+    let backend: Arc<dyn StorageBackend> = if config.path.starts_with("http://")
+        || config.path.starts_with("https://")
+    {
+        Arc::new(
+            hexz_core::store::http::HttpBackend::new(config.path.clone(), config.allow_restricted)
                 .map_err(|e| OpenError::Io(e.to_string()))?,
-            )
-        } else if config.path.starts_with("s3://") {
-            let remainder = &config.path[5..];
-            let parts: Vec<&str> = remainder.splitn(2, '/').collect();
-            if parts.len() != 2 {
-                return Err(OpenError::InvalidS3Uri(
-                    "Expected s3://bucket/key".to_string(),
-                ));
-            }
-            let bucket = parts[0].to_string();
-            let key = parts[1].to_string();
-            let region = config.s3_region.unwrap_or_else(|| "us-east-1".to_string());
+        )
+    } else if config.path.starts_with("s3://") {
+        let remainder = &config.path[5..];
+        let parts: Vec<&str> = remainder.splitn(2, '/').collect();
+        if parts.len() != 2 {
+            return Err(OpenError::InvalidS3Uri(
+                "Expected s3://bucket/key".to_string(),
+            ));
+        }
+        let bucket = parts[0].to_string();
+        let key = parts[1].to_string();
+        let region = config.s3_region.unwrap_or_else(|| "us-east-1".to_string());
 
-            Arc::new(
-                strata_core::store::s3::S3Backend::new(bucket, key, region, config.endpoint_url)
-                    .map_err(|e| OpenError::Io(e.to_string()))?,
-            )
-        } else {
-            Arc::new(
-                strata_core::store::local::FileBackend::new(std::path::Path::new(&config.path))
-                    .map_err(|e| OpenError::Io(e.to_string()))?,
-            )
-        };
+        Arc::new(
+            hexz_core::store::s3::S3Backend::new(bucket, key, region, config.endpoint_url)
+                .map_err(|e| OpenError::Io(e.to_string()))?,
+        )
+    } else {
+        Arc::new(
+            hexz_core::store::local::FileBackend::new(std::path::Path::new(&config.path))
+                .map_err(|e| OpenError::Io(e.to_string()))?,
+        )
+    };
 
     let header_bytes = backend
         .read_exact(0, HEADER_SIZE)
         .map_err(|e| OpenError::Io(e.to_string()))?;
 
-    let header: StrataHeader =
+    let header: Header =
         bincode::deserialize(&header_bytes).map_err(|e| OpenError::InvalidHeader(e.to_string()))?;
 
     let compressor: Box<dyn Compressor> = match header.compression {
@@ -545,7 +543,7 @@ pub fn open_snapshot(config: OpenConfig) -> Result<Arc<StrataFile>, OpenError> {
         None
     };
 
-    StrataFile::with_cache(
+    File::with_cache(
         backend,
         compressor,
         None,
@@ -557,7 +555,7 @@ pub fn open_snapshot(config: OpenConfig) -> Result<Arc<StrataFile>, OpenError> {
 
 /// Returns the total size in bytes of a specific stream in the snapshot.
 ///
-/// Strata snapshots contain two independent streams:
+/// Hexz snapshots contain two independent streams:
 /// - **Disk**: The virtual machine's persistent storage (e.g., root filesystem, data volumes).
 /// - **Memory**: A snapshot of physical RAM at the time of capture (optional).
 ///
@@ -576,11 +574,11 @@ pub fn open_snapshot(config: OpenConfig) -> Result<Arc<StrataFile>, OpenError> {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use strata_loader::engine::{OpenConfig, open_snapshot, stream_size};
-/// use strata_core::api::stratafile::SnapshotStream;
+/// use hexz_loader::engine::{OpenConfig, open_snapshot, stream_size};
+/// use hexz_core::api::file::SnapshotStream;
 ///
 /// let config = OpenConfig {
-///     path: "/data/snapshot.st".to_string(),
+///     path: "/data/snapshot.hxz".to_string(),
 ///     s3_region: None,
 ///     endpoint_url: None,
 ///     allow_restricted: false,
@@ -599,7 +597,7 @@ pub fn open_snapshot(config: OpenConfig) -> Result<Arc<StrataFile>, OpenError> {
 ///
 /// This operation reads only the snapshot header (cached after first access) and
 /// completes in O(1) time. It does not perform any I/O on the data stream itself.
-pub fn stream_size(snap: &StrataFile, stream: SnapshotStream) -> u64 {
+pub fn stream_size(snap: &File, stream: SnapshotStream) -> u64 {
     snap.size(stream)
 }
 
@@ -611,7 +609,7 @@ pub fn stream_size(snap: &StrataFile, stream: SnapshotStream) -> u64 {
 ///
 /// # Decompression and Caching
 ///
-/// Internally, Strata snapshots are divided into compressed blocks (typically 4KB).
+/// Internally, Hexz snapshots are divided into compressed blocks (typically 4KB).
 /// When you request a byte range:
 ///
 /// 1. The function determines which blocks contain the requested bytes.
@@ -654,11 +652,11 @@ pub fn stream_size(snap: &StrataFile, stream: SnapshotStream) -> u64 {
 /// ## Reading the First 1KB of a Snapshot
 ///
 /// ```rust,no_run
-/// use strata_loader::engine::{OpenConfig, open_snapshot, read_stream};
-/// use strata_core::api::stratafile::SnapshotStream;
+/// use hexz_loader::engine::{OpenConfig, open_snapshot, read_stream};
+/// use hexz_core::api::file::SnapshotStream;
 ///
 /// let config = OpenConfig {
-///     path: "/data/snapshot.st".to_string(),
+///     path: "/data/snapshot.hxz".to_string(),
 ///     s3_region: None,
 ///     endpoint_url: None,
 ///     allow_restricted: false,
@@ -676,11 +674,11 @@ pub fn stream_size(snap: &StrataFile, stream: SnapshotStream) -> u64 {
 /// ## Reading with Offset for Random Access
 ///
 /// ```rust,no_run
-/// use strata_loader::engine::{OpenConfig, open_snapshot, read_stream};
-/// use strata_core::api::stratafile::SnapshotStream;
+/// use hexz_loader::engine::{OpenConfig, open_snapshot, read_stream};
+/// use hexz_core::api::file::SnapshotStream;
 ///
 /// let config = OpenConfig {
-///     path: "s3://bucket/snapshot.st".to_string(),
+///     path: "s3://bucket/snapshot.hxz".to_string(),
 ///     s3_region: Some("us-east-1".to_string()),
 ///     endpoint_url: None,
 ///     allow_restricted: false,
@@ -711,7 +709,7 @@ pub fn stream_size(snap: &StrataFile, stream: SnapshotStream) -> u64 {
 /// `snap` concurrently. Reads do not interfere with each other, though they may
 /// compete for cache space (LRU eviction).
 pub fn read_stream(
-    snap: &Arc<StrataFile>,
+    snap: &Arc<File>,
     stream: SnapshotStream,
     offset: u64,
     length: usize,
@@ -723,9 +721,9 @@ pub fn read_stream(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hexz_core::ops::pack::{PackConfig, pack_snapshot};
     use std::fs;
     use std::path::PathBuf;
-    use strata_core::ops::pack::{PackConfig, pack_snapshot};
     use tempfile::TempDir;
 
     /// Helper to create a test disk image with specific pattern
@@ -744,7 +742,7 @@ mod tests {
         compression: &str,
     ) -> PathBuf {
         let disk_path = create_test_disk(dir, "disk.img", disk_size, pattern);
-        let output_path = dir.path().join("test.st");
+        let output_path = dir.path().join("test.hxz");
 
         let config = PackConfig {
             disk: Some(disk_path),
@@ -822,7 +820,7 @@ mod tests {
     #[test]
     fn test_open_snapshot_nonexistent_file() {
         let config = OpenConfig {
-            path: "/nonexistent/path/to/snapshot.st".to_string(),
+            path: "/nonexistent/path/to/snapshot.hxz".to_string(),
             s3_region: None,
             endpoint_url: None,
             allow_restricted: false,
@@ -1074,7 +1072,7 @@ mod tests {
         // Create both disk and memory images
         let disk_path = create_test_disk(&temp_dir, "disk.img", 8192, 0x55);
         let memory_path = create_test_disk(&temp_dir, "memory.dump", 4096, 0x66);
-        let output_path = temp_dir.path().join("snapshot_with_mem.st");
+        let output_path = temp_dir.path().join("snapshot_with_mem.hxz");
 
         let config = PackConfig {
             disk: Some(disk_path),

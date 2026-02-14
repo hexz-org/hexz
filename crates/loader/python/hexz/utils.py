@@ -1,28 +1,28 @@
-"""Utility functions for Strata.
+"""Utility functions for Hexz.
 
 This module provides convenience functions for inspecting, analyzing,
-and manipulating Strata snapshots.
+and manipulating Hexz snapshots.
 """
 
 from typing import Any, Dict, Optional
 
-from . import strata_loader
+from . import hexz_loader
 from .typing import PathLike
 
 # Format version constants
 # These are populated from Rust at module load time
-FORMAT_VERSION = strata_loader.get_format_version()
-MIN_SUPPORTED_VERSION = strata_loader.get_min_supported_version()
-MAX_SUPPORTED_VERSION = strata_loader.get_max_supported_version()
+FORMAT_VERSION = hexz_loader.get_format_version()
+MIN_SUPPORTED_VERSION = hexz_loader.get_min_supported_version()
+MAX_SUPPORTED_VERSION = hexz_loader.get_max_supported_version()
 
 
 class Metadata:
-    """Structured metadata from a Strata snapshot.
+    """Structured metadata from a Hexz snapshot.
 
     Provides property access to metadata fields with IDE autocomplete support.
 
     Example:
-        >>> meta = strata.inspect("snapshot.st")
+        >>> meta = hexz.inspect("snapshot.hxz")
         >>> meta.version
         1
         >>> meta.compression
@@ -125,9 +125,9 @@ class Metadata:
         """Human-readable snapshot information."""
         lines = []
         if self._path:
-            lines.append(f"Strata Snapshot: {self._path}")
+            lines.append(f"Hexz Snapshot: {self._path}")
         else:
-            lines.append("Strata Snapshot")
+            lines.append("Hexz Snapshot")
         lines.append(f"  Version: {self.version}")
         lines.append(f"  Compression: {self.compression}")
         if self.has_disk:
@@ -148,9 +148,9 @@ class Metadata:
         """Print human-readable snapshot information to stdout.
 
         Example:
-            >>> meta = strata.inspect("snapshot.st")
+            >>> meta = hexz.inspect("snapshot.hxz")
             >>> meta.print()
-            Strata Snapshot: snapshot.st
+            Hexz Snapshot: snapshot.st
               Version: 1
               Compression: lz4
               ...
@@ -169,7 +169,7 @@ class Metadata:
             Dictionary containing diff information
 
         Example:
-            >>> diff_info = strata.Metadata.diff("base.st", "updated.st")
+            >>> diff_info = hexz.Metadata.diff("base.hxz", "updated.hxz")
             >>> print(f"Changed blocks: {diff_info['changed_blocks']}")
 
         Note:
@@ -180,7 +180,7 @@ class Metadata:
         path2_str = str(path2)
         if path2_str.endswith(".bin"):
             # This is an overlay file, use the Rust diff function
-            return strata_loader.diff(path2_str)
+            return hexz_loader.diff(path2_str)
         else:
             # Both are snapshots, do basic metadata comparison
             meta1 = inspect(path1)
@@ -209,9 +209,9 @@ def merge_overlay(
         thin: If True, create a thin snapshot that references the base
 
     Example:
-        >>> strata.merge_overlay("base.st", "overlay.bin", "merged.st")
+        >>> hexz.merge_overlay("base.hxz", "overlay.bin", "merged.hxz")
         >>> # Or thin snapshot:
-        >>> strata.merge_overlay("base.st", "overlay.bin", "thin.st", thin=True)
+        >>> hexz.merge_overlay("base.hxz", "overlay.bin", "thin.hxz", thin=True)
     """
     from .writer import Writer
 
@@ -220,7 +220,7 @@ def merge_overlay(
 
 
 def inspect(path: PathLike) -> Metadata:
-    """Inspect a Strata snapshot and return structured metadata.
+    """Inspect a Hexz snapshot and return structured metadata.
 
     Args:
         path: Path to .st file
@@ -229,14 +229,14 @@ def inspect(path: PathLike) -> Metadata:
         Metadata object with snapshot information
 
     Example:
-        >>> meta = strata.inspect("snapshot.st")
+        >>> meta = hexz.inspect("snapshot.hxz")
         >>> print(f"Version: {meta.version}")
         >>> print(f"Compression: {meta.compression}")
         >>> print(f"Size: {meta.disk_size:,} bytes")
         >>> print(meta)  # Human-readable output
         >>> meta.print()  # Same as above
     """
-    raw_meta = strata_loader.inspect(str(path))
+    raw_meta = hexz_loader.inspect(str(path))
     raw_meta["path"] = str(path)  # Store path for display
     return Metadata(raw_meta)
 
@@ -297,14 +297,14 @@ def analyze(path: PathLike) -> AnalysisReport:
         AnalysisReport with deduplication statistics
 
     Example:
-        >>> report = strata.analyze("dataset.tar")
+        >>> report = hexz.analyze("dataset.tar")
         >>> print(f"Predicted ratio: {report.predicted_ratio:.2f}x")
         >>> print(f"Savings: {report.savings_percent:.1f}%")
     """
-    from . import strata_loader
+    from . import hexz_loader
     import os
 
-    raw_report = strata_loader.analyze(str(path))
+    raw_report = hexz_loader.analyze(str(path))
     # Add total_bytes from file size
     file_size = os.path.getsize(str(path))
     raw_report["total_bytes"] = float(file_size)
@@ -334,10 +334,10 @@ def verify(
 
     Example:
         >>> # Basic integrity check
-        >>> valid = strata.verify("snapshot.st")
+        >>> valid = hexz.verify("snapshot.hxz")
         ...
         >>> # With signature verification
-        >>> valid = strata.verify("snapshot.st", public_key="key.pub")
+        >>> valid = hexz.verify("snapshot.hxz", public_key="key.pub")
         >>> if not valid:
         ...     print("Snapshot verification failed!")
     """

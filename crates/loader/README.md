@@ -1,10 +1,10 @@
-# strata-loader
+# hexz-loader
 
-Python bindings for Strata - high-performance ML data loading with zero-copy reads and background prefetching.
+Python bindings for Hexz - high-performance ML data loading with zero-copy reads and background prefetching.
 
 ## Overview
 
-`strata-loader` provides Python bindings to the Strata engine via PyO3. It's designed for **AI/ML training workflows** where you need to stream massive datasets directly from compressed storage (local files, S3, HTTP) into GPU memory without Python GIL overhead.
+`hexz-loader` provides Python bindings to the Hexz engine via PyO3. It's designed for **AI/ML training workflows** where you need to stream massive datasets directly from compressed storage (local files, S3, HTTP) into GPU memory without Python GIL overhead.
 
 The loader bypasses Python's multiprocessing by handling prefetching in lightweight Rust threads, eliminating "GPU starvation" during training.
 
@@ -14,25 +14,25 @@ The loader bypasses Python's multiprocessing by handling prefetching in lightwei
 
 ```bash
 # Minimal installation (core features only, ~5MB)
-pip install strata
+pip install hexz
 
 # With PyTorch support
-pip install strata[torch]
+pip install hexz[torch]
 
 # With TensorFlow support
-pip install strata[tensorflow]
+pip install hexz[tensorflow]
 
 # With NumPy arrays
-pip install strata[numpy]
+pip install hexz[numpy]
 
 # ML bundle (PyTorch + NumPy)
-pip install strata[ml]
+pip install hexz[ml]
 
 # Everything
-pip install strata[full]
+pip install hexz[full]
 
 # Development
-pip install strata[dev]
+pip install hexz[dev]
 ```
 
 ### From Source (Development)
@@ -89,13 +89,13 @@ Drop-in replacement for standard PyTorch datasets:
 
 ```python
 import torch
-from strata import StrataLoader
+from hexz import Loader
 
 # Open a compressed dataset (local or remote)
-dataset = StrataLoader("s3://my-bucket/imagenet.st")
+dataset = Loader("s3://my-bucket/imagenet.hxz")
 
 # Standard PyTorch DataLoader
-# Strata handles prefetching in Rust background threads
+# Hexz handles prefetching in Rust background threads
 loader = torch.utils.data.DataLoader(
     dataset,
     batch_size=64,
@@ -109,13 +109,13 @@ for batch in loader:
 
 ### Reading Snapshots
 
-Simple file-like interface for reading Strata files:
+Simple file-like interface for reading Hexz files:
 
 ```python
-import strata
+import hexz
 
 # Open a snapshot
-reader = strata.open("path/to/snapshot.st")
+reader = hexz.open("path/to/snapshot.hxz")
 
 # Read entire file
 data = reader.read()
@@ -134,10 +134,10 @@ Async context manager for asyncio integration:
 
 ```python
 import asyncio
-import strata
+import hexz
 
 async def main():
-    async with strata.AsyncReader("path/to/snapshot.st") as reader:
+    async with hexz.AsyncReader("path/to/snapshot.hxz") as reader:
         data = await reader.read_at(0, 1024)
 
 asyncio.run(main())
@@ -147,7 +147,7 @@ asyncio.run(main())
 
 - **Zero-Copy Reads**: Direct memory access without Python overhead
 - **Background Prefetching**: Rust threads handle I/O while Python/GPU computes
-- **PyTorch Integration**: `StrataDataset` implements PyTorch's Dataset interface
+- **PyTorch Integration**: `Dataset` implements PyTorch's Dataset interface
 - **Remote Streaming**: Stream from S3/HTTP without downloading entire files
 - **NumPy Integration**: Read directly into NumPy arrays
 - **Encryption Support**: Transparent decryption of encrypted snapshots
@@ -155,7 +155,7 @@ asyncio.run(main())
 
 ## Feature Matrix
 
-Strata is designed with modularity in mind. Install only what you need:
+Hexz is designed with modularity in mind. Install only what you need:
 
 | Feature | Default | Description | Size Impact |
 |---------|---------|-------------|-------------|
@@ -202,13 +202,13 @@ maturin build --features full
 ## Architecture
 
 ```
-strata-loader/
+hexz-loader/
 ├── src/                    # Rust source (PyO3 bindings)
 │   ├── lib.rs             # Main Python module
 │   ├── reader.rs          # Reader bindings
 │   ├── writer.rs          # Writer bindings
 │   └── utils.rs           # Helper functions
-├── python/strata/         # Python wrapper code
+├── python/hexz/         # Python wrapper code
 │   ├── __init__.py        # Public API
 │   ├── dataset.py         # PyTorch Dataset integration
 │   ├── reader.py          # High-level reader interface
@@ -227,14 +227,14 @@ strata-loader/
 Create snapshots from Python:
 
 ```python
-import strata
+import hexz
 
 # From a file
-with strata.open("output.st", mode="w", compression="lz4") as w:
+with hexz.open("output.hxz", mode="w", compression="lz4") as w:
     w.add("source_disk.raw")
 
 # Or use Writer directly
-with strata.Writer("output.st", compression="lz4") as w:
+with hexz.Writer("output.hxz", compression="lz4") as w:
     w.add_file("source_disk.raw")
     w.add_bytes(b"additional data")
 ```
@@ -244,13 +244,13 @@ with strata.Writer("output.st", compression="lz4") as w:
 Read data directly into NumPy arrays without extra copies:
 
 ```python
-import strata
+import hexz
 import numpy as np
 
-reader = strata.open("data.st")
+reader = hexz.open("data.hxz")
 
 # Zero-copy read into NumPy array
-array = strata.read_array(
+array = hexz.read_array(
     reader,
     offset=0,
     shape=(100, 100),
@@ -263,9 +263,9 @@ array = strata.read_array(
 Mount as a read-only filesystem (requires FUSE):
 
 ```python
-import strata
+import hexz
 
-with strata.mount("snapshot.st") as mp:
+with hexz.mount("snapshot.hxz") as mp:
     print(f"Mounted at {mp.path}")
     # Access files in mp.path/disk
 ```
@@ -275,13 +275,13 @@ with strata.mount("snapshot.st") as mp:
 Stream from S3 or HTTP:
 
 ```python
-import strata
+import hexz
 
 # S3 streaming
-dataset = strata.open("s3://bucket/dataset.st")
+dataset = hexz.open("s3://bucket/dataset.hxz")
 
 # HTTP streaming
-dataset = strata.open("https://example.com/data.st")
+dataset = hexz.open("https://example.com/data.hxz")
 
 # Read on-demand (only fetches needed blocks)
 chunk = dataset.read_at(1024 * 1024, 4096)
@@ -342,8 +342,8 @@ See `make help` for all available commands.
 - **`Reader`**: Read snapshots with file-like interface
 - **`AsyncReader`**: Async I/O reader
 - **`Writer`**: Create new snapshots
-- **`StrataDataset`**: PyTorch Dataset implementation
-- **`StrataLoader`**: High-level loader (alias for `StrataDataset`)
+- **`Dataset`**: PyTorch Dataset implementation
+- **`Loader`**: High-level loader (alias for `Dataset`)
 
 ### Functions
 
@@ -367,15 +367,15 @@ Optimized for ML training workloads:
 
 ## PyTorch Integration
 
-The `StrataDataset` class implements PyTorch's `Dataset` interface:
+The `Dataset` class implements PyTorch's `Dataset` interface:
 
 ```python
-from strata import StrataDataset
+from hexz import Dataset
 from torch.utils.data import DataLoader
 
 # Create dataset
-dataset = StrataDataset(
-    "s3://bucket/train.st",
+dataset = Dataset(
+    "s3://bucket/train.hxz",
     transform=None,  # Optional transform function
     cache_size=1024  # Cache 1024 blocks in memory
 )
@@ -400,6 +400,6 @@ loader = DataLoader(
 
 - **[User Documentation](../../docs/)** - Tutorials and guides
 - **[Python API Reference](../../docs/reference/python-api.md)** - Complete API docs
-- **[strata-core](../core/)** - Core Rust engine
+- **[hexz-core](../core/)** - Core Rust engine
 - **[CLI Tool](../cli/)** - Command-line interface
 - **[Project README](../../README.md)** - Main project overview

@@ -1,5 +1,5 @@
 /// Unit tests for DCAM (Deduplication with Content-Aware Matching)
-use strata_core::algo::dedup::dcam::{DcamDeduplicator, DcamParams};
+use hexz_core::algo::dedup::dcam::{DcamDeduplicator, DcamParams};
 
 #[test]
 fn test_dcam_params_default() {
