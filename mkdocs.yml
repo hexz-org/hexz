@@ -96,8 +96,10 @@ nav:
     - ADR-0003 BLAKE3 FastCDC Deduplication: adr/0003-blake3-fastcdc-deduplication.md
     - ADR-0004 Storage Backend Abstraction: adr/0004-storage-backend-abstraction.md
     - ADR-0005 PyO3 Python Bindings: adr/0005-pyo3-python-bindings.md
+  - FAQ: FAQ.md
   - Project Info:
     - Benchmarks: project-docs/BENCHMARKS.md
+    - Competitive Comparison: project-docs/COMPETITIVE_COMPARISON.md
     - Contributing: project-docs/CONTRIBUTING.md
     - Roadmap: project-docs/ROADMAP.md
     - Release Notes: project-docs/release/RELEASE_NOTES_v0.1.0-alpha.md

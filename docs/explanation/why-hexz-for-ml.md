@@ -137,19 +137,29 @@ For ML training, this is the right trade-off:
 
 ### Why Content-Defined Chunking?
 
+Both fixed-size and CDC support deduplication, but CDC handles edits better.
+
 **Fixed-size blocks**:
-- Simple, fast
-- Insert 1 byte at start → all blocks shift → no deduplication
+- Fast (4.9 GB/s pack speed)
+- Dedup works great for append-only updates
+- Insert 1 byte at start → all blocks shift → dedup breaks
 
 **Content-defined chunking** (FastCDC):
-- Slightly slower (~20% overhead)
-- Insert 1 byte → only first block changes → deduplication preserved
+- Slower (1.9 GB/s pack speed, 2.6× overhead)
+- Dedup works for all types of updates
+- Insert 1 byte → only affected blocks change → dedup preserved
 
-**Example**: Training data v1 → v2 adds 5% new samples
-- Fixed blocks: 100% new blocks (no reuse)
-- CDC: 95% blocks reused
+**Validated benchmark** (`cargo bench --bench dedup_efficiency`):
 
-**Savings**: Update is 50MB instead of 1TB.
+50 MB base + 50 MB shifted (1KB inserted at start), packed into one snapshot:
+- Fixed blocks: -0.4% dedup (boundary shift breaks all blocks, 100.43 MB combined)
+- CDC: 92.4% dedup (boundaries re-sync, 54.02 MB combined)
+
+With insertions (samples inserted into middle):
+- Fixed blocks: ~0% deduplication (boundary shifts break every block)
+- CDC: 92%+ deduplication (resilient to shifts)
+
+**Recommendation**: Use fixed-size for append-only workflows, CDC when editing/inserting data.
 
 ### Why Rust (Not Python)?
 

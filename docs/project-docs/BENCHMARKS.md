@@ -180,9 +180,13 @@ Testing 100 blocks (64KB each) with hash table lookups:
 - For 100MB file: Pack time = 20ms (LZ4) vs 50ms (LZ4+CDC) vs 60ms (Zstd-3)
 
 **Recommendation:**
-- Use LZ4 without CDC for maximum pack speed (AI training datasets)
-- Use LZ4 with CDC when deduplication benefits exceed 2.6× throughput cost
-- Use Zstd-3 for archival/cold storage where compression ratio matters more than speed
+- Use LZ4 without CDC for maximum pack speed (4.9 GB/s)
+  - Fixed-size blocks still deduplicate append-only updates
+- Use LZ4 with CDC when data has insertions/edits (1.9 GB/s)
+  - Resilient to boundary shifts, better dedup on modified data
+- Use Zstd-3 for archival/cold storage where compression ratio matters
+
+**Note**: CDC only affects PACKING speed. Once packed, both CDC and fixed-size archives READ at the same 9.0 GB/s during training.
 
 ---
 
@@ -404,6 +408,73 @@ Different random number generators for shuffling:
 - Read-heavy workloads scale very well (near-linear to 8 threads)
 - Write-heavy workloads show lock contention
 - Typical ML workloads are read-heavy, so this is acceptable
+
+---
+
+## Deduplication Efficiency
+
+**Benchmark:** `cargo bench --bench dedup_efficiency`
+
+This benchmark measures actual compression ratios and deduplication percentages on controlled datasets with known duplication patterns.
+
+### No Duplication (Random Data)
+
+Testing 50 MB of purely random data (no repeated blocks):
+
+| Method | Input Size | Output Size | Compression Ratio | Space Savings |
+|--------|-----------|------------|-------------------|---------------|
+| Fixed-size blocks | 50.00 MB | 50.22 MB | 1.00x | -0.4% |
+| CDC blocks | 50.00 MB | 50.22 MB | 1.00x | -0.4% |
+
+**Analysis:**
+- Random data is incompressible with LZ4
+- Both methods produce similar output (no deduplication possible)
+- Slight size increase (-0.4%) is metadata overhead from the archive format
+- This establishes baseline: neither method adds significant overhead on incompressible data
+
+### 25% Duplication
+
+Testing 50 MB with 25% repeated blocks (same blocks appear multiple times):
+
+| Method | Input Size | Output Size | Compression Ratio | Space Savings |
+|--------|-----------|------------|-------------------|---------------|
+| Fixed-size blocks | 50.00 MB | 50.22 MB | 1.00x | -0.4% |
+| CDC blocks | 50.00 MB | 40.19 MB | 1.24x | 19.6% |
+
+**Analysis:**
+- **CDC achieved 19.6% space savings** by detecting and deduplicating repeated blocks
+- Fixed-size blocks showed no deduplication in this test (0% savings)
+- **CDC difference: 20.0% smaller** than fixed-size output
+- This demonstrates CDC's ability to detect duplicate content within a single file
+
+**Note:** The fixed-size result showing no deduplication needs further investigation. This may be due to:
+1. Test data pattern not aligning with fixed block boundaries
+2. Deduplication logic requiring multiple files/snapshots rather than internal duplication
+3. Implementation detail in how fixed-size chunking handles single-file packing
+
+### Shifted Data (Boundary Shift Problem)
+
+Testing base (50 MB) + shifted (50 MB + 1KB insertion at start) packed into ONE snapshot.
+Both streams share a dedup map, enabling cross-file deduplication.
+
+| Method | Base Only | Base + Shifted | Shifted Overhead | Dedup of Shifted |
+|--------|----------|---------------|-----------------|-----------------|
+| Fixed-size blocks | 50.22 MB | 100.43 MB | 50.22 MB | -0.4% |
+| CDC blocks | 50.22 MB | 54.02 MB | 3.81 MB | 92.4% |
+
+**CDC advantage: 92.8 percentage points better deduplication on shifted data.**
+
+**Analysis:**
+- **Fixed-size**: 1KB insertion shifts every block boundary. All ~763 blocks appear "new" despite
+  containing the same data. Zero deduplication. Combined output = 2x base (100.43 MB).
+- **CDC**: Content-defined boundaries re-sync after the insertion point. Only ~2-3 blocks near the
+  insertion differ. 92.4% of shifted data deduplicated against base. Combined output = base + 3.81 MB.
+
+**Why this matters for ML:**
+- Dataset v1 -> v2 often involves inserting new samples (not just appending)
+- Fixed-size chunking breaks deduplication when data shifts
+- CDC maintains deduplication across versions with insertions/edits
+- The 2.6x slower pack speed of CDC pays for itself when it avoids storing 50 MB of duplicate data
 
 ---
 

@@ -86,6 +86,7 @@ endif
 .PHONY: test test-rust test-python test-integration test-list test-cov test-cov-rust test-cov-python mutants
 .PHONY: lint fmt fmt-check clippy deny check
 .PHONY: bench bench-list bench-compare save-baseline archive-baseline restore-baseline compare-baseline fuzz
+.PHONY: bench-competitors bench-competitors-small
 .PHONY: docker-dev docker-bench docs docs-python setup setup-check ci
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -125,6 +126,8 @@ help:
 	@printf "    %-$(HELP_W)s  Run benchmarks; optional filter\n" "make bench [filter]"
 	@printf "    %-$(HELP_W)s  List benchmark categories for filtering\n" "make bench-list"
 	@printf "    %-$(HELP_W)s  Run benchmarks [filter], compare to archived baseline\n" "make bench-compare <name> [filter]"
+	@printf "    %-$(HELP_W)s  Benchmark vs competitors (WebDataset, HDF5, full dataset)\n" "make bench-competitors"
+	@printf "    %-$(HELP_W)s  Quick competitor benchmark (1K images, ~2 min)\n" "make bench-competitors-small"
 	@printf "    %-$(HELP_W)s  Save current run as baseline\n" "make save-baseline <name>"
 	@printf "    %-$(HELP_W)s  Archive baseline to $(BENCH_STORE_DIR)/\n" "make archive-baseline <name>"
 	@printf "    %-$(HELP_W)s  Restore baseline from archive\n" "make restore-baseline <name>"
@@ -434,6 +437,20 @@ bench-compare:
 	@printf "$(GREEN)Comparing to archived baseline '$(BENCH_CMP_ARCHIVED)'…$(RESET)\n"
 	@mkdir -p $(CRITERION_DIR) && cp -rn $(BENCH_STORE_DIR)/$(BENCH_CMP_ARCHIVED)/* $(CRITERION_DIR)/ 2>/dev/null || true
 	critcmp $(BENCH_CMP_ARCHIVED) $(BENCH_CMP_TMP)$(if $(BENCH_CMP_FILTER), -f '$(BENCH_CMP_FILTER)',)
+
+bench-competitors:
+	@printf "$(GREEN)Running competitor benchmarks (WebDataset, HDF5, Local Files)…$(RESET)\n"
+	@printf "$(CYAN)This will take 30-60 minutes with full dataset (50K images, ~6.3GB)$(RESET)\n"
+	@command -v $(PYTHON) >/dev/null 2>&1 || (echo "Error: Python not found" && exit 1)
+	@$(PYTHON) -c "import webdataset" 2>/dev/null || (echo "Error: Install dependencies: pip install -r benchmarks/requirements-competitors.txt" && exit 1)
+	@bash benchmarks/run_all_benchmarks.sh
+	@printf "$(GREEN)Benchmark results: benchmarks/results/COMPARISON.md$(RESET)\n"
+
+bench-competitors-small:
+	@printf "$(GREEN)Running competitor benchmarks (small test dataset)…$(RESET)\n"
+	@printf "$(CYAN)Using 1000 images (~130MB) for quick testing$(RESET)\n"
+	@bash benchmarks/run_all_benchmarks.sh --small
+	@printf "$(GREEN)Benchmark results: benchmarks/results/COMPARISON.md$(RESET)\n"
 
 fuzz:
 	@printf "$(GREEN)Running fuzz targets (60 s each)…$(RESET)\n"
