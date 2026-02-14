@@ -512,6 +512,24 @@ impl File {
     /// Minimum number of local blocks to use the parallel decompression path.
     const PARALLEL_MIN_BLOCKS: usize = 2;
 
+    /// Zero-fills a slice of uninitialized memory.
+    ///
+    /// This helper centralizes all unsafe zero-filling operations to improve
+    /// safety auditing and reduce code duplication.
+    ///
+    /// # Safety
+    ///
+    /// This function writes zeros to the provided buffer, making it fully initialized.
+    /// The caller must ensure the buffer is valid for writes.
+    #[inline]
+    fn zero_fill_uninit(buffer: &mut [MaybeUninit<u8>]) {
+        if !buffer.is_empty() {
+            // SAFETY: buffer is a valid &mut [MaybeUninit<u8>] slice, so writing
+            // buffer.len() zero bytes through its pointer is in-bounds.
+            unsafe { ptr::write_bytes(buffer.as_mut_ptr(), 0, buffer.len()) };
+        }
+    }
+
     /// Writes into uninitialized memory. Unused suffix is zero-filled. Uses parallel decompression when spanning multiple blocks.
     ///
     /// **On error:** The buffer contents are undefined (possibly partially written).
@@ -528,17 +546,13 @@ impl File {
 
         let stream_size = self.size(stream);
         if offset >= stream_size {
-            // SAFETY: buffer is a valid &mut [MaybeUninit<u8>] of length `len`,
-            // so writing `len` zero bytes through its pointer is in-bounds.
-            unsafe { ptr::write_bytes(buffer.as_mut_ptr(), 0, len) };
+            Self::zero_fill_uninit(buffer);
             return Ok(());
         }
 
         let actual_len = std::cmp::min(len as u64, stream_size - offset) as usize;
         if actual_len < len {
-            // SAFETY: The slice `buffer[actual_len..]` has exactly `len - actual_len`
-            // elements, so writing that many zero bytes is in-bounds.
-            unsafe { ptr::write_bytes(buffer[actual_len..].as_mut_ptr(), 0, len - actual_len) };
+            Self::zero_fill_uninit(&mut buffer[actual_len..]);
         }
 
         let target = &mut buffer[0..actual_len];
@@ -555,9 +569,7 @@ impl File {
             if let Some(parent) = &self.parent {
                 return parent.read_at_into_uninit(stream, offset, target);
             }
-            // SAFETY: `target` is a valid &mut [MaybeUninit<u8>] slice, so writing
-            // `target.len()` zero bytes through its pointer is in-bounds.
-            unsafe { ptr::write_bytes(target.as_mut_ptr(), 0, target.len()) };
+            Self::zero_fill_uninit(target);
             return Ok(());
         }
 
@@ -780,9 +792,7 @@ impl File {
             if let Some(parent) = &self.parent {
                 parent.read_at_into_uninit(stream, current_pos, &mut target[buf_offset..])?;
             } else {
-                // SAFETY: `target[buf_offset..]` has exactly `remaining` uninitialized
-                // elements left, so writing `remaining` zero bytes is in-bounds.
-                unsafe { ptr::write_bytes(target[buf_offset..].as_mut_ptr(), 0, remaining) };
+                Self::zero_fill_uninit(&mut target[buf_offset..]);
             }
         }
 
