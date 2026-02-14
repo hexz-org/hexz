@@ -9,7 +9,7 @@ This document contains **validated** performance measurements for Hexz. All benc
 - **OS**: Linux (Arch)
 - **Rust**: Release mode with optimizations
 
-**Last Updated**: 2026-02-13
+**Last Updated**: 2026-02-14
 
 ---
 
@@ -23,7 +23,7 @@ This document contains **validated** performance measurements for Hexz. All benc
 | **Zstd-3 Decompress** | 13.4 GB/s | `cargo bench --bench compression` |
 | **Zstd-9 Compress** | 1.9 GB/s | `cargo bench --bench compression` |
 | **Zstd-9 Decompress** | 13.4 GB/s | `cargo bench --bench compression` |
-| **BLAKE3 Hash** | 5.3 GB/s | `cargo bench --bench hashing` |
+| **BLAKE3 Hash** | 5.4 GB/s | `cargo bench --bench hashing` |
 | **SHA-256 Hash** | 2.5 GB/s | `cargo bench --bench hashing` |
 | **FastCDC Chunking** | 2.7 GB/s | `cargo bench --bench cdc_chunking` |
 | **AES-256-GCM Encrypt** | 2.1 GB/s | `cargo bench --bench encryption` |
@@ -76,21 +76,22 @@ Measured on various block sizes:
 
 | Block Size | BLAKE3 | SHA-256 | Speedup |
 |------------|--------|---------|---------|
-| 4KB | 5.3 GB/s | 2.5 GB/s | 2.2× |
-| 64KB | 5.3 GB/s | 2.5 GB/s | 2.2× |
-| 256KB | 5.3 GB/s | 2.5 GB/s | 2.2× |
-| 1MB | 5.3 GB/s | 2.5 GB/s | 2.2× |
+| 4KB | 4.0 GB/s | 2.4 GB/s | 1.7× |
+| 64KB | 5.4 GB/s | 2.5 GB/s | 2.2× |
+| 256KB | 5.4 GB/s | 2.5 GB/s | 2.2× |
+| 1MB | 5.3 GB/s | 2.5 GB/s | 2.1× |
 
 **Notes:**
-- BLAKE3 consistently 2.2× faster than SHA-256 across all block sizes
-- Performance stays constant regardless of block size (good CPU cache utilization)
+- BLAKE3 is 1.7-2.2× faster than SHA-256 across block sizes
+- Best performance at 64KB+ block sizes (5.4 GB/s)
+- Smaller 4KB blocks have higher overhead (4.0 GB/s)
 - Both use hardware acceleration where available
 
 **Deduplication Workflow Performance:**
 
 Testing 100 blocks (64KB each) with hash table lookups:
-- BLAKE3 workflow: 52.7 MB/s throughput
-- SHA-256 workflow: 25.1 MB/s throughput
+- BLAKE3 workflow: 54.0 MB/s throughput
+- SHA-256 workflow: 25.3 MB/s throughput
 - BLAKE3 is 2.1× faster in real deduplication scenarios
 
 ---

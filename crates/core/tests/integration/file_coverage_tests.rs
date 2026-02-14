@@ -439,11 +439,9 @@ fn test_encrypted_read_with_crc_check() {
 
     let compressor = Box::new(Lz4Compressor::new());
     let encryptor = header.encryption.as_ref().map(|params| {
-        Box::new(AesGcmEncryptor::new(
-            password.as_bytes(),
-            &params.salt,
-            params.iterations,
-        )) as Box<dyn hexz_core::algo::encryption::Encryptor>
+        Box::new(
+            AesGcmEncryptor::new(password.as_bytes(), &params.salt, params.iterations).unwrap(),
+        ) as Box<dyn hexz_core::algo::encryption::Encryptor>
     });
 
     let snapshot = File::new(backend, compressor, encryptor).unwrap();
@@ -523,11 +521,9 @@ fn test_encrypted_corruption_detected() {
 
     let compressor = Box::new(Lz4Compressor::new());
     let encryptor = header2.encryption.as_ref().map(|params| {
-        Box::new(AesGcmEncryptor::new(
-            password.as_bytes(),
-            &params.salt,
-            params.iterations,
-        )) as Box<dyn hexz_core::algo::encryption::Encryptor>
+        Box::new(
+            AesGcmEncryptor::new(password.as_bytes(), &params.salt, params.iterations).unwrap(),
+        ) as Box<dyn hexz_core::algo::encryption::Encryptor>
     });
 
     let snapshot = File::new(backend2, compressor, encryptor).unwrap();

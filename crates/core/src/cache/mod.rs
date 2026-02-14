@@ -49,13 +49,6 @@
 //!
 //! - [`lru`]: Sharded LRU cache implementation
 //! - [`prefetch`]: Sequential pattern detection and read-ahead
-//! - [`policy`]: Cache eviction policies (LRU, None)
-
-/// Cache admission and eviction strategies.
-///
-/// Contains policies that decide which blocks should be retained or evicted
-/// when cache capacity is constrained.
-pub mod policy;
 
 /// Background and anticipatory prefetch logic.
 ///

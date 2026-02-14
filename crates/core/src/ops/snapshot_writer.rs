@@ -15,6 +15,7 @@ use std::path::Path;
 
 use crate::algo::compression::Compressor;
 use crate::algo::encryption::Encryptor;
+use crate::algo::hashing::blake3::Blake3Hasher;
 use crate::format::{
     header::{CompressionType, FeatureFlags, Header},
     index::{BlockInfo, ENTRIES_PER_PAGE, IndexPage, MasterIndex, PageEntry},
@@ -35,6 +36,8 @@ pub struct SnapshotWriter {
     dedup_map: HashMap<[u8; 32], u64>,
     compressor: Box<dyn Compressor>,
     encryptor: Option<Box<dyn Encryptor>>,
+    hasher: Blake3Hasher,
+    hash_buf: [u8; 32],
 
     // Per-stream page state
     page: IndexPage,
@@ -53,9 +56,118 @@ pub struct SnapshotWriter {
     dict_len: Option<u32>,
 }
 
+/// Builder for configuring and creating a `SnapshotWriter`.
+///
+/// Provides a fluent API for constructing snapshots with optional features
+/// like encryption, variable-sized blocks, and custom block sizes.
+///
+/// # Examples
+///
+/// ```no_run
+/// use hexz_core::ops::snapshot_writer::SnapshotWriterBuilder;
+/// use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor};
+/// use std::path::Path;
+///
+/// let compressor: Box<dyn Compressor> = Box::new(Lz4Compressor::new());
+/// let writer = SnapshotWriterBuilder::new(Path::new("output.hxz"), compressor)
+///     .block_size(65536)
+///     .variable_blocks(true)
+///     .build()?;
+/// # Ok::<(), hexz_common::Error>(())
+/// ```
+pub struct SnapshotWriterBuilder {
+    output: std::path::PathBuf,
+    compressor: Box<dyn Compressor>,
+    compression_type: CompressionType,
+    encryptor: Option<Box<dyn Encryptor>>,
+    block_size: u32,
+    variable_blocks: bool,
+    encryption_params: Option<KeyDerivationParams>,
+}
+
+impl SnapshotWriterBuilder {
+    /// Creates a new builder for a snapshot file.
+    ///
+    /// **Required parameters:**
+    /// - `output`: Path where the snapshot will be written
+    /// - `compressor`: Compression algorithm (LZ4 or Zstd)
+    /// - `compression_type`: The compression type (must match the compressor)
+    ///
+    /// **Default values:**
+    /// - Block size: 65536 (64 KiB)
+    /// - Variable blocks: false
+    /// - Encryption: disabled
+    pub fn new(
+        output: &Path,
+        compressor: Box<dyn Compressor>,
+        compression_type: CompressionType,
+    ) -> Self {
+        Self {
+            output: output.to_path_buf(),
+            compressor,
+            compression_type,
+            encryptor: None,
+            block_size: 65536,
+            variable_blocks: false,
+            encryption_params: None,
+        }
+    }
+
+    /// Sets the block size in bytes (default: 65536).
+    pub fn block_size(mut self, size: u32) -> Self {
+        self.block_size = size;
+        self
+    }
+
+    /// Enables variable-sized blocks for CDC-based deduplication (default: false).
+    pub fn variable_blocks(mut self, enabled: bool) -> Self {
+        self.variable_blocks = enabled;
+        self
+    }
+
+    /// Sets the encryption parameters and encryptor.
+    pub fn encryption(
+        mut self,
+        encryptor: Box<dyn Encryptor>,
+        params: KeyDerivationParams,
+    ) -> Self {
+        self.encryptor = Some(encryptor);
+        self.encryption_params = Some(params);
+        self
+    }
+
+    /// Explicitly sets the compression type (usually auto-detected).
+    pub fn compression_type(mut self, compression_type: CompressionType) -> Self {
+        self.compression_type = compression_type;
+        self
+    }
+
+    /// Builds the `SnapshotWriter` and creates the output file.
+    pub fn build(self) -> Result<SnapshotWriter> {
+        SnapshotWriter::new(
+            &self.output,
+            self.compressor,
+            self.encryptor,
+            self.block_size,
+            self.compression_type,
+            self.variable_blocks,
+            self.encryption_params,
+        )
+    }
+}
+
 impl SnapshotWriter {
-    /// Creates a new snapshot file and writes the header placeholder.
-    pub fn create(
+    /// Creates a builder for constructing a snapshot writer.
+    pub fn builder(
+        output: &Path,
+        compressor: Box<dyn Compressor>,
+        compression_type: CompressionType,
+    ) -> SnapshotWriterBuilder {
+        SnapshotWriterBuilder::new(output, compressor, compression_type)
+    }
+
+    /// Internal constructor called by the builder. Do not use directly.
+    fn new(
         output: &Path,
         compressor: Box<dyn Compressor>,
         encryptor: Option<Box<dyn Encryptor>>,
@@ -75,6 +187,8 @@ impl SnapshotWriter {
             dedup_map: HashMap::new(),
             compressor,
             encryptor,
+            hasher: Blake3Hasher,
+            hash_buf: [0u8; 32],
             page: IndexPage::default(),
             page_start_block: 0,
             page_start_logical: 0,
@@ -146,6 +260,8 @@ impl SnapshotWriter {
                 dedup,
                 self.compressor.as_ref(),
                 enc_ref,
+                &self.hasher,
+                &mut self.hash_buf,
             )?
         };
 
@@ -280,6 +396,7 @@ impl SnapshotWriter {
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // Tests use deprecated create() method for brevity
 mod tests {
     use super::*;
     use crate::algo::compression::lz4::Lz4Compressor;
@@ -299,16 +416,10 @@ mod tests {
     fn test_round_trip_simple() {
         let path = temp_path();
         let compressor: Box<dyn Compressor> = Box::new(Lz4Compressor::new());
-        let mut w = SnapshotWriter::create(
-            &path,
-            compressor,
-            None,
-            4096,
-            CompressionType::Lz4,
-            false,
-            None,
-        )
-        .unwrap();
+        let mut w = SnapshotWriter::builder(&path, compressor, CompressionType::Lz4)
+            .block_size(4096)
+            .build()
+            .unwrap();
 
         w.begin_stream(true, 8192);
         w.write_data_block(&vec![0xAA; 4096]).unwrap();
@@ -333,16 +444,10 @@ mod tests {
     fn test_parent_ref() {
         let path = temp_path();
         let compressor: Box<dyn Compressor> = Box::new(Lz4Compressor::new());
-        let mut w = SnapshotWriter::create(
-            &path,
-            compressor,
-            None,
-            4096,
-            CompressionType::Lz4,
-            false,
-            None,
-        )
-        .unwrap();
+        let mut w = SnapshotWriter::builder(&path, compressor, CompressionType::Lz4)
+            .block_size(4096)
+            .build()
+            .unwrap();
 
         w.begin_stream(true, 4096);
         w.write_parent_ref(4096).unwrap();
@@ -362,16 +467,10 @@ mod tests {
     fn test_dedup() {
         let path = temp_path();
         let compressor: Box<dyn Compressor> = Box::new(Lz4Compressor::new());
-        let mut w = SnapshotWriter::create(
-            &path,
-            compressor,
-            None,
-            4096,
-            CompressionType::Lz4,
-            false,
-            None,
-        )
-        .unwrap();
+        let mut w = SnapshotWriter::builder(&path, compressor, CompressionType::Lz4)
+            .block_size(4096)
+            .build()
+            .unwrap();
 
         w.begin_stream(true, 12288);
         let chunk = vec![0xBB; 4096];
@@ -394,16 +493,10 @@ mod tests {
     fn test_metadata() {
         let path = temp_path();
         let compressor: Box<dyn Compressor> = Box::new(Lz4Compressor::new());
-        let mut w = SnapshotWriter::create(
-            &path,
-            compressor,
-            None,
-            4096,
-            CompressionType::Lz4,
-            false,
-            None,
-        )
-        .unwrap();
+        let mut w = SnapshotWriter::builder(&path, compressor, CompressionType::Lz4)
+            .block_size(4096)
+            .build()
+            .unwrap();
 
         w.begin_stream(true, 4096);
         w.write_data_block(&vec![1u8; 4096]).unwrap();

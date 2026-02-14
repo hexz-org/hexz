@@ -686,7 +686,16 @@ where
     // Train compression dictionary if requested
     let dictionary = if config.compression == "zstd" && config.train_dict {
         Some(train_dictionary(
-            config.disk.as_ref().or(config.memory.as_ref()).unwrap(),
+            config
+                .disk
+                .as_ref()
+                .or(config.memory.as_ref())
+                .ok_or_else(|| {
+                    Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "No input file available for dictionary training",
+                    ))
+                })?,
             config.block_size,
         )?)
     } else {
@@ -695,7 +704,7 @@ where
 
     // Initialize compressor
     let (compressor, compression_type) =
-        create_compressor_from_str(&config.compression, None, dictionary.clone());
+        create_compressor_from_str(&config.compression, None, dictionary.clone())?;
 
     // Initialize encryptor if requested
     let (encryptor, enc_params): (Option<Box<dyn Encryptor>>, _) = if config.encrypt {
@@ -706,21 +715,22 @@ where
             ))
         })?;
         let params = KeyDerivationParams::default();
-        let enc = AesGcmEncryptor::new(password.as_bytes(), &params.salt, params.iterations);
+        let enc = AesGcmEncryptor::new(password.as_bytes(), &params.salt, params.iterations)?;
         (Some(Box::new(enc) as Box<dyn Encryptor>), Some(params))
     } else {
         (None, None)
     };
 
-    let mut writer = SnapshotWriter::create(
-        &config.output,
-        compressor,
-        encryptor,
-        config.block_size,
-        compression_type,
-        config.cdc_enabled,
-        enc_params,
-    )?;
+    // Build the snapshot writer with optional encryption
+    let mut builder = SnapshotWriter::builder(&config.output, compressor, compression_type)
+        .block_size(config.block_size)
+        .variable_blocks(config.cdc_enabled);
+
+    if let (Some(enc), Some(params)) = (encryptor, enc_params) {
+        builder = builder.encryption(enc, params);
+    }
+
+    let mut writer = builder.build()?;
 
     // Write dictionary to file
     if let Some(d) = &dictionary {

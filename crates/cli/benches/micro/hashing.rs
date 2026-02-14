@@ -100,11 +100,14 @@ fn bench_dedup_workflow(c: &mut Criterion) {
             for block in &blocks {
                 let hash: [u8; 32] = blake3::hash(black_box(block)).into();
 
-                if dedup_map.contains_key(&hash) {
-                    duplicate_count += 1;
-                } else {
-                    dedup_map.insert(hash, offset);
-                    offset += block.len() as u64;
+                match dedup_map.entry(hash) {
+                    std::collections::hash_map::Entry::Occupied(_) => {
+                        duplicate_count += 1;
+                    }
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        e.insert(offset);
+                        offset += block.len() as u64;
+                    }
                 }
             }
 
@@ -124,11 +127,14 @@ fn bench_dedup_workflow(c: &mut Criterion) {
             for block in &blocks {
                 let hash: [u8; 32] = Sha256::digest(black_box(block)).into();
 
-                if dedup_map.contains_key(&hash) {
-                    duplicate_count += 1;
-                } else {
-                    dedup_map.insert(hash, offset);
-                    offset += block.len() as u64;
+                match dedup_map.entry(hash) {
+                    std::collections::hash_map::Entry::Occupied(_) => {
+                        duplicate_count += 1;
+                    }
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        e.insert(offset);
+                        offset += block.len() as u64;
+                    }
                 }
             }
 

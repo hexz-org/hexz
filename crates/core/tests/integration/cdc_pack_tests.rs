@@ -138,11 +138,9 @@ fn test_cdc_encrypted() {
     let header: Header = bincode::deserialize(&header_bytes).unwrap();
 
     let encryptor = header.encryption.as_ref().map(|params| {
-        Box::new(AesGcmEncryptor::new(
-            password.as_bytes(),
-            &params.salt,
-            params.iterations,
-        )) as Box<dyn hexz_core::algo::encryption::Encryptor>
+        Box::new(
+            AesGcmEncryptor::new(password.as_bytes(), &params.salt, params.iterations).unwrap(),
+        ) as Box<dyn hexz_core::algo::encryption::Encryptor>
     });
 
     let compressor = Box::new(Lz4Compressor::new());

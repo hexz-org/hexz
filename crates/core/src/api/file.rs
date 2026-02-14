@@ -350,7 +350,9 @@ impl File {
             encryptor,
             parent,
             cache_l1: BlockCache::with_capacity(l1_capacity),
-            page_cache: Mutex::new(LruCache::new(NonZeroUsize::new(128).unwrap())),
+            page_cache: Mutex::new(LruCache::new(
+                NonZeroUsize::new(128).unwrap_or(NonZeroUsize::MIN),
+            )),
             prefetcher,
         }))
     }
@@ -477,6 +479,10 @@ impl File {
         let len = buf.len();
         let cap = buf.capacity();
         std::mem::forget(buf);
+        // SAFETY: `buf` was a Vec<MaybeUninit<u8>> that we fully initialized via
+        // `read_at_into_uninit` (which writes every byte). We `forget` the original
+        // Vec to avoid a double-free and reconstruct it with the same ptr/len/cap.
+        // MaybeUninit<u8> has the same layout as u8.
         Ok(unsafe { Vec::from_raw_parts(ptr, len, cap) })
     }
 
@@ -522,12 +528,16 @@ impl File {
 
         let stream_size = self.size(stream);
         if offset >= stream_size {
+            // SAFETY: buffer is a valid &mut [MaybeUninit<u8>] of length `len`,
+            // so writing `len` zero bytes through its pointer is in-bounds.
             unsafe { ptr::write_bytes(buffer.as_mut_ptr(), 0, len) };
             return Ok(());
         }
 
         let actual_len = std::cmp::min(len as u64, stream_size - offset) as usize;
         if actual_len < len {
+            // SAFETY: The slice `buffer[actual_len..]` has exactly `len - actual_len`
+            // elements, so writing that many zero bytes is in-bounds.
             unsafe { ptr::write_bytes(buffer[actual_len..].as_mut_ptr(), 0, len - actual_len) };
         }
 
@@ -545,6 +555,8 @@ impl File {
             if let Some(parent) = &self.parent {
                 return parent.read_at_into_uninit(stream, offset, target);
             }
+            // SAFETY: `target` is a valid &mut [MaybeUninit<u8>] slice, so writing
+            // `target.len()` zero bytes through its pointer is in-bounds.
             unsafe { ptr::write_bytes(target.as_mut_ptr(), 0, target.len()) };
             return Ok(());
         }
@@ -592,6 +604,8 @@ impl File {
                                 remaining,
                                 (block.logical_len as usize).saturating_sub(offset_in_block),
                             );
+                            // SAFETY: The sub-slice has exactly `to_copy` elements,
+                            // so zeroing that many bytes is in-bounds.
                             unsafe {
                                 ptr::write_bytes(
                                     target[buf_offset..buf_offset + to_copy].as_mut_ptr(),
@@ -609,6 +623,8 @@ impl File {
                             remaining,
                             (block.logical_len as usize).saturating_sub(offset_in_block),
                         );
+                        // SAFETY: The sub-slice has exactly `to_copy` elements,
+                        // so zeroing that many bytes is in-bounds.
                         unsafe {
                             ptr::write_bytes(
                                 target[buf_offset..buf_offset + to_copy].as_mut_ptr(),
@@ -666,7 +682,7 @@ impl File {
                 .par_iter()
                 .zip(raw_blocks)
                 .for_each(|(work_item, raw_result)| {
-                    if err.lock().unwrap().is_some() {
+                    if err.lock().map_or(true, |e| e.is_some()) {
                         return;
                     }
 
@@ -676,7 +692,9 @@ impl File {
                     let raw = match raw_result {
                         Ok(r) => r,
                         Err(e) => {
-                            let _ = (*err.lock().unwrap()).replace(e);
+                            if let Ok(mut guard) = err.lock() {
+                                let _ = guard.replace(e);
+                            }
                             return;
                         }
                     };
@@ -694,7 +712,9 @@ impl File {
                                     d
                                 }
                                 Err(e) => {
-                                    let _ = (*err.lock().unwrap()).replace(e);
+                                    if let Ok(mut guard) = err.lock() {
+                                        let _ = guard.replace(e);
+                                    }
                                     return;
                                 }
                             }
@@ -706,11 +726,15 @@ impl File {
                     let len = *to_copy;
                     if start < src.len() && len <= src.len() - start {
                         let dest = (target_addr + buf_offset) as *mut u8;
+                        // SAFETY: `src[start..start+len]` is in-bounds (checked above).
+                        // `dest` points into the `target` MaybeUninit buffer at a unique
+                        // non-overlapping offset (each work item has a distinct `buf_offset`),
+                        // and the rayon par_iter ensures each item writes to a disjoint region.
                         unsafe { ptr::copy_nonoverlapping(src[start..].as_ptr(), dest, len) };
                     }
                 });
 
-            if let Some(e) = err.lock().unwrap().take() {
+            if let Some(e) = err.lock().ok().and_then(|mut guard| guard.take()) {
                 return Err(e);
             }
         } else {
@@ -719,6 +743,10 @@ impl File {
                 let src = data.as_ref();
                 let start = *offset_in_block;
                 if start < src.len() && *to_copy <= src.len() - start {
+                    // SAFETY: `src[start..start+to_copy]` is in-bounds (checked above).
+                    // `target[buf_offset..]` has sufficient room because `buf_offset + to_copy`
+                    // never exceeds `actual_len` (tracked during work-item collection).
+                    // MaybeUninit<u8> has the same layout as u8.
                     unsafe {
                         ptr::copy_nonoverlapping(
                             src[start..].as_ptr(),
@@ -734,6 +762,8 @@ impl File {
             if let Some(parent) = &self.parent {
                 parent.read_at_into_uninit(stream, current_pos, &mut target[buf_offset..])?;
             } else {
+                // SAFETY: `target[buf_offset..]` has exactly `remaining` uninitialized
+                // elements left, so writing `remaining` zero bytes is in-bounds.
                 unsafe { ptr::write_bytes(target[buf_offset..].as_mut_ptr(), 0, remaining) };
             }
         }
@@ -767,6 +797,9 @@ impl File {
         if buf.is_empty() {
             return Ok(());
         }
+        // SAFETY: &mut [u8] and &mut [MaybeUninit<u8>] have identical layout (both
+        // are slices of single-byte types). Initialized u8 values are valid MaybeUninit<u8>.
+        // The borrow is derived from `buf` so no aliasing occurs.
         let uninit = unsafe { &mut *(buf as *mut [u8] as *mut [MaybeUninit<u8>]) };
         self.read_at_into_uninit(stream, offset, uninit)
     }
@@ -792,7 +825,10 @@ impl File {
     fn get_page(&self, entry: &PageEntry) -> Result<Arc<IndexPage>> {
         // Fast path: check cache with lock held
         {
-            let mut cache = self.page_cache.lock().unwrap();
+            let mut cache = self
+                .page_cache
+                .lock()
+                .map_err(|_| Error::Io(std::io::Error::other("Page cache lock poisoned")))?;
             if let Some(p) = cache.get(&entry.offset) {
                 return Ok(p.clone());
             }
@@ -807,7 +843,10 @@ impl File {
 
         // Re-acquire lock only for insertion
         {
-            let mut cache = self.page_cache.lock().unwrap();
+            let mut cache = self
+                .page_cache
+                .lock()
+                .map_err(|_| Error::Io(std::io::Error::other("Page cache lock poisoned")))?;
             // Check again in case another thread inserted while we were doing I/O
             if let Some(p) = cache.get(&entry.offset) {
                 return Ok(p.clone());

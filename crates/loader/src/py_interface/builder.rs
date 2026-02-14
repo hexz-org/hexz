@@ -141,7 +141,8 @@ impl Builder {
         let path = PathBuf::from(output_path);
 
         let (compressor, comp_type) =
-            create_compressor_from_str(compression, compression_level, None);
+            create_compressor_from_str(compression, compression_level, None)
+                .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
         // When dedup is disabled we still create the writer the same way;
         // the SnapshotWriter always deduplicates (unless encrypting, which
@@ -150,9 +151,11 @@ impl Builder {
         // overhead and using SHA-256 was the old bug we are fixing.
         let _ = dedup;
 
-        let writer =
-            SnapshotWriter::create(&path, compressor, None, block_size, comp_type, cdc, None)
-                .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        let writer = SnapshotWriter::builder(&path, compressor, comp_type)
+            .block_size(block_size)
+            .variable_blocks(cdc)
+            .build()
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
         Ok(Builder {
             writer: Some(writer),
@@ -371,10 +374,9 @@ impl Builder {
         let writer = py.allow_threads(move || -> PyResult<SnapshotWriter> {
             writer.begin_stream(is_disk, len);
 
-            let chunker: Box<dyn Iterator<Item = std::io::Result<Vec<u8>>>> = if cdc_enabled {
-                Box::new(StreamChunker::new(f_in, cdc_params.unwrap()))
-            } else {
-                Box::new(FixedChunker::new(f_in, block_size))
+            let chunker: Box<dyn Iterator<Item = std::io::Result<Vec<u8>>>> = match cdc_params {
+                Some(params) => Box::new(StreamChunker::new(f_in, params)),
+                None => Box::new(FixedChunker::new(f_in, block_size)),
             };
 
             for chunk_res in chunker {

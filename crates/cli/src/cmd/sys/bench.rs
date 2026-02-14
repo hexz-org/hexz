@@ -111,7 +111,7 @@ pub fn run(
     let pb = ProgressBar::new(disk_size);
     pb.set_style(ProgressStyle::default_bar()
         .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec})")
-        .unwrap());
+        .unwrap_or_else(|_| ProgressStyle::default_bar()));
 
     while offset < disk_size {
         let len = std::cmp::min(chunk_size, (disk_size - offset) as usize);

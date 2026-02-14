@@ -290,7 +290,7 @@ fn open_snapshot(hexz_path: &str, cache_size: Option<String>) -> Result<Arc<File
             pass.as_bytes(),
             &params.salt,
             params.iterations,
-        ))
+        )?)
             as Box<dyn hexz_core::algo::encryption::Encryptor>)
     } else {
         None

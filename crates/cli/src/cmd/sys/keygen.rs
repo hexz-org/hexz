@@ -87,7 +87,10 @@ use std::path::PathBuf;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 pub fn run(output_dir: Option<PathBuf>) -> Result<()> {
-    let dir = output_dir.unwrap_or_else(|| std::env::current_dir().unwrap());
+    let dir = match output_dir {
+        Some(d) => d,
+        None => std::env::current_dir()?,
+    };
     let priv_path = dir.join("private.key");
     let pub_path = dir.join("public.key");
 

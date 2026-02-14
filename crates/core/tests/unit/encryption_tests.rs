@@ -15,7 +15,7 @@ fn test_aes_gcm_roundtrip() {
     let salt = b"random_salt_1234";
     let iterations = 10000;
 
-    let encryptor = AesGcmEncryptor::new(password, salt, iterations);
+    let encryptor = AesGcmEncryptor::new(password, salt, iterations).unwrap();
 
     let plaintext = b"Hello, World! This is a test message.";
     let block_idx = 0;
@@ -42,7 +42,7 @@ fn test_aes_gcm_roundtrip() {
 fn test_block_index_affects_encryption() {
     let password = b"password";
     let salt = b"salt12345678";
-    let encryptor = AesGcmEncryptor::new(password, salt, 10000);
+    let encryptor = AesGcmEncryptor::new(password, salt, 10000).unwrap();
 
     let plaintext = b"Same plaintext";
 
@@ -64,7 +64,7 @@ fn test_block_index_affects_encryption() {
 /// Test that wrong block index fails decryption.
 #[test]
 fn test_wrong_block_index_fails() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt", 10000).unwrap();
     let plaintext = b"Test data";
 
     let ciphertext = encryptor.encrypt(plaintext, 5).unwrap();
@@ -81,8 +81,8 @@ fn test_different_passwords() {
     let plaintext = b"Sensitive data";
     let block_idx = 0;
 
-    let enc1 = AesGcmEncryptor::new(b"password1", salt, 10000);
-    let enc2 = AesGcmEncryptor::new(b"password2", salt, 10000);
+    let enc1 = AesGcmEncryptor::new(b"password1", salt, 10000).unwrap();
+    let enc2 = AesGcmEncryptor::new(b"password2", salt, 10000).unwrap();
 
     let cipher1 = enc1.encrypt(plaintext, block_idx).unwrap();
     let cipher2 = enc2.encrypt(plaintext, block_idx).unwrap();
@@ -106,8 +106,8 @@ fn test_different_salts() {
     let plaintext = b"Data";
     let block_idx = 0;
 
-    let enc1 = AesGcmEncryptor::new(password, b"salt1", 10000);
-    let enc2 = AesGcmEncryptor::new(password, b"salt2", 10000);
+    let enc1 = AesGcmEncryptor::new(password, b"salt1", 10000).unwrap();
+    let enc2 = AesGcmEncryptor::new(password, b"salt2", 10000).unwrap();
 
     let cipher1 = enc1.encrypt(plaintext, block_idx).unwrap();
     let cipher2 = enc2.encrypt(plaintext, block_idx).unwrap();
@@ -123,7 +123,7 @@ fn test_different_salts() {
 /// Test encryption of empty data.
 #[test]
 fn test_encrypt_empty() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt", 10000).unwrap();
     let empty: &[u8] = &[];
 
     let ciphertext = encryptor.encrypt(empty, 0).unwrap();
@@ -138,7 +138,7 @@ fn test_encrypt_empty() {
 /// Test encryption of large data block.
 #[test]
 fn test_encrypt_large_block() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt", 10000).unwrap();
     let large_data = vec![0x42u8; 65536]; // 64KB
 
     let ciphertext = encryptor.encrypt(&large_data, 0).unwrap();
@@ -154,7 +154,7 @@ fn test_encrypt_large_block() {
 /// Test tamper detection - modify ciphertext.
 #[test]
 fn test_tamper_detection_modify() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt", 10000).unwrap();
     let plaintext = b"Important data";
 
     let mut ciphertext = encryptor.encrypt(plaintext, 0).unwrap();
@@ -172,7 +172,7 @@ fn test_tamper_detection_modify() {
 /// Test tamper detection - truncate ciphertext.
 #[test]
 fn test_tamper_detection_truncate() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt", 10000).unwrap();
     let plaintext = b"Test message";
 
     let ciphertext = encryptor.encrypt(plaintext, 0).unwrap();
@@ -196,7 +196,7 @@ fn test_various_iteration_counts() {
     let counts = vec![1000, 10000, 100000];
 
     for iterations in counts {
-        let encryptor = AesGcmEncryptor::new(password, salt, iterations);
+        let encryptor = AesGcmEncryptor::new(password, salt, iterations).unwrap();
         let ciphertext = encryptor.encrypt(plaintext, block_idx).unwrap();
         let decrypted = encryptor.decrypt(&ciphertext, block_idx).unwrap();
         assert_eq!(decrypted, plaintext);
@@ -211,8 +211,8 @@ fn test_iteration_count_affects_key() {
     let plaintext = b"Data";
     let block_idx = 0;
 
-    let enc1 = AesGcmEncryptor::new(password, salt, 10000);
-    let enc2 = AesGcmEncryptor::new(password, salt, 20000);
+    let enc1 = AesGcmEncryptor::new(password, salt, 10000).unwrap();
+    let enc2 = AesGcmEncryptor::new(password, salt, 20000).unwrap();
 
     let cipher1 = enc1.encrypt(plaintext, block_idx).unwrap();
 
@@ -224,7 +224,7 @@ fn test_iteration_count_affects_key() {
 /// Test encryption with maximum block index.
 #[test]
 fn test_max_block_index() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt", 10000).unwrap();
     let plaintext = b"Data";
 
     let max_idx = u64::MAX;
@@ -237,7 +237,7 @@ fn test_max_block_index() {
 /// Test multiple encryptions with sequential block indices.
 #[test]
 fn test_sequential_block_indices() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt", 10000).unwrap();
     let plaintext = b"Block data";
 
     for idx in 0..100 {
@@ -250,7 +250,7 @@ fn test_sequential_block_indices() {
 /// Test that authentication tag prevents silent corruption.
 #[test]
 fn test_authentication_prevents_corruption() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt", 10000).unwrap();
     let plaintext = b"Critical data that must not be corrupted";
 
     let mut ciphertext = encryptor.encrypt(plaintext, 0).unwrap();
@@ -273,7 +273,7 @@ fn test_authentication_prevents_corruption() {
 
 #[test]
 fn test_nonce_uniqueness_sequential_blocks() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000).unwrap();
     let plaintext = b"Test data";
 
     // Encrypt blocks 0, 1, 2 sequentially
@@ -294,7 +294,7 @@ fn test_nonce_uniqueness_sequential_blocks() {
 
 #[test]
 fn test_sparse_block_indices() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000).unwrap();
     let plaintext = b"Test data";
 
     // Use sparse block indices
@@ -321,7 +321,7 @@ fn test_sparse_block_indices() {
 
 #[test]
 fn test_maximum_block_index() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000).unwrap();
     let plaintext = b"Test at max index";
 
     // Test with very large block index (but not u64::MAX which might be reserved)
@@ -336,7 +336,7 @@ fn test_maximum_block_index() {
 
 #[test]
 fn test_bitflip_in_auth_tag() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000).unwrap();
     let plaintext = b"Sensitive data";
 
     let mut ciphertext = encryptor.encrypt(plaintext, 0).unwrap();
@@ -355,7 +355,7 @@ fn test_bitflip_in_auth_tag() {
 
 #[test]
 fn test_swap_encrypted_blocks() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000).unwrap();
 
     let plaintext1 = b"Block 1 data";
     let plaintext2 = b"Block 2 data";
@@ -374,7 +374,7 @@ fn test_swap_encrypted_blocks() {
 
 #[test]
 fn test_truncate_encrypted_data() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000).unwrap();
     let plaintext = b"This is a longer message that will be encrypted";
 
     let mut ciphertext = encryptor.encrypt(plaintext, 0).unwrap();
@@ -394,8 +394,8 @@ fn test_different_passwords_different_keys() {
     let salt = b"same_salt_1234";
     let plaintext = b"Test message";
 
-    let enc1 = AesGcmEncryptor::new(b"password1", salt, 10000);
-    let enc2 = AesGcmEncryptor::new(b"password2", salt, 10000);
+    let enc1 = AesGcmEncryptor::new(b"password1", salt, 10000).unwrap();
+    let enc2 = AesGcmEncryptor::new(b"password2", salt, 10000).unwrap();
 
     let cipher1 = enc1.encrypt(plaintext, 0).unwrap();
     let cipher2 = enc2.encrypt(plaintext, 0).unwrap();
@@ -413,8 +413,8 @@ fn test_same_password_different_salt() {
     let password = b"same_password";
     let plaintext = b"Test message";
 
-    let enc1 = AesGcmEncryptor::new(password, b"salt1_123456", 10000);
-    let enc2 = AesGcmEncryptor::new(password, b"salt2_654321", 10000);
+    let enc1 = AesGcmEncryptor::new(password, b"salt1_123456", 10000).unwrap();
+    let enc2 = AesGcmEncryptor::new(password, b"salt2_654321", 10000).unwrap();
 
     let cipher1 = enc1.encrypt(plaintext, 0).unwrap();
     let cipher2 = enc2.encrypt(plaintext, 0).unwrap();
@@ -433,8 +433,8 @@ fn test_pbkdf2_iteration_count() {
     let salt = b"salt12345678";
     let plaintext = b"Test message";
 
-    let enc_low = AesGcmEncryptor::new(password, salt, 1000);
-    let enc_high = AesGcmEncryptor::new(password, salt, 100000);
+    let enc_low = AesGcmEncryptor::new(password, salt, 1000).unwrap();
+    let enc_high = AesGcmEncryptor::new(password, salt, 100000).unwrap();
 
     let cipher_low = enc_low.encrypt(plaintext, 0).unwrap();
     let cipher_high = enc_high.encrypt(plaintext, 0).unwrap();
@@ -451,7 +451,7 @@ fn test_pbkdf2_iteration_count() {
 
 #[test]
 fn test_encrypt_large_block_1mb() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000).unwrap();
     let plaintext = create_random_data(1024 * 1024); // 1MB
 
     let ciphertext = encryptor.encrypt(&plaintext, 0).unwrap();
@@ -462,7 +462,7 @@ fn test_encrypt_large_block_1mb() {
 
 #[test]
 fn test_encrypt_large_block_10mb() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000).unwrap();
     let plaintext = create_random_data(10 * 1024 * 1024); // 10MB
 
     let ciphertext = encryptor.encrypt(&plaintext, 0).unwrap();
@@ -473,7 +473,7 @@ fn test_encrypt_large_block_10mb() {
 
 #[test]
 fn test_batch_encrypt_many_blocks() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000).unwrap();
 
     // Encrypt 100 small blocks
     for i in 0..100 {
@@ -488,7 +488,7 @@ fn test_batch_encrypt_many_blocks() {
 
 #[test]
 fn test_encrypt_empty_data() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000).unwrap();
     let plaintext = b"";
 
     let ciphertext = encryptor.encrypt(plaintext, 0).unwrap();
@@ -501,7 +501,7 @@ fn test_encrypt_empty_data() {
 
 #[test]
 fn test_encrypt_single_byte() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000).unwrap();
     let plaintext = b"X";
 
     let ciphertext = encryptor.encrypt(plaintext, 0).unwrap();
@@ -512,7 +512,7 @@ fn test_encrypt_single_byte() {
 
 #[test]
 fn test_encrypt_pattern_data() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000).unwrap();
 
     // All zeros
     let zeros = vec![0u8; 1000];
@@ -529,7 +529,7 @@ fn test_encrypt_pattern_data() {
 
 #[test]
 fn test_reuse_same_block_index() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000).unwrap();
 
     let plaintext1 = b"First encryption";
     let plaintext2 = b"Second encryption";
@@ -549,7 +549,7 @@ fn test_reuse_same_block_index() {
 #[test]
 fn test_very_long_password() {
     let long_password = vec![b'a'; 1000];
-    let encryptor = AesGcmEncryptor::new(&long_password, b"salt12345678", 10000);
+    let encryptor = AesGcmEncryptor::new(&long_password, b"salt12345678", 10000).unwrap();
 
     let plaintext = b"Test with long password";
     let ciphertext = encryptor.encrypt(plaintext, 0).unwrap();
@@ -560,7 +560,7 @@ fn test_very_long_password() {
 
 #[test]
 fn test_deterministic_encryption_same_inputs() {
-    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000);
+    let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678", 10000).unwrap();
     let plaintext = b"Deterministic test";
 
     // Encrypt same data with same block index multiple times

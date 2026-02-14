@@ -78,19 +78,25 @@ pub fn create_compressor(
 }
 
 /// Parse a compression string ("lz4"/"zstd") and create a compressor + type.
+///
+/// Returns an error for unrecognized compression names.
 pub fn create_compressor_from_str(
     s: &str,
     level: Option<i32>,
     dictionary: Option<Vec<u8>>,
-) -> (Box<dyn Compressor>, CompressionType) {
+) -> hexz_common::Result<(Box<dyn Compressor>, CompressionType)> {
     match s {
-        "zstd" => (
+        "zstd" => Ok((
             create_compressor(CompressionType::Zstd, level, dictionary),
             CompressionType::Zstd,
-        ),
-        _ => (
+        )),
+        "lz4" => Ok((
             create_compressor(CompressionType::Lz4, level, dictionary),
             CompressionType::Lz4,
-        ),
+        )),
+        other => Err(hexz_common::Error::Format(format!(
+            "Unknown compression type '{}'. Supported: lz4, zstd",
+            other
+        ))),
     }
 }

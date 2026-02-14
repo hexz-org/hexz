@@ -59,17 +59,12 @@ pub fn run(
 
     let mut overlay_file = File::open(&overlay_path)?;
 
-    let (write_compressor, compression_type) = create_compressor_from_str(&algo, None, None);
+    let (write_compressor, compression_type) = create_compressor_from_str(&algo, None, None)?;
 
-    let mut writer = SnapshotWriter::create(
-        &output_path,
-        write_compressor,
-        None,
-        block_size,
-        compression_type,
-        false,
-        None,
-    )?;
+    let mut writer = SnapshotWriter::builder(&output_path, write_compressor, compression_type)
+        .block_size(block_size)
+        .variable_blocks(false)
+        .build()?;
 
     let base_disk_size = base_snap.size(SnapshotStream::Disk);
     let overlay_len = overlay_file.metadata()?.len();

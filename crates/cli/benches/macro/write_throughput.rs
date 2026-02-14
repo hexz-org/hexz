@@ -71,7 +71,7 @@ fn bench_write_lz4(c: &mut Criterion) {
                     true,   // silent mode
                 );
 
-                black_box(result.unwrap());
+                black_box(&result.unwrap());
                 drop(temp_dir);
             },
         );
@@ -114,7 +114,7 @@ fn bench_write_zstd3(c: &mut Criterion) {
                     true,
                 );
 
-                black_box(result.unwrap());
+                black_box(&result.unwrap());
                 drop(temp_dir);
             },
         );
@@ -157,7 +157,7 @@ fn bench_write_cdc_overhead(c: &mut Criterion) {
                     true,
                 );
 
-                black_box(result.unwrap());
+                black_box(&result.unwrap());
                 drop(temp_dir);
             },
         );
@@ -189,7 +189,7 @@ fn bench_write_cdc_overhead(c: &mut Criterion) {
                     true,
                 );
 
-                black_box(result.unwrap());
+                black_box(&result.unwrap());
                 drop(temp_dir);
             },
         );

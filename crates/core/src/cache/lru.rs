@@ -378,6 +378,10 @@ pub struct BlockCache {
 /// **Constraints:** Must be a power-of-two-adjacent small integer to keep shard
 /// sizing simple; changing requires recompilation and affects cache behavior.
 const SHARD_COUNT: usize = 16;
+const _: () = assert!(
+    SHARD_COUNT.is_power_of_two(),
+    "SHARD_COUNT must be a power of two for bitwise AND shard selection"
+);
 
 /// Capacity threshold below which the cache uses a single shard.
 ///
@@ -503,11 +507,14 @@ impl BlockCache {
         }
         let (num_shards, cap_per_shard) = if capacity <= SINGLE_SHARD_CAPACITY_LIMIT {
             // Single shard so total capacity is exact and LRU is global
-            (1, NonZeroUsize::new(capacity).unwrap())
+            (1, NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::MIN))
         } else {
             // Ceiling division so total capacity >= capacity
             let cap_per = capacity.div_ceil(SHARD_COUNT);
-            (SHARD_COUNT, NonZeroUsize::new(cap_per.max(1)).unwrap())
+            (
+                SHARD_COUNT,
+                NonZeroUsize::new(cap_per.max(1)).unwrap_or(NonZeroUsize::MIN),
+            )
         };
         let mut shards = Vec::with_capacity(num_shards);
         for _ in 0..num_shards {
@@ -567,7 +574,9 @@ impl BlockCache {
         use std::hash::{Hash, Hasher};
         let mut hasher = DefaultHasher::new();
         key.hash(&mut hasher);
-        let idx = (hasher.finish() as usize) % shards.len();
+        // SHARD_COUNT is a power of two, so bitwise AND is equivalent to modulo
+        // but avoids a division instruction on the hot path.
+        let idx = (hasher.finish() as usize) & (shards.len() - 1);
         Some(&shards[idx])
     }
 
@@ -945,7 +954,7 @@ impl Default for BlockCache {
 /// assert_eq!(capacity.get(), 128);
 /// ```
 pub fn default_page_cache_size() -> NonZeroUsize {
-    NonZeroUsize::new(DEFAULT_PAGE_CACHE_CAPACITY).unwrap()
+    NonZeroUsize::new(DEFAULT_PAGE_CACHE_CAPACITY).unwrap_or(NonZeroUsize::MIN)
 }
 
 #[cfg(test)]

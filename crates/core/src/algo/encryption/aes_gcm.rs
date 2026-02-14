@@ -305,7 +305,7 @@
 //! let salt = b"random_16byte_sa";  // 16 bytes, cryptographically random
 //! let iterations = 600_000;
 //!
-//! let encryptor = AesGcmEncryptor::new(password, salt, iterations);
+//! let encryptor = AesGcmEncryptor::new(password, salt, iterations)?;
 //!
 //! // Encrypt a block (e.g., compressed data from block 42)
 //! let plaintext = b"Compressed block data...";
@@ -339,7 +339,7 @@
 //!     .into_bytes();
 //!
 //! // Create encryptor with strong parameters
-//! let encryptor = AesGcmEncryptor::new(&password, &salt, 600_000);
+//! let encryptor = AesGcmEncryptor::new(&password, &salt, 600_000)?;
 //!
 //! // Encrypt multiple blocks
 //! let blocks = vec![b"block0", b"block1", b"block2"];
@@ -362,12 +362,12 @@
 //! use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
 //!
 //! # fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 10_000);
+//! let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 10_000)?;
 //! let plaintext = b"Important data";
 //! let ciphertext = encryptor.encrypt(plaintext, 0)?;
 //!
 //! // Wrong password -> decryption fails
-//! let wrong_encryptor = AesGcmEncryptor::new(b"wrong_password", b"salt12345678salt", 10_000);
+//! let wrong_encryptor = AesGcmEncryptor::new(b"wrong_password", b"salt12345678salt", 10_000)?;
 //! match wrong_encryptor.decrypt(&ciphertext, 0) {
 //!     Ok(_) => panic!("Should have failed with wrong password"),
 //!     Err(e) => println!("Authentication failed (expected): {}", e),
@@ -399,7 +399,7 @@
 //!
 //! # fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! // Create encryptor and share across threads
-//! let encryptor = Arc::new(AesGcmEncryptor::new(b"password", b"salt12345678salt", 10_000));
+//! let encryptor = Arc::new(AesGcmEncryptor::new(b"password", b"salt12345678salt", 10_000)?);
 //!
 //! let mut handles = Vec::new();
 //! for idx in 0..10 {
@@ -487,8 +487,9 @@ use std::fmt;
 /// let salt = b"16_byte_salt____";  // Exactly 16 bytes
 /// let iterations = 600_000;
 ///
-/// let encryptor = AesGcmEncryptor::new(password, salt, iterations);
+/// let encryptor = AesGcmEncryptor::new(password, salt, iterations)?;
 /// // Encryptor is now ready for encrypting/decrypting blocks
+/// # Ok::<(), hexz_common::Error>(())
 /// ```
 ///
 /// ## Sharing Across Threads
@@ -499,7 +500,7 @@ use std::fmt;
 /// use std::thread;
 ///
 /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let encryptor = Arc::new(AesGcmEncryptor::new(b"password", b"salt12345678salt", 10_000));
+/// let encryptor = Arc::new(AesGcmEncryptor::new(b"password", b"salt12345678salt", 10_000)?);
 ///
 /// let handles: Vec<_> = (0..4).map(|i| {
 ///     let enc = Arc::clone(&encryptor);
@@ -580,7 +581,7 @@ impl fmt::Debug for AesGcmEncryptor {
     /// ```rust
     /// use hexz_core::algo::encryption::AesGcmEncryptor;
     ///
-    /// let encryptor = AesGcmEncryptor::new(b"secret_password", b"salt12345678salt", 600_000);
+    /// let encryptor = AesGcmEncryptor::new(b"secret_password", b"salt12345678salt", 600_000)?;
     ///
     /// // Safe to log: no key material is exposed
     /// println!("{:?}", encryptor);
@@ -589,6 +590,7 @@ impl fmt::Debug for AesGcmEncryptor {
     /// // Format works in error contexts
     /// let result: Result<(), String> = Err(format!("Encryptor: {:?}", encryptor));
     /// // Safe: error message does not contain keys
+    /// # Ok::<(), hexz_common::Error>(())
     /// ```
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AesGcmEncryptor")
@@ -689,10 +691,11 @@ impl AesGcmEncryptor {
     ///     password.as_bytes(),
     ///     &salt,
     ///     600_000  // OWASP 2023 recommendation
-    /// );
+    /// )?;
     ///
     /// // Store salt in snapshot header for later use
     /// // (iterations count should also be stored)
+    /// # Ok::<(), hexz_common::Error>(())
     /// ```
     ///
     /// ## Reproducible Key Derivation (for Decryption)
@@ -713,9 +716,10 @@ impl AesGcmEncryptor {
     ///     password.as_bytes(),
     ///     &stored_salt,
     ///     stored_iterations
-    /// );
+    /// )?;
     ///
     /// // Encryptor can now decrypt blocks from the snapshot
+    /// # Ok::<(), hexz_common::Error>(())
     /// ```
     ///
     /// ## Testing with Fast Parameters
@@ -729,16 +733,17 @@ impl AesGcmEncryptor {
     ///     b"test_password",
     ///     b"test_salt_16byte",
     ///     10_000  // Fast for testing, but insecure
-    /// );
+    /// )?;
+    /// # Ok::<(), hexz_common::Error>(())
     /// ```
-    pub fn new(password: &[u8], salt: &[u8], iterations: u32) -> Self {
+    pub fn new(password: &[u8], salt: &[u8], iterations: u32) -> Result<Self> {
         let mut key = [0u8; AES_KEY_LENGTH];
         pbkdf2::<Hmac<Sha256>>(password, salt, iterations, &mut key)
-            .expect("HMAC can be initialized with any key length");
+            .map_err(|e| Error::Encryption(format!("Key derivation failed: {}", e)))?;
         let key = Key::<Aes256Gcm>::from_slice(&key);
-        Self {
+        Ok(Self {
             cipher: Aes256Gcm::new(key),
-        }
+        })
     }
 
     /// Computes a deterministic 96-bit nonce from a block index for GCM mode.
@@ -821,11 +826,12 @@ impl AesGcmEncryptor {
     ///
     /// ```rust
     /// # use hexz_core::algo::encryption::AesGcmEncryptor;
-    /// # let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 10_000);
+    /// # let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 10_000)?;
     /// // Internal usage (not directly callable, but conceptually):
     /// // let nonce = encryptor.generate_nonce(42);
     /// // Result: [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2A]
     /// //          └─── Reserved (4 bytes) ──┘ └──────── Block Index 42 (8 bytes) ──────┘
+    /// # Ok::<(), hexz_common::Error>(())
     /// ```
     fn generate_nonce(&self, block_idx: u64) -> GenericArray<u8, U12> {
         let mut bytes = [0u8; AES_NONCE_LENGTH];
@@ -935,7 +941,7 @@ impl Encryptor for AesGcmEncryptor {
     /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000);
+    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000)?;
     ///
     /// // Encrypt a block (e.g., compressed data)
     /// let plaintext = b"Compressed block data from zstd";
@@ -954,7 +960,7 @@ impl Encryptor for AesGcmEncryptor {
     /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000);
+    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000)?;
     ///
     /// let blocks = vec![b"block0", b"block1", b"block2"];
     /// let mut encrypted = Vec::new();
@@ -975,7 +981,7 @@ impl Encryptor for AesGcmEncryptor {
     /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000);
+    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000)?;
     ///
     /// // Empty input is valid
     /// let ciphertext = encryptor.encrypt(b"", 0)?;
@@ -1081,8 +1087,8 @@ impl Encryptor for AesGcmEncryptor {
     /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let enc1 = AesGcmEncryptor::new(b"password1", b"salt12345678salt", 600_000);
-    /// let enc2 = AesGcmEncryptor::new(b"password2", b"salt12345678salt", 600_000);
+    /// let enc1 = AesGcmEncryptor::new(b"password1", b"salt12345678salt", 600_000)?;
+    /// let enc2 = AesGcmEncryptor::new(b"password2", b"salt12345678salt", 600_000)?;
     ///
     /// let ciphertext = enc1.encrypt(b"data", 0)?;
     ///
@@ -1098,7 +1104,7 @@ impl Encryptor for AesGcmEncryptor {
     /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000);
+    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000)?;
     ///
     /// let ciphertext = encryptor.encrypt(b"data", 42)?;
     ///
@@ -1114,7 +1120,7 @@ impl Encryptor for AesGcmEncryptor {
     /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000);
+    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000)?;
     ///
     /// let mut ciphertext = encryptor.encrypt(b"data", 0)?;
     ///
@@ -1135,7 +1141,7 @@ impl Encryptor for AesGcmEncryptor {
     /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000);
+    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000)?;
     ///
     /// // Encrypt a block
     /// let plaintext = b"Original data";
@@ -1155,7 +1161,7 @@ impl Encryptor for AesGcmEncryptor {
     /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() {
-    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000);
+    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000).unwrap();
     /// let ciphertext = encryptor.encrypt(b"data", 0).unwrap();
     ///
     /// match encryptor.decrypt(&ciphertext, 999) {
@@ -1177,7 +1183,7 @@ impl Encryptor for AesGcmEncryptor {
     /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000);
+    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000)?;
     ///
     /// // Encrypt blocks
     /// let blocks = vec![b"block0", b"block1", b"block2"];
@@ -1208,7 +1214,8 @@ mod tests {
 
     #[test]
     fn test_basic_encrypt_decrypt() {
-        let encryptor = AesGcmEncryptor::new(b"test_password", b"salt_16_bytes___", 10_000);
+        let encryptor =
+            AesGcmEncryptor::new(b"test_password", b"salt_16_bytes___", 10_000).unwrap();
 
         let plaintext = b"Hello, World!";
         let ciphertext = encryptor.encrypt(plaintext, 0).expect("Encryption failed");
@@ -1225,8 +1232,8 @@ mod tests {
 
     #[test]
     fn test_wrong_password_fails() {
-        let enc1 = AesGcmEncryptor::new(b"password1", b"salt_16_bytes___", 10_000);
-        let enc2 = AesGcmEncryptor::new(b"password2", b"salt_16_bytes___", 10_000);
+        let enc1 = AesGcmEncryptor::new(b"password1", b"salt_16_bytes___", 10_000).unwrap();
+        let enc2 = AesGcmEncryptor::new(b"password2", b"salt_16_bytes___", 10_000).unwrap();
 
         let ciphertext = enc1.encrypt(b"secret data", 0).expect("Encryption failed");
 
@@ -1236,8 +1243,8 @@ mod tests {
 
     #[test]
     fn test_wrong_salt_fails() {
-        let enc1 = AesGcmEncryptor::new(b"password", b"salt1___16bytes_", 10_000);
-        let enc2 = AesGcmEncryptor::new(b"password", b"salt2___16bytes_", 10_000);
+        let enc1 = AesGcmEncryptor::new(b"password", b"salt1___16bytes_", 10_000).unwrap();
+        let enc2 = AesGcmEncryptor::new(b"password", b"salt2___16bytes_", 10_000).unwrap();
 
         let ciphertext = enc1.encrypt(b"secret data", 0).expect("Encryption failed");
 
@@ -1247,8 +1254,8 @@ mod tests {
 
     #[test]
     fn test_wrong_iterations_fails() {
-        let enc1 = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
-        let enc2 = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 20_000);
+        let enc1 = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000).unwrap();
+        let enc2 = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 20_000).unwrap();
 
         let ciphertext = enc1.encrypt(b"secret data", 0).expect("Encryption failed");
 
@@ -1258,7 +1265,7 @@ mod tests {
 
     #[test]
     fn test_wrong_block_index_fails() {
-        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000).unwrap();
 
         let ciphertext = encryptor.encrypt(b"data", 42).expect("Encryption failed");
 
@@ -1268,7 +1275,7 @@ mod tests {
 
     #[test]
     fn test_corrupted_ciphertext_fails() {
-        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000).unwrap();
 
         let mut ciphertext = encryptor
             .encrypt(b"important data", 0)
@@ -1283,7 +1290,7 @@ mod tests {
 
     #[test]
     fn test_corrupted_tag_fails() {
-        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000).unwrap();
 
         let mut ciphertext = encryptor
             .encrypt(b"important data", 0)
@@ -1299,7 +1306,7 @@ mod tests {
 
     #[test]
     fn test_empty_data_encryption() {
-        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000).unwrap();
 
         let ciphertext = encryptor.encrypt(b"", 0).expect("Encryption failed");
 
@@ -1315,7 +1322,7 @@ mod tests {
 
     #[test]
     fn test_large_data_encryption() {
-        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000).unwrap();
 
         // Encrypt 1MB of data
         let large_data = vec![0xAB; 1024 * 1024];
@@ -1335,7 +1342,7 @@ mod tests {
 
     #[test]
     fn test_different_block_indices_produce_different_ciphertexts() {
-        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000).unwrap();
 
         let plaintext = b"Same plaintext for both blocks";
 
@@ -1356,7 +1363,7 @@ mod tests {
 
     #[test]
     fn test_multiple_blocks_encryption() {
-        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000).unwrap();
 
         let blocks = [b"block0", b"block1", b"block2", b"block3"];
         let mut ciphertexts = Vec::new();
@@ -1380,7 +1387,7 @@ mod tests {
 
     #[test]
     fn test_deterministic_encryption() {
-        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000).unwrap();
 
         let plaintext = b"deterministic test";
         let block_idx = 42;
@@ -1399,7 +1406,8 @@ mod tests {
 
     #[test]
     fn test_debug_does_not_leak_keys() {
-        let encryptor = AesGcmEncryptor::new(b"secret_password", b"salt_16_bytes___", 10_000);
+        let encryptor =
+            AesGcmEncryptor::new(b"secret_password", b"salt_16_bytes___", 10_000).unwrap();
 
         let debug_str = format!("{:?}", encryptor);
 
@@ -1414,11 +1422,8 @@ mod tests {
         use std::sync::Arc;
         use std::thread;
 
-        let encryptor = Arc::new(AesGcmEncryptor::new(
-            b"password",
-            b"salt_16_bytes___",
-            10_000,
-        ));
+        let encryptor =
+            Arc::new(AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000).unwrap());
 
         let mut handles = Vec::new();
 
@@ -1448,7 +1453,7 @@ mod tests {
 
     #[test]
     fn test_nonce_generation_is_unique_per_index() {
-        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000).unwrap();
 
         let plaintext = b"same plaintext";
 
@@ -1473,7 +1478,7 @@ mod tests {
 
     #[test]
     fn test_truncated_ciphertext_fails() {
-        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000).unwrap();
 
         let ciphertext = encryptor.encrypt(b"data", 0).expect("Encryption failed");
 
@@ -1486,8 +1491,8 @@ mod tests {
 
     #[test]
     fn test_encryption_with_different_passwords() {
-        let enc1 = AesGcmEncryptor::new(b"password1", b"salt_16_bytes___", 10_000);
-        let enc2 = AesGcmEncryptor::new(b"password2", b"salt_16_bytes___", 10_000);
+        let enc1 = AesGcmEncryptor::new(b"password1", b"salt_16_bytes___", 10_000).unwrap();
+        let enc2 = AesGcmEncryptor::new(b"password2", b"salt_16_bytes___", 10_000).unwrap();
 
         let plaintext = b"test data";
 
@@ -1509,7 +1514,7 @@ mod tests {
 
     #[test]
     fn test_very_short_data() {
-        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000).unwrap();
 
         // Single byte
         let plaintext = b"X";
@@ -1525,7 +1530,7 @@ mod tests {
 
     #[test]
     fn test_high_block_indices() {
-        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000).unwrap();
 
         // Test with maximum u64 value
         let max_idx = u64::MAX;
@@ -1543,7 +1548,7 @@ mod tests {
 
     #[test]
     fn test_encryption_does_not_modify_input() {
-        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000);
+        let encryptor = AesGcmEncryptor::new(b"password", b"salt_16_bytes___", 10_000).unwrap();
 
         let plaintext = b"original data";
         let original = plaintext.to_vec();
@@ -1556,8 +1561,8 @@ mod tests {
 
     #[test]
     fn test_different_salts_produce_different_keys() {
-        let enc1 = AesGcmEncryptor::new(b"password", b"salt1___16bytes_", 10_000);
-        let enc2 = AesGcmEncryptor::new(b"password", b"salt2___16bytes_", 10_000);
+        let enc1 = AesGcmEncryptor::new(b"password", b"salt1___16bytes_", 10_000).unwrap();
+        let enc2 = AesGcmEncryptor::new(b"password", b"salt2___16bytes_", 10_000).unwrap();
 
         let plaintext = b"test data";
 

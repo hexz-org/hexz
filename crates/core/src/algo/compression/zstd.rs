@@ -370,15 +370,15 @@ impl ZstdCompressor {
     /// # Dictionary Handling
     ///
     /// When a dictionary is provided, this function:
-    /// 1. **Clones** the dictionary bytes (allocates new memory)
-    /// 2. **Leaks** the bytes to obtain `'static` lifetime via `Box::leak`
-    /// 3. **Parses** the bytes into native zstd encoder/decoder dictionaries
+    /// 1. **Copies** the dictionary bytes internally via `EncoderDictionary::copy`
+    /// 2. **Parses** the bytes into native zstd encoder/decoder dictionaries
+    /// 3. **Manages** the dictionary lifetime automatically (no leaks)
     ///
-    /// The leaked memory (~110 KB for typical dictionaries) persists for the process
-    /// lifetime. This is acceptable because:
-    /// - Compressors are typically long-lived (one per open snapshot file)
-    /// - Dictionary reuse across millions of blocks amortizes the cost
-    /// - Memory safety is guaranteed without runtime lifetime tracking
+    /// The dictionary memory (~110 KB for typical dictionaries) is properly managed
+    /// and freed when the compressor is dropped. This provides:
+    /// - Proper memory management without leaks
+    /// - Dictionary reuse across millions of blocks
+    /// - Memory safety with automatic cleanup
     ///
     /// # Memory Usage
     ///
@@ -408,10 +408,11 @@ impl ZstdCompressor {
     /// Reuse compressor instances rather than creating them per-operation.
     pub fn new(level: i32, dict: Option<Vec<u8>>) -> Self {
         let (encoder_dict, decoder_dict) = if let Some(d) = &dict {
-            let leaked_dict = Box::leak(d.clone().into_boxed_slice());
+            // EncoderDictionary::copy and DecoderDictionary::copy both copy the
+            // dictionary data internally, so we only need a temporary reference.
             (
-                Some(EncoderDictionary::copy(leaked_dict, level)),
-                Some(DecoderDictionary::copy(leaked_dict)),
+                Some(EncoderDictionary::copy(d, level)),
+                Some(DecoderDictionary::copy(d)),
             )
         } else {
             (None, None)

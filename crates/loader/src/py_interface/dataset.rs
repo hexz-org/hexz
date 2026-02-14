@@ -157,7 +157,7 @@
 
 use hexz_core::File;
 use hexz_core::api::file::SnapshotStream;
-use pyo3::exceptions::{PyIOError, PyOSError, PyValueError};
+use pyo3::exceptions::{PyIOError, PyOSError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use std::sync::{Arc, Mutex};
@@ -382,7 +382,10 @@ impl Reader {
 
         let start = match offset {
             None => {
-                let mut cursor = self.cursor.lock().unwrap();
+                let mut cursor = self
+                    .cursor
+                    .lock()
+                    .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?;
                 if *cursor >= total_size {
                     return Ok(PyBytes::new(py, &[]));
                 }
@@ -507,7 +510,10 @@ impl Reader {
     /// bytes_read = reader.readinto(ba)
     /// ```
     fn readinto(&self, py: Python<'_>, buffer: Bound<'_, PyAny>) -> PyResult<usize> {
-        let mut cursor = self.cursor.lock().unwrap();
+        let mut cursor = self
+            .cursor
+            .lock()
+            .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?;
         let total_size = self.inner.size(SnapshotStream::Disk);
 
         if *cursor >= total_size {
@@ -578,7 +584,10 @@ impl Reader {
     /// ```
     #[pyo3(signature = (offset, whence=None))]
     fn seek(&self, offset: i64, whence: Option<i32>) -> PyResult<u64> {
-        let mut cursor = self.cursor.lock().unwrap();
+        let mut cursor = self
+            .cursor
+            .lock()
+            .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?;
         let total_size = self.inner.size(SnapshotStream::Disk);
 
         let new_pos = match whence.unwrap_or(0) {
@@ -612,8 +621,11 @@ impl Reader {
     /// reader.read(1024)  # cursor advances to 1024
     /// pos = reader.tell()  # returns 1024
     /// ```
-    fn tell(&self) -> u64 {
-        *self.cursor.lock().unwrap()
+    fn tell(&self) -> PyResult<u64> {
+        Ok(*self
+            .cursor
+            .lock()
+            .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?)
     }
 
     /// Check if the snapshot is readable.
@@ -744,7 +756,10 @@ impl Reader {
     ///
     /// Current cursor position as unsigned 64-bit integer.
     fn __getstate__(&self) -> PyResult<u64> {
-        Ok(*self.cursor.lock().unwrap())
+        Ok(*self
+            .cursor
+            .lock()
+            .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?)
     }
 
     /// Restore state from pickling.
@@ -756,7 +771,10 @@ impl Reader {
     ///
     /// - `state`: Cursor position to restore
     fn __setstate__(&self, state: u64) -> PyResult<()> {
-        *self.cursor.lock().unwrap() = state;
+        *self
+            .cursor
+            .lock()
+            .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))? = state;
         Ok(())
     }
 }

@@ -51,12 +51,6 @@
 
 use serde::{Deserialize, Serialize};
 
-/// B-Tree index for efficient range queries (alternative indexing strategy).
-pub mod btree;
-
-/// Hash-based index for fast random access and deduplication (alternative strategy).
-pub mod hash;
-
 /// Maximum number of `BlockInfo` entries per index page.
 ///
 /// This constant defines the capacity of each index page and is a critical

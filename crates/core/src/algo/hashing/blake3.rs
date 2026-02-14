@@ -264,6 +264,18 @@ impl ContentHasher for Blake3Hasher {
         Ok(self.hash_array(data).to_vec())
     }
 
+    /// Computes the BLAKE3 hash and writes it into the provided buffer.
+    ///
+    /// **Performance:** Zero allocations - reuses the caller's buffer.
+    /// Prefer this over `hash()` in hot paths.
+    ///
+    /// **Panics:** If `out.len() < 32` (caller must ensure buffer is large enough).
+    fn hash_into(&self, data: &[u8], out: &mut [u8]) -> Result<usize> {
+        let hash = self.hash_array(data);
+        out[..32].copy_from_slice(&hash);
+        Ok(32)
+    }
+
     /// Returns the output length in bytes (always 32 for BLAKE3).
     fn output_len(&self) -> usize {
         32
@@ -504,7 +516,7 @@ mod tests {
 
     #[test]
     fn test_default() {
-        let hasher = Blake3Hasher::default();
+        let hasher = Blake3Hasher;
         let hash = hasher.hash(b"test").unwrap();
 
         assert_eq!(hash.len(), 32);
@@ -553,7 +565,7 @@ mod tests {
         // Expect ~50% of bits to differ (128 out of 256)
         // Allow range 100-156 bits (reasonable avalanche)
         assert!(
-            diff_bits >= 100 && diff_bits <= 156,
+            (100..=156).contains(&diff_bits),
             "Expected 100-156 different bits, got {}",
             diff_bits
         );

@@ -76,7 +76,7 @@ pub fn create_progress_bar(total: u64) -> ProgressBar {
     pb.set_style(
         ProgressStyle::default_bar()
             .template("[{elapsed_precise}] {bar:40} {bytes}/{total_bytes} ({eta})")
-            .unwrap()
+            .unwrap_or_else(|_| ProgressStyle::default_bar())
             .progress_chars("=>-"),
     );
     pb
@@ -126,7 +126,7 @@ pub fn create_spinner(message: &str) -> ProgressBar {
     pb.set_style(
         ProgressStyle::default_spinner()
             .template("{spinner:.green} {msg}")
-            .unwrap(),
+            .unwrap_or_else(|_| ProgressStyle::default_spinner()),
     );
     pb.set_message(message.to_string());
     pb

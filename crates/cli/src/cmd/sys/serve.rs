@@ -221,10 +221,8 @@ use std::sync::Arc;
 /// ```
 pub fn run(hexz_path: String, port: u16, daemon: bool, nbd: bool, s3: bool) -> Result<()> {
     if daemon {
-        let stdout = File::create("/tmp/hexz-serve.log")
-            .unwrap_or_else(|_| File::create("/dev/null").unwrap());
-        let stderr = File::create("/tmp/hexz-serve.err")
-            .unwrap_or_else(|_| File::create("/dev/null").unwrap());
+        let stdout = File::create("/tmp/hexz-serve.log").or_else(|_| File::create("/dev/null"))?;
+        let stderr = File::create("/tmp/hexz-serve.err").or_else(|_| File::create("/dev/null"))?;
 
         Daemonize::new()
             .working_directory(".")

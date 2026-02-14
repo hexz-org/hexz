@@ -21,7 +21,7 @@ fn create_test_encryptor() -> AesGcmEncryptor {
     let salt = b"fixed_salt_16byt"; // 16 bytes for determinism
     let iterations = 10000; // Reduced iterations for faster setup (not security-critical in benchmarks)
 
-    AesGcmEncryptor::new(password, salt, iterations)
+    AesGcmEncryptor::new(password, salt, iterations).unwrap()
 }
 
 /// Generates random test data for encryption benchmarks.

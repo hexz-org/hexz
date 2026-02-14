@@ -202,7 +202,10 @@ pub fn handle_read(
         let len = (req_end - req_start) as usize;
         let buf_offset = (req_start - start) as usize;
 
-        let is_modified = fs.overlay.as_ref().unwrap().is_block_modified(blk);
+        let is_modified = match fs.overlay.as_ref() {
+            Some(ov) => ov.is_block_modified(blk),
+            None => false,
+        };
 
         if is_modified {
             if let Some(ov) = &mut fs.overlay {

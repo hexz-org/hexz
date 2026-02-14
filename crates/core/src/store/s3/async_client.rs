@@ -175,10 +175,18 @@ impl S3Backend {
             .map_err(|e| Error::Io(IoError::other(format!("Bucket error: {}", e))))?
             .with_path_style();
 
-        // Perform HEAD request to get size and validate access
-        let (head, code) = runtime
-            .block_on(async { bucket.head_object(&key).await })
-            .map_err(|e| Error::Io(IoError::other(format!("S3 Head error: {}", e))))?;
+        // Perform HEAD request to get size and validate access (with 30s timeout)
+        let (head, code) = runtime.block_on(async {
+            tokio::time::timeout(std::time::Duration::from_secs(30), bucket.head_object(&key))
+                .await
+                .map_err(|_| {
+                    Error::Io(IoError::new(
+                        ErrorKind::TimedOut,
+                        "S3 connection timeout after 30 seconds",
+                    ))
+                })?
+                .map_err(|e| Error::Io(IoError::other(format!("S3 Head error: {}", e))))
+        })?;
 
         if code != 200 {
             return Err(Error::Io(IoError::new(
@@ -216,11 +224,18 @@ impl StorageBackend for S3Backend {
         let end = offset + len as u64 - 1;
 
         self.runtime.block_on(async {
-            let response_data = self
-                .bucket
-                .get_object_range(&self.key, offset, Some(end))
-                .await
-                .map_err(|e| Error::Io(IoError::other(format!("S3 Read error: {}", e))))?;
+            let response_data = tokio::time::timeout(
+                std::time::Duration::from_secs(60),
+                self.bucket.get_object_range(&self.key, offset, Some(end)),
+            )
+            .await
+            .map_err(|_| {
+                Error::Io(IoError::new(
+                    ErrorKind::TimedOut,
+                    "S3 read timeout after 60 seconds",
+                ))
+            })?
+            .map_err(|e| Error::Io(IoError::other(format!("S3 Read error: {}", e))))?;
 
             let code = response_data.status_code();
             if code != 200 && code != 206 {

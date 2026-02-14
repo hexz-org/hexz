@@ -392,7 +392,9 @@ impl AsyncReader {
                 let total_size = inner.size(SnapshotStream::Disk);
                 match offset {
                     None => {
-                        let mut pos = cursor.lock().unwrap();
+                        let mut pos = cursor
+                            .lock()
+                            .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?;
                         if *pos >= total_size {
                             return Ok(Vec::new());
                         }
@@ -488,7 +490,9 @@ impl AsyncReader {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let new_pos = tokio::task::spawn_blocking(move || -> PyResult<u64> {
-                let mut pos = cursor.lock().unwrap();
+                let mut pos = cursor
+                    .lock()
+                    .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?;
                 let total_size = inner.size(SnapshotStream::Disk);
 
                 let new_pos = match whence.unwrap_or(0) {
@@ -530,8 +534,11 @@ impl AsyncReader {
     /// pos = reader.tell()  # synchronous, no await
     /// print(f"Cursor at: {pos}")
     /// ```
-    fn tell(&self) -> u64 {
-        *self.cursor.lock().unwrap()
+    fn tell(&self) -> PyResult<u64> {
+        Ok(*self
+            .cursor
+            .lock()
+            .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?)
     }
 
     /// Enter async context manager (returns self as coroutine).
