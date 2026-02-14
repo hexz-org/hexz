@@ -118,6 +118,16 @@ pub fn run(
     max_chunk: u32,
     silent: bool,
 ) -> Result<()> {
+    // Validate CDC chunk size ordering
+    if cdc && !(min_chunk < avg_chunk && avg_chunk < max_chunk) {
+        anyhow::bail!(
+            "CDC chunk sizes must satisfy min_chunk < avg_chunk < max_chunk, got {} < {} < {}",
+            min_chunk,
+            avg_chunk,
+            max_chunk
+        );
+    }
+
     // Get password if encryption is enabled
     let password = if encrypt {
         Some(rpassword::prompt_password("Enter encryption password: ")?)

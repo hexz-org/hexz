@@ -77,7 +77,7 @@ def verify(
             hexz_loader.verify_image(str(snapshot), str(public_key))
         # verify_image returns None on success, raises on failure
         return True
-    except Exception:
+    except (ValueError, RuntimeError):
         return False
 
 

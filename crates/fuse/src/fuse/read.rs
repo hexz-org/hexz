@@ -181,6 +181,11 @@ pub fn handle_read(
     }
 
     // Overlay merge path
+    if size == 0 {
+        reply.data(&[]);
+        return;
+    }
+
     let mut buffer = vec![0u8; size as usize];
     let start = offset as u64;
     let end = start + size as u64;

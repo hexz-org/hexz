@@ -68,7 +68,7 @@
 //! # Server Configuration
 //!
 //! **Port Binding:**
-//! - Binds to `0.0.0.0:<port>` (all interfaces)
+//! - Binds to `127.0.0.1:<port>` (localhost only)
 //! - Default ports vary by mode (consult CLI help)
 //! - Ensure firewall rules allow inbound connections
 //!
@@ -221,8 +221,13 @@ use std::sync::Arc;
 /// ```
 pub fn run(hexz_path: String, port: u16, daemon: bool, nbd: bool, s3: bool) -> Result<()> {
     if daemon {
-        let stdout = File::create("/tmp/hexz-serve.log").or_else(|_| File::create("/dev/null"))?;
-        let stderr = File::create("/tmp/hexz-serve.err").or_else(|_| File::create("/dev/null"))?;
+        let log_dir = std::env::var("XDG_RUNTIME_DIR")
+            .or_else(|_| std::env::var("TMPDIR"))
+            .unwrap_or_else(|_| "/tmp".to_string());
+        let stdout = File::create(format!("{}/hexz-serve.log", log_dir))
+            .or_else(|_| File::create("/dev/null"))?;
+        let stderr = File::create(format!("{}/hexz-serve.err", log_dir))
+            .or_else(|_| File::create("/dev/null"))?;
 
         Daemonize::new()
             .working_directory(".")

@@ -536,12 +536,13 @@ impl Overlay {
     /// - Time complexity: O(1) average (HashSet insert + file append)
     /// - Typical latency: 5-50 microseconds (depends on fsync speed)
     /// - I/O operations: 1 write (8 bytes) + 1 flush per first-write to block
-    pub fn mark_block_modified(&mut self, block_idx: u64) {
+    pub fn mark_block_modified(&mut self, block_idx: u64) -> io::Result<()> {
         if self.modified_blocks.insert(block_idx) {
             let bytes = block_idx.to_le_bytes();
-            let _ = self.meta_file.write_all(&bytes);
-            let _ = self.meta_file.flush();
+            self.meta_file.write_all(&bytes)?;
+            self.meta_file.flush()?;
         }
+        Ok(())
     }
 
     /// Reads bytes from the overlay data file at a given offset.
@@ -601,7 +602,8 @@ impl Overlay {
     /// - Typical latency: 5-50 microseconds (depends on page cache)
     pub fn read_file(&mut self, offset: u64, buf: &mut [u8]) -> io::Result<usize> {
         self.file.seek(SeekFrom::Start(offset))?;
-        self.file.read(buf)
+        self.file.read_exact(buf)?;
+        Ok(buf.len())
     }
 
     /// Writes bytes to the overlay data file at a given offset.
@@ -690,6 +692,7 @@ impl Overlay {
     /// - Typical latency: 10-100 microseconds (depends on page cache and fsync policy)
     pub fn write_file(&mut self, offset: u64, data: &[u8]) -> io::Result<usize> {
         self.file.seek(SeekFrom::Start(offset))?;
-        self.file.write(data)
+        self.file.write_all(data)?;
+        Ok(data.len())
     }
 }

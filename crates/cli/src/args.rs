@@ -62,8 +62,8 @@ pub enum DataCommands {
         #[arg(long)]
         train_dict: bool,
 
-        /// Block size in bytes
-        #[arg(long, default_value_t = 65536)]
+        /// Block size in bytes (must be > 0)
+        #[arg(long, default_value_t = 65536, value_parser = clap::value_parser!(u32).range(1..))]
         block_size: u32,
 
         /// Enable content-defined chunking (CDC)
@@ -71,15 +71,15 @@ pub enum DataCommands {
         cdc: bool,
 
         /// Minimum chunk size for CDC
-        #[arg(long, default_value_t = 16384)]
+        #[arg(long, default_value_t = 16384, value_parser = clap::value_parser!(u32).range(1..))]
         min_chunk: u32,
 
         /// Average chunk size for CDC
-        #[arg(long, default_value_t = 65536)]
+        #[arg(long, default_value_t = 65536, value_parser = clap::value_parser!(u32).range(1..))]
         avg_chunk: u32,
 
         /// Maximum chunk size for CDC
-        #[arg(long, default_value_t = 131072)]
+        #[arg(long, default_value_t = 131072, value_parser = clap::value_parser!(u32).range(1..))]
         max_chunk: u32,
 
         /// Suppress all output and progress bars
@@ -254,8 +254,8 @@ pub enum VmCommands {
         #[arg(long, default_value = "lz4")]
         compression: String,
 
-        /// Block size
-        #[arg(long, default_value_t = 65536)]
+        /// Block size (must be > 0)
+        #[arg(long, default_value_t = 65536, value_parser = clap::value_parser!(u32).range(1..))]
         block_size: u32,
 
         /// Keep overlay file after commit

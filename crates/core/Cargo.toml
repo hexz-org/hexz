@@ -26,6 +26,7 @@ zstd = { version = "0.13", optional = true }
 aes-gcm = { version = "0.10", optional = true }
 pbkdf2 = { version = "0.12", optional = true }
 hmac = { version = "0.12", optional = true }
+zeroize = { version = "1", optional = true }
 sha2.workspace = true
 blake3 = "1.5"
 
@@ -45,7 +46,7 @@ default = ["compression-zstd", "encryption", "s3", "signing"]
 
 s3 = ["dep:rust-s3"]
 compression-zstd = ["dep:zstd"]
-encryption = ["dep:aes-gcm", "dep:pbkdf2", "dep:hmac"]
+encryption = ["dep:aes-gcm", "dep:pbkdf2", "dep:hmac", "dep:zeroize"]
 signing = ["hexz-common/signing"]
 
 [dev-dependencies]

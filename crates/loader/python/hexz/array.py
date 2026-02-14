@@ -241,6 +241,14 @@ class ArrayView:
         """
         # Handle single integer index
         if isinstance(key, int):
+            # Normalize negative index
+            dim0 = self._shape[0] if self._shape else 0
+            if key < 0:
+                key += dim0
+            if key < 0 or key >= dim0:
+                raise IndexError(
+                    f"index {key} is out of bounds for axis 0 with size {dim0}"
+                )
             # Read a single row (for 2D arrays)
             if self.ndim == 1:
                 # 1D array: read single element

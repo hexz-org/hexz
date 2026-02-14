@@ -1017,6 +1017,14 @@ impl<R: Read> Iterator for StreamChunker<R> {
 
         let available = self.filled - self.cursor;
 
+        // Refill if we don't have enough data for a full chunk and more data is available
+        if available < self.max_size && !self.eof {
+            if let Err(e) = self.refill() {
+                return Some(Err(e));
+            }
+        }
+        let available = self.filled - self.cursor;
+
         let chunk_len = if available < self.min_size {
             available
         } else {

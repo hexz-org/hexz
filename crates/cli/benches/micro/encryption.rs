@@ -19,7 +19,7 @@ fn create_test_encryptor() -> AesGcmEncryptor {
     // Use deterministic parameters for reproducible benchmarks
     let password = b"benchmark_password";
     let salt = b"fixed_salt_16byt"; // 16 bytes for determinism
-    let iterations = 10000; // Reduced iterations for faster setup (not security-critical in benchmarks)
+    let iterations = 100_000; // Minimum allowed iterations
 
     AesGcmEncryptor::new(password, salt, iterations).unwrap()
 }

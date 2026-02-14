@@ -639,6 +639,19 @@ impl ZstdCompressor {
             }
             total += n;
         }
+        // Check if there's more data that didn't fit in the buffer
+        if total == out.len() {
+            let mut extra = [0u8; 1];
+            let n = reader
+                .read(&mut extra)
+                .map_err(|e| Error::Compression(e.to_string()))?;
+            if n > 0 {
+                return Err(Error::Compression(format!(
+                    "Decompressed data exceeds output buffer size ({})",
+                    out.len()
+                )));
+            }
+        }
         Ok(total)
     }
 }

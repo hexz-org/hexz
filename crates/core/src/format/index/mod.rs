@@ -423,11 +423,24 @@ pub struct MasterIndex {
 }
 
 impl MasterIndex {
+    /// Maximum allowed master index size (64 MiB) to prevent unbounded allocation.
+    const MAX_INDEX_SIZE: u64 = 64 * 1024 * 1024;
+
     /// Read master index by seeking to `index_offset` and reading to EOF.
     pub fn read_from<R: std::io::Read + std::io::Seek>(
         reader: &mut R,
         index_offset: u64,
     ) -> hexz_common::Result<Self> {
+        reader.seek(std::io::SeekFrom::Start(index_offset))?;
+        let end = reader.seek(std::io::SeekFrom::End(0))?;
+        let index_size = end.saturating_sub(index_offset);
+        if index_size > Self::MAX_INDEX_SIZE {
+            return Err(hexz_common::Error::Format(format!(
+                "Master index too large: {} bytes (max {})",
+                index_size,
+                Self::MAX_INDEX_SIZE
+            )));
+        }
         reader.seek(std::io::SeekFrom::Start(index_offset))?;
         let mut index_bytes = Vec::new();
         reader.read_to_end(&mut index_bytes)?;

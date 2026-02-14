@@ -168,6 +168,10 @@ pub fn handle_lookup(fs: &mut Hexz, _req: &Request, parent: u64, name: &OsStr, r
 /// - Time complexity: O(1) + optional `fstat` on overlay file
 /// - Typical latency: 1-2 microseconds with overlay, 50-100 ns without
 pub fn handle_getattr(fs: &mut Hexz, _req: &Request, ino: u64, reply: ReplyAttr) {
+    if !fs.inodes.is_valid_inode(ino) {
+        reply.error(ENOENT);
+        return;
+    }
     let attr = fs.get_merged_attr(ino);
     reply.attr(&TTL, &attr);
 }
@@ -336,7 +340,8 @@ pub fn handle_readdir(
     }
 
     let entries = fs.inodes.readdir();
-    for (i, entry) in entries.iter().enumerate().skip(offset as usize) {
+    let skip = if offset < 0 { 0usize } else { offset as usize };
+    for (i, entry) in entries.iter().enumerate().skip(skip) {
         if reply.add(entry.inode, (i + 1) as i64, entry.kind, &entry.name) {
             break;
         }

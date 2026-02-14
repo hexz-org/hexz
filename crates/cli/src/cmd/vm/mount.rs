@@ -466,9 +466,12 @@ pub fn run(
 
     // Daemonize if requested
     if daemon {
-        let stdout = std::fs::File::create("/tmp/hexz.log")
+        let log_dir = std::env::var("XDG_RUNTIME_DIR")
+            .or_else(|_| std::env::var("TMPDIR"))
+            .unwrap_or_else(|_| "/tmp".to_string());
+        let stdout = std::fs::File::create(format!("{}/hexz.log", log_dir))
             .unwrap_or_else(|_| std::fs::File::create("/dev/null").unwrap());
-        let stderr = std::fs::File::create("/tmp/hexz.err")
+        let stderr = std::fs::File::create(format!("{}/hexz.err", log_dir))
             .unwrap_or_else(|_| std::fs::File::create("/dev/null").unwrap());
 
         Daemonize::new()

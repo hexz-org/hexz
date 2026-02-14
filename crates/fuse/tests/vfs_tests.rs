@@ -141,7 +141,7 @@ fn test_overlay_mark_block_modified() {
     let mut overlay = Overlay::new(&path).unwrap();
 
     assert!(!overlay.is_block_modified(0));
-    overlay.mark_block_modified(0);
+    overlay.mark_block_modified(0).unwrap();
     assert!(overlay.is_block_modified(0));
     assert!(!overlay.is_block_modified(1));
 }
@@ -156,9 +156,9 @@ fn test_overlay_persistence() {
         let mut overlay = Overlay::new(&path).unwrap();
         let data = vec![0xAA; 8192]; // 2 blocks worth
         overlay.write_file(0, &data).unwrap();
-        overlay.mark_block_modified(0);
-        overlay.mark_block_modified(1);
-        overlay.mark_block_modified(5);
+        overlay.mark_block_modified(0).unwrap();
+        overlay.mark_block_modified(1).unwrap();
+        overlay.mark_block_modified(5).unwrap();
     }
 
     // Reopen and verify modified_blocks restored from .meta
@@ -193,9 +193,9 @@ fn test_overlay_dedup_marking() {
     let path = dir.path().join("overlay.bin");
     let mut overlay = Overlay::new(&path).unwrap();
 
-    overlay.mark_block_modified(7);
-    overlay.mark_block_modified(7); // duplicate
-    overlay.mark_block_modified(7); // triplicate
+    overlay.mark_block_modified(7).unwrap();
+    overlay.mark_block_modified(7).unwrap(); // duplicate
+    overlay.mark_block_modified(7).unwrap(); // triplicate
 
     assert!(overlay.is_block_modified(7));
 

@@ -132,7 +132,9 @@ pub fn run(
             #[cfg(feature = "firecracker")]
             return boot_firecracker(snap_path, ram_size, persist_path, network_mode);
             #[cfg(not(feature = "firecracker"))]
-            anyhow::bail!("Firecracker backend not enabled. Compile with --features firecracker")
+            anyhow::bail!(
+                "Firecracker backend is not available. Compile with --features firecracker"
+            )
         }
         other => anyhow::bail!("Unknown backend: {}", other),
     }
@@ -150,7 +152,7 @@ fn boot_firecracker(
     // 2. Map the FUSE mount point (or a tap device) as the root drive.
     // 3. Spawn the `firecracker` process and send the config via its API socket.
     // 4. Handle console output and cleanup.
-    unimplemented!("Firecracker backend is not yet fully implemented.")
+    anyhow::bail!("Firecracker backend is not yet fully implemented.")
 }
 
 fn boot_qemu(
@@ -348,8 +350,9 @@ fn boot_qemu(
     }
 
     if has_memory {
+        let mem_path_str = mem_path.to_string_lossy().replace('\'', "'\\''");
         qemu.arg("-incoming")
-            .arg(format!("exec:cat {}", mem_path.display()));
+            .arg(format!("exec:cat '{}'", mem_path_str));
     }
 
     let mut child = qemu.spawn().context("Failed to run qemu-system-x86_64")?;

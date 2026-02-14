@@ -148,6 +148,9 @@ impl HttpBackend {
 
 impl StorageBackend for HttpBackend {
     fn read_exact(&self, offset: u64, len: usize) -> Result<Bytes> {
+        if len == 0 {
+            return Ok(Bytes::new());
+        }
         let end = offset + len as u64 - 1;
         let range_header = format!("bytes={}-{}", offset, end);
 

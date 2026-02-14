@@ -112,6 +112,10 @@ const NBD_CMD_TRIM: u16 = 4;
 const NBD_REQUEST_MAGIC: u32 = 0x25609513;
 const NBD_REPLY_MAGIC: u32 = 0x67446698;
 
+/// Maximum allowed option data or read/write length from a client (32 MiB).
+/// Matches Linux kernel's NBD_MAX_BUFFER_SIZE to prevent OOM from crafted packets.
+const NBD_MAX_BUFFER_SIZE: u32 = 32 * 1024 * 1024;
+
 /// Handle a single NBD client connection.
 ///
 /// This function implements the complete NBD server lifecycle for one client:
@@ -159,7 +163,7 @@ pub async fn handle_client(mut socket: TcpStream, snap: Arc<File>) -> Result<()>
 
     // 2. Receive Client Flags
     let client_flags = socket.read_u32().await?;
-    let _supports_no_zeroes = (client_flags & (NBD_FLAG_NO_ZEROES as u32)) != 0;
+    let client_supports_no_zeroes = (client_flags & (NBD_FLAG_NO_ZEROES as u32)) != 0;
 
     // 3. Option Negotiation Loop
     loop {
@@ -170,6 +174,10 @@ pub async fn handle_client(mut socket: TcpStream, snap: Arc<File>) -> Result<()>
 
         let opt_id = socket.read_u32().await?;
         let opt_len = socket.read_u32().await?;
+
+        if opt_len > NBD_MAX_BUFFER_SIZE {
+            anyhow::bail!("NBD option data too large: {} bytes", opt_len);
+        }
 
         // Read option data
         let mut opt_data = vec![0u8; opt_len as usize];
@@ -184,7 +192,10 @@ pub async fn handle_client(mut socket: TcpStream, snap: Arc<File>) -> Result<()>
 
                 socket.write_u64(size).await?;
                 socket.write_u16(export_flags).await?;
-                // NO_ZEROES means we don't send 124 bytes of zeroes here.
+                // Only skip 124 zero bytes if client supports NO_ZEROES
+                if !client_supports_no_zeroes {
+                    socket.write_all(&[0u8; 124]).await?;
+                }
                 break;
             }
             NBD_OPT_INFO | NBD_OPT_GO => {
@@ -211,10 +222,10 @@ pub async fn handle_client(mut socket: TcpStream, snap: Arc<File>) -> Result<()>
                 }
             }
             _ => {
-                // Unsupported option: Reply ERR_UNSUP (2^31 + 1)
+                // Unsupported option: Reply ERR_UNSUP (0x80000001 = 2^31 + 1)
                 socket.write_u64(NBD_REP_MAGIC).await?;
                 socket.write_u32(opt_id).await?;
-                socket.write_u32(2147483649 + 1).await?;
+                socket.write_u32(0x80000001).await?;
                 socket.write_u32(0).await?;
             }
         }
@@ -234,6 +245,10 @@ pub async fn handle_client(mut socket: TcpStream, snap: Arc<File>) -> Result<()>
         let offset = socket.read_u64().await?;
         let length = socket.read_u32().await?;
 
+        if length > NBD_MAX_BUFFER_SIZE {
+            anyhow::bail!("NBD request length too large: {} bytes", length);
+        }
+
         match type_ {
             NBD_CMD_READ => {
                 let mut error = 0u32;
@@ -251,14 +266,16 @@ pub async fn handle_client(mut socket: TcpStream, snap: Arc<File>) -> Result<()>
                 socket.write_u32(error).await?;
                 socket.write_u64(handle).await?;
 
-                // Payload
+                // Payload: NBD protocol requires `length` bytes regardless of error
                 if error == 0 {
                     socket.write_all(&data).await?;
-                    // If read was short (EOF), pad with zeros
                     if data.len() < length as usize {
                         let padding = vec![0u8; length as usize - data.len()];
                         socket.write_all(&padding).await?;
                     }
+                } else {
+                    let padding = vec![0u8; length as usize];
+                    socket.write_all(&padding).await?;
                 }
             }
             NBD_CMD_DISC => {

@@ -115,7 +115,7 @@ pub fn run(
                     let rel_start = (chunk_start - block_start) as usize;
 
                     overlay_file.seek(SeekFrom::Start(chunk_start))?;
-                    let _ = overlay_file.read(&mut data[rel_start..rel_start + chunk_len])?;
+                    overlay_file.read_exact(&mut data[rel_start..rel_start + chunk_len])?;
                 }
             }
         } else if block_start < base_disk_size {

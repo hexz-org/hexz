@@ -806,6 +806,13 @@ impl DedupeParams {
 ///
 /// Equation 3 in DCAM paper (Randall et al., 2025).
 pub fn expected_chunk_length(params: &DedupeParams) -> f64 {
+    assert!(
+        params.m < params.z,
+        "DedupeParams: min chunk size (m={}) must be less than max chunk size (z={})",
+        params.m,
+        params.z
+    );
+
     let p = params.p();
     let m = params.m as f64;
     let z = params.z as f64;

@@ -189,15 +189,17 @@ class Prefetcher:
 
             # Check if prefetch is in progress
             if index in self.pending:
-                future = self.pending.pop(index)
-                # Wait for it to complete (non-blocking check first)
+                future = self.pending[index]
                 if future.done():
+                    del self.pending[index]
                     try:
                         data = future.result()
                         return data
                     except Exception:
                         # Prefetch failed, return None
                         return None
+                # Future still pending — leave it in self.pending
+                # so it's not orphaned
 
             return None
 

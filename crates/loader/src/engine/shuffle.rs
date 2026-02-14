@@ -278,7 +278,8 @@ pub fn shuffled_indices(count: usize, seed: u64) -> Vec<usize> {
     let mut indices: Vec<usize> = (0..count).collect();
 
     // Simple xorshift64 PRNG for deterministic shuffling
-    let mut state = seed;
+    // xorshift64 has a fixpoint at 0, so avoid it by mixing in a constant
+    let mut state = if seed == 0 { 0x5A17 } else { seed };
     for i in (1..indices.len()).rev() {
         state ^= state << 13;
         state ^= state >> 7;

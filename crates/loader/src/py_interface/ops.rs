@@ -715,17 +715,28 @@ fn send_qmp(
 }
 
 fn read_qmp(stream: &mut UnixStream) -> PyResult<serde_json::Value> {
-    let mut buf = [0u8; 4096];
-    let n = stream
-        .read(&mut buf)
-        .map_err(|e| PyIOError::new_err(e.to_string()))?;
-    let s = String::from_utf8_lossy(&buf[..n]);
-
-    for line in s.lines() {
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
-            if val.get("return").is_some() {
-                return Ok(val);
+    let mut all_data = Vec::new();
+    let mut buf = [0u8; 65536];
+    loop {
+        let n = stream
+            .read(&mut buf)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        if n == 0 {
+            break;
+        }
+        all_data.extend_from_slice(&buf[..n]);
+        // Check if we have a complete JSON line
+        let s = String::from_utf8_lossy(&all_data);
+        for line in s.lines() {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
+                if val.get("return").is_some() {
+                    return Ok(val);
+                }
             }
+        }
+        // If we got some data with a newline, we have complete responses
+        if all_data.contains(&b'\n') {
+            break;
         }
     }
     Ok(serde_json::json!({}))
@@ -814,11 +825,19 @@ pub fn snapshot_vm(
     let mem_dump = tempfile::NamedTempFile::new().map_err(|e| PyIOError::new_err(e.to_string()))?;
     let mem_path = mem_dump.path().to_string_lossy().to_string();
 
-    let migrate_cmd = format!("exec:cat > {}", mem_path);
+    let migrate_cmd = format!("exec:cat > '{}'", mem_path.replace('\'', "'\\''"));
     let args = serde_json::json!({ "uri": migrate_cmd });
     let _ = send_qmp(&mut stream, "migrate", Some(args))?;
 
+    let migrate_start = std::time::Instant::now();
+    let migrate_timeout = std::time::Duration::from_secs(600); // 10 minute timeout
     loop {
+        if migrate_start.elapsed() > migrate_timeout {
+            let _ = send_qmp(&mut stream, "cont", None);
+            return Err(PyRuntimeError::new_err(
+                "Memory dump timed out after 600 seconds",
+            ));
+        }
         let resp = send_qmp(&mut stream, "query-migrate", None)?;
         if let Some(status) = resp["return"]["status"].as_str() {
             if status == "completed" {
@@ -831,22 +850,29 @@ pub fn snapshot_vm(
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
 
-    let mut builder = Builder::new(
-        output_path,
-        65536,
-        "lz4",
-        None,
-        true,
-        false,
-        DEFAULT_CDC_MIN_CHUNK,
-        DEFAULT_CDC_AVG_CHUNK,
-        DEFAULT_CDC_MAX_CHUNK,
-    )?;
-    builder.merge_overlay(py, base_path, overlay_path, false)?;
-    builder.add_memory_file(py, mem_path)?;
-    builder.finalize()?;
+    let build_result = (|| -> PyResult<()> {
+        let mut builder = Builder::new(
+            output_path,
+            65536,
+            "lz4",
+            None,
+            true,
+            false,
+            DEFAULT_CDC_MIN_CHUNK,
+            DEFAULT_CDC_AVG_CHUNK,
+            DEFAULT_CDC_MAX_CHUNK,
+        )?;
+        builder.merge_overlay(py, base_path, overlay_path, false)?;
+        builder.add_memory_file(py, mem_path)?;
+        builder.finalize()?;
+        Ok(())
+    })();
 
-    let _ = send_qmp(&mut stream, "cont", None)?;
+    // Always resume VM, even if snapshot creation failed
+    let _ = send_qmp(&mut stream, "cont", None);
+
+    // Now propagate any build error
+    build_result?;
 
     Ok(())
 }

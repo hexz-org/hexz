@@ -6,8 +6,9 @@
 use crate::Result;
 use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 /// Generates an Ed25519 keypair and writes raw 32-byte keys to disk.
@@ -19,7 +20,12 @@ pub fn generate_keypair(private_out: &Path, public_out: &Path) -> Result<()> {
     let priv_bytes = signing_key.to_bytes();
     let pub_bytes = verifying_key.to_bytes();
 
-    let mut priv_file = File::create(private_out)?;
+    let mut priv_file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(private_out)?;
     priv_file.write_all(&priv_bytes)?;
 
     let mut pub_file = File::create(public_out)?;
@@ -30,11 +36,14 @@ pub fn generate_keypair(private_out: &Path, public_out: &Path) -> Result<()> {
 
 /// Signs a digest with an Ed25519 private key, returning a 64-byte signature.
 pub fn sign_digest(private_key_path: &Path, digest: &[u8]) -> Result<[u8; 64]> {
+    use zeroize::Zeroize;
+
     let mut f = File::open(private_key_path)?;
     let mut key_bytes = [0u8; 32];
     f.read_exact(&mut key_bytes)?;
 
     let signing_key = SigningKey::from_bytes(&key_bytes);
+    key_bytes.zeroize();
     let signature = signing_key.sign(digest);
     Ok(signature.to_bytes())
 }

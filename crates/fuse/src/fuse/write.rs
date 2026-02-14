@@ -187,6 +187,11 @@ pub fn handle_write(
 ) {
     if let Some(overlay) = &mut fs.overlay {
         if ino == 2 {
+            if data.is_empty() {
+                reply.written(0);
+                return;
+            }
+
             let start = offset as u64;
             let len = data.len() as u64;
             let end = start + len;
@@ -199,16 +204,22 @@ pub fn handle_write(
                 if !overlay.is_block_modified(blk) {
                     let blk_start = blk * BLOCK_SIZE;
                     if blk_start < fs.snap.size(SnapshotStream::Disk) {
+                        let mut seed_buf = vec![0u8; BLOCK_SIZE as usize];
                         let original = fs
                             .snap
                             .read_at(SnapshotStream::Disk, blk_start, BLOCK_SIZE as usize)
                             .unwrap_or_default();
-                        if overlay.write_file(blk_start, &original).is_err() {
+                        // Copy what we got, rest stays zero-filled
+                        seed_buf[..original.len()].copy_from_slice(&original);
+                        if overlay.write_file(blk_start, &seed_buf).is_err() {
                             reply.error(EIO);
                             return;
                         }
                     }
-                    overlay.mark_block_modified(blk);
+                    if overlay.mark_block_modified(blk).is_err() {
+                        reply.error(EIO);
+                        return;
+                    }
                 }
             }
 

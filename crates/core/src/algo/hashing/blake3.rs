@@ -130,7 +130,7 @@
 //! ```
 
 use super::ContentHasher;
-use hexz_common::Result;
+use hexz_common::{Error, Result};
 
 /// BLAKE3 hasher for content addressing and deduplication.
 ///
@@ -271,6 +271,12 @@ impl ContentHasher for Blake3Hasher {
     ///
     /// **Panics:** If `out.len() < 32` (caller must ensure buffer is large enough).
     fn hash_into(&self, data: &[u8], out: &mut [u8]) -> Result<usize> {
+        if out.len() < 32 {
+            return Err(Error::Format(format!(
+                "hash_into: output buffer too small ({} < 32)",
+                out.len()
+            )));
+        }
         let hash = self.hash_array(data);
         out[..32].copy_from_slice(&hash);
         Ok(32)

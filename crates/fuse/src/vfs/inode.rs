@@ -604,6 +604,16 @@ impl InodeMap {
     ///
     /// - Time complexity: O(1) - enum match
     /// - Typical latency: < 10 nanoseconds
+    /// Returns whether the given inode number is valid (root, disk, or memory).
+    pub fn is_valid_inode(&self, ino: u64) -> bool {
+        match InodeType::from_u64(ino) {
+            Some(InodeType::Root) => true,
+            Some(InodeType::Disk) => self.has_disk,
+            Some(InodeType::Memory) => self.has_mem,
+            _ => false,
+        }
+    }
+
     pub fn inode_to_stream(&self, ino: u64) -> Option<SnapshotStream> {
         match InodeType::from_u64(ino) {
             Some(InodeType::Disk) if self.has_disk => Some(SnapshotStream::Disk),

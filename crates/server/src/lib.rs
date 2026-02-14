@@ -451,7 +451,13 @@ pub async fn serve_nbd(snap: Arc<File>, port: u16) -> anyhow::Result<()> {
 
     loop {
         // Accept incoming NBD connections
-        let (socket, remote_addr) = listener.accept().await?;
+        let (socket, remote_addr) = match listener.accept().await {
+            Ok(conn) => conn,
+            Err(e) => {
+                tracing::warn!("NBD accept error (continuing): {}", e);
+                continue;
+            }
+        };
         tracing::debug!("Accepted NBD connection from {}", remote_addr);
 
         let snap_clone = snap.clone();
@@ -1118,6 +1124,7 @@ fn handle_request(headers: HeaderMap, snap: &Arc<File>, stream: SnapshotStream) 
 
     match snap.read_at(stream, start, len) {
         Ok(data) => (
+            StatusCode::PARTIAL_CONTENT,
             [
                 (header::CONTENT_TYPE, "application/octet-stream"),
                 (

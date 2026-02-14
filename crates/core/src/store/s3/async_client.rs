@@ -221,6 +221,9 @@ impl S3Backend {
 #[cfg(feature = "s3")]
 impl StorageBackend for S3Backend {
     fn read_exact(&self, offset: u64, len: usize) -> Result<Bytes> {
+        if len == 0 {
+            return Ok(Bytes::copy_from_slice(&[]));
+        }
         let end = offset + len as u64 - 1;
 
         self.runtime.block_on(async {

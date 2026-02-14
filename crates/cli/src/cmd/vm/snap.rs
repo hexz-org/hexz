@@ -207,7 +207,7 @@ pub fn run(
     let mem_dump = NamedTempFile::new()?;
     let mem_path = mem_dump.path().to_str().unwrap().to_string();
 
-    let migrate_cmd = format!("exec:cat > {}", mem_path);
+    let migrate_cmd = format!("exec:cat > '{}'", mem_path.replace('\'', "'\\''"));
     let args = serde_json::json!({ "uri": migrate_cmd });
 
     send_command(&mut stream, "migrate", Some(args))?;
