@@ -280,22 +280,16 @@
 use hexz_common::constants::{DEFAULT_ZSTD_LEVEL, DICT_TRAINING_SIZE, ENTROPY_THRESHOLD};
 use hexz_common::crypto::KeyDerivationParams;
 use hexz_common::{Error, Result};
-// Note: Switched from SHA-256 to BLAKE3 for 6x faster hashing (3200 MB/s vs 500 MB/s)
-// Both provide 128-bit collision resistance, but BLAKE3 has better performance
-use std::collections::HashMap;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use crate::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
 use crate::algo::dedup::cdc::StreamChunker;
 use crate::algo::dedup::dcam::DedupeParams;
 use crate::algo::encryption::{Encryptor, aes_gcm::AesGcmEncryptor};
-use crate::format::{
-    header::{CompressionType, FeatureFlags, Header},
-    index::{BlockInfo, ENTRIES_PER_PAGE, IndexPage, MasterIndex, PageEntry},
-    magic::{FORMAT_VERSION, HEADER_SIZE, MAGIC_BYTES},
-};
+use crate::format::header::CompressionType;
+use crate::ops::snapshot_writer::SnapshotWriter;
 
 /// Configuration parameters for snapshot packing.
 ///
@@ -453,25 +447,16 @@ impl<T: Iterator<Item = std::io::Result<Vec<u8>>>> Chunker for T {}
 /// Splits input into equal-sized blocks (except possibly the last one).
 /// Simpler and faster than CDC, but less effective for deduplication.
 ///
-/// # Performance
-///
-/// - **Throughput**: ~3 GB/s (limited by memory copy)
-/// - **Chunk variance**: None (all chunks are `block_size`, except last)
-struct FixedChunker<R> {
-    /// Input data source.
+/// Uses a read loop to guarantee full blocks, avoiding short reads from
+/// pipes, network streams, or OS buffering.
+pub struct FixedChunker<R> {
     reader: R,
-    /// Fixed block size in bytes.
     block_size: usize,
 }
 
 impl<R: Read> FixedChunker<R> {
     /// Creates a new fixed-size chunker.
-    ///
-    /// # Parameters
-    ///
-    /// - `reader`: Input data source
-    /// - `block_size`: Size of each chunk in bytes
-    fn new(reader: R, block_size: usize) -> Self {
+    pub fn new(reader: R, block_size: usize) -> Self {
         Self { reader, block_size }
     }
 }
@@ -479,22 +464,21 @@ impl<R: Read> FixedChunker<R> {
 impl<R: Read> Iterator for FixedChunker<R> {
     type Item = std::io::Result<Vec<u8>>;
 
-    /// Yields the next fixed-size chunk.
-    ///
-    /// # Returns
-    ///
-    /// - `Some(Ok(chunk))`: Next chunk (may be shorter than `block_size` for last chunk)
-    /// - `Some(Err(e))`: I/O error reading from source
-    /// - `None`: End of input reached
     fn next(&mut self) -> Option<Self::Item> {
         let mut buf = vec![0u8; self.block_size];
-        match self.reader.read(&mut buf) {
-            Ok(0) => None,
-            Ok(n) => {
-                buf.truncate(n);
-                Some(Ok(buf))
+        let mut pos = 0;
+        while pos < self.block_size {
+            match self.reader.read(&mut buf[pos..]) {
+                Ok(0) => break,
+                Ok(n) => pos += n,
+                Err(e) => return Some(Err(e)),
             }
-            Err(e) => Some(Err(e)),
+        }
+        if pos == 0 {
+            None
+        } else {
+            buf.truncate(pos);
+            Some(Ok(buf))
         }
     }
 }
@@ -700,9 +684,6 @@ where
         )));
     }
 
-    let mut out = File::create(&config.output)?;
-    out.write_all(&[0u8; HEADER_SIZE])?;
-
     // Train compression dictionary if requested
     let dictionary = if config.compression == "zstd" && config.train_dict {
         Some(train_dictionary(
@@ -713,27 +694,14 @@ where
         None
     };
 
-    let mut current_offset = HEADER_SIZE as u64;
-
-    // Write dictionary to file
-    let (dict_offset, dict_len) = if let Some(d) = &dictionary {
-        out.write_all(d)?;
-        let start = current_offset;
-        let len = d.len() as u32;
-        current_offset += len as u64;
-        (Some(start), Some(len))
-    } else {
-        (None, None)
-    };
-
     // Initialize compressor
     let compressor: Box<dyn Compressor> = match config.compression.as_str() {
-        "zstd" => Box::new(ZstdCompressor::new(DEFAULT_ZSTD_LEVEL, dictionary)),
+        "zstd" => Box::new(ZstdCompressor::new(DEFAULT_ZSTD_LEVEL, dictionary.clone())),
         _ => Box::new(Lz4Compressor::new()),
     };
 
     // Initialize encryptor if requested
-    let (encryptor, enc_header) = if config.encrypt {
+    let (encryptor, enc_params): (Option<Box<dyn Encryptor>>, _) = if config.encrypt {
         let password = config.password.clone().ok_or_else(|| {
             Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -742,27 +710,38 @@ where
         })?;
         let params = KeyDerivationParams::default();
         let enc = AesGcmEncryptor::new(password.as_bytes(), &params.salt, params.iterations);
-        (Some(enc), Some(params))
+        (Some(Box::new(enc) as Box<dyn Encryptor>), Some(params))
     } else {
         (None, None)
     };
 
-    let mut master = MasterIndex::default();
-    let mut dedup_map: HashMap<[u8; 32], u64> = HashMap::new();
-    let mut global_block_idx = 0;
+    let compression_type = if config.compression == "zstd" {
+        CompressionType::Zstd
+    } else {
+        CompressionType::Lz4
+    };
+
+    let mut writer = SnapshotWriter::create(
+        &config.output,
+        compressor,
+        encryptor,
+        config.block_size,
+        compression_type,
+        config.cdc_enabled,
+        enc_params,
+    )?;
+
+    // Write dictionary to file
+    if let Some(d) = &dictionary {
+        writer.write_dictionary(d)?;
+    }
 
     // Process disk stream
     if let Some(ref path) = config.disk {
         process_stream(
             path.clone(),
             true,
-            &mut out,
-            &mut current_offset,
-            &mut master,
-            &mut global_block_idx,
-            &mut dedup_map,
-            compressor.as_ref(),
-            &encryptor,
+            &mut writer,
             &config,
             progress_callback.as_ref(),
         )?;
@@ -773,52 +752,13 @@ where
         process_stream(
             path.clone(),
             false,
-            &mut out,
-            &mut current_offset,
-            &mut master,
-            &mut global_block_idx,
-            &mut dedup_map,
-            compressor.as_ref(),
-            &encryptor,
+            &mut writer,
             &config,
             progress_callback.as_ref(),
         )?;
     }
 
-    // Write master index
-    let index_offset = current_offset;
-    let index_bytes = bincode::serialize(&master)?;
-    out.write_all(&index_bytes)?;
-
-    // Write header
-    let header = Header {
-        magic: *MAGIC_BYTES,
-        version: FORMAT_VERSION,
-        block_size: config.block_size,
-        index_offset,
-        parent_path: None,
-        dictionary_offset: dict_offset,
-        dictionary_length: dict_len,
-        metadata_offset: None,
-        metadata_length: None,
-        signature_offset: None,
-        signature_length: None,
-        encryption: enc_header,
-        compression: if config.compression == "zstd" {
-            CompressionType::Zstd
-        } else {
-            CompressionType::Lz4
-        },
-        features: FeatureFlags {
-            has_disk: !master.disk_pages.is_empty(),
-            has_memory: !master.memory_pages.is_empty(),
-            variable_blocks: config.cdc_enabled,
-        },
-    };
-
-    out.seek(SeekFrom::Start(0))?;
-    out.write_all(&bincode::serialize(&header)?)?;
-    out.flush()?;
+    writer.finalize(None, None)?;
 
     Ok(())
 }
@@ -931,107 +871,11 @@ fn train_dictionary(input_path: &Path, block_size: u32) -> Result<Vec<u8>> {
     }
 }
 
-/// Processes a single input stream (disk or memory) into compressed blocks and index pages.
-///
-/// This is the core packing loop that transforms a raw input file into a compressed,
-/// indexed stream of blocks. It handles chunking, compression, encryption, deduplication,
-/// and index page management.
-///
-/// # Algorithm
-///
-/// ```text
-/// FOR each chunk from chunker:
-///   IF chunk is all zeros:
-///     Create zero-block metadata (offset=0, length=0)
-///   ELSE:
-///     Compress chunk
-///     IF encrypt:
-///       Encrypt compressed data with block_idx as nonce
-///     Compute CRC32 checksum
-///
-///     IF encrypt:
-///       Write directly (no dedup, unique nonces prevent it)
-///     ELSE:
-///       Compute BLAKE3 hash
-///       IF hash exists in dedup_map:
-///         Reuse existing offset (don't write)
-///       ELSE:
-///         Write block, store offset in dedup_map
-///
-///     Create BlockInfo metadata
-///
-///   Add BlockInfo to current index page
-///   Update logical position
-///   Report progress via callback
-///
-///   IF page is full (4096 entries):
-///     Serialize page to bincode
-///     Write page to output
-///     Create PageEntry (offset, length, start_block, start_logical)
-///     Add PageEntry to master index (disk_pages or memory_pages)
-///     Reset page for next batch
-///
-/// IF page has remaining entries:
-///   Flush final partial page
-/// ```
-///
-/// # Parameters
-///
-/// - `path`: Input file path to process
-/// - `is_disk`: true for disk stream, false for memory stream (determines master index target)
-/// - `out`: Output file writer (positioned after header/dictionary)
-/// - `current_offset`: Mutable reference to current physical file offset (updated as blocks written)
-/// - `master`: Mutable master index (accumulates PageEntry records)
-/// - `global_block_idx`: Global block counter across all streams (used for encryption nonces)
-/// - `dedup_map`: BLAKE3 hash → offset mapping for deduplication (shared across streams)
-/// - `compressor`: Compression algorithm implementation
-/// - `encryptor`: Optional encryption implementation
-/// - `config`: Packing configuration (chunking parameters, block size, etc.)
-/// - `progress_callback`: Optional callback for progress reporting (logical_pos, total_size)
-///
-/// # Returns
-///
-/// - `Ok(())`: Stream processed successfully
-/// - `Err(Error)`: I/O error, compression error, or encryption error
-///
-/// # Side Effects
-///
-/// - Writes compressed blocks to `out`
-/// - Writes serialized index pages to `out`
-/// - Updates `current_offset` with bytes written
-/// - Updates `global_block_idx` with blocks processed
-/// - Updates `dedup_map` with new unique blocks (if not encrypting)
-/// - Appends PageEntry records to `master.disk_pages` or `master.memory_pages`
-/// - Sets `master.disk_size` or `master.memory_size` to input file size
-///
-/// # Memory Usage
-///
-/// - **Working set**: ~1 MB (chunk buffer, compression output, index page)
-/// - **Dedup map growth**: ~48 bytes per unique block
-/// - **Index page**: 80 KiB maximum (4096 × 20 bytes)
-///
-/// # Performance
-///
-/// - **Bottleneck**: Usually compression (LZ4: ~2 GB/s, Zstd: ~500 MB/s)
-/// - **I/O pattern**: Sequential writes (efficient for SSDs and HDDs)
-/// - **Progress updates**: Called once per chunk (~64 KiB), minimal overhead
-///
-/// # Error Behavior
-///
-/// On error, the function returns immediately without cleanup. The output file
-/// will be left in a partially written state. Callers should delete the output
-/// file on error.
-#[allow(clippy::too_many_arguments)]
+/// Processes a single input stream (disk or memory) via the [`SnapshotWriter`].
 fn process_stream<F>(
     path: PathBuf,
     is_disk: bool,
-    out: &mut File,
-    current_offset: &mut u64,
-    master: &mut MasterIndex,
-    global_block_idx: &mut u64,
-    dedup_map: &mut HashMap<[u8; 32], u64>,
-    compressor: &dyn Compressor,
-    encryptor: &Option<AesGcmEncryptor>,
+    writer: &mut SnapshotWriter,
     config: &PackConfig,
     progress_callback: Option<&F>,
 ) -> Result<()>
@@ -1041,16 +885,7 @@ where
     let f = File::open(&path)?;
     let len = f.metadata()?.len();
 
-    if is_disk {
-        master.disk_size = len;
-    } else {
-        master.memory_size = len;
-    }
-
-    let mut page = IndexPage::default();
-    let mut page_start_block = *global_block_idx;
-    let mut page_start_logical = 0u64;
-    let mut current_logical_pos = 0u64;
+    writer.begin_stream(is_disk, len);
 
     // Choose chunker based on configuration
     let chunker: Box<dyn Chunker> = if config.cdc_enabled {
@@ -1066,117 +901,20 @@ where
         Box::new(FixedChunker::new(f, config.block_size as usize))
     };
 
+    let mut logical_pos = 0u64;
+
     for chunk_res in chunker {
         let chunk = chunk_res?;
-        let chunk_len = chunk.len() as u32;
+        logical_pos += chunk.len() as u64;
 
-        // Handle zero blocks efficiently
-        if chunk.iter().all(|&b| b == 0) {
-            page.blocks.push(BlockInfo {
-                offset: 0,
-                length: 0,
-                logical_len: chunk_len,
-                checksum: 0,
-            });
-        } else {
-            // Compress the chunk
-            let compressed = compressor.compress(&chunk)?;
+        writer.write_data_block(&chunk)?;
 
-            // Encrypt if requested
-            let final_data = if let Some(enc) = encryptor {
-                enc.encrypt(&compressed, *global_block_idx)?
-            } else {
-                compressed
-            };
-
-            let checksum = crc32fast::hash(&final_data);
-            let offset;
-
-            // Handle deduplication (disabled for encrypted data)
-            if config.encrypt {
-                offset = *current_offset;
-                out.write_all(&final_data)?;
-                *current_offset += final_data.len() as u64;
-            } else {
-                // Use BLAKE3 for content-addressed deduplication
-                // BLAKE3 provides same security as SHA-256 but 6x faster (3200 MB/s vs 500 MB/s)
-                let hash_key: [u8; 32] = blake3::hash(&final_data).into();
-
-                if let Some(&off) = dedup_map.get(&hash_key) {
-                    // Duplicate chunk found - reuse existing offset
-                    offset = off;
-                } else {
-                    // New unique chunk - write to disk and record hash
-                    offset = *current_offset;
-                    dedup_map.insert(hash_key, offset);
-                    out.write_all(&final_data)?;
-                    *current_offset += final_data.len() as u64;
-                }
-            }
-
-            page.blocks.push(BlockInfo {
-                offset,
-                length: final_data.len() as u32,
-                logical_len: chunk_len,
-                checksum,
-            });
-        }
-
-        *global_block_idx += 1;
-        current_logical_pos += chunk_len as u64;
-
-        // Report progress
         if let Some(callback) = progress_callback {
-            callback(current_logical_pos, len);
-        }
-
-        // Flush page if full
-        if page.blocks.len() >= ENTRIES_PER_PAGE {
-            let bytes = bincode::serialize(&page)?;
-            let p_off = *current_offset;
-            out.write_all(&bytes)?;
-            *current_offset += bytes.len() as u64;
-
-            let entry = PageEntry {
-                offset: p_off,
-                length: bytes.len() as u32,
-                start_block: page_start_block,
-                start_logical: page_start_logical,
-            };
-
-            if is_disk {
-                master.disk_pages.push(entry);
-            } else {
-                master.memory_pages.push(entry);
-            }
-
-            page = IndexPage::default();
-            page_start_block = *global_block_idx;
-            page_start_logical = current_logical_pos;
+            callback(logical_pos, len);
         }
     }
 
-    // Flush remaining page
-    if !page.blocks.is_empty() {
-        let bytes = bincode::serialize(&page)?;
-        let p_off = *current_offset;
-        out.write_all(&bytes)?;
-        *current_offset += bytes.len() as u64;
-
-        let entry = PageEntry {
-            offset: p_off,
-            length: bytes.len() as u32,
-            start_block: page_start_block,
-            start_logical: page_start_logical,
-        };
-
-        if is_disk {
-            master.disk_pages.push(entry);
-        } else {
-            master.memory_pages.push(entry);
-        }
-    }
-
+    writer.end_stream()?;
     Ok(())
 }
 

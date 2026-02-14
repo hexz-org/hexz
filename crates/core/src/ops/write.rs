@@ -48,7 +48,7 @@
 //! └────────────────┘
 //!      ↓
 //! ┌────────────────┐
-//! │ Deduplication  │ → SHA-256 hash lookup (skip write if duplicate)
+//! │ Deduplication  │ → BLAKE3 hash lookup (skip write if duplicate)
 //! └────────────────┘   (disabled for encrypted data)
 //!      ↓
 //! ┌────────────────┐
@@ -218,15 +218,15 @@
 //! - **LZ4**: ~2 GB/s (minimal overhead)
 //! - **Zstd level 3**: ~200-500 MB/s (depends on data)
 //! - **Encryption**: ~1-2 GB/s (hardware AES-NI)
-//! - **SHA-256 hashing**: ~500 MB/s (for deduplication)
+//! - **BLAKE3 hashing**: ~3200 MB/s (for deduplication)
 //!
 //! Typical bottleneck: Compression CPU time.
 //!
 //! ## Deduplication Overhead
 //!
-//! SHA-256 hashing adds ~10-20% overhead to write operations:
+//! BLAKE3 hashing adds ~5-10% overhead to write operations:
 //!
-//! - **Hash computation**: ~500 MB/s throughput (crypto library optimized)
+//! - **Hash computation**: ~3200 MB/s throughput (BLAKE3 tree-hashed)
 //! - **HashMap lookup**: O(1) average, ~50-100 ns per lookup
 //! - **Memory usage**: ~48 bytes per unique block
 //!
@@ -249,7 +249,7 @@
 //! - **Input chunk**: Caller-provided (typically 64 KiB)
 //! - **Compression output**: ~1.5× chunk size worst case (incompressible data)
 //! - **Encryption output**: compression_size + 28 bytes (AES-GCM overhead)
-//! - **Dedup hash**: 32 bytes (SHA-256 digest)
+//! - **Dedup hash**: 32 bytes (BLAKE3 digest)
 //!
 //! Total temporary allocation per write: ~100-150 KiB (released immediately after write).
 //!
@@ -286,7 +286,7 @@ use crate::format::index::BlockInfo;
 /// 2. **Encryption** (optional): Encrypt compressed data with AES-256-GCM using block_idx as nonce
 /// 3. **Checksum**: Compute CRC32 of final data for integrity verification
 /// 4. **Deduplication** (optional, not for encrypted):
-///    - Compute SHA-256 hash of final data
+///    - Compute BLAKE3 hash of final data
 ///    - Check dedup_map for existing block with same hash
 ///    - If found: Reuse existing offset, skip write
 ///    - If new: Write block, record offset in dedup_map
@@ -317,7 +317,7 @@ use crate::format::index::BlockInfo;
 ///   - `Some(&mut map)`: Enable dedup, use this map
 ///   - `None`: Disable dedup, always write
 ///   - Ignored if `encryptor.is_some()` (encryption prevents dedup)
-///   - Maps SHA-256 hash → physical offset of first occurrence
+///   - Maps BLAKE3 hash → physical offset of first occurrence
 ///
 /// - `compressor`: Compression algorithm implementation
 ///   - Typically `Lz4Compressor` or `ZstdCompressor`
@@ -462,7 +462,7 @@ use crate::format::index::BlockInfo;
 ///
 /// - **Compression**: Dominates runtime (~2 GB/s LZ4, ~500 MB/s Zstd)
 /// - **Encryption**: ~1-2 GB/s (hardware AES-NI)
-/// - **Hashing**: ~500 MB/s (SHA-256 for dedup)
+/// - **Hashing**: ~3200 MB/s (BLAKE3 for dedup)
 /// - **I/O**: Typically not bottleneck (buffered writes, ~3 GB/s sequential)
 ///
 /// # Deduplication Effectiveness
@@ -490,7 +490,7 @@ use crate::format::index::BlockInfo;
 ///
 /// Deduplication is automatically disabled when encrypting because:
 /// - Each block has a unique nonce → unique ciphertext
-/// - SHA-256(ciphertext1) ≠ SHA-256(ciphertext2) even if plaintext is identical
+/// - BLAKE3(ciphertext1) ≠ BLAKE3(ciphertext2) even if plaintext is identical
 /// - Attempting dedup with encryption wastes CPU (hashing) without space savings
 ///
 /// # Thread Safety
@@ -532,7 +532,6 @@ pub fn write_block<W: Write>(
         *current_offset += final_data.len() as u64;
         off
     } else if let Some(map) = dedup_map {
-        // Try to deduplicate using BLAKE3 (6x faster than SHA-256)
         let hash_key: [u8; 32] = blake3::hash(&final_data).into();
 
         if let Some(&existing_offset) = map.get(&hash_key) {

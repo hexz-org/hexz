@@ -1333,7 +1333,6 @@ name = "hexz-loader"
 version = "0.1.0-alpha"
 dependencies = [
  "bincode",
- "crc32fast",
  "hexz-common",
  "hexz-core",
  "pyo3",

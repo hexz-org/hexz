@@ -35,7 +35,7 @@
 //! - [`pack`]: Complete archive creation from disk/memory dumps
 //!   - Chunking (fixed-size or CDC)
 //!   - Compression (LZ4 or Zstandard)
-//!   - Deduplication (SHA-256 based)
+//!   - Deduplication (BLAKE3 based)
 //!   - Optional encryption (AES-256-GCM)
 //!   - Dictionary training
 //!
@@ -70,4 +70,5 @@
 //! ```
 
 pub mod pack;
+pub mod snapshot_writer;
 pub mod write;
