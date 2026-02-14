@@ -725,11 +725,20 @@ impl File {
                     let start = *offset_in_block;
                     let len = *to_copy;
                     if start < src.len() && len <= src.len() - start {
+                        // Defensive assertion: ensure destination write is within bounds
+                        debug_assert!(
+                            buf_offset + len <= actual_len,
+                            "Buffer overflow: attempting to write {} bytes at offset {} into buffer of length {}",
+                            len,
+                            buf_offset,
+                            actual_len
+                        );
                         let dest = (target_addr + buf_offset) as *mut u8;
                         // SAFETY: `src[start..start+len]` is in-bounds (checked above).
                         // `dest` points into the `target` MaybeUninit buffer at a unique
                         // non-overlapping offset (each work item has a distinct `buf_offset`),
                         // and the rayon par_iter ensures each item writes to a disjoint region.
+                        // The debug_assert above validates buf_offset + len <= actual_len.
                         unsafe { ptr::copy_nonoverlapping(src[start..].as_ptr(), dest, len) };
                     }
                 });
@@ -743,9 +752,18 @@ impl File {
                 let src = data.as_ref();
                 let start = *offset_in_block;
                 if start < src.len() && *to_copy <= src.len() - start {
+                    // Defensive assertion: ensure destination write is within bounds
+                    debug_assert!(
+                        *buf_offset + *to_copy <= actual_len,
+                        "Buffer overflow: attempting to write {} bytes at offset {} into buffer of length {}",
+                        to_copy,
+                        buf_offset,
+                        actual_len
+                    );
                     // SAFETY: `src[start..start+to_copy]` is in-bounds (checked above).
                     // `target[buf_offset..]` has sufficient room because `buf_offset + to_copy`
                     // never exceeds `actual_len` (tracked during work-item collection).
+                    // The debug_assert above validates this invariant.
                     // MaybeUninit<u8> has the same layout as u8.
                     unsafe {
                         ptr::copy_nonoverlapping(
