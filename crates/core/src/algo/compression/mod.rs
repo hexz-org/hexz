@@ -58,3 +58,39 @@ pub mod zstd;
 
 pub use lz4::Lz4Compressor;
 pub use zstd::ZstdCompressor;
+
+use crate::format::header::CompressionType;
+use hexz_common::constants::DEFAULT_ZSTD_LEVEL;
+
+/// Create a compressor from a [`CompressionType`] enum.
+pub fn create_compressor(
+    comp_type: CompressionType,
+    level: Option<i32>,
+    dictionary: Option<Vec<u8>>,
+) -> Box<dyn Compressor> {
+    match comp_type {
+        CompressionType::Lz4 => Box::new(Lz4Compressor::new()),
+        CompressionType::Zstd => Box::new(ZstdCompressor::new(
+            level.unwrap_or(DEFAULT_ZSTD_LEVEL),
+            dictionary,
+        )),
+    }
+}
+
+/// Parse a compression string ("lz4"/"zstd") and create a compressor + type.
+pub fn create_compressor_from_str(
+    s: &str,
+    level: Option<i32>,
+    dictionary: Option<Vec<u8>>,
+) -> (Box<dyn Compressor>, CompressionType) {
+    match s {
+        "zstd" => (
+            create_compressor(CompressionType::Zstd, level, dictionary),
+            CompressionType::Zstd,
+        ),
+        _ => (
+            create_compressor(CompressionType::Lz4, level, dictionary),
+            CompressionType::Lz4,
+        ),
+    }
+}

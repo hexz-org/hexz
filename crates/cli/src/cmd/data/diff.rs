@@ -67,23 +67,11 @@
 //! ```
 
 use anyhow::Result;
+use hexz_common::constants::{META_ENTRY_SIZE, OVERLAY_BLOCK_SIZE};
 use indicatif::HumanBytes;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
-
-/// Overlay block granularity (4 KiB).
-///
-/// **Architectural intent:** Matches the standard filesystem block size for
-/// compatibility with guest filesystems (ext4, xfs, ntfs) and ensures
-/// reasonable copy-on-write granularity without excessive metadata overhead.
-const OVERLAY_BLOCK_SIZE: u64 = 4096;
-
-/// Size of a metadata entry (8 bytes).
-///
-/// **Architectural intent:** Each entry is a `u64` block index in little-endian
-/// format, allowing up to 2^64 * 4KiB = 64 ZiB addressable space.
-const META_ENTRY_SIZE: usize = 8;
 
 /// Executes the diff command to analyze overlay modifications.
 ///

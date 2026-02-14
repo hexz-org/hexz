@@ -130,7 +130,7 @@ pub const PERM_FILE: u16 = 0o644;
 /// blocks = file_size.div_ceil(512)
 /// ```
 /// This ensures that tools like `du` and `ls -s` report reasonable values.
-pub const FUSE_BLOCK_SIZE: u32 = 512;
+pub const FUSE_BLOCK_SIZE: u64 = 512;
 
 /// Synthesizes a `FileAttr` structure for a given inode and size.
 ///
@@ -184,7 +184,7 @@ pub fn make_attr(ino: u64, size: u64, uid: u32, gid: u32) -> FileAttr {
     FileAttr {
         ino,
         size,
-        blocks: size.div_ceil(FUSE_BLOCK_SIZE as u64),
+        blocks: size.div_ceil(FUSE_BLOCK_SIZE),
         atime: UNIX_EPOCH,
         mtime: UNIX_EPOCH,
         ctime: UNIX_EPOCH,
@@ -204,6 +204,6 @@ pub fn make_attr(ino: u64, size: u64, uid: u32, gid: u32) -> FileAttr {
         gid,
         rdev: 0,
         flags: 0,
-        blksize: FUSE_BLOCK_SIZE,
+        blksize: FUSE_BLOCK_SIZE as u32,
     }
 }

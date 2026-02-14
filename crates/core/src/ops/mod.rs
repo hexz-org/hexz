@@ -69,6 +69,9 @@
 //! )
 //! ```
 
+pub mod inspect;
 pub mod pack;
+#[cfg(feature = "signing")]
+pub mod sign;
 pub mod snapshot_writer;
 pub mod write;

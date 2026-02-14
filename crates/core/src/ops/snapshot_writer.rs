@@ -108,13 +108,20 @@ impl SnapshotWriter {
         self.stream_active = true;
         self.page = IndexPage::default();
         self.page_start_block = self.global_block_idx;
-        self.page_start_logical = 0;
-        self.current_logical_pos = 0;
+
+        // Continue logical positions from the end of previous streams of the same type.
+        let stream_start = if is_disk {
+            self.master.disk_size
+        } else {
+            self.master.memory_size
+        };
+        self.page_start_logical = stream_start;
+        self.current_logical_pos = stream_start;
 
         if is_disk {
-            self.master.disk_size = total_size;
+            self.master.disk_size += total_size;
         } else {
-            self.master.memory_size = total_size;
+            self.master.memory_size += total_size;
         }
     }
 

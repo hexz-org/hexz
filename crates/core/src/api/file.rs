@@ -1,10 +1,10 @@
 //! High-level snapshot file API and logical stream types.
 
-use crate::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
+use crate::algo::compression::{Compressor, create_compressor};
 use crate::algo::encryption::Encryptor;
 use crate::cache::lru::BlockCache;
 use crate::cache::prefetch::Prefetcher;
-use crate::format::header::{CompressionType, Header};
+use crate::format::header::Header;
 use crate::format::index::{BlockInfo, IndexPage, MasterIndex, PageEntry};
 use crate::format::magic::{HEADER_SIZE, MAGIC_BYTES};
 use crate::format::version::{VersionCompatibility, check_version, compatibility_message};
@@ -19,7 +19,7 @@ use std::path::Path;
 use std::ptr;
 use std::sync::{Arc, Mutex};
 
-use hexz_common::constants::{BLOCK_OFFSET_PARENT, DEFAULT_BLOCK_SIZE, DEFAULT_ZSTD_LEVEL};
+use hexz_common::constants::{BLOCK_OFFSET_PARENT, DEFAULT_BLOCK_SIZE};
 use hexz_common::{Error, Result};
 use rayon::prelude::*;
 
@@ -198,6 +198,36 @@ impl File {
     /// # Ok(())
     /// # }
     /// ```
+    /// Opens a snapshot, auto-detecting compression and dictionary from the header.
+    ///
+    /// This eliminates the 3-step boilerplate of: read header, load dict, create
+    /// compressor. Equivalent to `File::new(backend, auto_compressor, encryptor)`.
+    pub fn open(
+        backend: Arc<dyn StorageBackend>,
+        encryptor: Option<Box<dyn Encryptor>>,
+    ) -> Result<Arc<Self>> {
+        Self::open_with_cache(backend, encryptor, None, None)
+    }
+
+    /// Like [`open`](Self::open) but with custom cache and prefetch settings.
+    pub fn open_with_cache(
+        backend: Arc<dyn StorageBackend>,
+        encryptor: Option<Box<dyn Encryptor>>,
+        cache_capacity_bytes: Option<usize>,
+        prefetch_window_size: Option<u32>,
+    ) -> Result<Arc<Self>> {
+        let header = Header::read_from_backend(backend.as_ref())?;
+        let dictionary = header.load_dictionary(backend.as_ref())?;
+        let compressor = create_compressor(header.compression, None, dictionary);
+        Self::with_cache(
+            backend,
+            compressor,
+            encryptor,
+            cache_capacity_bytes,
+            prefetch_window_size,
+        )
+    }
+
     pub fn new(
         backend: Arc<dyn StorageBackend>,
         compressor: Box<dyn Compressor>,
@@ -295,31 +325,9 @@ impl File {
 
         // Recursively load parent if present
         let parent = if let Some(parent_path) = &header.parent_path {
-            // Note: This assumes the parent path is accessible relative to CWD
-            // or is absolute. In a real system, you might need path resolution logic.
             tracing::info!("Loading parent snapshot: {}", parent_path);
             let p_backend = Arc::new(FileBackend::new(Path::new(parent_path))?);
-
-            // For simplicity, we re-read the parent header to get its compression settings
-            let p_header_bytes = p_backend.read_exact(0, HEADER_SIZE)?;
-            let p_header: Header = bincode::deserialize(&p_header_bytes)?;
-
-            let p_compressor: Box<dyn Compressor> = match p_header.compression {
-                CompressionType::Lz4 => Box::new(Lz4Compressor::new()),
-                CompressionType::Zstd => {
-                    let dict = if let (Some(off), Some(len)) =
-                        (p_header.dictionary_offset, p_header.dictionary_length)
-                    {
-                        Some(p_backend.read_exact(off, len as usize)?.to_vec())
-                    } else {
-                        None
-                    };
-                    Box::new(ZstdCompressor::new(DEFAULT_ZSTD_LEVEL, dict))
-                }
-            };
-
-            // TODO: Handle parent encryption if needed. Assuming unencrypted parent for v1 thin snap example.
-            Some(File::new(p_backend, p_compressor, None)?)
+            Some(File::open(p_backend, None)?)
         } else {
             None
         };

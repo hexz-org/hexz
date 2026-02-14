@@ -6,13 +6,11 @@
 //! unmodified blocks).
 
 use anyhow::Result;
-use hexz_common::constants::DEFAULT_ZSTD_LEVEL;
+use hexz_common::constants::{META_ENTRY_SIZE, OVERLAY_BLOCK_SIZE};
 use hexz_core::File as HexzFile;
-use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
+use hexz_core::algo::compression::create_compressor_from_str;
 use hexz_core::api::file::SnapshotStream;
-use hexz_core::format::header::CompressionType;
 use hexz_core::ops::snapshot_writer::SnapshotWriter;
-use hexz_core::store::StorageBackend;
 use hexz_core::store::local::FileBackend;
 use indicatif::ProgressBar;
 use std::collections::HashSet;
@@ -20,9 +18,6 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 use std::sync::Arc;
-
-const OVERLAY_BLOCK_SIZE: u64 = 4096;
-const META_ENTRY_SIZE: usize = 8;
 
 /// Executes the commit command to merge overlay changes into a new snapshot.
 #[allow(clippy::too_many_arguments)]
@@ -43,24 +38,7 @@ pub fn run(
     );
 
     let backend = Arc::new(FileBackend::new(&base_path)?);
-    let header_bytes = backend.read_exact(0, hexz_core::format::magic::HEADER_SIZE)?;
-    let header: hexz_core::format::header::Header = bincode::deserialize(&header_bytes)?;
-
-    let read_compressor: Box<dyn Compressor> = match header.compression {
-        CompressionType::Lz4 => Box::new(Lz4Compressor::new()),
-        CompressionType::Zstd => {
-            let dict = if let (Some(off), Some(len)) =
-                (header.dictionary_offset, header.dictionary_length)
-            {
-                Some(backend.read_exact(off, len as usize)?.to_vec())
-            } else {
-                None
-            };
-            Box::new(ZstdCompressor::new(DEFAULT_ZSTD_LEVEL, dict))
-        }
-    };
-
-    let base_snap = Arc::new(HexzFile::new(backend, read_compressor, None)?);
+    let base_snap = HexzFile::open(backend, None)?;
 
     let meta_path = overlay_path.with_extension("meta");
     let mut modified_blocks = HashSet::new();
@@ -81,16 +59,7 @@ pub fn run(
 
     let mut overlay_file = File::open(&overlay_path)?;
 
-    let compression_type = if algo == "zstd" {
-        CompressionType::Zstd
-    } else {
-        CompressionType::Lz4
-    };
-
-    let write_compressor: Box<dyn Compressor> = match algo.as_str() {
-        "zstd" => Box::new(ZstdCompressor::new(DEFAULT_ZSTD_LEVEL, None)),
-        _ => Box::new(Lz4Compressor::new()),
-    };
+    let (write_compressor, compression_type) = create_compressor_from_str(&algo, None, None);
 
     let mut writer = SnapshotWriter::create(
         &output_path,

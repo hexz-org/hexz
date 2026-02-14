@@ -1338,7 +1338,6 @@ dependencies = [
  "pyo3",
  "pyo3-async-runtimes",
  "serde_json",
- "sha2",
  "tempfile",
  "tokio",
 ]

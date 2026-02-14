@@ -122,6 +122,37 @@ pub struct FeatureFlags {
     pub variable_blocks: bool,
 }
 
+impl Header {
+    /// Read and deserialize a header from a [`Read`] source.
+    pub fn read_from<R: std::io::Read>(reader: &mut R) -> hexz_common::Result<Self> {
+        let mut header_bytes = [0u8; super::magic::HEADER_SIZE];
+        reader.read_exact(&mut header_bytes)?;
+        let header: Header = bincode::deserialize(&header_bytes)?;
+        Ok(header)
+    }
+
+    /// Read a header from a [`StorageBackend`](crate::store::StorageBackend) at offset 0.
+    pub fn read_from_backend(
+        backend: &dyn crate::store::StorageBackend,
+    ) -> hexz_common::Result<Self> {
+        let header_bytes = backend.read_exact(0, super::magic::HEADER_SIZE)?;
+        let header: Header = bincode::deserialize(&header_bytes)?;
+        Ok(header)
+    }
+
+    /// Load the compression dictionary from the backend, if present.
+    pub fn load_dictionary(
+        &self,
+        backend: &dyn crate::store::StorageBackend,
+    ) -> hexz_common::Result<Option<Vec<u8>>> {
+        if let (Some(offset), Some(length)) = (self.dictionary_offset, self.dictionary_length) {
+            Ok(Some(backend.read_exact(offset, length as usize)?.to_vec()))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
 impl Default for Header {
     fn default() -> Self {
         Self {

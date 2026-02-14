@@ -138,12 +138,7 @@
 
 use anyhow::Result;
 use daemonize::Daemonize;
-use hexz_common::constants::DEFAULT_ZSTD_LEVEL;
 use hexz_core::File as HexzFile;
-use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
-use hexz_core::format::header::CompressionType;
-use hexz_core::format::magic::HEADER_SIZE;
-use hexz_core::store::StorageBackend;
 use hexz_core::store::local::FileBackend;
 use std::fs::File;
 use std::sync::Arc;
@@ -245,26 +240,7 @@ pub fn run(hexz_path: String, port: u16, daemon: bool, nbd: bool, s3: bool) -> R
         .build()?
         .block_on(async {
             let backend = Arc::new(FileBackend::new(std::path::Path::new(&hexz_path))?);
-
-            let header_bytes = backend.read_exact(0, HEADER_SIZE)?;
-            let header: hexz_core::format::header::Header = bincode::deserialize(&header_bytes)?;
-
-            let dictionary = if let (Some(offset), Some(length)) =
-                (header.dictionary_offset, header.dictionary_length)
-            {
-                Some(backend.read_exact(offset, length as usize)?.to_vec())
-            } else {
-                None
-            };
-
-            let compressor: Box<dyn Compressor> = match header.compression {
-                CompressionType::Lz4 => Box::new(Lz4Compressor::new()),
-                CompressionType::Zstd => {
-                    Box::new(ZstdCompressor::new(DEFAULT_ZSTD_LEVEL, dictionary))
-                }
-            };
-
-            let snap = HexzFile::new(backend, compressor, None)?;
+            let snap = HexzFile::open(backend, None)?;
 
             if nbd {
                 hexz_server::serve_nbd(snap, port).await

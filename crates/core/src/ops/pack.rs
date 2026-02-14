@@ -277,18 +277,17 @@
 //! For production use cases requiring atomicity, write to a temporary file and
 //! perform an atomic rename after successful completion.
 
-use hexz_common::constants::{DEFAULT_ZSTD_LEVEL, DICT_TRAINING_SIZE, ENTROPY_THRESHOLD};
+use hexz_common::constants::{DICT_TRAINING_SIZE, ENTROPY_THRESHOLD};
 use hexz_common::crypto::KeyDerivationParams;
 use hexz_common::{Error, Result};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use crate::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
+use crate::algo::compression::{create_compressor_from_str, zstd::ZstdCompressor};
 use crate::algo::dedup::cdc::StreamChunker;
 use crate::algo::dedup::dcam::DedupeParams;
 use crate::algo::encryption::{Encryptor, aes_gcm::AesGcmEncryptor};
-use crate::format::header::CompressionType;
 use crate::ops::snapshot_writer::SnapshotWriter;
 
 /// Configuration parameters for snapshot packing.
@@ -695,10 +694,8 @@ where
     };
 
     // Initialize compressor
-    let compressor: Box<dyn Compressor> = match config.compression.as_str() {
-        "zstd" => Box::new(ZstdCompressor::new(DEFAULT_ZSTD_LEVEL, dictionary.clone())),
-        _ => Box::new(Lz4Compressor::new()),
-    };
+    let (compressor, compression_type) =
+        create_compressor_from_str(&config.compression, None, dictionary.clone());
 
     // Initialize encryptor if requested
     let (encryptor, enc_params): (Option<Box<dyn Encryptor>>, _) = if config.encrypt {
@@ -713,12 +710,6 @@ where
         (Some(Box::new(enc) as Box<dyn Encryptor>), Some(params))
     } else {
         (None, None)
-    };
-
-    let compression_type = if config.compression == "zstd" {
-        CompressionType::Zstd
-    } else {
-        CompressionType::Lz4
     };
 
     let mut writer = SnapshotWriter::create(

@@ -157,12 +157,8 @@
 pub mod iterator;
 pub mod shuffle;
 
-use hexz_common::constants::DEFAULT_ZSTD_LEVEL;
 use hexz_core::File;
-use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
 use hexz_core::api::file::SnapshotStream;
-use hexz_core::format::header::{CompressionType, Header};
-use hexz_core::format::magic::HEADER_SIZE;
 use hexz_core::store::StorageBackend;
 use std::sync::Arc;
 
@@ -524,33 +520,15 @@ pub fn open_snapshot(config: OpenConfig) -> Result<Arc<File>, OpenError> {
         )
     };
 
-    let header_bytes = backend
-        .read_exact(0, HEADER_SIZE)
-        .map_err(|e| OpenError::Io(e.to_string()))?;
-
-    let header: Header =
-        bincode::deserialize(&header_bytes).map_err(|e| OpenError::InvalidHeader(e.to_string()))?;
-
-    let compressor: Box<dyn Compressor> = match header.compression {
-        CompressionType::Lz4 => Box::new(Lz4Compressor::new()),
-        CompressionType::Zstd => Box::new(ZstdCompressor::new(DEFAULT_ZSTD_LEVEL, None)),
-    };
-
-    // Use with_cache to enable prefetching and custom cache size if configured
+    // Use open_with_cache to auto-detect compression and load dictionary
     let prefetch_window = if config.prefetch_count > 0 {
         Some(config.prefetch_count)
     } else {
         None
     };
 
-    File::with_cache(
-        backend,
-        compressor,
-        None,
-        config.cache_capacity_bytes,
-        prefetch_window,
-    )
-    .map_err(|e| OpenError::Io(e.to_string()))
+    File::open_with_cache(backend, None, config.cache_capacity_bytes, prefetch_window)
+        .map_err(|e| OpenError::Io(e.to_string()))
 }
 
 /// Returns the total size in bytes of a specific stream in the snapshot.

@@ -61,12 +61,8 @@
 //! ```
 
 use anyhow::{Context, Result};
-use hexz_core::format::header::Header;
-use hexz_core::format::index::MasterIndex;
-use hexz_core::format::magic::HEADER_SIZE;
+use hexz_core::ops::inspect::inspect_snapshot;
 use indicatif::HumanBytes;
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 
 /// Executes the info command to display snapshot metadata.
@@ -127,86 +123,50 @@ use std::path::PathBuf;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 pub fn run(snap: PathBuf, json: bool) -> Result<()> {
-    let mut f = File::open(&snap).context("Failed to open snapshot file")?;
-    let file_len = f.metadata()?.len();
+    let info = inspect_snapshot(&snap).context("Failed to inspect snapshot")?;
 
-    let mut header_bytes = [0u8; HEADER_SIZE];
-    f.read_exact(&mut header_bytes)
-        .context("Failed to read header")?;
-    let header: Header = bincode::deserialize(&header_bytes).context("Invalid header format")?;
-
-    f.seek(SeekFrom::Start(header.index_offset))
-        .context("Failed to seek to index")?;
-    let mut index_bytes = Vec::new();
-    f.read_to_end(&mut index_bytes)
-        .context("Failed to read master index")?;
-
-    let master: MasterIndex =
-        bincode::deserialize(&index_bytes).context("Invalid master index format")?;
-
-    let total_uncompressed = master.disk_size + master.memory_size;
-    let ratio = if file_len > 0 {
-        total_uncompressed as f64 / file_len as f64
-    } else {
-        0.0
-    };
+    let total_uncompressed = info.total_uncompressed();
+    let ratio = info.compression_ratio();
 
     if json {
-        // JSON output
         println!("{{");
         println!("  \"path\": {:?},", snap);
-        println!("  \"version\": {},", header.version);
-        println!("  \"compression\": {:?},", header.compression);
-        println!("  \"block_size\": {},", header.block_size);
-        println!("  \"encrypted\": {},", header.encryption.is_some());
-        println!("  \"has_disk\": {},", header.features.has_disk);
-        println!("  \"has_memory\": {},", header.features.has_memory);
-        println!(
-            "  \"variable_blocks\": {},",
-            header.features.variable_blocks
-        );
+        println!("  \"version\": {},", info.version);
+        println!("  \"compression\": {:?},", info.compression);
+        println!("  \"block_size\": {},", info.block_size);
+        println!("  \"encrypted\": {},", info.encrypted);
+        println!("  \"has_disk\": {},", info.has_disk);
+        println!("  \"has_memory\": {},", info.has_memory);
+        println!("  \"variable_blocks\": {},", info.variable_blocks);
         println!("  \"original_size\": {},", total_uncompressed);
-        println!("  \"compressed_size\": {},", file_len);
+        println!("  \"compressed_size\": {},", info.file_size);
         println!("  \"compression_ratio\": {:.2},", ratio);
-        println!("  \"index_offset\": {},", header.index_offset);
-        println!("  \"disk_pages\": {},", master.disk_pages.len());
-        println!("  \"memory_pages\": {}", master.memory_pages.len());
+        println!("  \"index_offset\": {},", info.index_offset);
+        println!("  \"disk_pages\": {},", info.disk_pages);
+        println!("  \"memory_pages\": {}", info.memory_pages);
         println!("}}");
     } else {
-        // Human-readable output
         println!("Snapshot:       {:?}", snap);
-        println!("Format Version: {}", header.version);
-        println!("Compression:    {:?}", header.compression);
-        println!("Block Size:     {}", header.block_size);
+        println!("Format Version: {}", info.version);
+        println!("Compression:    {:?}", info.compression);
+        println!("Block Size:     {}", info.block_size);
 
         println!("\n--- Features ---");
         println!(
             "Encrypted:      {}",
-            if header.encryption.is_some() {
-                "Yes"
-            } else {
-                "No"
-            }
+            if info.encrypted { "Yes" } else { "No" }
         );
         println!(
             "Has Disk:       {}",
-            if header.features.has_disk {
-                "Yes"
-            } else {
-                "No"
-            }
+            if info.has_disk { "Yes" } else { "No" }
         );
         println!(
             "Has Memory:     {}",
-            if header.features.has_memory {
-                "Yes"
-            } else {
-                "No"
-            }
+            if info.has_memory { "Yes" } else { "No" }
         );
         println!(
             "Variable Blks:  {}",
-            if header.features.variable_blocks {
+            if info.variable_blocks {
                 "Yes (CDC)"
             } else {
                 "No"
@@ -215,13 +175,13 @@ pub fn run(snap: PathBuf, json: bool) -> Result<()> {
 
         println!("\n--- Storage Statistics ---");
         println!("Original Size:  {}", HumanBytes(total_uncompressed));
-        println!("Compressed:     {}", HumanBytes(file_len));
+        println!("Compressed:     {}", HumanBytes(info.file_size));
         println!("Ratio:          {:.2}x", ratio);
 
         println!("\n--- Index Details ---");
-        println!("Index Offset:   {}", header.index_offset);
-        println!("Disk Pages:     {}", master.disk_pages.len());
-        println!("Memory Pages:   {}", master.memory_pages.len());
+        println!("Index Offset:   {}", info.index_offset);
+        println!("Disk Pages:     {}", info.disk_pages);
+        println!("Memory Pages:   {}", info.memory_pages);
     }
 
     Ok(())

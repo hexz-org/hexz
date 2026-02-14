@@ -35,13 +35,8 @@
 //! - Average throughput (MB/s)
 
 use anyhow::Result;
-use hexz_common::constants::DEFAULT_ZSTD_LEVEL;
 use hexz_core::File;
-use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
 use hexz_core::api::file::SnapshotStream;
-use hexz_core::format::header::CompressionType;
-use hexz_core::format::magic::HEADER_SIZE;
-use hexz_core::store::StorageBackend;
 use hexz_core::store::local::FileBackend;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use std::path::PathBuf;
@@ -102,24 +97,7 @@ pub fn run(
 ) -> Result<()> {
     println!("Benchmarking snapshot: {:?}", snap_path);
     let backend = Arc::new(FileBackend::new(&snap_path)?);
-
-    let header_bytes = backend.read_exact(0, HEADER_SIZE)?;
-    let header: hexz_core::format::header::Header = bincode::deserialize(&header_bytes)?;
-
-    let dictionary = if let (Some(offset), Some(length)) =
-        (header.dictionary_offset, header.dictionary_length)
-    {
-        Some(backend.read_exact(offset, length as usize)?.to_vec())
-    } else {
-        None
-    };
-
-    let compressor: Box<dyn Compressor> = match header.compression {
-        CompressionType::Lz4 => Box::new(Lz4Compressor::new()),
-        CompressionType::Zstd => Box::new(ZstdCompressor::new(DEFAULT_ZSTD_LEVEL, dictionary)),
-    };
-
-    let snap = File::new(backend, compressor, None)?;
+    let snap = File::open(backend, None)?;
     let disk_size = snap.size(SnapshotStream::Disk);
 
     println!("Image Size: {}", HumanBytes(disk_size));

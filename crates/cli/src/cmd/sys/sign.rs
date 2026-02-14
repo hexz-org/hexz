@@ -65,12 +65,7 @@
 //! ```
 
 use anyhow::Result;
-use hexz_common::sign;
-use hexz_core::format::header::Header;
-use hexz_core::format::magic::HEADER_SIZE;
-use sha2::{Digest, Sha256};
-use std::fs::OpenOptions;
-use std::io::{Read, Seek, SeekFrom, Write};
+use hexz_core::ops::sign::sign_snapshot;
 use std::path::PathBuf;
 
 /// Sign a Hexz archive with an Ed25519 private key.
@@ -119,45 +114,7 @@ use std::path::PathBuf;
 /// ```
 pub fn run(key_path: PathBuf, image_path: PathBuf) -> Result<()> {
     println!("Signing {:?} with key {:?}...", image_path, key_path);
-
-    let mut f = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(&image_path)?;
-    let mut header_bytes = [0u8; HEADER_SIZE];
-    f.read_exact(&mut header_bytes)?;
-    let mut header: Header = bincode::deserialize(&header_bytes)?;
-
-    f.seek(SeekFrom::Start(header.index_offset))?;
-    let mut index_bytes = Vec::new();
-    f.read_to_end(&mut index_bytes)?;
-
-    let mut hasher = Sha256::new();
-    hasher.update(&index_bytes);
-    let digest = hasher.finalize();
-
-    // 2. Sign digest
-    let signature = sign::sign_digest(&key_path, &digest)?;
-
-    // 3. Write signature to file
-    // We put the signature at the end of the file (append) or in a reserved slot?
-    // The plan said "append a signature block after header (e.g. offset + length in header)".
-    // Let's append it to the end of the file.
-
-    let signature_offset = f.seek(SeekFrom::End(0))?;
-    f.write_all(&signature)?;
-    let signature_length = signature.len() as u32;
-
-    // 4. Update header
-    header.signature_offset = Some(signature_offset);
-    header.signature_length = Some(signature_length);
-
-    f.seek(SeekFrom::Start(0))?;
-    f.write_all(&bincode::serialize(&header)?)?;
-
-    println!(
-        "Signature written to image. Offset: {}, Length: {}",
-        signature_offset, signature_length
-    );
+    sign_snapshot(&image_path, &key_path)?;
+    println!("Signature written to image.");
     Ok(())
 }

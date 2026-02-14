@@ -65,12 +65,7 @@ use std::time::Duration;
 /// requiring manual cache invalidation.
 const TTL: Duration = Duration::from_secs(1);
 
-/// Block size in bytes used for overlay-backed size and block count (512).
-///
-/// **Architectural intent:** Aligns with the FUSE `blksize` and `st_blocks`
-/// semantics so that the exported disk file reports consistent block counts
-/// when overlay length exceeds the base snapshot.
-const FUSE_BLOCK_SIZE: u64 = 512;
+use crate::vfs::attr::FUSE_BLOCK_SIZE;
 
 /// FUSE filesystem adapter for Hexz snapshots.
 ///

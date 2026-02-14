@@ -106,6 +106,7 @@
 //! - **Encryption**: Adds ~5-10% overhead. Encrypted snapshots cannot be deduplicated
 //!   across runs due to random IVs.
 
+use hexz_common::constants::{DEFAULT_CDC_AVG_CHUNK, DEFAULT_CDC_MAX_CHUNK, DEFAULT_CDC_MIN_CHUNK};
 use hexz_core::ops::pack::{PackConfig, pack_snapshot};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
@@ -211,9 +212,9 @@ use std::path::PathBuf;
     encrypt=false,
     password=None,
     cdc=false,
-    min_chunk=16384,
-    avg_chunk=65536,
-    max_chunk=131072
+    min_chunk=DEFAULT_CDC_MIN_CHUNK,
+    avg_chunk=DEFAULT_CDC_AVG_CHUNK,
+    max_chunk=DEFAULT_CDC_MAX_CHUNK
 ))]
 pub fn pack(
     py: Python<'_>,

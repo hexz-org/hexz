@@ -428,6 +428,33 @@ pub struct MasterIndex {
     pub memory_size: u64,
 }
 
+impl MasterIndex {
+    /// Read master index by seeking to `index_offset` and reading to EOF.
+    pub fn read_from<R: std::io::Read + std::io::Seek>(
+        reader: &mut R,
+        index_offset: u64,
+    ) -> hexz_common::Result<Self> {
+        reader.seek(std::io::SeekFrom::Start(index_offset))?;
+        let mut index_bytes = Vec::new();
+        reader.read_to_end(&mut index_bytes)?;
+        let master: MasterIndex = bincode::deserialize(&index_bytes)?;
+        Ok(master)
+    }
+
+    /// Read master index with bounded length.
+    pub fn read_from_bounded<R: std::io::Read + std::io::Seek>(
+        reader: &mut R,
+        index_offset: u64,
+        length: u64,
+    ) -> hexz_common::Result<Self> {
+        reader.seek(std::io::SeekFrom::Start(index_offset))?;
+        let mut index_bytes = vec![0u8; length as usize];
+        reader.read_exact(&mut index_bytes)?;
+        let master: MasterIndex = bincode::deserialize(&index_bytes)?;
+        Ok(master)
+    }
+}
+
 /// Serialized array of block metadata records.
 ///
 /// An index page contains up to `ENTRIES_PER_PAGE` (4096) block metadata entries

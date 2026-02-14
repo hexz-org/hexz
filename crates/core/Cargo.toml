@@ -41,11 +41,12 @@ url = "2.5"
 fastcdc = "3.1"
 
 [features]
-default = ["compression-zstd", "encryption", "s3"]
+default = ["compression-zstd", "encryption", "s3", "signing"]
 
 s3 = ["dep:rust-s3"]
 compression-zstd = ["dep:zstd"]
 encryption = ["dep:aes-gcm", "dep:pbkdf2", "dep:hmac"]
+signing = ["hexz-common/signing"]
 
 [dev-dependencies]
 tempfile = "3.8"

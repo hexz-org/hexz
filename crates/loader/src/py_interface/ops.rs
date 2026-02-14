@@ -135,24 +135,24 @@
 //! - **sign_image()**: Requires reading entire index for SHA-256 hashing
 //! - **snapshot_vm()**: Blocks until VM memory dump completes (can take seconds to minutes)
 
+use hexz_common::constants::{
+    DEFAULT_CDC_AVG_CHUNK, DEFAULT_CDC_MAX_CHUNK, DEFAULT_CDC_MIN_CHUNK, META_ENTRY_SIZE,
+    OVERLAY_BLOCK_SIZE,
+};
 #[cfg(feature = "signing")]
 use hexz_common::sign;
 use hexz_core::algo::dedup::{cdc, dcam};
-use hexz_core::format::header::Header;
-use hexz_core::format::index::MasterIndex;
-use hexz_core::format::magic::HEADER_SIZE;
 use hexz_core::format::version::{
     CURRENT_VERSION, MAX_SUPPORTED_VERSION, MIN_SUPPORTED_VERSION, check_version,
     compatibility_message,
 };
+use hexz_core::ops::inspect::inspect_snapshot;
+#[cfg(feature = "signing")]
+use hexz_core::ops::sign as core_sign;
 use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-#[cfg(feature = "signing")]
-use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs::File;
-#[cfg(feature = "signing")]
-use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
@@ -345,35 +345,10 @@ pub fn get_max_supported_version() -> u32 {
 /// ```
 #[pyfunction]
 pub fn inspect(py: Python<'_>, path: String) -> PyResult<HashMap<String, PyObject>> {
-    let mut f = File::open(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
-
-    let mut header_bytes = [0u8; HEADER_SIZE];
-    f.read_exact(&mut header_bytes)
-        .map_err(|e| PyIOError::new_err(e.to_string()))?;
-    let header: Header =
-        bincode::deserialize(&header_bytes).map_err(|e| PyValueError::new_err(e.to_string()))?;
-
-    f.seek(SeekFrom::Start(header.index_offset))
-        .map_err(|e| PyIOError::new_err(e.to_string()))?;
-    let mut index_bytes = Vec::new();
-    f.read_to_end(&mut index_bytes)
-        .map_err(|e| PyIOError::new_err(e.to_string()))?;
-    let master: MasterIndex =
-        bincode::deserialize(&index_bytes).map_err(|e| PyValueError::new_err(e.to_string()))?;
-
-    let file_len = f
-        .metadata()
-        .map_err(|e| PyIOError::new_err(e.to_string()))?
-        .len();
-    let total_uncompressed = master.disk_size + master.memory_size;
-    let ratio = if file_len > 0 {
-        total_uncompressed as f64 / file_len as f64
-    } else {
-        0.0
-    };
+    let info = inspect_snapshot(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
 
     // Check version compatibility
-    let compatibility = check_version(header.version);
+    let compatibility = check_version(info.version);
     let is_compatible = compatibility.is_compatible();
     let compatibility_status = match compatibility {
         hexz_core::format::version::VersionCompatibility::Full => "full",
@@ -383,16 +358,16 @@ pub fn inspect(py: Python<'_>, path: String) -> PyResult<HashMap<String, PyObjec
 
     let mut dict: HashMap<String, PyObject> = HashMap::new();
 
-    // Read user metadata if present
-    if let (Some(offset), Some(length)) = (header.metadata_offset, header.metadata_length) {
+    // Read user metadata if present (Python-specific JSON parsing)
+    if let (Some(offset), Some(length)) = (info.metadata_offset, info.metadata_length) {
         if length > 0 {
+            let mut f = File::open(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
             f.seek(SeekFrom::Start(offset))
                 .map_err(|e| PyIOError::new_err(e.to_string()))?;
             let mut meta_bytes = vec![0u8; length as usize];
             f.read_exact(&mut meta_bytes)
                 .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
-            // Decode using Python's json module
             if let Ok(json) = py.import("json") {
                 let bytes_obj = pyo3::types::PyBytes::new(py, &meta_bytes);
                 if let Ok(user_meta) = json.call_method1("loads", (bytes_obj,)) {
@@ -408,9 +383,11 @@ pub fn inspect(py: Python<'_>, path: String) -> PyResult<HashMap<String, PyObjec
         }
     }
 
+    let ratio = info.compression_ratio();
+
     dict.insert(
         "version".to_string(),
-        header.version.into_pyobject(py)?.unbind().into(),
+        info.version.into_pyobject(py)?.unbind().into(),
     );
     dict.insert(
         "current_version".to_string(),
@@ -439,18 +416,18 @@ pub fn inspect(py: Python<'_>, path: String) -> PyResult<HashMap<String, PyObjec
     );
     dict.insert(
         "compatibility_message".to_string(),
-        compatibility_message(header.version)
+        compatibility_message(info.version)
             .into_pyobject(py)?
             .unbind()
             .into(),
     );
     dict.insert(
         "block_size".to_string(),
-        header.block_size.into_pyobject(py)?.unbind().into(),
+        info.block_size.into_pyobject(py)?.unbind().into(),
     );
     dict.insert(
         "compression".to_string(),
-        format!("{:?}", header.compression)
+        format!("{:?}", info.compression)
             .into_pyobject(py)?
             .unbind()
             .into(),
@@ -459,26 +436,26 @@ pub fn inspect(py: Python<'_>, path: String) -> PyResult<HashMap<String, PyObjec
         "encrypted".to_string(),
         <pyo3::Bound<'_, pyo3::types::PyBool> as Clone>::clone(&pyo3::types::PyBool::new(
             py,
-            header.encryption.is_some(),
+            info.encrypted,
         ))
         .unbind()
         .into(),
     );
     dict.insert(
         "parent_path".to_string(),
-        header.parent_path.into_pyobject(py)?.unbind(),
+        info.parent_path.into_pyobject(py)?.unbind(),
     );
     dict.insert(
         "disk_size".to_string(),
-        master.disk_size.into_pyobject(py)?.unbind().into(),
+        info.disk_size.into_pyobject(py)?.unbind().into(),
     );
     dict.insert(
         "memory_size".to_string(),
-        master.memory_size.into_pyobject(py)?.unbind().into(),
+        info.memory_size.into_pyobject(py)?.unbind().into(),
     );
     dict.insert(
         "file_size".to_string(),
-        file_len.into_pyobject(py)?.unbind().into(),
+        info.file_size.into_pyobject(py)?.unbind().into(),
     );
     dict.insert(
         "ratio".to_string(),
@@ -626,8 +603,8 @@ pub fn diff(overlay_path: String) -> PyResult<HashMap<String, u64>> {
         .map_err(|e| PyIOError::new_err(e.to_string()))?
         .len();
 
-    let count = len / 8;
-    let size = count * 4096;
+    let count = len / META_ENTRY_SIZE as u64;
+    let size = count * OVERLAY_BLOCK_SIZE;
 
     let mut dict = HashMap::new();
     dict.insert("modified_blocks".to_string(), count);
@@ -675,49 +652,8 @@ pub fn diff(overlay_path: String) -> PyResult<HashMap<String, u64>> {
 #[cfg(feature = "signing")]
 #[pyfunction]
 pub fn sign_image(image_path: String, key_path: String) -> PyResult<()> {
-    let image_path = PathBuf::from(image_path);
-    let key_path = PathBuf::from(key_path);
-
-    let mut f = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(&image_path)
-        .map_err(|e| PyIOError::new_err(e.to_string()))?;
-
-    let mut header_bytes = [0u8; HEADER_SIZE];
-    f.read_exact(&mut header_bytes)
-        .map_err(|e| PyIOError::new_err(e.to_string()))?;
-    let mut header: Header =
-        bincode::deserialize(&header_bytes).map_err(|e| PyValueError::new_err(e.to_string()))?;
-
-    f.seek(SeekFrom::Start(header.index_offset))
-        .map_err(|e| PyIOError::new_err(e.to_string()))?;
-    let mut index_bytes = Vec::new();
-    f.read_to_end(&mut index_bytes)
-        .map_err(|e| PyIOError::new_err(e.to_string()))?;
-
-    let mut hasher = Sha256::new();
-    hasher.update(&index_bytes);
-    let digest = hasher.finalize();
-
-    let signature = sign::sign_digest(&key_path, &digest)
-        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-
-    let signature_offset = f
-        .seek(SeekFrom::End(0))
-        .map_err(|e| PyIOError::new_err(e.to_string()))?;
-    f.write_all(&signature)
-        .map_err(|e| PyIOError::new_err(e.to_string()))?;
-
-    header.signature_offset = Some(signature_offset);
-    header.signature_length = Some(signature.len() as u32);
-
-    f.seek(SeekFrom::Start(0))
-        .map_err(|e| PyIOError::new_err(e.to_string()))?;
-    f.write_all(&bincode::serialize(&header).map_err(|e| PyValueError::new_err(e.to_string()))?)
-        .map_err(|e| PyIOError::new_err(e.to_string()))?;
-
-    Ok(())
+    core_sign::sign_snapshot(&image_path, &key_path)
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))
 }
 
 /// Verify a snapshot file's signature with an Ed25519 public key.
@@ -758,49 +694,8 @@ pub fn sign_image(image_path: String, key_path: String) -> PyResult<()> {
 #[cfg(feature = "signing")]
 #[pyfunction]
 pub fn verify_image(image_path: String, key_path: String) -> PyResult<()> {
-    let image_path = PathBuf::from(image_path);
-    let key_path = PathBuf::from(key_path);
-
-    let mut f = File::open(&image_path).map_err(|e| PyIOError::new_err(e.to_string()))?;
-    let mut header_bytes = [0u8; HEADER_SIZE];
-    f.read_exact(&mut header_bytes)
-        .map_err(|e| PyIOError::new_err(e.to_string()))?;
-    let header: Header =
-        bincode::deserialize(&header_bytes).map_err(|e| PyValueError::new_err(e.to_string()))?;
-
-    let (sig_off, sig_len) = match (header.signature_offset, header.signature_length) {
-        (Some(o), Some(l)) => (o, l),
-        _ => return Err(PyValueError::new_err("Image is not signed")),
-    };
-
-    if sig_len != 64 {
-        return Err(PyValueError::new_err("Invalid signature length"));
-    }
-
-    let mut signature = [0u8; 64];
-    f.seek(SeekFrom::Start(sig_off))
-        .map_err(|e| PyIOError::new_err(e.to_string()))?;
-    f.read_exact(&mut signature)
-        .map_err(|e| PyIOError::new_err(e.to_string()))?;
-
-    let index_len = sig_off - header.index_offset;
-    f.seek(SeekFrom::Start(header.index_offset))
-        .map_err(|e| PyIOError::new_err(e.to_string()))?;
-
-    let mut index_reader = f.take(index_len);
-    let mut index_bytes = Vec::new();
-    index_reader
-        .read_to_end(&mut index_bytes)
-        .map_err(|e| PyIOError::new_err(e.to_string()))?;
-
-    let mut hasher = Sha256::new();
-    hasher.update(&index_bytes);
-    let digest = hasher.finalize();
-
-    sign::verify_digest(&key_path, &digest, &signature)
-        .map_err(|e| PyValueError::new_err(format!("Verification failed: {}", e)))?;
-
-    Ok(())
+    core_sign::verify_snapshot(&image_path, &key_path)
+        .map_err(|e| PyValueError::new_err(format!("Verification failed: {}", e)))
 }
 
 fn send_qmp(
@@ -943,9 +838,9 @@ pub fn snapshot_vm(
         None,
         true,
         false,
-        16384,
-        65536,
-        131072,
+        DEFAULT_CDC_MIN_CHUNK,
+        DEFAULT_CDC_AVG_CHUNK,
+        DEFAULT_CDC_MAX_CHUNK,
     )?;
     builder.merge_overlay(py, base_path, overlay_path, false)?;
     builder.add_memory_file(py, mem_path)?;

@@ -79,12 +79,13 @@
 //! builder.finalize()
 //! ```
 
-use hexz_common::constants::DEFAULT_ZSTD_LEVEL;
+use hexz_common::constants::{
+    DEFAULT_CDC_AVG_CHUNK, DEFAULT_CDC_MAX_CHUNK, DEFAULT_CDC_MIN_CHUNK, OVERLAY_BLOCK_SIZE,
+};
 use hexz_core::File as HexzFile;
-use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCompressor};
+use hexz_core::algo::compression::create_compressor_from_str;
 use hexz_core::algo::dedup::{cdc::StreamChunker, dcam::DedupeParams};
 use hexz_core::api::file::SnapshotStream;
-use hexz_core::format::header::CompressionType;
 use hexz_core::ops::pack::FixedChunker;
 use hexz_core::ops::snapshot_writer::SnapshotWriter;
 use hexz_core::store::local::FileBackend;
@@ -124,7 +125,7 @@ pub struct Builder {
 impl Builder {
     /// Create a new snapshot builder.
     #[new]
-    #[pyo3(signature = (output_path, block_size=65536, compression="lz4", compression_level=None, dedup=true, cdc=false, min_chunk=16384, avg_chunk=65536, max_chunk=131072))]
+    #[pyo3(signature = (output_path, block_size=65536, compression="lz4", compression_level=None, dedup=true, cdc=false, min_chunk=DEFAULT_CDC_MIN_CHUNK, avg_chunk=DEFAULT_CDC_AVG_CHUNK, max_chunk=DEFAULT_CDC_MAX_CHUNK))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         output_path: String,
@@ -139,18 +140,8 @@ impl Builder {
     ) -> PyResult<Self> {
         let path = PathBuf::from(output_path);
 
-        let comp_type = match compression {
-            "zstd" => CompressionType::Zstd,
-            _ => CompressionType::Lz4,
-        };
-
-        let compressor: Box<dyn Compressor> = match compression {
-            "zstd" => Box::new(ZstdCompressor::new(
-                compression_level.unwrap_or(DEFAULT_ZSTD_LEVEL),
-                None,
-            )),
-            _ => Box::new(Lz4Compressor::new()),
-        };
+        let (compressor, comp_type) =
+            create_compressor_from_str(compression, compression_level, None);
 
         // When dedup is disabled we still create the writer the same way;
         // the SnapshotWriter always deduplicates (unless encrypting, which
@@ -230,9 +221,8 @@ impl Builder {
         let backend = Arc::new(
             FileBackend::new(&abs_base_path).map_err(|e| PyIOError::new_err(e.to_string()))?,
         );
-        let read_compressor = Box::new(Lz4Compressor::new());
-        let base_snap = HexzFile::new(backend, read_compressor, None)
-            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        let base_snap =
+            HexzFile::open(backend, None).map_err(|e| PyIOError::new_err(e.to_string()))?;
 
         let base_size = base_snap.size(SnapshotStream::Disk);
 
@@ -254,7 +244,7 @@ impl Builder {
             writer.begin_stream(true, final_size);
 
             let total_blocks = final_size.div_ceil(block_size as u64);
-            let overlay_block_size: u64 = 4096;
+            let overlay_block_size: u64 = OVERLAY_BLOCK_SIZE;
 
             for i in 0..total_blocks {
                 let block_start = i * block_size as u64;
