@@ -363,6 +363,7 @@ use crate::format::index::BlockInfo;
 /// ```no_run
 /// use hexz_core::ops::write::write_block;
 /// use hexz_core::algo::compression::Lz4Compressor;
+/// use hexz_core::algo::hashing::blake3::Blake3Hasher;
 /// use std::fs::File;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -370,8 +371,10 @@ use crate::format::index::BlockInfo;
 /// let mut offset = 512u64; // After header
 /// let chunk = vec![0x42; 65536]; // 64 KiB of data
 /// let compressor = Lz4Compressor::new();
+/// let hasher = Blake3Hasher;
+/// let mut hash_buf = [0u8; 32];
 ///
-/// let info = write_block_simple(
+/// let info = write_block(
 ///     &mut out,
 ///     &chunk,
 ///     0,              // block_idx
@@ -379,6 +382,8 @@ use crate::format::index::BlockInfo;
 ///     None,           // No dedup
 ///     &compressor,
 ///     None,           // No encryption
+///     &hasher,
+///     &mut hash_buf,
 /// )?;
 ///
 /// println!("Block written at offset {}, size {}", info.offset, info.length);
@@ -391,6 +396,7 @@ use crate::format::index::BlockInfo;
 /// ```no_run
 /// use hexz_core::ops::write::write_block;
 /// use hexz_core::algo::compression::Lz4Compressor;
+/// use hexz_core::algo::hashing::blake3::Blake3Hasher;
 /// use std::collections::HashMap;
 /// use std::fs::File;
 ///
@@ -399,10 +405,12 @@ use crate::format::index::BlockInfo;
 /// let mut offset = 512u64;
 /// let mut dedup_map: HashMap<[u8; 32], u64> = HashMap::new();
 /// let compressor = Lz4Compressor::new();
+/// let hasher = Blake3Hasher;
+/// let mut hash_buf = [0u8; 32];
 ///
 /// // Write first block
 /// let chunk1 = vec![0xAA; 65536];
-/// let info1 = write_block_simple(
+/// let info1 = write_block(
 ///     &mut out,
 ///     &chunk1,
 ///     0,
@@ -410,12 +418,14 @@ use crate::format::index::BlockInfo;
 ///     Some(&mut dedup_map),
 ///     &compressor,
 ///     None,
+///     &hasher,
+///     &mut hash_buf,
 /// )?;
 /// println!("Block 0: offset={}, written", info1.offset);
 ///
 /// // Write duplicate block (same content)
 /// let chunk2 = vec![0xAA; 65536];
-/// let info2 = write_block_simple(
+/// let info2 = write_block(
 ///     &mut out,
 ///     &chunk2,
 ///     1,
@@ -423,6 +433,8 @@ use crate::format::index::BlockInfo;
 ///     Some(&mut dedup_map),
 ///     &compressor,
 ///     None,
+///     &hasher,
+///     &mut hash_buf,
 /// )?;
 /// println!("Block 1: offset={}, deduplicated (no write)", info2.offset);
 /// assert_eq!(info1.offset, info2.offset); // Same offset, block reused
@@ -436,6 +448,7 @@ use crate::format::index::BlockInfo;
 /// use hexz_core::ops::write::write_block;
 /// use hexz_core::algo::compression::Lz4Compressor;
 /// use hexz_core::algo::encryption::AesGcmEncryptor;
+/// use hexz_core::algo::hashing::blake3::Blake3Hasher;
 /// use hexz_common::crypto::KeyDerivationParams;
 /// use std::fs::File;
 ///
@@ -443,6 +456,8 @@ use crate::format::index::BlockInfo;
 /// let mut out = File::create("output.hxz")?;
 /// let mut offset = 512u64;
 /// let compressor = Lz4Compressor::new();
+/// let hasher = Blake3Hasher;
+/// let mut hash_buf = [0u8; 32];
 ///
 /// // Initialize encryptor
 /// let params = KeyDerivationParams::default();
@@ -453,7 +468,7 @@ use crate::format::index::BlockInfo;
 /// )?;
 ///
 /// let chunk = vec![0x42; 65536];
-/// let info = write_block_simple(
+/// let info = write_block(
 ///     &mut out,
 ///     &chunk,
 ///     0,
@@ -461,6 +476,8 @@ use crate::format::index::BlockInfo;
 ///     None,           // Dedup disabled (encryption prevents it)
 ///     &compressor,
 ///     Some(&encryptor),
+///     &hasher,
+///     &mut hash_buf,
 /// )?;
 ///
 /// println!("Encrypted block: offset={}, length={}", info.offset, info.length);
@@ -645,11 +662,14 @@ pub fn write_block<W: Write>(
 /// ```no_run
 /// # use hexz_core::ops::write::{is_zero_chunk, create_zero_block, write_block};
 /// # use hexz_core::algo::compression::Lz4Compressor;
+/// # use hexz_core::algo::hashing::blake3::Blake3Hasher;
 /// # use std::fs::File;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// # let mut out = File::create("output.hxz")?;
 /// # let mut offset = 512u64;
 /// # let compressor = Lz4Compressor::new();
+/// # let hasher = Blake3Hasher;
+/// # let mut hash_buf = [0u8; 32];
 /// # let chunks: Vec<Vec<u8>> = vec![];
 /// for (idx, chunk) in chunks.iter().enumerate() {
 ///     let info = if is_zero_chunk(chunk) {
@@ -657,7 +677,7 @@ pub fn write_block<W: Write>(
 ///         create_zero_block(chunk.len() as u32)
 ///     } else {
 ///         // Normal path: Compress and write
-///         write_block_simple(&mut out, chunk, idx as u64, &mut offset, None, &compressor, None)?
+///         write_block(&mut out, chunk, idx as u64, &mut offset, None, &compressor, None, &hasher, &mut hash_buf)?
 ///     };
 ///     // Add info to index page...
 /// }
@@ -799,12 +819,15 @@ fn write_block_simple<W: Write>(
 /// ```no_run
 /// # use hexz_core::ops::write::{is_zero_chunk, create_zero_block, write_block};
 /// # use hexz_core::algo::compression::Lz4Compressor;
+/// # use hexz_core::algo::hashing::blake3::Blake3Hasher;
 /// # use hexz_core::format::index::BlockInfo;
 /// # use std::fs::File;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// # let mut out = File::create("output.hxz")?;
 /// # let mut offset = 512u64;
 /// # let compressor = Lz4Compressor::new();
+/// # let hasher = Blake3Hasher;
+/// # let mut hash_buf = [0u8; 32];
 /// # let mut index_blocks = Vec::new();
 /// # let chunks: Vec<Vec<u8>> = vec![];
 /// for (idx, chunk) in chunks.iter().enumerate() {
@@ -813,7 +836,7 @@ fn write_block_simple<W: Write>(
 ///         create_zero_block(chunk.len() as u32)
 ///     } else {
 ///         // Slow path: Compress, write, create metadata
-///         write_block_simple(&mut out, chunk, idx as u64, &mut offset, None, &compressor, None)?
+///         write_block(&mut out, chunk, idx as u64, &mut offset, None, &compressor, None, &hasher, &mut hash_buf)?
 ///     };
 ///     index_blocks.push(info);
 /// }

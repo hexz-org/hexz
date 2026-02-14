@@ -66,10 +66,15 @@ pub struct SnapshotWriter {
 /// ```no_run
 /// use hexz_core::ops::snapshot_writer::SnapshotWriterBuilder;
 /// use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor};
+/// use hexz_core::format::header::CompressionType;
 /// use std::path::Path;
 ///
 /// let compressor: Box<dyn Compressor> = Box::new(Lz4Compressor::new());
-/// let writer = SnapshotWriterBuilder::new(Path::new("output.hxz"), compressor)
+/// let writer = SnapshotWriterBuilder::new(
+///     Path::new("output.hxz"),
+///     compressor,
+///     CompressionType::Lz4,
+/// )
 ///     .block_size(65536)
 ///     .variable_blocks(true)
 ///     .build()?;
