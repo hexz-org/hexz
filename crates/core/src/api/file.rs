@@ -26,6 +26,9 @@ use rayon::prelude::*;
 /// Shared zero block for the default block size to avoid allocating when returning zero blocks.
 static ZEROS_64K: [u8; DEFAULT_BLOCK_SIZE as usize] = [0u8; DEFAULT_BLOCK_SIZE as usize];
 
+/// Work item for block decompression: (block_idx, info, buf_offset, offset_in_block, to_copy)
+type WorkItem = (u64, BlockInfo, usize, usize, usize);
+
 /// Logical stream identifier for dual-stream snapshots.
 ///
 /// Hexz snapshots can store two independent data streams:
@@ -512,6 +515,226 @@ impl File {
     /// Minimum number of local blocks to use the parallel decompression path.
     const PARALLEL_MIN_BLOCKS: usize = 2;
 
+    /// Collects work items for blocks that need decompression.
+    ///
+    /// This method iterates through index pages and blocks, handling:
+    /// - Parent blocks: delegate to parent snapshot or zero-fill
+    /// - Zero blocks: zero-fill directly
+    /// - Regular blocks: add to work queue for later decompression
+    ///
+    /// Returns the work items to process and updates the tracking variables.
+    fn collect_work_items(
+        &self,
+        stream: SnapshotStream,
+        pages: &[PageEntry],
+        page_idx: usize,
+        target: &mut [MaybeUninit<u8>],
+        offset: u64,
+        actual_len: usize,
+    ) -> Result<(Vec<WorkItem>, usize)> {
+        let mut local_work: Vec<WorkItem> = Vec::new();
+        let mut buf_offset = 0;
+        let mut current_pos = offset;
+        let mut remaining = actual_len;
+
+        for page_entry in pages.iter().skip(page_idx) {
+            if remaining == 0 {
+                break;
+            }
+            if page_entry.start_logical > current_pos + remaining as u64 {
+                break;
+            }
+
+            let page = self.get_page(page_entry)?;
+            let mut block_logical_start = page_entry.start_logical;
+
+            for (block_idx_in_page, block) in page.blocks.iter().enumerate() {
+                let block_end = block_logical_start + block.logical_len as u64;
+
+                if block_end > current_pos {
+                    let global_block_idx = page_entry.start_block + block_idx_in_page as u64;
+                    let offset_in_block = (current_pos - block_logical_start) as usize;
+                    let to_copy = std::cmp::min(
+                        remaining,
+                        (block.logical_len as usize).saturating_sub(offset_in_block),
+                    );
+
+                    if block.offset == BLOCK_OFFSET_PARENT {
+                        // Parent block: delegate or zero-fill
+                        if let Some(parent) = &self.parent {
+                            let dest = &mut target[buf_offset..buf_offset + to_copy];
+                            parent.read_at_into_uninit(stream, current_pos, dest)?;
+                        } else {
+                            Self::zero_fill_uninit(&mut target[buf_offset..buf_offset + to_copy]);
+                        }
+                        current_pos += to_copy as u64;
+                        buf_offset += to_copy;
+                        remaining -= to_copy;
+                    } else if block.length == 0 {
+                        // Zero block: fill with zeros
+                        Self::zero_fill_uninit(&mut target[buf_offset..buf_offset + to_copy]);
+                        current_pos += to_copy as u64;
+                        buf_offset += to_copy;
+                        remaining -= to_copy;
+                    } else {
+                        // Regular block: add to work queue
+                        if to_copy > 0 {
+                            local_work.push((
+                                global_block_idx,
+                                *block,
+                                buf_offset,
+                                offset_in_block,
+                                to_copy,
+                            ));
+                            buf_offset += to_copy;
+                            current_pos += to_copy as u64;
+                            remaining -= to_copy;
+                        }
+                    }
+
+                    if remaining == 0 {
+                        break;
+                    }
+                }
+                block_logical_start += block.logical_len as u64;
+            }
+        }
+
+        Ok((local_work, buf_offset))
+    }
+
+    /// Executes parallel decompression for multiple blocks.
+    ///
+    /// Uses a two-phase approach:
+    /// 1. Parallel I/O: Fetch all raw blocks concurrently
+    /// 2. Parallel CPU: Decompress and copy to target buffer
+    fn execute_parallel_decompression(
+        self: &Arc<Self>,
+        stream: SnapshotStream,
+        work_items: &[WorkItem],
+        target: &mut [MaybeUninit<u8>],
+        actual_len: usize,
+    ) -> Result<()> {
+        let snap = Arc::clone(self);
+        let target_addr = target.as_mut_ptr() as usize;
+
+        // Phase 1: Parallel fetch all raw blocks
+        let raw_blocks: Vec<Result<Bytes>> = work_items
+            .par_iter()
+            .map(|(block_idx, info, _, _, _)| snap.fetch_raw_block(stream, *block_idx, info))
+            .collect();
+
+        // Phase 2: Parallel decompress and copy
+        let err: Mutex<Option<Error>> = Mutex::new(None);
+        work_items
+            .par_iter()
+            .zip(raw_blocks)
+            .for_each(|(work_item, raw_result)| {
+                if err.lock().map_or(true, |e| e.is_some()) {
+                    return;
+                }
+
+                let (block_idx, info, buf_offset, offset_in_block, to_copy) = work_item;
+
+                // Handle fetch errors
+                let raw = match raw_result {
+                    Ok(r) => r,
+                    Err(e) => {
+                        if let Ok(mut guard) = err.lock() {
+                            let _ = guard.replace(e);
+                        }
+                        return;
+                    }
+                };
+
+                // If cache hit or zero block, raw is already decompressed
+                let data = if info.length == 0 || snap.cache_l1.get(stream, *block_idx).is_some() {
+                    raw
+                } else {
+                    // Decompress and verify
+                    match snap.decompress_and_verify(raw, *block_idx, info) {
+                        Ok(d) => {
+                            // Cache the result
+                            snap.cache_l1.insert(stream, *block_idx, d.clone());
+                            d
+                        }
+                        Err(e) => {
+                            if let Ok(mut guard) = err.lock() {
+                                let _ = guard.replace(e);
+                            }
+                            return;
+                        }
+                    }
+                };
+
+                // Copy to target buffer
+                let src = data.as_ref();
+                let start = *offset_in_block;
+                let len = *to_copy;
+                if start < src.len() && len <= src.len() - start {
+                    // Defensive assertion: ensure destination write is within bounds
+                    debug_assert!(
+                        buf_offset + len <= actual_len,
+                        "Buffer overflow: attempting to write {} bytes at offset {} into buffer of length {}",
+                        len,
+                        buf_offset,
+                        actual_len
+                    );
+                    let dest = (target_addr + buf_offset) as *mut u8;
+                    // SAFETY: `src[start..start+len]` is in-bounds (checked above).
+                    // `dest` points into the `target` MaybeUninit buffer at a unique
+                    // non-overlapping offset (each work item has a distinct `buf_offset`),
+                    // and the rayon par_iter ensures each item writes to a disjoint region.
+                    // The debug_assert above validates buf_offset + len <= actual_len.
+                    unsafe { ptr::copy_nonoverlapping(src[start..].as_ptr(), dest, len) };
+                }
+            });
+
+        if let Some(e) = err.lock().ok().and_then(|mut guard| guard.take()) {
+            return Err(e);
+        }
+
+        Ok(())
+    }
+
+    /// Executes serial decompression for a small number of blocks.
+    fn execute_serial_decompression(
+        &self,
+        stream: SnapshotStream,
+        work_items: &[WorkItem],
+        target: &mut [MaybeUninit<u8>],
+        actual_len: usize,
+    ) -> Result<()> {
+        for (block_idx, info, buf_offset, offset_in_block, to_copy) in work_items {
+            let data = self.resolve_block_data(stream, *block_idx, info)?;
+            let src = data.as_ref();
+            let start = *offset_in_block;
+            if start < src.len() && *to_copy <= src.len() - start {
+                // Defensive assertion: ensure destination write is within bounds
+                debug_assert!(
+                    *buf_offset + *to_copy <= actual_len,
+                    "Buffer overflow: attempting to write {} bytes at offset {} into buffer of length {}",
+                    to_copy,
+                    buf_offset,
+                    actual_len
+                );
+                // SAFETY: `src[start..start+to_copy]` is in-bounds (checked above).
+                // `target[buf_offset..]` has sufficient room because `buf_offset + to_copy`
+                // never exceeds `actual_len` (tracked during work-item collection).
+                // The debug_assert above validates this invariant.
+                // MaybeUninit<u8> has the same layout as u8.
+                unsafe {
+                    ptr::copy_nonoverlapping(
+                        src[start..].as_ptr(),
+                        target[*buf_offset..].as_mut_ptr() as *mut u8,
+                        *to_copy,
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Zero-fills a slice of uninitialized memory.
     ///
     /// This helper centralizes all unsafe zero-filling operations to improve
@@ -539,6 +762,7 @@ impl File {
         offset: u64,
         buffer: &mut [MaybeUninit<u8>],
     ) -> Result<()> {
+        // Early validation
         let len = buffer.len();
         if len == 0 {
             return Ok(());
@@ -550,21 +774,21 @@ impl File {
             return Ok(());
         }
 
+        // Calculate actual read length and zero-fill suffix if needed
         let actual_len = std::cmp::min(len as u64, stream_size - offset) as usize;
         if actual_len < len {
             Self::zero_fill_uninit(&mut buffer[actual_len..]);
         }
 
         let target = &mut buffer[0..actual_len];
-        let mut buf_offset = 0;
-        let mut current_pos = offset;
-        let mut remaining = actual_len;
 
+        // Get page list for stream
         let pages = match stream {
             SnapshotStream::Disk => &self.master.disk_pages,
             SnapshotStream::Memory => &self.master.memory_pages,
         };
 
+        // Delegate to parent if no index pages
         if pages.is_empty() {
             if let Some(parent) = &self.parent {
                 return parent.read_at_into_uninit(stream, offset, target);
@@ -573,223 +797,28 @@ impl File {
             return Ok(());
         }
 
+        // Find starting page index
         let page_idx = match pages.binary_search_by(|p| p.start_logical.cmp(&offset)) {
             Ok(idx) => idx,
             Err(idx) => idx.saturating_sub(1),
         };
 
-        // (block_idx, info, buf_offset, offset_in_block, to_copy)
-        let mut local_work: Vec<(u64, BlockInfo, usize, usize, usize)> = Vec::new();
+        // Collect work items (handles parent blocks, zero blocks, and queues regular blocks)
+        let (work_items, buf_offset) =
+            self.collect_work_items(stream, pages, page_idx, target, offset, actual_len)?;
 
-        for page_entry in pages.iter().skip(page_idx) {
-            if remaining == 0 {
-                break;
-            }
-            if page_entry.start_logical > current_pos + remaining as u64 {
-                break;
-            }
-
-            let page = self.get_page(page_entry)?;
-            let mut block_logical_start = page_entry.start_logical;
-
-            for (block_idx_in_page, block) in page.blocks.iter().enumerate() {
-                let block_end = block_logical_start + block.logical_len as u64;
-
-                if block_end > current_pos {
-                    let global_block_idx = page_entry.start_block + block_idx_in_page as u64;
-
-                    if block.offset == BLOCK_OFFSET_PARENT {
-                        if let Some(parent) = &self.parent {
-                            let offset_in_block = (current_pos - block_logical_start) as usize;
-                            let to_copy = std::cmp::min(
-                                remaining,
-                                (block.logical_len as usize).saturating_sub(offset_in_block),
-                            );
-                            let dest = &mut target[buf_offset..buf_offset + to_copy];
-                            parent.read_at_into_uninit(stream, current_pos, dest)?;
-                            current_pos += to_copy as u64;
-                            buf_offset += to_copy;
-                            remaining -= to_copy;
-                        } else {
-                            let offset_in_block = (current_pos - block_logical_start) as usize;
-                            let to_copy = std::cmp::min(
-                                remaining,
-                                (block.logical_len as usize).saturating_sub(offset_in_block),
-                            );
-                            // SAFETY: The sub-slice has exactly `to_copy` elements,
-                            // so zeroing that many bytes is in-bounds.
-                            unsafe {
-                                ptr::write_bytes(
-                                    target[buf_offset..buf_offset + to_copy].as_mut_ptr(),
-                                    0,
-                                    to_copy,
-                                )
-                            };
-                            current_pos += to_copy as u64;
-                            buf_offset += to_copy;
-                            remaining -= to_copy;
-                        }
-                    } else if block.length == 0 {
-                        let offset_in_block = (current_pos - block_logical_start) as usize;
-                        let to_copy = std::cmp::min(
-                            remaining,
-                            (block.logical_len as usize).saturating_sub(offset_in_block),
-                        );
-                        // SAFETY: The sub-slice has exactly `to_copy` elements,
-                        // so zeroing that many bytes is in-bounds.
-                        unsafe {
-                            ptr::write_bytes(
-                                target[buf_offset..buf_offset + to_copy].as_mut_ptr(),
-                                0,
-                                to_copy,
-                            )
-                        };
-                        current_pos += to_copy as u64;
-                        buf_offset += to_copy;
-                        remaining -= to_copy;
-                    } else {
-                        let offset_in_block = (current_pos - block_logical_start) as usize;
-                        let to_copy = std::cmp::min(
-                            remaining,
-                            (block.logical_len as usize).saturating_sub(offset_in_block),
-                        );
-                        if to_copy > 0 {
-                            local_work.push((
-                                global_block_idx,
-                                *block,
-                                buf_offset,
-                                offset_in_block,
-                                to_copy,
-                            ));
-                            buf_offset += to_copy;
-                            current_pos += to_copy as u64;
-                            remaining -= to_copy;
-                        }
-                    }
-
-                    if remaining == 0 {
-                        break;
-                    }
-                }
-                block_logical_start += block.logical_len as u64;
-            }
-        }
-
-        if local_work.len() >= Self::PARALLEL_MIN_BLOCKS {
-            // Two-phase parallel I/O optimization:
-            // Phase 1: Parallel I/O - fetch all raw blocks concurrently
-            // Phase 2: Parallel CPU - decompress and copy to target buffer
-            let snap = Arc::clone(self);
-            let target_addr = target.as_mut_ptr() as usize;
-
-            // Phase 1: Parallel fetch all raw blocks
-            let raw_blocks: Vec<Result<Bytes>> = local_work
-                .par_iter()
-                .map(|(block_idx, info, _, _, _)| snap.fetch_raw_block(stream, *block_idx, info))
-                .collect();
-
-            // Phase 2: Parallel decompress and copy
-            let err: Mutex<Option<Error>> = Mutex::new(None);
-            local_work
-                .par_iter()
-                .zip(raw_blocks)
-                .for_each(|(work_item, raw_result)| {
-                    if err.lock().map_or(true, |e| e.is_some()) {
-                        return;
-                    }
-
-                    let (block_idx, info, buf_offset, offset_in_block, to_copy) = work_item;
-
-                    // Handle fetch errors
-                    let raw = match raw_result {
-                        Ok(r) => r,
-                        Err(e) => {
-                            if let Ok(mut guard) = err.lock() {
-                                let _ = guard.replace(e);
-                            }
-                            return;
-                        }
-                    };
-
-                    // If cache hit or zero block, raw is already decompressed
-                    let data =
-                        if info.length == 0 || snap.cache_l1.get(stream, *block_idx).is_some() {
-                            raw
-                        } else {
-                            // Decompress and verify
-                            match snap.decompress_and_verify(raw, *block_idx, info) {
-                                Ok(d) => {
-                                    // Cache the result
-                                    snap.cache_l1.insert(stream, *block_idx, d.clone());
-                                    d
-                                }
-                                Err(e) => {
-                                    if let Ok(mut guard) = err.lock() {
-                                        let _ = guard.replace(e);
-                                    }
-                                    return;
-                                }
-                            }
-                        };
-
-                    // Copy to target buffer
-                    let src = data.as_ref();
-                    let start = *offset_in_block;
-                    let len = *to_copy;
-                    if start < src.len() && len <= src.len() - start {
-                        // Defensive assertion: ensure destination write is within bounds
-                        debug_assert!(
-                            buf_offset + len <= actual_len,
-                            "Buffer overflow: attempting to write {} bytes at offset {} into buffer of length {}",
-                            len,
-                            buf_offset,
-                            actual_len
-                        );
-                        let dest = (target_addr + buf_offset) as *mut u8;
-                        // SAFETY: `src[start..start+len]` is in-bounds (checked above).
-                        // `dest` points into the `target` MaybeUninit buffer at a unique
-                        // non-overlapping offset (each work item has a distinct `buf_offset`),
-                        // and the rayon par_iter ensures each item writes to a disjoint region.
-                        // The debug_assert above validates buf_offset + len <= actual_len.
-                        unsafe { ptr::copy_nonoverlapping(src[start..].as_ptr(), dest, len) };
-                    }
-                });
-
-            if let Some(e) = err.lock().ok().and_then(|mut guard| guard.take()) {
-                return Err(e);
-            }
+        // Choose parallel or serial decompression based on work item count
+        if work_items.len() >= Self::PARALLEL_MIN_BLOCKS {
+            self.execute_parallel_decompression(stream, &work_items, target, actual_len)?;
         } else {
-            for (block_idx, info, buf_offset, offset_in_block, to_copy) in &local_work {
-                let data = self.resolve_block_data(stream, *block_idx, info)?;
-                let src = data.as_ref();
-                let start = *offset_in_block;
-                if start < src.len() && *to_copy <= src.len() - start {
-                    // Defensive assertion: ensure destination write is within bounds
-                    debug_assert!(
-                        *buf_offset + *to_copy <= actual_len,
-                        "Buffer overflow: attempting to write {} bytes at offset {} into buffer of length {}",
-                        to_copy,
-                        buf_offset,
-                        actual_len
-                    );
-                    // SAFETY: `src[start..start+to_copy]` is in-bounds (checked above).
-                    // `target[buf_offset..]` has sufficient room because `buf_offset + to_copy`
-                    // never exceeds `actual_len` (tracked during work-item collection).
-                    // The debug_assert above validates this invariant.
-                    // MaybeUninit<u8> has the same layout as u8.
-                    unsafe {
-                        ptr::copy_nonoverlapping(
-                            src[start..].as_ptr(),
-                            target[*buf_offset..].as_mut_ptr() as *mut u8,
-                            *to_copy,
-                        );
-                    }
-                }
-            }
+            self.execute_serial_decompression(stream, &work_items, target, actual_len)?;
         }
 
+        // Handle any remaining unprocessed data
+        let remaining = actual_len - buf_offset;
         if remaining > 0 {
             if let Some(parent) = &self.parent {
+                let current_pos = offset + buf_offset as u64;
                 parent.read_at_into_uninit(stream, current_pos, &mut target[buf_offset..])?;
             } else {
                 Self::zero_fill_uninit(&mut target[buf_offset..]);
@@ -797,16 +826,12 @@ impl File {
         }
 
         // Trigger prefetch for next sequential blocks if enabled
-        if self.prefetcher.is_some() && !local_work.is_empty() {
-            // Calculate the next logical position (end of current read)
+        if self.prefetcher.is_some() && !work_items.is_empty() {
             let next_offset = offset + actual_len as u64;
-            let prefetch_len = (self.header.block_size * 4) as usize; // Prefetch ~4 blocks worth
-
-            // Spawn background prefetch for the next range
+            let prefetch_len = (self.header.block_size * 4) as usize;
             let snap = Arc::clone(self);
             let stream_copy = stream;
             std::thread::spawn(move || {
-                // Prefetch silently - ignore errors
                 let _ = snap.read_at(stream_copy, next_offset, prefetch_len);
             });
         }
