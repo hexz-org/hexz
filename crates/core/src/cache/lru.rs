@@ -699,7 +699,18 @@ impl BlockCache {
     pub fn get(&self, stream: SnapshotStream, block: u64) -> Option<Bytes> {
         let key = (stream as u8, block);
         let shard = self.get_shard(&key)?;
-        shard.lock().ok()?.get(&key).cloned()
+        match shard.lock() {
+            Ok(mut guard) => guard.get(&key).cloned(),
+            Err(e) => {
+                tracing::warn!(
+                    "Cache shard mutex poisoned during get (stream={:?}, block={}): {}",
+                    stream,
+                    block,
+                    e
+                );
+                None
+            }
+        }
     }
 
     /// Inserts or updates a decompressed block in the cache.
@@ -850,8 +861,18 @@ impl BlockCache {
     pub fn insert(&self, stream: SnapshotStream, block: u64, data: Bytes) {
         let key = (stream as u8, block);
         if let Some(shard) = self.get_shard(&key) {
-            if let Ok(mut guard) = shard.lock() {
-                guard.put(key, data);
+            match shard.lock() {
+                Ok(mut guard) => {
+                    guard.put(key, data);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Cache shard mutex poisoned during insert (stream={:?}, block={}): {}",
+                        stream,
+                        block,
+                        e
+                    );
+                }
             }
         }
     }
