@@ -17,3 +17,10 @@ tower-http = { version = "0.5", features = ["fs", "trace"] }
 tracing.workspace = true
 anyhow.workspace = true
 bytes.workspace = true
+
+[dev-dependencies]
+reqwest = { version = "0.11", features = ["blocking"] }
+tokio = { workspace = true, features = ["full"] }
+tempfile = "3.8"
+hexz-core = { workspace = true }
+rand = "0.8"
