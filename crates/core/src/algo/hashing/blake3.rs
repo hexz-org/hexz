@@ -88,167 +88,11 @@
 //! - **Content authenticity**: Original chunk cannot be substituted without detection
 //! - **Deduplication safety**: Prevents adversary replacing legitimate chunks
 //!
-//! # Output Length Selection
-//!
-//! BLAKE3 supports arbitrary output lengths via its extendable output function. This
-//! implementation uses 256 bits (32 bytes) as the standard output size.
-//!
-//! ## Rationale for 256-bit Output
-//!
-//! - **Collision resistance**: Provides 128-bit security level (birthday bound)
-//! - **Storage efficiency**: 32 bytes per chunk is acceptable overhead
-//! - **Index density**: Block metadata typically 64-128 bytes; hash is 25-50% of entry
-//! - **Future-proofing**: 256 bits remains secure against quantum attacks (Grover's algorithm
-//!   reduces effective security to 128 bits, still sufficient)
-//!
-//! ## Alternative Output Lengths
-//!
-//! While not currently implemented, BLAKE3 supports:
-//!
-//! - **128 bits (16 bytes)**: Faster storage, but only 64-bit collision resistance
-//!   (insufficient for large-scale deduplication)
-//! - **512 bits (64 bytes)**: Overkill for deduplication; no security benefit over 256 bits
-//! - **Truncated outputs**: Any length is valid, but 256 bits is the sweet spot
-//!
-//! # Use in Deduplication Context
-//!
-//! BLAKE3 hashes are computed after compression and used for deduplication:
-//!
-//! ```text
-//! Input Chunk (variable size via FastCDC: 16-256 KB)
-//!     ↓
-//! Compress (LZ4 or Zstd)
-//!     ↓
-//! BLAKE3 Hash (compressed data) → 32-byte fingerprint
-//!     ↓
-//! Dedup Table Lookup (HashMap<[u8; 32], ChunkInfo>)
-//!     ↓
-//! [Match found] → Reuse existing physical offset (deduplication)
-//! [No match] → Write new block, store hash in index
-//! ```
-//!
-//! ## Why Hash Compressed Data (Not Raw)
-//!
-//! Hashing after compression rather than before:
-//!
-//! **Advantages:**
-//! - **Smaller hash input**: Compressed data is typically 1.5-3x smaller, faster to hash
-//! - **Exact block deduplication**: Detects when compressed representations are identical
-//! - **Compression determinism**: Same input always compresses to same output (critical)
-//!
-//! **Tradeoffs:**
-//! - **Compression variability**: Different compression levels/algorithms prevent deduplication
-//!   (mitigated by fixing compression settings per snapshot)
-//! - **Dictionary sensitivity**: Zstd with different dictionaries produces different hashes
-//!   for same input (acceptable since dictionaries are snapshot-scoped)
-//!
-//! # Memory Requirements
-//!
-//! ## Per-Hash Operation
-//!
-//! - **Hasher state**: ~200 bytes (chunk counter, tree state, buffer)
-//! - **Input buffering**: Up to 1 KB (BLAKE3 chunk size)
-//! - **Output**: 32 bytes (256-bit hash)
-//! - **Total**: ~1.2 KB per concurrent hash operation
-//!
-//! ## Deduplication Table
-//!
-//! For a snapshot with N unique chunks:
-//!
-//! ```text
-//! HashMap<[u8; 32], ChunkInfo> where ChunkInfo is 16 bytes
-//! Memory per entry: 32 (hash) + 16 (ChunkInfo) + 8 (HashMap overhead) = 56 bytes
-//! ```
-//!
-//! **Examples:**
-//! - 100,000 unique chunks: ~5.6 MB
-//! - 1,000,000 unique chunks: ~56 MB
-//! - 10,000,000 unique chunks: ~560 MB
-//!
-//! For large snapshots (100+ GB), the deduplication table becomes the dominant memory
-//! consumer during packing operations.
-//!
-//! # Comparison with Other Hash Functions
-//!
-//! ## BLAKE3 vs SHA-256
-//!
-//! | Feature              | BLAKE3       | SHA-256      | BLAKE3 Advantage  |
-//! |----------------------|--------------|--------------|-------------------|
-//! | Throughput (1 core)  | ~3200 MB/s   | ~500 MB/s    | 6.4x faster       |
-//! | Throughput (8 cores) | ~21000 MB/s  | ~550 MB/s    | 38x faster        |
-//! | Collision resistance | 128-bit      | 128-bit      | Equal             |
-//! | Preimage resistance  | 256-bit      | 256-bit      | Equal             |
-//! | Standardization      | No (2020)    | Yes (2001)   | SHA-256 wins      |
-//! | Hardware support     | Software     | CPU (SHA-NI) | SHA-256 wins      |
-//!
-//! **Conclusion**: BLAKE3's software performance vastly exceeds SHA-256, even with SHA-256's
-//! hardware acceleration. For Hexz's software-only implementation, BLAKE3 is superior.
-//!
-//! ## BLAKE3 vs BLAKE2b
-//!
-//! | Feature              | BLAKE3       | BLAKE2b      | BLAKE3 Advantage  |
-//! |----------------------|--------------|--------------|-------------------|
-//! | Throughput (1 core)  | ~3200 MB/s   | ~1100 MB/s   | 2.9x faster       |
-//! | Parallelism          | Tree-based   | Sequential   | BLAKE3 wins       |
-//! | Output flexibility   | XOF (any)    | Fixed 64B    | BLAKE3 wins       |
-//! | Security             | 128/256-bit  | 128/256-bit  | Equal             |
-//!
-//! **Conclusion**: BLAKE3 is strictly better than BLAKE2 for Hexz's use case.
-//!
-//! ## BLAKE3 vs xxHash (Non-Cryptographic)
-//!
-//! | Feature              | BLAKE3       | xxHash       | Verdict           |
-//! |----------------------|--------------|--------------|-------------------|
-//! | Throughput           | ~3200 MB/s   | ~15000 MB/s  | xxHash wins       |
-//! | Collision resistance | 128-bit      | ~64-bit      | BLAKE3 wins       |
-//! | Preimage resistance  | 256-bit      | None         | BLAKE3 wins       |
-//! | Attack resistance    | Yes          | No           | BLAKE3 wins       |
-//!
-//! **Conclusion**: xxHash's speed advantage is insufficient to justify its lack of
-//! cryptographic security. An adversary could craft colliding chunks to corrupt snapshots.
-//! BLAKE3 is fast enough that hashing is not a bottleneck (compression is slower).
-//!
-//! # When Hashing Becomes a Bottleneck
-//!
-//! BLAKE3 hashing (~3200 MB/s) is faster than compression for most algorithms:
-//!
-//! | Operation         | Throughput   | Bottleneck? |
-//! |-------------------|--------------|-------------|
-//! | BLAKE3 hash       | ~3200 MB/s   | No          |
-//! | LZ4 compress      | ~2000 MB/s   | Yes         |
-//! | Zstd-3 compress   | ~340 MB/s    | Yes         |
-//! | Disk write (SSD)  | ~500 MB/s    | Depends     |
-//! | Network (1GbE)    | ~125 MB/s    | Yes         |
-//!
-//! **Implication**: In typical Hexz workflows, compression or I/O is the bottleneck,
-//! not hashing. BLAKE3's performance ensures it adds negligible overhead to packing.
-//!
-//! **Exception**: When packing already-compressed data (JPEG, video, encrypted files) with
-//! LZ4 (which will effectively pass-through), hashing may become the dominant CPU cost.
-//! Even so, 3200 MB/s is acceptable for most use cases.
-//!
-//! # Thread Safety
-//!
-//! The (future) `Blake3Hasher` implementation will be `Send + Sync`, allowing safe
-//! concurrent hashing across threads. Each hasher instance maintains independent state,
-//! so multiple threads can hash different chunks simultaneously without coordination.
-//!
-//! # Implementation Status
-//!
-//! **Current**: This module is a stub placeholder for future implementation.
-//!
-//! **Planned**:
-//! - Implement `ContentHasher` trait for BLAKE3
-//! - Use the `blake3` crate (official implementation in Rust)
-//! - Expose 256-bit output as `[u8; 32]` or `Vec<u8>`
-//! - Support incremental hashing for streaming scenarios
-//! - Provide keyed hashing variant for MAC use cases (optional)
-//!
-//! # Examples (Future Implementation)
+//! # Examples
 //!
 //! ## Basic Hashing
 //!
-//! ```text
+//! ```
 //! use hexz_core::algo::hashing::{ContentHasher, blake3::Blake3Hasher};
 //!
 //! let hasher = Blake3Hasher::new();
@@ -256,12 +100,11 @@
 //! let hash = hasher.hash(data).unwrap();
 //!
 //! assert_eq!(hash.len(), 32); // 256 bits
-//! println!("Chunk hash: {}", hex::encode(&hash));
 //! ```
 //!
 //! ## Deduplication Workflow
 //!
-//! ```text
+//! ```
 //! use hexz_core::algo::hashing::{ContentHasher, blake3::Blake3Hasher};
 //! use std::collections::HashMap;
 //!
@@ -269,14 +112,14 @@
 //! let mut dedup_table: HashMap<[u8; 32], u64> = HashMap::new();
 //!
 //! // First chunk
-//! let chunk1 = compress_chunk(b"data block 1");
-//! let hash1 = hasher.hash(&chunk1).unwrap();
+//! let chunk1 = b"data block 1";
+//! let hash1 = hasher.hash(chunk1).unwrap();
 //! let hash1_array: [u8; 32] = hash1.try_into().unwrap();
 //! dedup_table.insert(hash1_array, 0); // Physical offset 0
 //!
 //! // Duplicate chunk (same content)
-//! let chunk2 = compress_chunk(b"data block 1"); // Same as chunk1
-//! let hash2 = hasher.hash(&chunk2).unwrap();
+//! let chunk2 = b"data block 1"; // Same as chunk1
+//! let hash2 = hasher.hash(chunk2).unwrap();
 //! let hash2_array: [u8; 32] = hash2.try_into().unwrap();
 //!
 //! if let Some(&offset) = dedup_table.get(&hash2_array) {
@@ -285,61 +128,445 @@
 //!     println!("New chunk: Writing to disk");
 //! }
 //! ```
-//!
-//! ## Incremental Hashing (Large Inputs)
-//!
-//! ```text
-//! use hexz_core::algo::hashing::blake3::Blake3Hasher;
-//!
-//! let mut hasher = Blake3Hasher::new();
-//!
-//! // Hash large input in chunks to avoid loading entire input into memory
-//! for chunk in large_file.chunks(65536) {
-//!     hasher.update(chunk);
-//! }
-//!
-//! let hash = hasher.finalize();
-//! println!("File hash: {}", hex::encode(&hash));
-//! ```
-//!
-//! # Architectural Integration in Hexz
-//!
-//! BLAKE3 integrates at multiple layers:
-//!
-//! - **Packing layer**: Hashes compressed chunks during snapshot creation
-//! - **Deduplication layer**: Uses hash as key in dedup table (HashMap)
-//! - **Index layer**: Stores hash in block metadata for verification
-//! - **Verification layer**: Recomputes hash on read to detect corruption
-//! - **CLI**: Provides `--verify-hashes` flag to enable read-time verification
-//!
-//! The hash is computed once during packing and stored in the index. On reads, hash
-//! verification is optional (disabled by default for performance).
-//!
-//! # Error Handling
-//!
-//! BLAKE3 hashing operations are infallible (cannot fail under normal conditions).
-//! The `ContentHasher::hash` method returns `Result` for trait consistency, but the
-//! BLAKE3 implementation will always return `Ok`.
-//!
-//! Potential future error conditions (not currently implemented):
-//! - **Keyed hashing with invalid key**: If keyed mode is added
-//! - **XOF with invalid output length**: If variable-length output is exposed
-//!
-//! # Future Enhancements
-//!
-//! Potential extensions for future versions:
-//!
-//! - **Keyed hashing (MAC mode)**: BLAKE3 supports keyed hashing for message authentication
-//! - **Derive key mode**: Generate subkeys from master key for encryption integration
-//! - **Variable output length**: Expose XOF for applications needing longer hashes
-//! - **Incremental verification**: Stream-verify large files without full read
-//! - **Hardware acceleration**: Utilize specialized instructions if available (AVX-512, etc.)
-//! - **Parallel hashing**: Explicit multi-threaded hashing for very large inputs (>100 MB)
-//!
-//! # References
-//!
-//! - **BLAKE3 specification**: <https://github.com/BLAKE3-team/BLAKE3-specs>
-//! - **Official implementation**: <https://github.com/BLAKE3-team/BLAKE3>
-//! - **Rust crate**: <https://crates.io/crates/blake3>
-//! - **Performance analysis**: <https://github.com/BLAKE3-team/BLAKE3/blob/master/b3sum/README.md>
-//! - **Hexz ADR-0003**: BLAKE3 and FastCDC deduplication decision rationale
+
+use super::ContentHasher;
+use hexz_common::Result;
+
+/// BLAKE3 hasher for content addressing and deduplication.
+///
+/// **Architectural intent:** Provides a zero-config, high-performance cryptographic
+/// hash function for chunk fingerprinting. The hasher is stateless and can be reused
+/// across multiple hash operations.
+///
+/// **Thread safety:** `Blake3Hasher` is `Send + Sync` and safe to share across threads.
+/// Each hash operation is independent.
+///
+/// **Performance:** Hashing throughput ~3200 MB/s single-threaded on modern CPUs with
+/// SIMD optimizations enabled (automatic via the blake3 crate).
+#[derive(Debug, Clone)]
+pub struct Blake3Hasher;
+
+impl Blake3Hasher {
+    /// Creates a new BLAKE3 hasher.
+    ///
+    /// **Constraints:** This is a zero-cost constructor - no initialization required.
+    /// The hasher is stateless and reusable.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hexz_core::algo::hashing::blake3::Blake3Hasher;
+    ///
+    /// let hasher = Blake3Hasher::new();
+    /// ```
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+
+    /// Computes the BLAKE3 hash of the given data and returns it as a 32-byte array.
+    ///
+    /// **Architectural intent:** Provides a type-safe, fixed-size hash output that can
+    /// be used directly as a HashMap key for deduplication without allocations.
+    ///
+    /// **Performance:** ~3200 MB/s for data >1KB. For very small inputs (<100 bytes),
+    /// overhead is ~200ns per hash operation.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hexz_core::algo::hashing::blake3::Blake3Hasher;
+    ///
+    /// let hasher = Blake3Hasher::new();
+    /// let hash = hasher.hash_array(b"test data");
+    ///
+    /// assert_eq!(hash.len(), 32);
+    /// ```
+    pub fn hash_array(&self, data: &[u8]) -> [u8; 32] {
+        blake3::hash(data).into()
+    }
+
+    /// Computes the BLAKE3 hash with a keyed mode for MAC (Message Authentication Code).
+    ///
+    /// **Architectural intent:** Provides authenticated hashing where only parties with
+    /// the key can verify the hash. Useful for integrity verification in encrypted snapshots.
+    ///
+    /// **Constraints:** The key must be exactly 32 bytes (256 bits). Using a shorter or
+    /// longer key will panic.
+    ///
+    /// **Side effects:** Keyed hashes are NOT compatible with regular hashes - the same
+    /// data with different keys produces completely different outputs.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `key.len() != 32`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hexz_core::algo::hashing::blake3::Blake3Hasher;
+    ///
+    /// let hasher = Blake3Hasher::new();
+    /// let key = [0u8; 32]; // Secret key
+    /// let hash = hasher.hash_keyed(&key, b"authenticated data");
+    ///
+    /// assert_eq!(hash.len(), 32);
+    /// ```
+    pub fn hash_keyed(&self, key: &[u8; 32], data: &[u8]) -> [u8; 32] {
+        blake3::keyed_hash(key, data).into()
+    }
+
+    /// Creates an incremental hasher for streaming large inputs.
+    ///
+    /// **Architectural intent:** Allows hashing data that doesn't fit in memory or
+    /// arrives in chunks over a network. The hasher maintains internal state and
+    /// can be finalized once all data has been fed.
+    ///
+    /// **Performance:** Incremental hashing has the same throughput as one-shot hashing
+    /// (~3200 MB/s) but with ~200 bytes of state overhead.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hexz_core::algo::hashing::blake3::Blake3Hasher;
+    ///
+    /// let hasher = Blake3Hasher::new();
+    /// let mut incremental = hasher.new_incremental();
+    ///
+    /// incremental.update(b"part 1");
+    /// incremental.update(b"part 2");
+    ///
+    /// let hash = incremental.finalize();
+    /// assert_eq!(hash.len(), 32);
+    /// ```
+    #[must_use]
+    pub fn new_incremental(&self) -> IncrementalHasher {
+        IncrementalHasher {
+            inner: blake3::Hasher::new(),
+        }
+    }
+}
+
+impl Default for Blake3Hasher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ContentHasher for Blake3Hasher {
+    /// Computes the BLAKE3 hash of the given data.
+    ///
+    /// **Constraints:** Always returns a 32-byte (256-bit) hash. This operation
+    /// is infallible and will always return `Ok`.
+    ///
+    /// **Performance:** ~3200 MB/s for data >1KB on modern CPUs with SIMD.
+    fn hash(&self, data: &[u8]) -> Result<Vec<u8>> {
+        Ok(self.hash_array(data).to_vec())
+    }
+
+    /// Returns the output length in bytes (always 32 for BLAKE3).
+    fn output_len(&self) -> usize {
+        32
+    }
+}
+
+/// Incremental BLAKE3 hasher for streaming large inputs.
+///
+/// **Architectural intent:** Allows hashing data in chunks without loading the entire
+/// input into memory. Useful for hashing files, network streams, or any data source
+/// that produces bytes incrementally.
+///
+/// **Thread safety:** NOT `Sync` - each incremental hasher maintains mutable state and
+/// should not be shared across threads during updates. Clone the hasher if needed.
+///
+/// **Memory:** Maintains ~200 bytes of internal state (tree state, buffers, counters).
+pub struct IncrementalHasher {
+    inner: blake3::Hasher,
+}
+
+impl IncrementalHasher {
+    /// Adds more data to the hash state.
+    ///
+    /// **Architectural intent:** Updates the hash state incrementally. Can be called
+    /// multiple times with arbitrarily-sized chunks before finalizing.
+    ///
+    /// **Performance:** Same throughput as one-shot hashing (~3200 MB/s). Small inputs
+    /// (<1KB) are buffered internally.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hexz_core::algo::hashing::blake3::Blake3Hasher;
+    ///
+    /// let hasher = Blake3Hasher::new();
+    /// let mut inc = hasher.new_incremental();
+    ///
+    /// inc.update(b"chunk 1");
+    /// inc.update(b"chunk 2");
+    /// inc.update(b"chunk 3");
+    ///
+    /// let hash = inc.finalize();
+    /// ```
+    pub fn update(&mut self, data: &[u8]) {
+        self.inner.update(data);
+    }
+
+    /// Finalizes the hash and returns the 32-byte output.
+    ///
+    /// **Architectural intent:** Completes the hash computation and returns the final
+    /// digest. After calling this, the hasher is consumed and cannot be reused.
+    ///
+    /// **Side effects:** Consumes `self` to prevent accidental reuse after finalization.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hexz_core::algo::hashing::blake3::Blake3Hasher;
+    ///
+    /// let hasher = Blake3Hasher::new();
+    /// let mut inc = hasher.new_incremental();
+    /// inc.update(b"data");
+    /// let hash = inc.finalize();
+    ///
+    /// assert_eq!(hash.len(), 32);
+    /// ```
+    #[must_use]
+    pub fn finalize(self) -> [u8; 32] {
+        self.inner.finalize().into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_basic_hash() {
+        let hasher = Blake3Hasher::new();
+        let hash = hasher.hash(b"test data").unwrap();
+
+        assert_eq!(hash.len(), 32);
+    }
+
+    #[test]
+    fn test_hash_array() {
+        let hasher = Blake3Hasher::new();
+        let hash = hasher.hash_array(b"test data");
+
+        assert_eq!(hash.len(), 32);
+    }
+
+    #[test]
+    fn test_deterministic() {
+        let hasher = Blake3Hasher::new();
+        let hash1 = hasher.hash(b"test data").unwrap();
+        let hash2 = hasher.hash(b"test data").unwrap();
+
+        assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_different_inputs_different_hashes() {
+        let hasher = Blake3Hasher::new();
+        let hash1 = hasher.hash(b"test data 1").unwrap();
+        let hash2 = hasher.hash(b"test data 2").unwrap();
+
+        assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_empty_input() {
+        let hasher = Blake3Hasher::new();
+        let hash = hasher.hash(b"").unwrap();
+
+        assert_eq!(hash.len(), 32);
+        // BLAKE3 of empty input is a known value
+        let expected = blake3::hash(b"");
+        assert_eq!(hash, expected.as_bytes());
+    }
+
+    #[test]
+    fn test_large_input() {
+        let hasher = Blake3Hasher::new();
+        let data = vec![0u8; 1024 * 1024]; // 1 MB of zeros
+        let hash = hasher.hash(&data).unwrap();
+
+        assert_eq!(hash.len(), 32);
+    }
+
+    #[test]
+    fn test_output_len() {
+        let hasher = Blake3Hasher::new();
+        assert_eq!(hasher.output_len(), 32);
+    }
+
+    #[test]
+    fn test_keyed_hash() {
+        let hasher = Blake3Hasher::new();
+        let key = [0u8; 32];
+        let hash = hasher.hash_keyed(&key, b"test data");
+
+        assert_eq!(hash.len(), 32);
+    }
+
+    #[test]
+    fn test_keyed_hash_different_keys() {
+        let hasher = Blake3Hasher::new();
+        let key1 = [0u8; 32];
+        let key2 = [1u8; 32];
+
+        let hash1 = hasher.hash_keyed(&key1, b"test data");
+        let hash2 = hasher.hash_keyed(&key2, b"test data");
+
+        assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_keyed_vs_unkeyed() {
+        let hasher = Blake3Hasher::new();
+        let key = [0u8; 32];
+
+        let hash_keyed = hasher.hash_keyed(&key, b"test data");
+        let hash_unkeyed = hasher.hash_array(b"test data");
+
+        // Keyed and unkeyed hashes should be different even with zero key
+        assert_ne!(hash_keyed, hash_unkeyed);
+    }
+
+    #[test]
+    fn test_incremental_hash() {
+        let hasher = Blake3Hasher::new();
+        let mut inc = hasher.new_incremental();
+
+        inc.update(b"test");
+        inc.update(b" ");
+        inc.update(b"data");
+
+        let hash_incremental = inc.finalize();
+        let hash_oneshot = hasher.hash_array(b"test data");
+
+        assert_eq!(hash_incremental, hash_oneshot);
+    }
+
+    #[test]
+    fn test_incremental_empty() {
+        let hasher = Blake3Hasher::new();
+        let inc = hasher.new_incremental();
+
+        let hash_incremental = inc.finalize();
+        let hash_empty = hasher.hash_array(b"");
+
+        assert_eq!(hash_incremental, hash_empty);
+    }
+
+    #[test]
+    fn test_incremental_single_update() {
+        let hasher = Blake3Hasher::new();
+        let mut inc = hasher.new_incremental();
+
+        inc.update(b"test data");
+
+        let hash_incremental = inc.finalize();
+        let hash_oneshot = hasher.hash_array(b"test data");
+
+        assert_eq!(hash_incremental, hash_oneshot);
+    }
+
+    #[test]
+    fn test_incremental_many_updates() {
+        let hasher = Blake3Hasher::new();
+        let mut inc = hasher.new_incremental();
+
+        // Update with many small chunks
+        for i in 0..100 {
+            inc.update(&[i as u8]);
+        }
+
+        let hash_incremental = inc.finalize();
+
+        // Build the same data in one shot
+        let data: Vec<u8> = (0..100).map(|i| i as u8).collect();
+        let hash_oneshot = hasher.hash_array(&data);
+
+        assert_eq!(hash_incremental, hash_oneshot);
+    }
+
+    #[test]
+    fn test_clone_hasher() {
+        let hasher1 = Blake3Hasher::new();
+        let hasher2 = hasher1.clone();
+
+        let hash1 = hasher1.hash(b"test").unwrap();
+        let hash2 = hasher2.hash(b"test").unwrap();
+
+        assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_default() {
+        let hasher = Blake3Hasher::default();
+        let hash = hasher.hash(b"test").unwrap();
+
+        assert_eq!(hash.len(), 32);
+    }
+
+    #[test]
+    fn test_hash_as_dedup_key() {
+        use std::collections::HashMap;
+
+        let hasher = Blake3Hasher::new();
+        let mut dedup_table: HashMap<[u8; 32], u64> = HashMap::new();
+
+        // Insert first chunk
+        let chunk1 = b"unique data 1";
+        let hash1 = hasher.hash_array(chunk1);
+        dedup_table.insert(hash1, 0);
+
+        // Insert second chunk
+        let chunk2 = b"unique data 2";
+        let hash2 = hasher.hash_array(chunk2);
+        dedup_table.insert(hash2, 1024);
+
+        // Check deduplication for duplicate chunk
+        let chunk3 = b"unique data 1"; // Same as chunk1
+        let hash3 = hasher.hash_array(chunk3);
+
+        assert!(dedup_table.contains_key(&hash3));
+        assert_eq!(dedup_table.get(&hash3), Some(&0));
+    }
+
+    #[test]
+    fn test_avalanche_effect() {
+        // Test that small input changes cause large hash changes (avalanche property)
+        let hasher = Blake3Hasher::new();
+
+        let hash1 = hasher.hash_array(b"test data");
+        let hash2 = hasher.hash_array(b"test datb"); // Changed last char
+
+        // Count different bits
+        let diff_bits: u32 = hash1
+            .iter()
+            .zip(hash2.iter())
+            .map(|(a, b)| (a ^ b).count_ones())
+            .sum();
+
+        // Expect ~50% of bits to differ (128 out of 256)
+        // Allow range 100-156 bits (reasonable avalanche)
+        assert!(
+            diff_bits >= 100 && diff_bits <= 156,
+            "Expected 100-156 different bits, got {}",
+            diff_bits
+        );
+    }
+
+    #[test]
+    fn test_known_vector() {
+        // Test against a known BLAKE3 test vector
+        let hasher = Blake3Hasher::new();
+        let hash = hasher.hash_array(b"abc");
+
+        // Known BLAKE3 hash of "abc"
+        let expected = blake3::hash(b"abc");
+        assert_eq!(hash, *expected.as_bytes());
+    }
+}

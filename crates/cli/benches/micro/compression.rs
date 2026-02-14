@@ -6,8 +6,8 @@
 //! guide codec selection based on workload characteristics.
 
 use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
-use hexz_core::algo::compression::lz4::Lz4Compressor;
 use hexz_core::algo::compression::Compressor;
+use hexz_core::algo::compression::lz4::Lz4Compressor;
 use hexz_core::algo::compression::zstd::ZstdCompressor;
 
 /// Benchmarks compression and decompression performance for available codecs.
@@ -39,7 +39,7 @@ fn bench_compression(c: &mut Criterion) {
     });
 
     group.bench_function("Zstd-3 Compress", |b| {
-        let compressor = ZstdCompressor::new(3);
+        let compressor = ZstdCompressor::new(3, None);
         b.iter(|| {
             compressor.compress(black_box(&data)).unwrap();
         })
@@ -51,6 +51,31 @@ fn bench_compression(c: &mut Criterion) {
     group.bench_function("LZ4 Decompress", |b| {
         b.iter(|| {
             lz4.decompress(black_box(&lz4_compressed)).unwrap();
+        })
+    });
+
+    let zstd = ZstdCompressor::new(3, None);
+    let zstd_compressed = zstd.compress(&data).unwrap();
+
+    group.bench_function("Zstd-3 Decompress", |b| {
+        b.iter(|| {
+            zstd.decompress(black_box(&zstd_compressed)).unwrap();
+        })
+    });
+
+    group.bench_function("Zstd-9 Compress", |b| {
+        let compressor = ZstdCompressor::new(9, None);
+        b.iter(|| {
+            compressor.compress(black_box(&data)).unwrap();
+        })
+    });
+
+    let zstd9 = ZstdCompressor::new(9, None);
+    let zstd9_compressed = zstd9.compress(&data).unwrap();
+
+    group.bench_function("Zstd-9 Decompress", |b| {
+        b.iter(|| {
+            zstd9.decompress(black_box(&zstd9_compressed)).unwrap();
         })
     });
 

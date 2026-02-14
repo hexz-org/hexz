@@ -136,24 +136,19 @@ reader.read(buffer=array)  # Writes to tensor
 
 ## Performance Impact
 
-Measured on loading 1GB of compressed data:
+[BENCHMARK NOT YET VALIDATED]
+
+The zero-copy approach should provide significant speedup by eliminating intermediate copies:
 
 **Traditional approach**:
-- Disk read: 1GB
-- Copy to Python: 1GB
-- Copy to NumPy: 1GB
-- Copy to PyTorch: 1GB
-- Total data moved: 4GB
-- Time: ~2 seconds
+- Multiple copies: Disk → Python bytes → NumPy → PyTorch
+- Each copy consumes memory bandwidth and CPU time
 
 **Zero-copy approach**:
-- Disk read: 1GB (via mmap, zero-copy)
-- Decompress to NumPy: 1GB (direct)
-- View as PyTorch: 0 (zero-copy)
-- Total data moved: 1GB
-- Time: ~0.6 seconds
+- Direct path: Disk → NumPy buffer (via PyO3 buffer protocol)
+- PyTorch tensor is zero-copy view of NumPy array
 
-**Speedup**: 3.3x
+Actual speedup depends on workload characteristics and needs end-to-end Python benchmarking to validate.
 
 ## Limitations
 

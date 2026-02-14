@@ -259,24 +259,30 @@ print(f"Throughput: {throughput:.1f} MB/s")
 
 ## Benchmark Results
 
-Representative performance on standard hardware:
+Validated performance on Intel i7-14700K, 64GB RAM, NVMe SSD.
 
-### Local NVMe (Samsung 980 Pro)
+**See [`docs/project-docs/BENCHMARKS.md`](../project-docs/BENCHMARKS.md)** for complete benchmark results including:
 
-| Block Size | Algorithm | Random Access Latency | Sequential Throughput |
-|------------|-----------|----------------------|----------------------|
-| 64KB | LZ4 | 15 µs | 2.1 GB/s |
-| 64KB | Zstd-3 | 45 µs | 890 MB/s |
-| 256KB | LZ4 | 35 µs | 2.3 GB/s |
-| 256KB | Zstd-3 | 120 µs | 950 MB/s |
+- Compression/decompression throughput (LZ4 and Zstd)
+- Sequential and random access performance
+- Multi-worker scaling characteristics
+- AI/ML DataLoader simulation results
+- Cache effectiveness measurements
 
-### S3 Streaming (us-west-2, same region)
+### Quick Reference
 
-| Configuration | First Epoch | Second Epoch (cached) |
-|---------------|-------------|---------------------|
-| Default (256MB cache) | 45 min | 25 min |
-| 2GB cache | 38 min | 12 min |
-| 2GB cache + disk | 36 min | 8 min |
+| Metric | Value | Benchmark |
+|--------|-------|-----------|
+| LZ4 Compress | 22 GB/s | `cargo bench --bench compression` |
+| LZ4 Decompress | 31 GB/s | `cargo bench --bench compression` |
+| Sequential Read | 8-9 GB/s | `cargo bench --bench read_throughput` |
+| Random Access (cold) | 6.6 µs | `cargo bench --bench sparse_access` |
+| Random Access (warm) | 174 ns | `cargo bench --bench sparse_access` |
+| Multi-worker (8 workers) | 2.9× speedup | `cargo bench --bench ai_multiworker` |
+
+### Not Yet Validated
+
+**S3 Streaming**, **Deduplication Efficiency**, and **Real-world Compression Ratios** need benchmarks. See BENCHMARKS.md "What's Not Yet Validated" section.
 
 ## Troubleshooting Slow Performance
 

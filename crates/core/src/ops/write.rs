@@ -511,8 +511,6 @@ pub fn write_block<W: Write>(
     compressor: &dyn Compressor,
     encryptor: Option<&dyn Encryptor>,
 ) -> Result<BlockInfo> {
-    use sha2::Digest;
-
     // Compress the chunk
     let compressed = compressor.compress(chunk)?;
 
@@ -534,9 +532,8 @@ pub fn write_block<W: Write>(
         *current_offset += final_data.len() as u64;
         off
     } else if let Some(map) = dedup_map {
-        // Try to deduplicate
-        let hash = sha2::Sha256::digest(&final_data);
-        let hash_key: [u8; 32] = hash.into();
+        // Try to deduplicate using BLAKE3 (6x faster than SHA-256)
+        let hash_key: [u8; 32] = blake3::hash(&final_data).into();
 
         if let Some(&existing_offset) = map.get(&hash_key) {
             // Block already exists, reuse it

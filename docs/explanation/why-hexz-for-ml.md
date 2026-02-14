@@ -108,17 +108,14 @@ graph TB
 
 **Scenario**: Train ResNet-50 on ImageNet-21K (1.3TB dataset) from S3
 
-| Metric | WebDataset | Hexz | Improvement |
-|--------|-----------|--------|-------------|
-| First epoch time | 45min | 38min | 1.18× |
-| Second epoch time | 45min | 12min | 3.75× |
-| Storage required | 1.3TB local | 256MB cache | 5000× |
-| Setup time | 2 hours (download) | 2 seconds (index) | 3600× |
+[BENCHMARK NOT YET VALIDATED]
 
-**Why the difference**:
-- **Epoch 1**: WebDataset streams sequentially (fast), Hexz fetches randomly (slightly slower but caches)
-- **Epoch 2**: WebDataset re-streams (same time), Hexz hits cache (much faster)
-- **Storage**: WebDataset needs full local copy, Hexz caches working set only
+This comparison requires end-to-end integration testing with actual S3 infrastructure. Preliminary estimates suggest:
+- First epoch: Comparable to WebDataset (network-bound)
+- Second epoch: Faster due to caching (cache hit rate dependent)
+- Storage: Significantly lower (cache working set vs full copy)
+
+See `crates/cli/benches/ai/` for ML-specific benchmarks that have been validated.
 
 ## Design Decisions
 
@@ -166,7 +163,7 @@ Python's GIL (Global Interpreter Lock) prevents true parallelism. With 8 DataLoa
 - Workers decompress in parallel (GIL released during I/O)
 - 8 workers = 7.5× speedup
 
-**Measured**: Training ResNet-50 with 8 workers: 850 img/s (Python) vs 6400 img/s (Hexz).
+**Note**: Multi-worker scaling benchmarks exist in `crates/cli/benches/ai/multiworker.rs` but end-to-end PyTorch integration numbers need validation.
 
 ## Comparison Matrix
 

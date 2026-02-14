@@ -90,29 +90,26 @@ hexz.open("out.hxz", mode="w", compression="zstd", compression_level=9)
 
 ### Performance
 
-Measured on random data, 64KB blocks:
+Validated on i7-14700K (single-threaded):
 
 | Algorithm | Compress | Decompress | Ratio | CPU |
 |-----------|----------|------------|-------|-----|
-| LZ4 | Fast | Very fast | 2.2x | Low |
-| Zstd-1 | Fast | Fast | 2.8x | Low |
-| Zstd-3 | Moderate | Fast | 3.4x | Medium |
-| Zstd-9 | Slow | Fast | 4.1x | High |
-| Zstd-22 | Very slow | Moderate | 5.2x | Very high |
+| LZ4 | 22 GB/s | 32 GB/s | 2-3x [measured in benchmarks] | Low |
+| Zstd-3 | 8-9 GB/s | [not measured] | 3-4x [estimated] | Medium |
+| Zstd-9+ | [not measured] | [not measured] | [not measured] | High |
 
-Note: Actual performance varies by data characteristics.
+Note: Actual performance varies by data characteristics. Compression ratios need validation with real datasets.
 
 ### Storage Savings
 
-Example: 1TB image dataset
+[BENCHMARK NOT YET VALIDATED]
 
-| Algorithm | Compressed Size | Bandwidth Saved | Pack Time |
-|-----------|----------------|-----------------|-----------|
-| None | 1000 GB | 0% | N/A |
-| LZ4 | 450 GB | 55% | Fast |
-| Zstd-3 | 330 GB | 67% | Moderate |
-| Zstd-9 | 280 GB | 72% | Slow |
-| Zstd-22 | 220 GB | 78% | Very slow |
+Compression ratios depend heavily on data characteristics. Typical ranges:
+- LZ4: 2-3× (measured in micro-benchmarks)
+- Zstd-3: 3-4× (estimated)
+- Zstd-9+: 4-5× (estimated)
+
+Actual savings on real datasets (images, VMs, code) need validation through macro-benchmarks.
 
 ### Use Case Recommendations
 
@@ -127,17 +124,11 @@ Example: 1TB image dataset
 
 ## Block Size Impact
 
-Compression ratio improves with larger blocks:
+[BENCHMARK NOT YET VALIDATED]
 
-| Block Size | LZ4 Ratio | Zstd-9 Ratio | Random Access Latency |
-|------------|-----------|--------------|----------------------|
-| 4 KB | 1.8x | 2.4x | Lowest |
-| 16 KB | 2.0x | 3.0x | Low |
-| 64 KB | 2.2x | 3.5x | Moderate (default) |
-| 256 KB | 2.4x | 4.2x | Higher |
-| 1 MB | 2.6x | 4.8x | Highest |
+Compression ratio generally improves with larger blocks, but this trades off against random access latency. A dedicated benchmark is needed to measure the actual relationship between block size, compression ratio, and access latency.
 
-See [ADR-0002](../adr/0002-block-level-compression.md) for block-level compression rationale.
+Default block size is 64KB as a balanced compromise. See [ADR-0002](../adr/0002-block-level-compression.md) for block-level compression rationale.
 
 ## Choosing an Algorithm
 

@@ -156,9 +156,17 @@ make build    # Rust workspace + Python wheel
 
 ## Benchmarks
 
-* **Random Access Latency:** ~15µs per 4KB block (vs. milliseconds for standard tar/gzip).
-* **Throughput:** Saturates network bandwidth before CPU limits (Zero-Copy).
-* **Storage Savings:** Up to 40% reduction on standard datasets via block-level deduplication.
+Performance measured on Intel i7-14700K with 64GB RAM:
+
+* **Compression:** LZ4 at 22 GB/s (compress) / 31 GB/s (decompress)
+* **Sequential Read:** 8-9 GB/s (LZ4 compression)
+* **Random Access:** 6.6 µs (cold cache), 174 ns (warm cache)
+* **Multi-worker Scaling:** 2.9× speedup with 8 workers, 4.1× with 16 workers
+* **Hashing:** BLAKE3 at 5.3 GB/s (2.2× faster than SHA-256)
+
+**See [`docs/project-docs/BENCHMARKS.md`](docs/project-docs/BENCHMARKS.md)** for complete validated results and reproduction commands.
+
+Run benchmarks: `cargo bench --bench compression` or `make bench` from repo root.
 
 ---
 

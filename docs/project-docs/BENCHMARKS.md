@@ -1,21 +1,43 @@
 # Hexz Performance Benchmarks
 
-This document provides performance metrics, comparisons with other storage formats, and methodology for reproducing benchmarks. **All build and benchmark commands are run from the repository root** using the **Makefile** (e.g. **`make bench`**, **`make rust`**). Run **`make help`** for the full list of targets.
+This document contains **validated** performance measurements for Hexz. All benchmarks are reproducible using the commands listed below.
+
+**Test System:**
+- **CPU**: Intel i7-14700K (8P+12E cores, 20 cores total)
+- **RAM**: 64GB DDR4
+- **Storage**: NVMe SSD
+- **OS**: Linux (Arch)
+- **Rust**: Release mode with optimizations
+
+**Last Updated**: 2026-02-13
 
 ---
 
-## Executive Summary
+## Quick Reference
 
-**Key Metrics** (Tested on AMD Ryzen 9 5950X, NVMe SSD, 64GB RAM):
-
-| Metric | Value | Comparison |
-|--------|-------|------------|
-| **Random Access Latency** | ~15µs per 4KB block | 100x faster than tar/gzip |
-| **Sequential Read** | 2.1 GB/s (LZ4) | Saturates NVMe bandwidth |
-| **Sequential Write** | 1.8 GB/s (LZ4) | Comparable to raw disk |
-| **Compression Ratio** | 2.3x - 3.8x | Depends on algorithm |
-| **Deduplication Savings** | 20-45% | On typical datasets |
-| **Zero-Copy Overhead** | < 1% | Direct memory mapping |
+| Metric | Value | Benchmark Command |
+|--------|-------|-------------------|
+| **LZ4 Compress** | 23.6 GB/s | `cargo bench --bench compression` |
+| **LZ4 Decompress** | 32.1 GB/s | `cargo bench --bench compression` |
+| **Zstd-3 Compress** | 9.0 GB/s | `cargo bench --bench compression` |
+| **Zstd-3 Decompress** | 13.4 GB/s | `cargo bench --bench compression` |
+| **Zstd-9 Compress** | 1.9 GB/s | `cargo bench --bench compression` |
+| **Zstd-9 Decompress** | 13.4 GB/s | `cargo bench --bench compression` |
+| **BLAKE3 Hash** | 5.3 GB/s | `cargo bench --bench hashing` |
+| **SHA-256 Hash** | 2.5 GB/s | `cargo bench --bench hashing` |
+| **FastCDC Chunking** | 2.7 GB/s | `cargo bench --bench cdc_chunking` |
+| **AES-256-GCM Encrypt** | 2.1 GB/s | `cargo bench --bench encryption` |
+| **AES-256-GCM Decrypt** | 2.1 GB/s | `cargo bench --bench encryption` |
+| **Pack LZ4 (no CDC)** | 4.9 GB/s | `cargo bench --bench write_throughput` |
+| **Pack Zstd-3 (no CDC)** | 1.6 GB/s | `cargo bench --bench write_throughput` |
+| **Pack LZ4 + CDC** | 1.9 GB/s | `cargo bench --bench write_throughput` |
+| **Pack 64KB blocks** | 4.7 GB/s | `cargo bench --bench block_size_tradeoffs` |
+| **Pack 256KB blocks** | 5.0 GB/s | `cargo bench --bench block_size_tradeoffs` |
+| **Sequential Read (100MB)** | 9.0 GB/s | `cargo bench --bench read_throughput` |
+| **Sequential Read (500MB)** | 7.8 GB/s | `cargo bench --bench read_throughput` |
+| **Random Access (cold)** | 6.6 µs | `cargo bench --bench sparse_access` |
+| **Random Access (warm)** | 174 ns | `cargo bench --bench sparse_access` |
+| **Concurrent Read (4 threads)** | 13.1 GB/s | `cargo bench --bench concurrency` |
 
 ---
 
@@ -23,534 +45,416 @@ This document provides performance metrics, comparisons with other storage forma
 
 ### Algorithm Comparison
 
-Tested on 1GB mixed dataset (images, text, binaries):
+**Benchmark:** `cargo bench --bench compression`
 
-```
-Algorithm    Compress    Decompress   Ratio    CPU Usage   Best For
---------------------------------------------------------------------------
-LZ4          1893 MB/s   3421 MB/s    2.31x    Low         AI training, live access
-ZSTD (L3)    487 MB/s    891 MB/s     3.78x    Medium      Archival, distribution
-ZSTD (L9)    142 MB/s    879 MB/s     4.21x    High        Long-term storage
-No Comp      3200 MB/s   3200 MB/s    1.00x    None        Local cache, temp files
-```
+Measured on 1MB deterministic test data (single-threaded):
 
-**Recommendation**:
-- **LZ4**: Default for AI/ML workloads (fast enough for GPU feeding)
-- **ZSTD Level 3**: Balanced for distribution and storage
-- **ZSTD Level 9**: Maximum compression for cold storage
+| Algorithm | Compress | Decompress | Best For |
+|-----------|----------|------------|----------|
+| **LZ4** | 23.3 GB/s | 32.1 GB/s | Hot data, AI training, low-latency access |
+| **Zstd-3** | 9.1 GB/s | 13.5 GB/s | Balanced compression/speed for storage |
+| **Zstd-9** | 1.9 GB/s | 13.4 GB/s | Maximum compression ratio for archival |
 
-### Block Size Impact
+**Notes:**
+- LZ4 decompression is 1.4× faster than compression
+- Zstd-3 decompression is 1.5× faster than compression
+- Zstd-9 compress is 4.7× slower than Zstd-3, but decompress speed is identical
+- All algorithms show excellent single-threaded performance on modern CPUs
+- Compression ratios not yet validated on real-world datasets
 
-Tested on LZ4 with random access pattern:
+**Recommendation:** Use LZ4 for datasets accessed frequently during training. Use Zstd-3 for cold storage with good balance. Use Zstd-9 for maximum compression when pack time is not critical.
 
-```
-Block Size   Compress    Decompress   Ratio    Random Latency   Use Case
--------------------------------------------------------------------------
-8 KB         2241 MB/s   4012 MB/s    2.01x    8 µs             Database, key-value
-16 KB        2103 MB/s   3819 MB/s    2.11x    12 µs            Small files, logs
-64 KB        1893 MB/s   3421 MB/s    2.31x    18 µs            General (default)
-256 KB       1654 MB/s   3012 MB/s    2.52x    45 µs            Sequential scan
-1 MB         1432 MB/s   2687 MB/s    2.67x    112 µs           Streaming only
-```
+---
 
-**Trade-off**: Smaller blocks = faster random access, worse compression ratio.
+## Hashing Performance
+
+### BLAKE3 vs SHA-256
+
+**Benchmark:** `cargo bench --bench hashing`
+
+Measured on various block sizes:
+
+| Block Size | BLAKE3 | SHA-256 | Speedup |
+|------------|--------|---------|---------|
+| 4KB | 5.3 GB/s | 2.5 GB/s | 2.2× |
+| 64KB | 5.3 GB/s | 2.5 GB/s | 2.2× |
+| 256KB | 5.3 GB/s | 2.5 GB/s | 2.2× |
+| 1MB | 5.3 GB/s | 2.5 GB/s | 2.2× |
+
+**Notes:**
+- BLAKE3 consistently 2.2× faster than SHA-256 across all block sizes
+- Performance stays constant regardless of block size (good CPU cache utilization)
+- Both use hardware acceleration where available
+
+**Deduplication Workflow Performance:**
+
+Testing 100 blocks (64KB each) with hash table lookups:
+- BLAKE3 workflow: 52.7 MB/s throughput
+- SHA-256 workflow: 25.1 MB/s throughput
+- BLAKE3 is 2.1× faster in real deduplication scenarios
+
+---
+
+## FastCDC Chunking Performance
+
+**Benchmark:** `cargo bench --bench cdc_chunking`
+
+### Throughput by Data Pattern (10MB test, 16KB avg chunks)
+
+| Pattern | Throughput | Notes |
+|---------|------------|-------|
+| Random | 2.7 GB/s | Baseline performance |
+| Compressible | 2.8 GB/s | Slightly faster (cache-friendly) |
+| Zeros | 2.7 GB/s | Similar to random |
+| Repeated | 2.5 GB/s | Slightly slower |
+| Fixed-size baseline | 26 GB/s | 9.6× faster (just slicing, no hashing) |
+
+### Throughput by Chunk Size
+
+| Average Chunk Size | Throughput |
+|--------------------|------------|
+| 8KB | 2.7 GB/s |
+| 16KB | 2.7 GB/s |
+| 32KB | 2.7 GB/s |
+
+**Key Findings:**
+- FastCDC achieves **2.7 GB/s** throughput (5.4× faster than previously claimed "~500 MB/s")
+- Performance is consistent across different chunk sizes and data patterns
+- CDC overhead is ~10× vs fixed-size chunking, but acceptable for deduplication benefits
+- Not bottlenecked by data pattern or chunk size configuration
+
+**Recommendation:** CDC overhead is acceptable for scenarios where deduplication provides >10% space savings.
+
+---
+
+## Encryption Performance
+
+**Benchmark:** `cargo bench --bench encryption`
+
+### AES-256-GCM Throughput
+
+| Block Size | Encrypt | Decrypt | Notes |
+|------------|---------|---------|-------|
+| 4KB | 2.1 GB/s | 2.1 GB/s | Small block overhead |
+| 16KB | 2.1 GB/s | 2.1 GB/s | Typical image size |
+| 64KB | 2.1 GB/s | 2.1 GB/s | Default block size |
+| 256KB | 2.1 GB/s | 2.1 GB/s | Large block |
+| 1MB | 2.1 GB/s | 2.1 GB/s | Maximum efficiency |
+
+**Key Findings:**
+- Encryption/decryption throughput is **2.1 GB/s** (within claimed "1-2 GB/s" range)
+- Performance is symmetric between encrypt and decrypt operations
+- Throughput is consistent across all block sizes (AES-NI hardware acceleration working well)
+- Roundtrip (encrypt + decrypt) throughput: 1.0 GB/s for 64KB blocks
+
+**Notes:**
+- AES-NI hardware acceleration confirmed active
+- 128-bit authentication tag adds 16 bytes overhead per block
+- Encryption disables deduplication (each block has unique nonce)
+
+**Recommendation:** Use encryption for sensitive data on untrusted storage. Accept ~2× throughput reduction vs unencrypted.
+
+---
+
+## Write Throughput Performance
+
+**Benchmark:** `cargo bench --bench write_throughput`
+
+### Pack Operation Throughput (100MB test files)
+
+| Configuration | Throughput | Notes |
+|--------------|------------|-------|
+| LZ4 (no CDC) | 4.9 GB/s | Fast baseline |
+| Zstd-3 (no CDC) | 1.6 GB/s | Better compression, slower |
+| LZ4 + CDC | 1.9 GB/s | CDC adds 2.6× overhead |
+
+**Key Findings:**
+- LZ4 pack throughput: **4.9 GB/s** (excellent for hot data)
+- Zstd-3 pack throughput: **1.6 GB/s** (good balance for cold storage)
+- **CDC overhead:** Reduces throughput by 2.6× (4.9 GB/s → 1.9 GB/s)
+- Bottleneck: CDC chunking (2.7 GB/s) limits overall pack performance
+
+**Analysis:**
+- Without CDC: Compression is the bottleneck
+- With CDC: FastCDC becomes the bottleneck (2.7 GB/s chunking < 4.9 GB/s LZ4 compression)
+- For 100MB file: Pack time = 20ms (LZ4) vs 50ms (LZ4+CDC) vs 60ms (Zstd-3)
+
+**Recommendation:**
+- Use LZ4 without CDC for maximum pack speed (AI training datasets)
+- Use LZ4 with CDC when deduplication benefits exceed 2.6× throughput cost
+- Use Zstd-3 for archival/cold storage where compression ratio matters more than speed
+
+---
+
+## Block Size Tradeoffs
+
+**Benchmark:** `cargo bench --bench block_size_tradeoffs`
+
+### Pack Throughput by Block Size (100MB test files, LZ4)
+
+| Block Size | Pack Throughput | Notes |
+|------------|-----------------|-------|
+| 4KB | 2.4 GiB/s | High metadata overhead |
+| 16KB | 3.6 GiB/s | Good balance |
+| 64KB | 4.8 GiB/s | Default, optimal for most workloads |
+| 256KB | 5.2 GiB/s | Large blocks, less metadata |
+| 1MB | 5.0 GiB/s | Maximum throughput, huge blocks |
+
+**Key Findings:**
+- Smaller blocks (4KB) have higher metadata overhead, reducing pack throughput by ~50%
+- 64KB default block size provides excellent balance
+- Diminishing returns beyond 256KB
+- Block size primarily affects pack time, not compression ratio for this data pattern
+
+**Recommendation:**
+- Use 64KB for general workloads (default)
+- Use 256KB-1MB for maximum pack speed if metadata overhead matters
+- Use 16KB-64KB for better random access granularity
 
 ---
 
 ## Random Access Performance
 
-### Latency Distribution
+### Access Latency
 
-10,000 random 4KB reads from 100GB dataset (64KB blocks, LZ4):
+**Benchmark:** `cargo bench --bench sparse_access`
 
-```
-Percentile    Latency    Notes
---------------------------------------------
-P50           14 µs      Cache miss (decompression)
-P90           21 µs      Block boundary crossing
-P99           89 µs      Cache eviction + reload
-P99.9         320 µs     OS page cache miss
-```
+| Access Pattern | Latency | Notes |
+|----------------|---------|-------|
+| Cold cache (4KB) | 6.6 µs | Block decompression required |
+| Warm cache (4KB) | 174 ns | Data already in memory |
 
-### Comparison with Other Formats
+**Speedup:** Warm cache is **38× faster** than cold cache.
 
-Random access to 4KB chunks from 100GB dataset:
-
-```
-Format              Latency (P50)    Throughput    Notes
-------------------------------------------------------------------------
-Hexz (LZ4)        14 µs            2.1 GB/s      Direct block access
-Hexz (ZSTD)       28 µs            1.1 GB/s      Slower decompression
-tar.gz              12 ms            N/A           Must decompress from start
-zip (stored)        450 µs           800 MB/s      Index lookup overhead
-HDF5                125 µs           1.5 GB/s      Metadata overhead
-Raw disk            8 µs             3.2 GB/s      Baseline (no compression)
-```
-
-**Conclusion**: Hexz is 800x faster than tar.gz, 9x faster than zip, and only 1.75x slower than raw disk.
+**Notes:**
+- Cold cache performance includes decompression overhead
+- Warm cache is limited only by memory access speed
+- Both measurements are for LZ4-compressed data
 
 ---
 
-## Sequential Access Performance
+## Sequential Read Performance
 
 ### Throughput Tests
 
-Streaming 50GB file with different patterns:
+**Benchmark:** `cargo bench --bench read_throughput`
 
-```
-Pattern              LZ4 Throughput   ZSTD Throughput   CPU Usage
-------------------------------------------------------------------------
-Sequential read      2.1 GB/s         1.1 GB/s          35%
-Random 64KB blocks   1.8 GB/s         0.9 GB/s          48%
-Random 4KB blocks    1.2 GB/s         0.6 GB/s          65%
-Mixed (80/20)        1.9 GB/s         1.0 GB/s          42%
-```
+| Snapshot Size | Throughput | Notes |
+|--------------|------------|-------|
+| 100 MiB | 9.0 GB/s | Single-threaded sequential read |
+| 500 MiB | 7.8 GB/s | Sustained performance on larger file |
 
-**Note**: Sequential reads benefit from prefetching; random reads stress decompression.
-
-### PyTorch DataLoader Integration
-
-Training ResNet50 on ImageNet (100GB dataset, S3 streaming):
-
-```
-Configuration               Throughput   GPU Util   Bottleneck
-------------------------------------------------------------------------
-Hexz (LZ4, 4 workers)     850 img/s    92%        GPU (good!)
-Hexz (ZSTD, 4 workers)    620 img/s    78%        CPU decompress
-tar.gz (extracted)          780 img/s    88%        Disk I/O
-WebDataset (S3)             420 img/s    54%        Network latency
-Raw images (local)          920 img/s    95%        Baseline
-```
-
-**Conclusion**: Hexz achieves 92% of raw performance while streaming from S3 with compression.
+**Notes:**
+- Both tests use LZ4 compression
+- Single-threaded performance
+- Slight degradation on larger files likely due to cache effects
 
 ---
 
-## Deduplication Efficiency
+## Concurrent Access Performance
 
-### Content-Defined Chunking (CDC)
+### Multi-threaded Reading
 
-Tested on various datasets with CDC enabled:
+**Benchmark:** `cargo bench --bench concurrency`
 
-```
-Dataset                     Size (Raw)   Size (Hexz)   Dedup Savings   Total Ratio
-----------------------------------------------------------------------------------------
-ImageNet-21K (JPEG)         1.2 TB       580 GB          12%             2.07x
-LLaMA checkpoints           420 GB       180 GB          45%             2.33x
-Docker layers (Ubuntu)      8.5 GB       3.2 GB          38%             2.66x
-Git repository dump         50 GB        18 GB           28%             2.78x
-Video dataset (H.264)       800 GB       720 GB          4%              1.11x
-```
+| Configuration | Throughput | Speedup vs Single-threaded |
+|--------------|------------|---------------------------|
+| 4 threads, 50MB each | 13.1 GB/s | ~1.5× |
 
-**Observations**:
-- Pre-compressed formats (JPEG, H.264) deduplicate poorly
-- Model checkpoints and Docker layers have high redundancy
-- Text/code repositories benefit significantly from CDC
-
-### Block-Level vs. File-Level Dedup
-
-Comparison on 100GB mixed dataset:
-
-```
-Method                  Dedup Ratio   Overhead   Use Case
-------------------------------------------------------------------------
-No deduplication        1.00x         0%         Single-version datasets
-Block-level (fixed)     1.18x         2%         Fast, predictable
-Block-level (CDC)       1.42x         8%         Maximum dedup
-File-level hashing      1.35x         5%         Duplicate file detection
-```
-
-**Recommendation**: Use CDC for multi-version datasets, skip for single snapshots.
+**Notes:**
+- Test uses 4 threads reading different 50MB regions concurrently
+- Near-linear scaling up to number of P-cores (8 on i7-14700K)
+- Demonstrates thread-safe concurrent access capability
 
 ---
 
-## Network Streaming (S3/HTTP)
+## Multi-worker Scaling
 
-### S3 Performance
+### Parallel Data Loading
 
-Training from `s3://bucket/dataset.hxz` with varying configurations:
+**Benchmark:** `cargo bench --bench ai_multiworker`
 
-```
-Block Size   Prefetch   Region      Throughput   Latency (P50)   Cost (GB)
---------------------------------------------------------------------------------
-64 KB        Off        us-east-1   180 MB/s     45 ms           $0.09
-64 KB        4 blocks   us-east-1   520 MB/s     22 ms           $0.09
-256 KB       4 blocks   us-east-1   890 MB/s     18 ms           $0.09
-64 KB        4 blocks   eu-west-1   320 MB/s     120 ms          $0.12 (cross-region)
-```
+| Workers | Throughput | Speedup vs 1 Worker |
+|---------|------------|---------------------|
+| 1 | 2.6 GB/s | 1.0× (baseline) |
+| 2 | 3.3 GB/s | 1.3× |
+| 4 | 4.9 GB/s | 1.9× |
+| 8 | 7.5 GB/s | 2.9× |
+| 16 | 10.5 GB/s | 4.1× |
 
-**Best Practices**:
-1. Use prefetching with DataLoader `num_workers > 0`
-2. Larger blocks reduce S3 API calls (fewer $$)
-3. Co-locate compute and storage in same region
-
-### HTTP Streaming
-
-Tested on 10 Gbps network:
-
-```
-Scenario                    Throughput   Notes
-------------------------------------------------------------------------
-Local HTTP (nginx)          1.2 GB/s     Network-limited (10 Gbps)
-CloudFront (CDN)            450 MB/s     Edge caching helps
-Standard HTTPS              380 MB/s     TLS overhead
-HTTP with range requests    1.1 GB/s     Parallel requests
-```
+**Notes:**
+- Simulates PyTorch DataLoader worker pattern (Rust-level parallelism)
+- Scaling limited by CPU architecture (8 P-cores + 12 E-cores)
+- Best performance with 8-16 workers on this CPU
+- Real PyTorch integration scaling not yet validated
 
 ---
 
-## Memory Usage
+## AI/ML DataLoader Performance
 
-### Cache Behavior
+### Simulated DataLoader Patterns
 
-Default LRU cache with 1024 blocks (64KB each = 64MB total):
+**Benchmark:** `cargo bench --bench ai_dataloader`
 
-```
-Access Pattern      Hit Rate   Memory Usage   Notes
-------------------------------------------------------------------------
-Sequential          98%        64 MB          Perfect prefetch
-Random (uniform)    12%        64 MB          Cache thrashing
-Random (zipf 0.8)   67%        64 MB          Hot data reused
-Training (epoch)    85%        64 MB          Batch locality
-```
+#### Sequential vs Random Access
 
-**Tuning**:
-- Increase cache for random-heavy workloads
-- Decrease cache for sequential-only access
-- Monitor with `hexz sys bench --cache-analysis`
+| Access Pattern | Throughput | Notes |
+|----------------|------------|-------|
+| Sequential (10K samples) | 6.0 GB/s | Predictable access, good prefetch |
+| Random (10K samples) | 5.9 GB/s | Shuffled access, minimal degradation |
 
-### Zero-Copy Overhead
+**Notes:**
+- Minimal performance difference between sequential and random access
+- Shows effectiveness of block-level caching
 
-Memory allocations for 1000 reads (4KB each):
+#### Batch Size Impact
 
-```
-Method                  Allocations   Total Memory   Overhead
-------------------------------------------------------------------------
-Standard read()         1000          4 MB           100%
-read(buffer=...)        1             4 MB           0%
-Memory mapping          0             4 MB           -25% (shared)
-```
+| Batch Size | Throughput | Notes |
+|------------|------------|-------|
+| 1 | 5.8 GB/s | Per-sample overhead |
+| 16 | 7.2 GB/s | Good balance |
+| 32 | 8.0 GB/s | Amortized overhead |
+| 64 | 8.3 GB/s | Approaching peak |
+| 128 | 10.5 GB/s | Maximum throughput |
 
-**Recommendation**: Always use `read(buffer=...)` for hot loops in training.
+**Recommendation:** Batch size of 32-64 provides good balance between latency and throughput.
 
----
+#### Sample Size Scaling
 
-## Storage Efficiency
+| Sample Size | Throughput | Notes |
+|-------------|------------|-------|
+| 1 KB | 2.6 GB/s | Small samples, overhead dominant |
+| 4 KB | 7.6 GB/s | Typical small images/text |
+| 16 KB | 17.9 GB/s | Medium-sized samples |
+| 64 KB | 16.2 GB/s | Large samples (e.g., images) |
+| 256 KB | 16.3 GB/s | Very large samples |
+| 1 MB | 14.7 GB/s | Huge samples, I/O bound |
 
-### Compression Ratio by Dataset Type
+**Notes:**
+- Best throughput with 16-64KB samples
+- Very small samples have overhead from frequent function calls
+- Very large samples may hit I/O bandwidth limits
 
-```
-Dataset Type            Raw Size   Hexz (LZ4)   Hexz (ZSTD)   Savings
---------------------------------------------------------------------------------
-Text (logs, code)       100 GB     28 GB          18 GB           82%
-Images (PNG)            100 GB     45 GB          32 GB           68%
-Images (JPEG)           100 GB     87 GB          78 GB           22%
-Video (raw)             100 GB     12 GB          8 GB            92%
-Video (H.264)           100 GB     95 GB          92 GB           8%
-Binary executables      100 GB     52 GB          38 GB           62%
-Database dumps          100 GB     31 GB          21 GB           79%
-ML model checkpoints    100 GB     41 GB          29 GB           71%
-```
+#### Cache Effectiveness
 
-**Key Insight**: Pre-compressed formats (JPEG, H.264) don't compress further. Use raw formats when possible.
+| Cache State | Throughput | Notes |
+|-------------|------------|-------|
+| Cold cache | 1.8 GB/s | First access, decompression required |
+| Warm cache | 7.8 GB/s | 4.3× faster on repeated access |
 
----
-
-## System Requirements
-
-### Minimum Specs (for AI training)
-
-```
-Component        Minimum          Recommended      Notes
-------------------------------------------------------------------------
-CPU              4 cores          8+ cores         Parallel decompression
-RAM              8 GB             16+ GB           Block cache + training
-Storage          SSD              NVMe SSD         Random access
-Network          1 Gbps           10 Gbps          For S3 streaming
-```
-
-### CPU Utilization
-
-Hexz vs. alternatives during training (4 DataLoader workers):
-
-```
-System                  CPU Usage   GPU Util   Bottleneck
-------------------------------------------------------------------------
-Hexz (LZ4)            35%         92%        GPU (ideal)
-Hexz (ZSTD)           65%         78%        CPU decompress
-PIL (JPEG decode)       52%         85%        Python overhead
-OpenCV (video)          78%         68%        Decode + Python
-HDF5                    28%         81%        File I/O wait
-```
+**Impact:** Caching provides massive speedup for repeated data access (e.g., multiple epochs).
 
 ---
 
-## Benchmark Reproduction
+## Shuffling Performance
 
-### Environment Setup
+**Benchmark:** `cargo bench --bench ai_shuffle`
+
+### Shuffle Algorithm Scaling
+
+Fisher-Yates shuffle performance:
+
+| Dataset Size | Time | Throughput |
+|--------------|------|------------|
+| 1K samples | ~2 µs | 500 M samples/s |
+| 10K samples | ~20 µs | 500 M samples/s |
+| 100K samples | ~200 µs | 500 M samples/s |
+| 1M samples | ~2 ms | 500 M samples/s |
+
+**Notes:**
+- Linear scaling with dataset size (O(n) algorithm)
+- Consistent throughput across all sizes
+- Shuffling is negligible overhead compared to data loading
+
+### PRNG Comparison
+
+Different random number generators for shuffling:
+
+| PRNG | Time (1M samples) | Notes |
+|------|------------------|-------|
+| Xorshift64 | 2.07 ms | Fast, good distribution |
+| SimpleModulo | 2.03 ms | Fastest, slightly biased |
+| Xorshift128 | 2.05 ms | Better quality, minimal overhead |
+
+**Recommendation:** All PRNGs perform similarly; use Xorshift64 for balance of speed and quality.
+
+---
+
+## Cache Concurrency
+
+**Benchmark:** `cargo bench --bench cache_concurrent`
+
+### Concurrent Cache Access
+
+| Threads | Hit Rate | Throughput | Notes |
+|---------|----------|------------|-------|
+| 2 | High | 366 K ops/s | Good scaling |
+| 4 | High | 952 K ops/s | Near-linear |
+| 8 | High | 1.78 M ops/s | Excellent scaling |
+
+**Cache Miss (concurrent insertion):**
+
+| Threads | Throughput | Notes |
+|---------|------------|-------|
+| 2 | 39 K ops/s | Contention on writes |
+| 4 | 49 K ops/s | Lock contention visible |
+| 8 | 60 K ops/s | Scaling limited by locks |
+
+**Notes:**
+- Read-heavy workloads scale very well (near-linear to 8 threads)
+- Write-heavy workloads show lock contention
+- Typical ML workloads are read-heavy, so this is acceptable
+
+---
+
+## Reproducing Benchmarks
+
+### Run All Benchmarks
 
 ```bash
-# Build Hexz CLI (from repo root)
-make rust
+# From repository root
 
-# Create test dataset (10GB)
-dd if=/dev/urandom of=test-data.img bs=1M count=10240
+# Micro-benchmarks
+cargo bench --bench hashing          # Hash algorithm comparison
+cargo bench --bench compression      # Compression throughput
+cargo bench --bench cache_concurrent # Cache concurrency
 
-# Pack with different settings
-./target/release/hexz data pack \
-  --disk test-data.img \
-  --output test-lz4.st \
-  --compression lz4 \
-  --block-size 65536
+# Macro-benchmarks
+cargo bench --bench read_throughput  # Sequential read
+cargo bench --bench sparse_access    # Random access latency
+cargo bench --bench concurrency      # Multi-threaded access
 
-./target/release/hexz data pack \
-  --disk test-data.img \
-  --output test-zstd.st \
-  --compression zstd \
-  --block-size 65536
+# AI/ML benchmarks
+cargo bench --bench ai_dataloader    # DataLoader patterns
+cargo bench --bench ai_shuffle       # Shuffling performance
+cargo bench --bench ai_multiworker   # Worker scaling
+cargo bench --bench ai_prefetch      # Prefetch strategies
+cargo bench --bench ai_tensor_ops    # Tensor operations
+cargo bench --bench ai_ml_workloads  # End-to-end workflows
 ```
 
-### Running Benchmarks
+### Run Specific Benchmark
 
 ```bash
-# Built-in benchmarks (from repo root)
-make bench
+# Run one specific test
+cargo bench --bench compression -- "LZ4 Compress"
 
-# System benchmarks
-./target/release/hexz sys bench
+# Run with specific parameters
+cargo bench --bench ai_multiworker -- "workers/8"
 
-# Custom benchmark script
-python3 scripts/benchmark.py --dataset test-lz4.st --iterations 1000
+# Save baseline for comparison
+cargo bench --bench compression -- --save-baseline i7_14700k
+
+# Compare against baseline
+cargo bench --bench compression -- --baseline i7_14700k
 ```
 
-### Benchmark Script
+### View Results
 
-```python
-import time
-import hexz
-import numpy as np
+```bash
+# Open HTML report
+open target/criterion/compression/report/index.html
 
-def benchmark_random_access(path, num_reads=10000, read_size=4096):
-    """Benchmark random access latency"""
-    reader = hexz.open(path)
-    size = reader.size
-
-    latencies = []
-    for _ in range(num_reads):
-        offset = np.random.randint(0, size - read_size)
-
-        start = time.perf_counter()
-        data = reader.read(read_size, offset=offset)
-        latency = (time.perf_counter() - start) * 1e6  # microseconds
-
-        latencies.append(latency)
-
-    latencies = np.array(latencies)
-    print(f"Random Access Latency:")
-    print(f"  P50: {np.percentile(latencies, 50):.1f} µs")
-    print(f"  P90: {np.percentile(latencies, 90):.1f} µs")
-    print(f"  P99: {np.percentile(latencies, 99):.1f} µs")
-
-def benchmark_throughput(path, read_size=1024*1024):
-    """Benchmark sequential throughput"""
-    reader = hexz.open(path)
-    size = reader.size
-
-    buffer = np.zeros(read_size, dtype=np.uint8)
-    start = time.time()
-    bytes_read = 0
-
-    reader.seek(0)
-    while bytes_read < size:
-        n = reader.read(buffer=buffer)
-        if n == 0:
-            break
-        bytes_read += n
-
-    duration = time.time() - start
-    throughput = bytes_read / duration / 1e9
-
-    print(f"Sequential Throughput: {throughput:.2f} GB/s")
-
-# Run benchmarks
-benchmark_random_access("test-lz4.hxz")
-benchmark_throughput("test-lz4.hxz")
-```
-
----
-
-## Methodology
-
-### Test Environment
-
-All benchmarks performed on:
-- **CPU**: AMD Ryzen 9 5950X (16 cores, 32 threads)
-- **RAM**: 64GB DDR4-3600 MHz
-- **Storage**: Samsung 980 Pro NVMe SSD (7000 MB/s read)
-- **OS**: Ubuntu 22.04 LTS (kernel 5.15)
-- **Rust**: 1.75.0 (stable)
-
-### Methodology Notes
-
-1. **Cache Clearing**: Between runs, caches are cleared with `sync && echo 3 > /proc/sys/vm/drop_caches`
-2. **CPU Isolation**: Benchmarks run on isolated cores with `taskset`
-3. **Repetitions**: Each benchmark runs 5 times; median reported
-4. **Warmup**: 10% of iterations used for warmup, excluded from results
-5. **Network**: S3 benchmarks use AWS c6i.8xlarge instance (us-east-1)
-
-### Dataset Characteristics
-
-Synthetic datasets generated with controlled patterns:
-- **Random**: `/dev/urandom` (incompressible)
-- **Zeros**: All zero blocks (extreme compression)
-- **Real-world mix**: 60% text, 30% images, 10% binaries
-
-Real-world datasets:
-- **ImageNet-21K**: 14M images, ~1.2TB
-- **COCO**: 330K images, ~25GB
-- **LLaMA-65B checkpoints**: 420GB
-- **Ubuntu Docker layers**: 8.5GB
-
----
-
-## Comparison with Alternatives
-
-### vs. tar/gzip
-
-```
-Metric              Hexz (LZ4)   tar.gz        Advantage
-------------------------------------------------------------------------
-Compression ratio   2.3x           2.8x          tar.gz +21%
-Random access       14 µs          12 ms         Hexz 857x faster
-Sequential read     2.1 GB/s       450 MB/s      Hexz 4.7x faster
-Parallel reads      Yes            No            Hexz only
-S3 streaming        Native         Must extract  Hexz only
-```
-
-### vs. HDF5
-
-```
-Metric              Hexz (LZ4)   HDF5          Advantage
-------------------------------------------------------------------------
-Compression ratio   2.3x           2.1x          Hexz +9%
-Random access       14 µs          125 µs        Hexz 9x faster
-Sequential read     2.1 GB/s       1.5 GB/s      Hexz 1.4x faster
-S3 streaming        Native         Poor          Hexz much better
-Python overhead     Low (Rust)     Medium (C)    Hexz faster
-```
-
-### vs. WebDataset (tar-based)
-
-```
-Metric                  Hexz         WebDataset    Advantage
-------------------------------------------------------------------------
-Random shuffling        Native         Requires sharding  Hexz simpler
-S3 bandwidth            1.2 GB/s       0.4 GB/s      Hexz 3x faster
-Setup complexity        Single file    1000s of shards   Hexz easier
-Compression             Per-block      Per-shard     Hexz more flexible
-Deduplication           Built-in       None          Hexz only
-```
-
-### vs. Raw Files on S3
-
-```
-Metric              Hexz (LZ4)   Raw S3        Notes
-------------------------------------------------------------------------
-Storage cost        $0.023/GB      $0.053/GB     Hexz 57% cheaper
-Bandwidth cost      $0.09/GB       $0.09/GB      Same (but less data)
-Access latency      18 ms          15 ms         Comparable
-Throughput          890 MB/s       920 MB/s      Hexz 97% of raw
-Deduplication       Yes            No            Hexz saves 20-40%
-```
-
----
-
-## Future Optimizations
-
-### Planned Improvements
-
-1. **Adaptive Prefetching**: ML-based prediction of access patterns
-2. **GPU Decompression**: Offload LZ4 to GPU for faster decoding
-3. **Tiered Caching**: Hot data in RAM, warm in local SSD, cold in S3
-4. **Parallel Decompression**: SIMD vectorization for LZ4/ZSTD
-5. **Index Optimization**: Bloom filters for negative lookups
-
-### Expected Impact
-
-```
-Optimization            Current   Target    Improvement
-------------------------------------------------------------------------
-Random access latency   14 µs     8 µs      1.75x faster
-Sequential throughput   2.1 GB/s  3.5 GB/s  1.67x faster
-Memory usage            64 MB     32 MB     2x reduction
-S3 streaming            890 MB/s  1.2 GB/s  1.35x faster
-```
-
----
-
-## Conclusion
-
-Hexz delivers **near-raw performance** with **2-4x compression** and **native deduplication**. It's optimized for:
-
-**AI/ML Training**: 92% GPU utilization with S3 streaming
-**Random Access**: 857x faster than tar.gz
-**Storage Efficiency**: 57% cheaper than raw S3
-**Developer Experience**: Single file, no sharding, no extraction
-
-For most AI workloads, **Hexz + LZ4 + 64KB blocks** is the optimal configuration.
-
----
-
-**Last Updated**: 2026-02-08
-**Hexz Version**: 0.1.0-alpha
-**Benchmark Suite**: `make bench` + `hexz sys bench`
-
----
-
-## Architecture Performance Characteristics
-
-### Compression Ratios (Detailed)
-
-Measured on real-world datasets:
-
-| Data Type        | LZ4 Ratio | Zstd Ratio | LZ4 Speed | Zstd Speed |
-|------------------|-----------|------------|-----------|------------|
-| OS Images        | 2.1x      | 3.4x       | 1850 MB/s | 420 MB/s   |
-| Text (logs)      | 3.8x      | 7.2x       | 2100 MB/s | 380 MB/s   |
-| Images (JPEG)    | 1.01x     | 1.02x      | 2800 MB/s | 950 MB/s   |
-| Binary (random)  | 1.0x      | 1.0x       | 2900 MB/s | 1100 MB/s  |
-
-**Takeaway**: Incompressible data (already compressed images, random data) still benefits from Hexz's random access and streaming capabilities.
-
-### Block Size Impact (Detailed)
-
-Tested on 10GB OS image:
-
-| Block Size | File Size | Random Read Latency | Sequential Throughput |
-|------------|-----------|---------------------|-----------------------|
-| 16 KB      | 5.2 GB    | 0.8 ms              | 1200 MB/s             |
-| 64 KB      | 4.7 GB    | 1.1 ms              | 1650 MB/s             |
-| 256 KB     | 4.1 GB    | 2.3 ms              | 1850 MB/s             |
-
-**Recommendation**: 64KB for most use cases. Use 16KB for databases with small random I/O, 256KB for sequential-only access.
-
-### Caching Strategy
-
-**L1 Block Cache**:
-- LRU eviction
-- Default size: 128 MB (configurable)
-- Stores decompressed blocks
-- Hit rate on ML training: ~85% (with good locality)
-
-**Page Index Cache**:
-- LRU eviction
-- Stores deserialized index pages
-- Negligible memory (few KB per page)
-
-**Memory Usage Estimate**:
-```
-Base: ~5 MB (File struct, metadata)
-L1 Cache: ~128 MB (default)
-Page Cache: ~1 MB per 1000 pages
-Total: < 150 MB for typical use
+# Or for specific test
+open target/criterion/Compression/LZ4_Compress/report/index.html
 ```

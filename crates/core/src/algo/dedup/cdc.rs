@@ -118,9 +118,10 @@
 //!
 //! ## Throughput
 //!
-//! - **Single-threaded**: ~500 MB/s on modern CPUs (2020+ Intel/AMD)
+//! - **Single-threaded**: 2.7 GB/s on modern CPUs (i7-14700K, validated via `cargo bench --bench cdc_chunking`)
 //! - **Bottleneck**: Rolling hash computation (CPU-bound, not I/O-bound)
 //! - **Comparison**: 4-5x faster than Rabin fingerprinting, 2x faster than basic CDC
+//! - **Overhead**: ~10× slower than fixed-size chunking (26 GB/s vs 2.7 GB/s), but acceptable for dedup benefits
 //!
 //! ## Parallelization
 //!
