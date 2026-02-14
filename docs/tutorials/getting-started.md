@@ -129,7 +129,7 @@ Compression ratio: 6.15x
 1. We created a 960-byte file with repetitive text (highly compressible)
 2. Hexz compressed it using the LZ4 algorithm
 3. The compressed snapshot is only 156 bytes (~6× smaller)
-4. The `.st` file includes the data, compression metadata, and an index for random access
+4. The `.hxz` file includes the data, compression metadata, and an index for random access
 
 **Understanding the Code**:
 - `hexz.open(..., mode="w")`: Opens a snapshot for writing (like Python's built-in `open()`)
@@ -201,7 +201,7 @@ echo "CLI Test Data" > /tmp/cli_test.txt
 # Pack it
 ./target/release/hexz data pack \
   --disk /tmp/cli_test.txt \
-  --output /tmp/cli_test.st \
+  --output /tmp/cli_test.hxz \
   --compression lz4
 
 # View snapshot info
@@ -210,7 +210,7 @@ echo "CLI Test Data" > /tmp/cli_test.txt
 
 **Expected Output**:
 ```
-Snapshot: /tmp/cli_test.st
+Snapshot: /tmp/cli_test.hxz
 Format Version: 1
 Compression: LZ4
 Uncompressed Size: 14 bytes
@@ -260,7 +260,7 @@ Now that you understand the basics, you can:
 ## Troubleshooting
 
 **"Permission denied" when writing to /tmp**:
-- Use a different directory: `~/hexz-test/hello.st`
+- Use a different directory: `~/hexz-test/hello.hxz`
 
 **"Module hexz not found"**:
 - Activate your Python environment: `source .venv/bin/activate`
@@ -277,7 +277,7 @@ In this tutorial, you learned the fundamental Hexz workflow:
 | Action | Python | CLI |
 |--------|--------|-----|
 | Install | `make develop` | `make rust` |
-| Pack Data | `hexz.open(path, mode="w")` + `writer.add(file)` | `hexz data pack --disk file --output out.st` |
+| Pack Data | `hexz.open(path, mode="w")` + `writer.add(file)` | `hexz data pack --disk file --output out.hxz` |
 | Read Data | `hexz.open(path)` + `reader.read(n)` | Python or mount |
 
 The power of Hexz is **random access to compressed data**. Unlike traditional formats, you don't decompress everything to read a single byte.

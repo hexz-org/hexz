@@ -4,15 +4,15 @@ This module provides the high-level Writer class that wraps the Rust-implemented
 Builder with a more pythonic interface.
 """
 
-from typing import Optional, Any, Dict, Literal
-from pathlib import Path
+import json
 import tempfile
 import warnings
-import json
+from pathlib import Path
+from typing import Any, Dict, Literal, Optional
 
 from . import hexz_loader
 from .exceptions import ValidationError
-from .typing import PathLike, PackingMode
+from .typing import PackingMode, PathLike
 
 # Compression level mappings for different modes
 COMPRESSION_LEVELS = {
@@ -51,7 +51,7 @@ class Writer:
         """Create a new snapshot writer.
 
         Args:
-            path: Path to output .st file
+            path: Path to output .hxz file
             compression: Compression algorithm ("lz4" or "zstd")
             mode: Packing mode alias for 'packing' (for backward compatibility)
             packing: Packing mode - "fast", "balanced", or "tight"
@@ -305,7 +305,7 @@ class Writer:
         """Merge a copy-on-write overlay with a base snapshot.
 
         Args:
-            base: Path to the base .st snapshot
+            base: Path to the base .hxz snapshot
             overlay: Path to the overlay data file
             thin: If True, create a thin snapshot that references the base
 

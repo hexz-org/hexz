@@ -4,7 +4,7 @@ This file provides type hints for the _hexz_core extension module
 implemented in Rust using PyO3.
 """
 
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 class Reader:
     """Low-level reader for Hexz snapshots (Rust implementation)."""
@@ -38,7 +38,7 @@ class Reader:
         """
         ...
 
-    def read_at_into(self, offset: int, buffer: bytearray) -> int:
+    def _read_at_into(self, offset: int, buffer: bytearray) -> int:
         """Read at offset into a writable buffer. Returns bytes read. Buffer need not be zeroed.
         On OSError, buffer contents are undefined and must not be read."""
         ...
@@ -173,7 +173,7 @@ class Builder:
         """Create a new snapshot builder.
 
         Args:
-            output_path: Path to output .st file
+            output_path: Path to output .hxz file
             block_size: Block size in bytes
             compression: Compression algorithm ("lz4" or "zstd")
             compression_level: Compression level (algorithm-specific, optional)
@@ -227,7 +227,7 @@ def pack(
 
     Args:
         disk: Path to input disk image
-        output: Path to output .st file
+        output: Path to output .hxz file
         compression: Compression algorithm ("lz4" or "zstd")
         encrypt: Enable encryption
         password: Encryption password
@@ -242,7 +242,7 @@ def inspect(path: str) -> Dict[str, Any]:
     """Inspect a Hexz snapshot and return metadata.
 
     Args:
-        path: Path to .st file
+        path: Path to .hxz file
 
     Returns:
         Dictionary containing metadata (version, compression, sizes, etc.)

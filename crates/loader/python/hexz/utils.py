@@ -192,11 +192,6 @@ class Metadata:
             }
 
 
-# merge_overlay has been moved to Writer.merge_overlay()
-# Old top-level function removed in v0.1.0-beta
-# Re-added for backward compatibility
-
-
 def merge_overlay(
     base: PathLike, overlay: PathLike, output: PathLike, thin: bool = False
 ) -> None:
@@ -223,7 +218,7 @@ def inspect(path: PathLike) -> Metadata:
     """Inspect a Hexz snapshot and return structured metadata.
 
     Args:
-        path: Path to .st file
+        path: Path to .hxz file
 
     Returns:
         Metadata object with snapshot information
@@ -281,12 +276,6 @@ class AnalysisReport:
         return f"AnalysisReport(dedup_ratio={self.dedup_ratio:.2f}, savings={self.savings_percent:.1f}%)"
 
 
-# analyze() has been moved to Reader.analyze()
-# diff() has been moved to Metadata.diff()
-# Old top-level functions removed in v0.1.0-beta
-# Re-added analyze() for backward compatibility
-
-
 def analyze(path: PathLike) -> AnalysisReport:
     """Analyze a file for deduplication potential.
 
@@ -301,8 +290,9 @@ def analyze(path: PathLike) -> AnalysisReport:
         >>> print(f"Predicted ratio: {report.predicted_ratio:.2f}x")
         >>> print(f"Savings: {report.savings_percent:.1f}%")
     """
-    from . import hexz_loader
     import os
+
+    from . import hexz_loader
 
     raw_report = hexz_loader.analyze(str(path))
     # Add total_bytes from file size
@@ -363,7 +353,3 @@ def verify(
         return False
 
     return True
-
-
-# info() has been moved to Metadata.print() or str(Metadata)
-# Old top-level function removed in v0.1.0-beta

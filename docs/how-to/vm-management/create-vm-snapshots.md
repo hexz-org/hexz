@@ -15,7 +15,7 @@
 ```bash
 hexz data pack \
   --disk /path/to/vm-disk.img \
-  --output vm-snapshot.st \
+  --output vm-snapshot.hxz \
   --compression zstd \
   --compression-level 9
 ```
@@ -29,7 +29,7 @@ qemu-img convert -f qcow2 -O raw vm-disk.qcow2 vm-disk.raw
 
 hexz data pack \
   --disk vm-disk.raw \
-  --output vm-snapshot.st \
+  --output vm-snapshot.hxz \
   --compression zstd
 ```
 
@@ -41,18 +41,18 @@ Capture only changes since last snapshot:
 # Create base snapshot
 hexz data pack \
   --disk base-vm.img \
-  --output vm-base.st \
+  --output vm-base.hxz \
   --cdc
 
 # Later, create incremental snapshot
 hexz data pack \
   --disk updated-vm.img \
-  --output vm-v2.st \
-  --parent vm-base.st \
+  --output vm-v2.hxz \
+  --parent vm-base.hxz \
   --cdc
 ```
 
-**Result**: `vm-v2.st` only stores changed blocks, referencing `vm-base.st` for unchanged data.
+**Result**: `vm-v2.hxz` only stores changed blocks, referencing `vm-base.hxz` for unchanged data.
 
 ## Snapshot Running VM
 
@@ -62,15 +62,15 @@ Boot VM with overlay to capture changes:
 
 ```bash
 # Boot with overlay
-hexz vm boot base-vm.st --overlay changes.img
+hexz vm boot base-vm.hxz --overlay changes.img
 
 # ... use VM ...
 
 # Shutdown VM, then commit changes
 hexz vm commit \
-  --base base-vm.st \
+  --base base-vm.hxz \
   --overlay changes.img \
-  --output updated-vm.st
+  --output updated-vm.hxz
 ```
 
 ### Method 2: QEMU Monitor
@@ -85,7 +85,7 @@ For VMs not booted via Hexz:
 
 # Convert saved snapshot
 qemu-img convert -f qcow2 -O raw vm-disk.qcow2 vm-disk.raw
-hexz data pack --disk vm-disk.raw --output vm-snapshot.st
+hexz data pack --disk vm-disk.raw --output vm-snapshot.hxz
 ```
 
 ## Snapshot with Deduplication
@@ -95,7 +95,7 @@ Enable content-defined chunking for better deduplication:
 ```bash
 hexz data pack \
   --disk vm-disk.img \
-  --output vm.st \
+  --output vm.hxz \
   --compression zstd \
   --cdc
 ```
@@ -110,7 +110,7 @@ For VMs with distinct regions (OS, data, swap):
 # Pack with block size tuned for VM workload
 hexz data pack \
   --disk vm-disk.img \
-  --output vm.st \
+  --output vm.hxz \
   --block-size 4096  # 4KB for VM (matches page size)
   --compression lz4  # Fast for VM boot
 ```
@@ -121,11 +121,11 @@ After creating snapshot, verify integrity:
 
 ```bash
 # Check snapshot info
-hexz data info vm-snapshot.st
+hexz data info vm-snapshot.hxz
 
 # Test mount
 mkdir /tmp/test-mount
-hexz vm mount vm-snapshot.st /tmp/test-mount --readonly
+hexz vm mount vm-snapshot.hxz /tmp/test-mount --readonly
 
 # Verify files
 ls -la /tmp/test-mount/
@@ -139,13 +139,13 @@ sudo umount /tmp/test-mount
 ### List Snapshots
 
 ```bash
-ls -lh *.st
+ls -lh *.hxz
 ```
 
 ### Compare Snapshots
 
 ```bash
-hexz data diff vm-v1.st vm-v2.st
+hexz data diff vm-v1.hxz vm-v2.hxz
 ```
 
 ### Sign Snapshot
@@ -155,10 +155,10 @@ hexz data diff vm-v1.st vm-v2.st
 hexz sys keygen --output-dir ./keys
 
 # Sign snapshot
-hexz sys sign --key ./keys/private.key vm-snapshot.st
+hexz sys sign --key ./keys/private.key vm-snapshot.hxz
 
 # Verify
-hexz sys verify --key ./keys/public.key vm-snapshot.st
+hexz sys verify --key ./keys/public.key vm-snapshot.hxz
 ```
 
 ## Best Practices
@@ -175,32 +175,32 @@ hexz sys verify --key ./keys/public.key vm-snapshot.st
 # 1. Install base OS
 hexz vm install \
   --iso ubuntu-22.04.iso \
-  --output ubuntu-base.st \
+  --output ubuntu-base.hxz \
   --disk-size 40G \
   --vnc
 
 # 2. Boot and customize
-hexz vm boot ubuntu-base.st --overlay dev-setup.img
+hexz vm boot ubuntu-base.hxz --overlay dev-setup.img
 # Install tools, configure system, then shutdown
 
 # 3. Commit changes
 hexz vm commit \
-  --base ubuntu-base.st \
+  --base ubuntu-base.hxz \
   --overlay dev-setup.img \
-  --output ubuntu-dev-v1.0.st \
+  --output ubuntu-dev-v1.0.hxz \
   --cdc
 
 # 4. Use for development
-hexz vm boot ubuntu-dev-v1.0.st --snapshot  # Changes discarded on exit
+hexz vm boot ubuntu-dev-v1.0.hxz --snapshot  # Changes discarded on exit
 
 # 5. Create updated version
-hexz vm boot ubuntu-dev-v1.0.st --overlay updates.img
+hexz vm boot ubuntu-dev-v1.0.hxz --overlay updates.img
 # Make updates, then shutdown
 
 hexz vm commit \
-  --base ubuntu-dev-v1.0.st \
+  --base ubuntu-dev-v1.0.hxz \
   --overlay updates.img \
-  --output ubuntu-dev-v1.1.st \
+  --output ubuntu-dev-v1.1.hxz \
   --cdc
 ```
 

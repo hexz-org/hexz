@@ -1,6 +1,6 @@
 //! Format version management and compatibility checking.
 //!
-//! This module defines the versioning strategy for Hexz snapshot files (`.st`),
+//! This module defines the versioning strategy for Hexz snapshot files (`.hxz`),
 //! enabling safe evolution of the on-disk format while maintaining backward and
 //! forward compatibility guarantees. Version negotiation ensures that readers can
 //! detect incompatible snapshots and provide actionable error messages.
@@ -131,10 +131,10 @@
 //!
 //! ```bash
 //! # Upgrade old snapshot to current format
-//! hexz-migrate upgrade --input old_v1.st --output new_v2.st
+//! hexz-migrate upgrade --input old_v1.hxz --output new_v2.hxz
 //!
 //! # Downgrade for compatibility (if supported)
-//! hexz-migrate downgrade --input new_v2.st --output legacy_v1.st \
+//! hexz-migrate downgrade --input new_v2.hxz --output legacy_v1.hxz \
 //!     --target-version 1
 //! ```
 //!
@@ -546,10 +546,10 @@ pub fn check_version(version: u32) -> VersionCompatibility {
 /// ## CLI Integration
 ///
 /// ```bash
-/// $ hexz open old_snapshot.st
+/// $ hexz open old_snapshot.hxz
 /// Error: Version 0 is too old (min supported: 1). Please upgrade the snapshot.
 ///
-/// Run: hexz-migrate upgrade old_snapshot.st new_snapshot.st
+/// Run: hexz-migrate upgrade old_snapshot.hxz new_snapshot.hxz
 /// ```
 pub fn compatibility_message(version: u32) -> String {
     match check_version(version) {

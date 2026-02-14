@@ -25,7 +25,7 @@ use tempfile::NamedTempFile;
 /// `create` command succeeds and will panic on failure via `unwrap()`.
 ///
 /// **Side effects:** Writes `size` bytes of data into a temporary file and produces an
-/// associated `.st` file, consuming disk space and I/O bandwidth during setup.
+/// associated `.hxz` file, consuming disk space and I/O bandwidth during setup.
 fn setup_benchmark(size: usize) -> (NamedTempFile, NamedTempFile) {
     let mut input_file = NamedTempFile::new().unwrap();
     let output_file = NamedTempFile::new().unwrap();

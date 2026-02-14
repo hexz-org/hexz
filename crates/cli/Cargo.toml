@@ -1,11 +1,10 @@
 [package]
 name = "hexz"
-version = "0.1.0-alpha"
+version = "0.1.0"
 edition = "2024"
 autobenches = false
 authors = ["Will McCallion"]
-license = "Apache-2.0"
-repository = "https://github.com/willmccallion/hexz"
+repository = "https://github.com/Alethic-Systems/hexz"
 description = "CLI tool for managing Hexz snapshots and datasets"
 
 [dependencies]

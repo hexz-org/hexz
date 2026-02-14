@@ -31,7 +31,7 @@ Hexz supports two compression algorithms optimized for different use cases.
 
 ```bash
 # CLI
-hexz data pack --disk data/ --output out.st --compression lz4
+hexz data pack --disk data/ --output out.hxz --compression lz4
 ```
 
 ```python
@@ -76,7 +76,7 @@ hexz.open("out.hxz", mode="w", compression="lz4")
 # CLI with compression level
 hexz data pack \
   --disk data/ \
-  --output out.st \
+  --output out.hxz \
   --compression zstd \
   --compression-level 9
 ```
@@ -157,8 +157,8 @@ To change compression algorithm on existing snapshot:
 ```bash
 # Repack with different compression
 hexz data pack \
-  --disk original.st \
-  --output recompressed.st \
+  --disk original.hxz \
+  --output recompressed.hxz \
   --compression lz4
 ```
 

@@ -332,3 +332,42 @@ fn test_zero_length_read() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+/// Test that prefetch does not spawn unbounded threads.
+///
+/// Previously, prefetch called `read_at()` which re-entered `read_at_into_uninit`,
+/// hitting the same prefetch block and spawning another thread — infinitely.
+/// The fix uses `is_prefetch` flag to prevent recursive spawning.
+#[test]
+fn test_prefetch_does_not_spawn_unbounded_threads() -> Result<(), Box<dyn std::error::Error>> {
+    let (snap_path, _original) = create_multi_block_snapshot()?;
+    let backend = Arc::new(FileBackend::new(&snap_path)?);
+    let compressor = Box::new(Lz4Compressor::new());
+    // Small cache + prefetch enabled
+    let snapshot = File::with_cache(backend, compressor, None, Some(65536), Some(4))?;
+
+    // Warm up: do an initial read to initialize rayon thread pool and any
+    // one-time background threads, then let everything settle.
+    let _warmup = snapshot.read_at(SnapshotStream::Disk, 0, 65536)?;
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    let initial_threads = std::fs::read_dir("/proc/self/task")?.count();
+
+    // Read multiple sequential blocks — each should trigger at most 1 prefetch,
+    // not a cascade of recursive spawns.
+    for i in 0..4 {
+        let offset = (i * 65536) as u64;
+        let _data = snapshot.read_at(SnapshotStream::Disk, offset, 65536)?;
+    }
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let after_threads = std::fs::read_dir("/proc/self/task")?.count();
+
+    // With the fix, each read spawns at most 1 prefetch thread (which exits
+    // after completing). Without the fix, thread count would explode.
+    let spawned = after_threads.saturating_sub(initial_threads);
+    assert!(
+        spawned <= 4,
+        "Prefetch spawned {spawned} threads after 4 reads, expected at most 4 (one per read)"
+    );
+    Ok(())
+}

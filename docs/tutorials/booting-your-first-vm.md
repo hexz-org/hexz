@@ -52,7 +52,7 @@ newgrp kvm  # Or log out and back in
 **Option A: Download Pre-Built Snapshot** (Quickest):
 ```bash
 # Download a minimal Ubuntu snapshot (example URL)
-wget https://example.com/ubuntu-minimal.st -O /tmp/ubuntu.st
+wget https://example.com/ubuntu-minimal.hxz -O /tmp/ubuntu.st
 ```
 
 **Option B: Install from ISO**:
@@ -63,7 +63,7 @@ wget https://releases.ubuntu.com/22.04/ubuntu-22.04-live-server-amd64.iso
 # Install interactively via VNC
 ./target/release/hexz vm install \\
   --iso ubuntu-22.04-live-server-amd64.iso \\
-  --output /tmp/ubuntu.st \\
+  --output /tmp/ubuntu.hxz \\
   --disk-size 20G \\
   --ram 2G \\
   --vnc
@@ -92,7 +92,7 @@ Boot with default settings:
 Enable network access and SSH port forwarding:
 
 ```bash
-./target/release/hexz vm boot /tmp/ubuntu.st \\
+./target/release/hexz vm boot /tmp/ubuntu.hxz \\
   --ram 4G \\
   --cpus 4 \\
   --net \\
@@ -109,7 +109,7 @@ ssh -p 2222 user@localhost
 Run the VM without saving changes:
 
 ```bash
-./target/release/hexz vm boot /tmp/ubuntu.st --snapshot
+./target/release/hexz vm boot /tmp/ubuntu.hxz --snapshot
 ```
 
 **Use Case**: Testing, debugging, or running untrusted code without risk.

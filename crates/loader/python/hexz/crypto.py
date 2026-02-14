@@ -5,6 +5,7 @@ for securing Hexz snapshots with Ed25519 signatures.
 """
 
 from typing import Optional
+
 from . import hexz_loader
 from .typing import PathLike
 
@@ -38,7 +39,7 @@ def sign(snapshot: PathLike, private_key: PathLike) -> None:
     """Sign a snapshot with a private key.
 
     Args:
-        snapshot: Path to .st snapshot file
+        snapshot: Path to .hxz snapshot file
         private_key: Path to private key file
 
     Example:
@@ -56,7 +57,7 @@ def verify(
     """Verify a snapshot signature with a public key.
 
     Args:
-        snapshot: Path to .st snapshot file
+        snapshot: Path to .hxz snapshot file
         public_key: Path to public key file
         signature: Optional path to signature file (if separate)
 

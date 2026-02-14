@@ -4,14 +4,14 @@ This module provides utilities for reading and writing NumPy arrays
 to/from Hexz snapshots with zero-copy support where possible.
 """
 
-from typing import Optional, Union
-from pathlib import Path
 import warnings
+from pathlib import Path
+from typing import Optional, Union
 
-from .typing import PathLike, Shape
-from .reader import Reader
-from .writer import Writer
 from .exceptions import ValidationError
+from .reader import Reader
+from .typing import PathLike, Shape
+from .writer import Writer
 
 try:
     import numpy as np
@@ -42,7 +42,7 @@ def read_array(
     """Read NumPy array from hexz file.
 
     Args:
-        source: Path to .st file or Reader instance
+        source: Path to .hxz file or Reader instance
         offset: Byte offset in file
         shape: Array shape (required if reading from raw offset)
         dtype: NumPy dtype (string or numpy.dtype)
@@ -122,7 +122,7 @@ def write_array(
     """Write NumPy array to hexz file.
 
     Args:
-        dest: Path to .st file or Writer instance
+        dest: Path to .hxz file or Writer instance
         array: NumPy array to write
         offset: Byte offset to write at
         compression: Compression algorithm ('lz4' or 'zstd')
@@ -193,7 +193,7 @@ class ArrayView:
         """Create an array view into a Hexz file.
 
         Args:
-            path: Path to .st file
+            path: Path to .hxz file
             shape: Shape of the array
             dtype: NumPy dtype
             offset: Byte offset where array data starts

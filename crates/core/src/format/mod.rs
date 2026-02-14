@@ -1,6 +1,6 @@
 //! On-disk format structures for Hexz snapshot files.
 //!
-//! This module defines the binary format of `.st` files, including headers,
+//! This module defines the binary format of `.hxz` files, including headers,
 //! indices, and metadata structures. All types are serialized with `bincode`
 //! and must maintain backward compatibility across versions.
 //!
@@ -46,7 +46,7 @@
 //! - **Minor**: Backward-compatible additions (old readers work)
 //! - **Patch**: Bug fixes, no format changes
 //!
-//! Current version: [`magic::FORMAT_VERSION`]
+//! Current version: See [`magic`] module for version constants
 //!
 //! # Serialization
 //!
@@ -57,21 +57,29 @@
 //!
 //! # Submodules
 //!
-//! - [`magic`]: Magic bytes and version constants
-//! - [`header`]: File header structure and enums
-//! - [`index`]: Index pages and block metadata
-//! - [`version`]: Version compatibility checking
+//! - `magic`: Magic bytes and version constants
+//! - `header`: File header structure and enums
+//! - `index`: Index pages and block metadata
+//! - `version`: Version compatibility checking
 
 /// Magic bytes and version constants.
 ///
 /// Defines the file signature (`HEXZ`) and format version that identify
-/// a valid `.st` file.
+/// a valid snapshot file.
+///
+/// **Critical Note:** The magic bytes **never change**—they permanently identify
+/// this as a Hexz file across all versions. Altering them would make all
+/// existing files unreadable.
+///
+/// The format version constant, however, **can and will change** to indicate
+/// incompatible format updates. Readers must check this version and reject files
+/// they cannot decode.
 pub mod magic;
 
 /// Snapshot on-disk header format.
 ///
 /// Types in this module define the fixed-size header that precedes all other
-/// data in a `.st` file and describe global format parameters.
+/// data in a `.hxz` file and describe global format parameters.
 pub mod header;
 
 /// Snapshot index layout and block metadata structures.

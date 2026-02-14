@@ -59,7 +59,7 @@ use std::time::Instant;
 ///
 /// # Arguments
 ///
-/// * `snap_path` - Path to the `.st` snapshot file
+/// * `snap_path` - Path to the `.hxz` snapshot file
 /// * `_block_size` - Reserved for future random I/O tests (currently unused)
 /// * `_duration` - Reserved for time-limited tests (currently unused)
 /// * `_threads` - Reserved for multi-threaded tests (currently unused)

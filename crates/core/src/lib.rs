@@ -139,8 +139,9 @@
 
 /// Public API surface for reading snapshot files.
 ///
-/// Contains [`api::file::File`], the main entry point
-/// for opening and reading snapshots.
+/// Contains the main entry point for opening and reading snapshots.
+///
+/// See [`api::file`] module for the main types.
 pub mod api;
 
 /// Storage backend abstraction and implementations.
@@ -152,28 +153,44 @@ pub mod store;
 /// In-memory caching for decompressed blocks and deserialized index pages.
 ///
 /// Caching is critical for performance—decompression is expensive. The LRU cache
-/// ([`cache::lru`]) stores recently accessed blocks to avoid repeated decompression.
+/// implementation stores recently accessed blocks to avoid repeated decompression.
 pub mod cache;
 
 /// On-disk format structures: headers, indices, and serialization.
 ///
 /// These types define the binary wire format for Hexz snapshots. All structures
 /// use `bincode` for serialization and are versioned for forward compatibility.
+///
+/// See submodules for detailed format specification:
+/// - `magic`: Magic bytes and version constants
+/// - `header`: File header structure and enums
+/// - `index`: Index pages and block metadata
+/// - `version`: Version compatibility checking
 pub mod format;
 
 /// Algorithms for compression, encryption, hashing, and deduplication.
 ///
 /// Each algorithm category has a trait definition and one or more implementations:
-/// - **Compression**: LZ4, Zstandard
-/// - **Encryption**: AES-256-GCM
-/// - **Hashing**: BLAKE3 (content-defined chunking)
-/// - **Deduplication**: FastCDC, DCAM modeling
+///
+/// ## Compression
+/// - LZ4: Fast compression
+/// - Zstandard: High ratio compression
+///
+/// ## Encryption
+/// - AES-256-GCM: Authenticated encryption
+///
+/// ## Hashing
+/// - BLAKE3: Content-defined chunking
+///
+/// ## Deduplication
+/// - FastCDC, DCAM modeling
 pub mod algo;
 
 /// High-level operations for creating, modifying, and analyzing snapshots.
 ///
-/// Contains complex logic like [`ops::pack`] (creating snapshots from disk images)
-/// that orchestrates multiple lower-level components.
+/// Contains complex logic for creating and manipulating snapshots.
+///
+/// See submodules for specific operations.
 pub mod ops;
 
 pub use api::file::{File, SnapshotStream};

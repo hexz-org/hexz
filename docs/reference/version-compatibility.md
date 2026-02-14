@@ -117,10 +117,10 @@ Re-pack snapshots with new version:
 
 ```bash
 # Extract old snapshot
-hexz data info old.st  # Check format version
+hexz data info old.hxz  # Check format version
 
 # If format incompatible, repack
-hexz data pack --disk old.st --output new.st
+hexz data pack --disk old.hxz --output new.hxz
 ```
 
 ### Python Package

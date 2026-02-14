@@ -51,21 +51,21 @@
 //!
 //! ## Reading Unmodified Data
 //!
-//! ```no_run
-//! // Read first 4096 bytes of /mnt/hexz/disk (no overlay modifications):
-//! // 1. handle_read(ino=2, offset=0, size=4096)
-//! // 2. Block 0 not modified -> read from snapshot
-//! // 3. Return snapshot bytes [0..4096]
+//! ```text
+//! Read first 4096 bytes of /mnt/hexz/disk (no overlay modifications):
+//! 1. handle_read(ino=2, offset=0, size=4096)
+//! 2. Block 0 not modified -> read from snapshot
+//! 3. Return snapshot bytes [0..4096]
 //! ```
 //!
 //! ## Reading Mixed Modified/Unmodified Blocks
 //!
-//! ```no_run
-//! // Read 12288 bytes starting at offset 2048 (spans blocks 0, 1, 2):
-//! // - Block 0 (offset 0..4096): Unmodified -> snapshot
-//! // - Block 1 (offset 4096..8192): Modified -> overlay
-//! // - Block 2 (offset 8192..12288): Unmodified -> snapshot
-//! // Result: [snapshot[2048..4096], overlay[4096..8192], snapshot[8192..14336]]
+//! ```text
+//! Read 12288 bytes starting at offset 2048 (spans blocks 0, 1, 2):
+//! - Block 0 (offset 0..4096): Unmodified -> snapshot
+//! - Block 1 (offset 4096..8192): Modified -> overlay
+//! - Block 2 (offset 8192..12288): Unmodified -> snapshot
+//! Result: [snapshot[2048..4096], overlay[4096..8192], snapshot[8192..14336]]
 //! ```
 
 use super::Hexz;
@@ -124,21 +124,21 @@ use libc::{EIO, ENOENT};
 ///
 /// ## Fast Path Read (No Overlay)
 ///
-/// ```no_run
-/// // read(ino=2, offset=0, size=4096) with no overlay:
-/// // -> snap.read_at(Disk, 0, 4096) -> reply.data(snapshot_bytes)
-/// // Latency: ~1-5 µs
+/// ```text
+/// read(ino=2, offset=0, size=4096) with no overlay:
+/// -> snap.read_at(Disk, 0, 4096) -> reply.data(snapshot_bytes)
+/// Latency: ~1-5 µs
 /// ```
 ///
 /// ## Overlay Merge Read
 ///
-/// ```no_run
-/// // read(ino=2, offset=0, size=12288) with blocks 0 and 2 modified:
-/// // Block 0 [0..4096]: modified -> overlay.read_file(0, 4096)
-/// // Block 1 [4096..8192]: unmodified -> snap.read_at(Disk, 4096, 4096)
-/// // Block 2 [8192..12288]: modified -> overlay.read_file(8192, 4096)
-/// // Result: Merged buffer [overlay[0..4096], snap[4096..8192], overlay[8192..12288]]
-/// // Latency: ~10-20 µs
+/// ```text
+/// read(ino=2, offset=0, size=12288) with blocks 0 and 2 modified:
+/// Block 0 [0..4096]: modified -> overlay.read_file(0, 4096)
+/// Block 1 [4096..8192]: unmodified -> snap.read_at(Disk, 4096, 4096)
+/// Block 2 [8192..12288]: modified -> overlay.read_file(8192, 4096)
+/// Result: Merged buffer [overlay[0..4096], snap[4096..8192], overlay[8192..12288]]
+/// Latency: ~10-20 µs
 /// ```
 ///
 /// # Performance

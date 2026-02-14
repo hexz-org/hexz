@@ -37,15 +37,15 @@
 //! hexz sys doctor
 //!
 //! # Benchmark an archive
-//! hexz sys bench snapshot.st --threads 8 --duration 60
+//! hexz sys bench snapshot.hxz --threads 8 --duration 60
 //!
 //! # Serve via NBD
-//! hexz sys serve snapshot.st --nbd --port 10809
+//! hexz sys serve snapshot.hxz --nbd --port 10809
 //!
 //! # Generate and use signing keys
 //! hexz sys keygen --output-dir ~/.hexz/keys
-//! hexz sys sign --key ~/.hexz/keys/private.key snapshot.st
-//! hexz sys verify --key ~/.hexz/keys/public.key snapshot.st
+//! hexz sys sign --key ~/.hexz/keys/private.key snapshot.hxz
+//! hexz sys verify --key ~/.hexz/keys/public.key snapshot.hxz
 //! ```
 //!
 //! # Feature Flags

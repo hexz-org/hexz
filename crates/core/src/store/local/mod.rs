@@ -3,8 +3,8 @@
 //! This module provides two complementary implementations of the `StorageBackend`
 //! trait for accessing snapshot files on the local filesystem:
 //!
-//! - [`FileBackend`]: Traditional file I/O using `pread(2)` system calls
-//! - [`MmapBackend`]: Memory-mapped file access leveraging the OS page cache
+//! - `FileBackend`: Traditional file I/O using `pread(2)` system calls
+//! - `MmapBackend`: Memory-mapped file access leveraging the OS page cache
 //!
 //! # Architecture
 //!
@@ -16,17 +16,17 @@
 //!
 //! | Scenario | Recommended Backend | Rationale |
 //! |----------|-------------------|-----------|
-//! | Sequential scans | [`FileBackend`] | Lower kernel overhead, predictable I/O scheduling |
-//! | Random access with locality | [`MmapBackend`] | OS page cache provides transparent prefetch and caching |
-//! | Small files (<100MB) | [`MmapBackend`] | Entire file likely stays resident, near-zero overhead |
-//! | Large files (>1GB) with sparse access | [`FileBackend`] | Avoids address space fragmentation, explicit control |
-//! | Containers/restricted environments | [`FileBackend`] | No special kernel capabilities required |
+//! | Sequential scans | `FileBackend` | Lower kernel overhead, predictable I/O scheduling |
+//! | Random access with locality | `MmapBackend` | OS page cache provides transparent prefetch and caching |
+//! | Small files (<100MB) | `MmapBackend` | Entire file likely stays resident, near-zero overhead |
+//! | Large files (>1GB) with sparse access | `FileBackend` | Avoids address space fragmentation, explicit control |
+//! | Containers/restricted environments | `FileBackend` | No special kernel capabilities required |
 //!
 //! # Thread Safety
 //!
 //! Both backends are fully thread-safe (`Send + Sync`):
-//! - [`FileBackend`] uses offset-based I/O (`pread`) that bypasses file cursor state
-//! - [`MmapBackend`] wraps the memory map in `Arc<Mmap>` for safe shared access
+//! - `FileBackend` uses offset-based I/O (`pread`) that bypasses file cursor state
+//! - `MmapBackend` wraps the memory map in `Arc<Mmap>` for safe shared access
 //!
 //! Multiple threads can safely read from the same backend instance concurrently
 //! without locks or coordination.
@@ -69,9 +69,19 @@
 //! ```
 
 /// File-backed storage backend using `pread` for thread-safe reads.
+///
+/// Prefer `FileBackend` over `MmapBackend` when:
+/// - Accessing large files (>1GB) with sparse access patterns
+/// - Working in restricted environments (containers)
+/// - Sequential scan workloads
 pub mod file;
 
 /// Memory-mapped file backend leveraging the OS page cache.
+///
+/// Prefer `MmapBackend` over `FileBackend` when:
+/// - Random access with spatial locality
+/// - Small files (<100MB)
+/// - Workloads that benefit from OS page cache management
 pub mod mmap;
 
 pub use file::FileBackend;

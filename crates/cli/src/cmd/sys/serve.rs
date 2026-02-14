@@ -49,7 +49,7 @@
 //! **Client Usage:**
 //! ```bash
 //! # Start NBD server
-//! hexz serve snapshot.st --nbd --port 10809
+//! hexz serve snapshot.hxz --nbd --port 10809
 //!
 //! # Connect from client
 //! sudo nbd-client server-ip 10809 /dev/nbd0
@@ -121,13 +121,13 @@
 //!
 //! ```bash
 //! # Start HTTP server on port 8080
-//! hexz serve snapshot.st --port 8080
+//! hexz serve snapshot.hxz --port 8080
 //!
 //! # Start as daemon (background process)
-//! hexz serve snapshot.st --port 8080 --daemon
+//! hexz serve snapshot.hxz --port 8080 --daemon
 //!
 //! # Start NBD server
-//! hexz serve snapshot.st --nbd --port 10809
+//! hexz serve snapshot.hxz --nbd --port 10809
 //!
 //! # Access from remote client
 //! curl -H "Range: bytes=0-1024" http://server:8080/disk
@@ -151,7 +151,7 @@ use std::sync::Arc;
 ///
 /// # Arguments
 ///
-/// * `hexz_path` - Path to the `.st` snapshot file to serve
+/// * `hexz_path` - Path to the `.hxz` snapshot file to serve
 /// * `port` - TCP port to bind to
 /// * `daemon` - If true, daemonize the process and run in background
 /// * `nbd` - If true, use NBD protocol; otherwise use HTTP

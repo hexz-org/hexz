@@ -40,17 +40,33 @@ Quick Start:
 See documentation for advanced usage: https://github.com/hexz-storage/hexz
 """
 
-from typing import Union, Any
-
-# Core I/O (always available)
-from .reader import AsyncReader, Reader
-from .writer import Writer
+from typing import Any, Union
 
 # Arrays (always available)
 from .array import ArrayView, read_array, write_array
 
+# Exceptions (always available)
+from .exceptions import (
+    CacheError,
+    CompressionError,
+    EncryptionError,
+    Error,
+    FormatError,
+    IOError,
+    MountError,
+    NetworkError,
+    ValidationError,
+    VersionError,
+)
+
 # Build helpers (always available)
 from .profiles import PROFILES, build
+
+# Core I/O (always available)
+from .reader import AsyncReader, Reader
+
+# Types (always available)
+from .typing import PathLike
 
 # Inspection & Utilities (always available)
 from .utils import (
@@ -62,23 +78,7 @@ from .utils import (
     inspect,
     verify,
 )
-
-# Types (always available)
-from .typing import PathLike
-
-# Exceptions (always available)
-from .exceptions import (
-    CacheError,
-    CompressionError,
-    EncryptionError,
-    FormatError,
-    IOError,
-    MountError,
-    NetworkError,
-    Error,
-    ValidationError,
-    VersionError,
-)
+from .writer import Writer
 
 # Optional: ML Integration (requires torch/tensorflow)
 try:
@@ -120,7 +120,7 @@ def open(path: PathLike, *, mode: str = "r", **options: Any) -> Union[Reader, Wr
     """Open a Hexz snapshot for reading or writing.
 
     Args:
-        path: Path to .st file. Supports local paths, HTTP/HTTPS URLs, and S3 URIs.
+        path: Path to .hxz file. Supports local paths, HTTP/HTTPS URLs, and S3 URIs.
         mode: 'r' for reading, 'w' for writing
         **options: Additional options for Reader or Writer
 
@@ -161,7 +161,7 @@ def open(path: PathLike, *, mode: str = "r", **options: Any) -> Union[Reader, Wr
         raise ValueError(f"Invalid mode: {mode}")
 
 
-__version__ = "0.1.0-alpha"
+__version__ = "0.1.0"
 
 
 def version() -> str:

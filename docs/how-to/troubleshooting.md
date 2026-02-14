@@ -159,9 +159,9 @@ Error: Parent snapshot not found: /old/path/base.st
 1. Restore parent to original location
 2. Convert to standalone snapshot:
    ```bash
-   hexz vm mount thin.st /mnt --overlay full.img
+   hexz vm mount thin.hxz /mnt --overlay full.img
    sudo umount /mnt
-   hexz vm commit --base thin.st --overlay full.img --output standalone.st
+   hexz vm commit --base thin.hxz --overlay full.img --output standalone.hxz
    ```
 
 ## Compression/Packing Issues
@@ -176,11 +176,11 @@ fatal runtime error: out of memory
 **Solutions**:
 1. Reduce block size:
    ```bash
-   hexz data pack --disk data/ --output out.st --block-size 16384
+   hexz data pack --disk data/ --output out.hxz --block-size 16384
    ```
 2. Disable CDC (uses less memory):
    ```bash
-   hexz data pack --disk data/ --output out.st  # No --cdc flag
+   hexz data pack --disk data/ --output out.hxz  # No --cdc flag
    ```
 3. Pack in smaller batches
 
@@ -221,7 +221,7 @@ hexz data info snapshot.st
 1. Reduce workers: `num_workers=4` instead of 8
 2. Use LZ4 for hot data:
    ```bash
-   hexz data pack --disk data/ --output out.st --compression lz4
+   hexz data pack --disk data/ --output out.hxz --compression lz4
    ```
 
 ### High memory usage

@@ -166,7 +166,7 @@ class Reader:
     ) -> int:
         """Read into a writable buffer (private). Used by read() when buffer= is given."""
         if offset is not None:
-            return self._reader.read_at_into(offset, buffer)
+            return self._reader._read_at_into(offset, buffer)
         return self._reader.readinto(buffer)
 
     def readinto(self, buffer: Union[bytearray, memoryview]) -> int:

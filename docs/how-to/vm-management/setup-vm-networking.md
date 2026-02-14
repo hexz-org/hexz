@@ -15,7 +15,7 @@ Hexz supports QEMU user-mode networking (no root required).
 ## Enable Basic Networking
 
 ```bash
-hexz vm boot vm-snapshot.st --net
+hexz vm boot vm-snapshot.hxz --net
 ```
 
 **What this provides**:
@@ -31,7 +31,7 @@ Forward host ports to VM services.
 
 ```bash
 # Forward host:2222 to VM:22 (SSH)
-hexz vm boot vm-snapshot.st \\
+hexz vm boot vm-snapshot.hxz \\
   --net \\
   --forward 2222:22
 ```
@@ -44,7 +44,7 @@ ssh -p 2222 user@localhost
 ### Forward Multiple Ports
 
 ```bash
-hexz vm boot vm-snapshot.st \\
+hexz vm boot vm-snapshot.hxz \\
   --net \\
   --forward 2222:22 \\    # SSH
   --forward 8080:80 \\    # HTTP
@@ -76,7 +76,7 @@ sudo systemctl start ssh
 ### Step 2: Boot with SSH Port Forward
 
 ```bash
-hexz vm boot vm-snapshot.st \\
+hexz vm boot vm-snapshot.hxz \\
   --net \\
   --forward 2222:22
 ```
@@ -126,7 +126,7 @@ sudo systemctl start nginx
 ### Boot with HTTP Port Forward
 
 ```bash
-hexz vm boot vm-snapshot.st \\
+hexz vm boot vm-snapshot.hxz \\
   --net \\
   --forward 8080:80
 ```
@@ -159,7 +159,7 @@ host    all             all             0.0.0.0/0               md5
 
 Boot with port forward:
 ```bash
-hexz vm boot vm-snapshot.st \\
+hexz vm boot vm-snapshot.hxz \\
   --net \\
   --forward 5432:5432
 ```
@@ -174,7 +174,7 @@ psql -h localhost -p 5432 -U postgres
 ### Full Development Environment
 
 ```bash
-hexz vm boot dev-vm.st \\
+hexz vm boot dev-vm.hxz \\
   --ram 8G \\
   --cpus 4 \\
   --net \\

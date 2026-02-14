@@ -1,10 +1,12 @@
-import pytest
 import os
-import time
-import subprocess
-import socket
-import hexz
 import shutil
+import socket
+import subprocess
+import time
+
+import pytest
+
+import hexz
 
 pytest.importorskip("boto3")
 import boto3
@@ -110,7 +112,7 @@ def test_async_s3_read(s3_server, s3_client, tmp_path):
     with hexz.open(local_snap, mode="w") as w:
         w.add(local_data)
 
-    # Read the generated snapshot bytes (the .st file) to upload to S3
+    # Read the generated snapshot bytes (the .hxz file) to upload to S3
     with open(local_snap, "rb") as f:
         snap_file_bytes = f.read()
 

@@ -54,15 +54,15 @@ Pack your dataset and upload it:
 # Pack dataset locally
 hexz data pack \\
   --disk /data/imagenet-train \\
-  --output imagenet-train.st \\
+  --output imagenet-train.hxz \\
   --compression zstd \\
   --cdc
 
 # Upload to S3
-aws s3 cp imagenet-train.st s3://my-ml-datasets/imagenet-train.st
+aws s3 cp imagenet-train.hxz s3://my-ml-datasets/imagenet-train.hxz
 
 # Verify upload
-aws s3 ls s3://my-ml-datasets/imagenet-train.st
+aws s3 ls s3://my-ml-datasets/imagenet-train.hxz
 ```
 
 **Tip**: Use `aws s3 cp --storage-class INTELLIGENT_TIERING` to automatically optimize storage costs.

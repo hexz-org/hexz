@@ -183,8 +183,8 @@ with hexz.open("/tmp/v1_with_cdc.hxz", mode="w", cdc=True) as writer:
     writer.add("/tmp/version1.txt")
 
 print("Version 1:")
-print(f"  Without CDC: {os.path.getsize('/tmp/v1_no_cdc.st'):,} bytes")
-print(f"  With CDC: {os.path.getsize('/tmp/v1_with_cdc.st'):,} bytes")
+print(f"  Without CDC: {os.path.getsize('/tmp/v1_no_cdc.hxz'):,} bytes")
+print(f"  With CDC: {os.path.getsize('/tmp/v1_with_cdc.hxz'):,} bytes")
 
 # Now create version 2 with insertion at the beginning
 with open("/tmp/version2.txt", "w") as f:
@@ -202,8 +202,8 @@ with hexz.open("/tmp/v2_with_cdc.hxz", mode="w", cdc=True) as writer:
     writer.add("/tmp/version2.txt")
 
 print("\nVersion 2 (with insertion at start):")
-print(f"  Without CDC: {os.path.getsize('/tmp/v2_no_cdc.st'):,} bytes")
-print(f"  With CDC: {os.path.getsize('/tmp/v2_with_cdc.st'):,} bytes")
+print(f"  Without CDC: {os.path.getsize('/tmp/v2_no_cdc.hxz'):,} bytes")
+print(f"  With CDC: {os.path.getsize('/tmp/v2_with_cdc.hxz'):,} bytes")
 
 # Show the benefit
 v1_size = os.path.getsize("/tmp/v1_with_cdc.hxz")
@@ -239,19 +239,19 @@ Block size affects compression ratio and access latency.
 dd if=/dev/urandom of=/tmp/test_data.bin bs=1M count=10
 
 # Pack with different block sizes
-hexz data pack --disk /tmp/test_data.bin --output /tmp/4kb.st --block-size 4096
-hexz data pack --disk /tmp/test_data.bin --output /tmp/64kb.st --block-size 65536
-hexz data pack --disk /tmp/test_data.bin --output /tmp/256kb.st --block-size 262144
+hexz data pack --disk /tmp/test_data.bin --output /tmp/4kb.hxz --block-size 4096
+hexz data pack --disk /tmp/test_data.bin --output /tmp/64kb.hxz --block-size 65536
+hexz data pack --disk /tmp/test_data.bin --output /tmp/256kb.hxz --block-size 262144
 
 # Compare sizes
-ls -lh /tmp/*kb.st
+ls -lh /tmp/*kb.hxz
 ```
 
 **Expected Output**:
 ```
--rw-r--r-- 1 user user 10.2M  4kb.st
--rw-r--r-- 1 user user 10.1M  64kb.st
--rw-r--r-- 1 user user 10.0M  256kb.st
+-rw-r--r-- 1 user user 10.2M  4kb.hxz
+-rw-r--r-- 1 user user 10.1M  64kb.hxz
+-rw-r--r-- 1 user user 10.0M  256kb.hxz
 ```
 
 **Observation**: Larger blocks compress slightly better (more context), but slower random access.
@@ -297,5 +297,5 @@ ls -lh /tmp/*kb.st
 ## Cleanup
 
 ```bash
-rm -rf /tmp/compression_test /tmp/*.st /tmp/*.bin /tmp/*.txt
+rm -rf /tmp/compression_test /tmp/*.hxz /tmp/*.bin /tmp/*.txt
 ```

@@ -220,7 +220,7 @@ impl SnapshotWriter {
 
     /// Begins a new stream (disk or memory).
     ///
-    /// Must be called before [`write_data_block`] or [`write_parent_ref`].
+    /// Must be called before writing blocks or parent references.
     /// `total_size` is recorded in the master index.
     pub fn begin_stream(&mut self, is_disk: bool, total_size: u64) {
         self.is_disk = is_disk;

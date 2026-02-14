@@ -14,7 +14,7 @@
 ```bash
 hexz data pack \\
   --disk /path/to/file.img \\
-  --output snapshot.st \\
+  --output snapshot.hxz \\
   --compression lz4
 ```
 
@@ -34,7 +34,7 @@ hexz data pack \\
 
 **LZ4** (fast decompression):
 ```bash
-hexz data pack --disk data/ --output out.st --compression lz4
+hexz data pack --disk data/ --output out.hxz --compression lz4
 ```
 - Speed: ~2GB/s decompression
 - Ratio: 2-3×
@@ -42,7 +42,7 @@ hexz data pack --disk data/ --output out.st --compression lz4
 
 **Zstandard** (better compression):
 ```bash
-hexz data pack --disk data/ --output out.st --compression zstd --compression-level 9
+hexz data pack --disk data/ --output out.hxz --compression zstd --compression-level 9
 ```
 - Speed: ~500MB/s decompression
 - Ratio: 3-5×
@@ -52,13 +52,13 @@ hexz data pack --disk data/ --output out.st --compression zstd --compression-lev
 
 ```bash
 # Small blocks (faster random access, less compression)
-hexz data pack --disk data/ --output out.st --block-size 16384   # 16KB
+hexz data pack --disk data/ --output out.hxz --block-size 16384   # 16KB
 
 # Default (balanced)
-hexz data pack --disk data/ --output out.st --block-size 65536   # 64KB
+hexz data pack --disk data/ --output out.hxz --block-size 65536   # 64KB
 
 # Large blocks (better compression, slower random access)
-hexz data pack --disk data/ --output out.st --block-size 262144  # 256KB
+hexz data pack --disk data/ --output out.hxz --block-size 262144  # 256KB
 ```
 
 ### Enable Deduplication
@@ -86,7 +86,7 @@ hexz sys keygen --output-dir ./keys
 # Pack with encryption
 hexz data pack \\
   --disk sensitive-data/ \\
-  --output encrypted.st \\
+  --output encrypted.hxz \\
   --encrypt \\
   --key ./keys/public.key
 ```
@@ -95,36 +95,36 @@ hexz data pack \\
 
 ```bash
 # Pack and sign
-hexz data pack --disk data/ --output signed.st
-hexz sys sign --key ./keys/private.key signed.st
+hexz data pack --disk data/ --output signed.hxz
+hexz sys sign --key ./keys/private.key signed.hxz
 
 # Verify
-hexz sys verify --key ./keys/public.key signed.st
+hexz sys verify --key ./keys/public.key signed.hxz
 ```
 
 ### Parent Snapshots (Incremental)
 
 ```bash
 # Create base snapshot
-hexz data pack --disk v1/ --output dataset-v1.st --cdc
+hexz data pack --disk v1/ --output dataset-v1.hxz --cdc
 
 # Create incremental update (references parent)
 hexz data pack \\
   --disk v2/ \\
-  --output dataset-v2.st \\
-  --parent dataset-v1.st \\
+  --output dataset-v2.hxz \\
+  --parent dataset-v1.hxz \\
   --cdc
 ```
 
 ## View Snapshot Info
 
 ```bash
-hexz data info snapshot.st
+hexz data info snapshot.hxz
 ```
 
 Output:
 ```
-Snapshot: snapshot.st
+Snapshot: snapshot.hxz
 Format Version: 1
 Compression: LZ4
 Block Size: 65536

@@ -4,10 +4,10 @@ This module provides high-performance dataset classes backed by Hexz snapshots,
 with features like smart caching, prefetching, and shuffling.
 """
 
-from typing import Optional, Callable, Dict, Any, List, Tuple, Literal, Union
-from concurrent.futures import ThreadPoolExecutor, Future
-from threading import Lock
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
+from threading import Lock
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
 try:
     import torch  # noqa: F401
@@ -18,13 +18,12 @@ except ImportError:
     TorchDataset = object
     HAS_TORCH = False
 
+import struct
+from collections import OrderedDict
+
+from .exceptions import ValidationError
 from .reader import Reader
 from .typing import PathLike
-from .exceptions import ValidationError
-
-
-from collections import OrderedDict
-import struct
 
 
 class LRUCache:
@@ -286,7 +285,7 @@ class Dataset(TorchDataset):
         """Create a Hexz-backed dataset.
 
         Args:
-            path: Path to .st file (local or s3://)
+            path: Path to .hxz file (local or s3://)
             item_size: Fixed item size in bytes (required if no index)
             index_file: Path to index file for variable-length items
             output_format: Output format - "bytes", "numpy", or "tensor"
@@ -568,7 +567,7 @@ class TFDataset:
         """Create TensorFlow dataset.
 
         Args:
-            path: Path to .st file
+            path: Path to .hxz file
             **kwargs: Same as Dataset (except output_format)
 
         Raises:

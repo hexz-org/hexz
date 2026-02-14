@@ -2,12 +2,14 @@
 //!
 //! This module provides the high-level API for reading Hexz snapshot archives.
 //! It re-exports the primary types used by applications and libraries to interact
-//! with `.st` files.
+//! with `.hxz` files.
 //!
 //! # Primary Types
 //!
-//! - [`File`](file::File): Main handle for reading snapshots
-//! - [`SnapshotStream`](file::SnapshotStream): Logical stream identifier (Disk or Memory)
+//! - `File`: Main handle for reading snapshots
+//! - `SnapshotStream`: Logical stream identifier (Disk or Memory)
+//!
+//! See the `file` submodule for these types.
 //!
 //! # Usage Example
 //!

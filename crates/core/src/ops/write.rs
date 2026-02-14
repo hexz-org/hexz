@@ -322,16 +322,16 @@ use crate::format::index::BlockInfo;
 ///
 /// - `compressor`: Compression algorithm implementation
 ///   - Typically `Lz4Compressor` or `ZstdCompressor`
-///   - Must implement [`Compressor`](crate::algo::compression::Compressor) trait
+///   - Must implement [`Compressor`] trait
 ///
 /// - `encryptor`: Optional encryption implementation
 ///   - `Some(enc)`: Encrypt compressed data with AES-256-GCM
 ///   - `None`: Store compressed data unencrypted
-///   - Must implement [`Encryptor`](crate::algo::encryption::Encryptor) trait
+///   - Must implement [`Encryptor`] trait
 ///
 /// - `hasher`: Content hasher for deduplication
 ///   - Typically `Blake3Hasher`
-///   - Must implement [`ContentHasher`](crate::algo::hashing::ContentHasher) trait
+///   - Must implement [`ContentHasher`] trait
 ///   - Used only when dedup_map is Some and encryptor is None
 ///
 /// - `hash_buf`: Reusable buffer for hash output (must be ≥32 bytes)

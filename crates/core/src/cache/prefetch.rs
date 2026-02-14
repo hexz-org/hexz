@@ -199,7 +199,7 @@
 //! - **Multi-stream prefetch**: Prefetch from multiple streams (Disk + Memory) simultaneously
 //! - **Priority hints**: Mark prefetch requests as low-priority to avoid evicting hot data
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 /// Thread-safe prefetch manager with configurable lookahead window.
 ///
@@ -235,6 +235,10 @@ pub struct Prefetcher {
     /// Stored as `AtomicU32` to enable lock-free runtime updates. A value of 0
     /// disables prefetching (returns empty target vectors).
     window_size: AtomicU32,
+
+    /// Guards against concurrent prefetch threads. Only one prefetch operation
+    /// can be in flight at a time to prevent unbounded thread spawning.
+    in_flight: AtomicBool,
 }
 
 impl Prefetcher {
@@ -277,7 +281,22 @@ impl Prefetcher {
     pub fn new(window_size: u32) -> Self {
         Self {
             window_size: AtomicU32::new(window_size),
+            in_flight: AtomicBool::new(false),
         }
+    }
+
+    /// Attempts to acquire the in-flight guard. Returns `true` if this caller
+    /// won the race and should spawn a prefetch thread. The caller **must** call
+    /// [`clear_in_flight`](Self::clear_in_flight) when the prefetch completes.
+    pub fn try_start(&self) -> bool {
+        self.in_flight
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+            .is_ok()
+    }
+
+    /// Clears the in-flight flag, allowing the next read to spawn a prefetch.
+    pub fn clear_in_flight(&self) {
+        self.in_flight.store(false, Ordering::Release);
     }
 
     /// Computes the block indices that should be speculatively prefetched.

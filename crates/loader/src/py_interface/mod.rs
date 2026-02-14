@@ -37,7 +37,7 @@
 //!   threads call into Hexz.
 //!
 //! - **Buffer Protocol**: Direct integration with Python's buffer protocol allows zero-copy
-//!   reads into NumPy arrays and other buffer-supporting types via `read_at_into()` and
+//!   reads into NumPy arrays and other buffer-supporting types via `read(buffer=...)` and
 //!   `readinto()` methods.
 //!
 //! - **Context Managers**: All reader classes implement `__enter__`/`__exit__` (and async
@@ -64,7 +64,7 @@
 //!
 //! # Zero-copy into NumPy array
 //! buffer = np.zeros(1024, dtype=np.uint8)
-//! bytes_read = reader.read_at_into(offset=0, buffer=buffer)
+//! bytes_read = reader.read(buffer=buffer, offset=0)
 //! ```
 //!
 //! ## Asynchronous Reading
@@ -114,7 +114,7 @@
 //! - **Cache Sizing**: Set `cache_capacity_bytes` based on working set size. Default is
 //!   conservative; increase for better hit rates on random access.
 //!
-//! - **Buffer Reuse**: Use `read_at_into()` and `readinto()` to avoid allocations when
+//! - **Buffer Reuse**: Use `read(buffer=...)` and `readinto()` to avoid allocations when
 //!   reading into pre-allocated buffers (NumPy arrays, ByteArrays).
 //!
 //! - **Async Concurrency**: `AsyncReader` operations run on the Tokio blocking pool,

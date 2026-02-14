@@ -9,14 +9,14 @@ Build profiles provide optimized configurations for different scenarios:
 - archival: Long-term storage (max compression and dedup)
 """
 
-from typing import Dict, Any
-from pathlib import Path
 import os
+from pathlib import Path
+from typing import Any, Dict
 
-from .typing import BuildProfile, PathLike
-from .writer import Writer
-from .utils import Metadata, inspect
 from .exceptions import ValidationError
+from .typing import BuildProfile, PathLike
+from .utils import Metadata, inspect
+from .writer import Writer
 
 # Build profiles map to specific Writer configurations
 PROFILES: Dict[BuildProfile, Dict[str, Any]] = {
@@ -72,7 +72,7 @@ def build(
 
     Args:
         source: Source file, directory, or data
-        output: Output .st file path
+        output: Output .hxz file path
         profile: Build profile to use
         **overrides: Override any profile settings
 

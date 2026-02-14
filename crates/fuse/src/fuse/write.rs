@@ -69,22 +69,22 @@
 //!
 //! ## First Write to a Clean Block
 //!
-//! ```no_run
-//! // write(ino=2, offset=100, data=[0xAA; 50]) to block 0:
-//! // 1. Block 0 not modified -> seed with snapshot.read_at(Disk, 0, 4096)
-//! // 2. overlay.write_file(0, snapshot_block_0)
-//! // 3. overlay.mark_block_modified(0) -> append 0u64.to_le_bytes() to .meta
-//! // 4. overlay.write_file(100, [0xAA; 50]) -> overwrite bytes 100..150
-//! // Result: Overlay block 0 = snapshot[0..100] ++ [0xAA; 50] ++ snapshot[150..4096]
+//! ```text
+//! write(ino=2, offset=100, data=[0xAA; 50]) to block 0:
+//! 1. Block 0 not modified -> seed with snapshot.read_at(Disk, 0, 4096)
+//! 2. overlay.write_file(0, snapshot_block_0)
+//! 3. overlay.mark_block_modified(0) -> append 0u64.to_le_bytes() to .meta
+//! 4. overlay.write_file(100, [0xAA; 50]) -> overwrite bytes 100..150
+//! Result: Overlay block 0 = snapshot[0..100] ++ [0xAA; 50] ++ snapshot[150..4096]
 //! ```
 //!
 //! ## Write to Already-Modified Block
 //!
-//! ```no_run
-//! // write(ino=2, offset=200, data=[0xBB; 100]) to block 0 (already modified):
-//! // 1. Block 0 modified -> skip seeding
-//! // 2. overlay.write_file(200, [0xBB; 100])
-//! // Result: Overlay block 0 bytes 200..300 updated
+//! ```text
+//! write(ino=2, offset=200, data=[0xBB; 100]) to block 0 (already modified):
+//! 1. Block 0 modified -> skip seeding
+//! 2. overlay.write_file(200, [0xBB; 100])
+//! Result: Overlay block 0 bytes 200..300 updated
 //! ```
 
 use super::Hexz;
@@ -146,22 +146,22 @@ use libc::{EIO, EROFS};
 ///
 /// ## Simple Block-Aligned Write
 ///
-/// ```no_run
-/// // write(ino=2, offset=4096, data=[0xFF; 4096]) to clean block 1:
-/// // 1. Block 1 not modified -> seed with snapshot.read_at(Disk, 4096, 4096)
-/// // 2. overlay.write_file(4096, snapshot_block_1)
-/// // 3. overlay.mark_block_modified(1) -> append to .meta
-/// // 4. overlay.write_file(4096, [0xFF; 4096]) -> full block overwrite
-/// // Result: Block 1 in overlay = [0xFF; 4096]
+/// ```text
+/// write(ino=2, offset=4096, data=[0xFF; 4096]) to clean block 1:
+/// 1. Block 1 not modified -> seed with snapshot.read_at(Disk, 4096, 4096)
+/// 2. overlay.write_file(4096, snapshot_block_1)
+/// 3. overlay.mark_block_modified(1) -> append to .meta
+/// 4. overlay.write_file(4096, [0xFF; 4096]) -> full block overwrite
+/// Result: Block 1 in overlay = [0xFF; 4096]
 /// ```
 ///
 /// ## Partial Cross-Block Write
 ///
-/// ```no_run
-/// // write(ino=2, offset=4090, data=[0xAA; 12]) spans blocks 0 and 1:
-/// // Block 0: Seed if needed, then overwrite [4090..4096]
-/// // Block 1: Seed if needed, then overwrite [4096..4102]
-/// // Result: 6 bytes modified in block 0, 6 bytes modified in block 1
+/// ```text
+/// write(ino=2, offset=4090, data=[0xAA; 12]) spans blocks 0 and 1:
+/// Block 0: Seed if needed, then overwrite [4090..4096]
+/// Block 1: Seed if needed, then overwrite [4096..4102]
+/// Result: 6 bytes modified in block 0, 6 bytes modified in block 1
 /// ```
 ///
 /// # Performance

@@ -46,7 +46,7 @@ graph TD
 
 ## File Format Structure
 
-The Hexz (`.st`) file is a structured binary format designed for random access. It starts with a fixed-size header pointing to a Master Index. This index maps virtual offsets to Page Indices, which in turn contain metadata for individual compressed data blocks. This hierarchical lookup allows the engine to find any byte in the file with minimal I/O.
+The Hexz (`.hxz`) file is a structured binary format designed for random access. It starts with a fixed-size header pointing to a Master Index. This index maps virtual offsets to Page Indices, which in turn contain metadata for individual compressed data blocks. This hierarchical lookup allows the engine to find any byte in the file with minimal I/O.
 
 ```mermaid
 classDiagram
@@ -169,7 +169,7 @@ flowchart TD
     subgraph "Persistence"
         Hash --> Dedup{"In Dedup Map?"}
         Dedup -- Yes --> IndexEntry["Create Index Entry<br/>(Reuse Offset)"]
-        Dedup -- No --> Write["Write to .st File"]
+        Dedup -- No --> Write["Write to .hxz File"]
         
         Write --> MapUpdate["Update Dedup Map"]
         MapUpdate --> IndexEntryNew["Create Index Entry<br/>(New Offset)"]
@@ -250,7 +250,7 @@ Deduplication occurs during the write path and is transparent to the reader. By 
 sequenceDiagram
     participant Writer as Hexz Writer
     participant DedupMap as Hash-to-Offset Map
-    participant File as .st Storage
+    participant File as .hxz Storage
     participant Index as Index Builder
 
     Note over Writer: Block A (Content X)
@@ -310,7 +310,7 @@ graph TD
 
 ## FUSE Overlay (Copy-On-Write)
 
-When a Hexz archive is mounted with `--overlay`, it presents a writable filesystem. Since the `.st` file is immutable, writes are redirected to a temporary overlay file. A metadata map tracks which 4KB blocks have been modified. Read requests first check this map; if the block is modified, it is read from the overlay; otherwise, it is fetched from the base `.st` file.
+When a Hexz archive is mounted with `--overlay`, it presents a writable filesystem. Since the `.hxz` file is immutable, writes are redirected to a temporary overlay file. A metadata map tracks which 4KB blocks have been modified. Read requests first check this map; if the block is modified, it is read from the overlay; otherwise, it is fetched from the base `.hxz` file.
 
 ```mermaid
 flowchart TD
@@ -324,6 +324,6 @@ flowchart TD
     CheckMeta -- Yes --> ReadOverlay["Read from Overlay File"]
     ReadOverlay --> Return
     
-    CheckMeta -- No --> ReadBase["Read from Base .st File"]
+    CheckMeta -- No --> ReadBase["Read from Base .hxz File"]
     ReadBase --> Return["Return Data"]
 ```

@@ -92,8 +92,8 @@ Choose based on access pattern:
 # Change to: LZ4 (fast decompression)
 
 hexz data pack \
-  --disk original.st \
-  --output optimized.st \
+  --disk original.hxz \
+  --output optimized.hxz \
   --compression lz4
 ```
 
@@ -113,13 +113,13 @@ Larger blocks compress better but slower random access.
 # For random access workload
 hexz data pack \
   --disk data/ \
-  --output fast-access.st \
+  --output fast-access.hxz \
   --block-size 16384  # 16KB
 
 # For sequential streaming
 hexz data pack \
   --disk data/ \
-  --output high-compression.st \
+  --output high-compression.hxz \
   --block-size 262144  # 256KB
 ```
 

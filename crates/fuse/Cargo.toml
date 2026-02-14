@@ -1,10 +1,9 @@
 [package]
 name = "hexz-fuse"
-version = "0.1.0-alpha"
+version = "0.1.0"
 edition = "2024"
 authors = ["Will McCallion"]
-license = "Apache-2.0"
-repository = "https://github.com/willmccallion/hexz"
+repository = "https://github.com/Alethic-Systems/hexz"
 description = "FUSE filesystem adapter for Hexz snapshots"
 
 [dependencies]

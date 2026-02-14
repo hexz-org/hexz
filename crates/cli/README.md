@@ -14,7 +14,7 @@ This is the primary tool for developers and data engineers working with the Hexz
 
 ```bash
 # Clone the repository
-git clone https://github.com/willmccallion/hexz.git
+git clone https://github.com/Alethic-Systems/hexz.git
 cd hexz
 
 # Install the CLI
@@ -39,7 +39,7 @@ hexz data pack --disk ./raw_images --output dataset.hxz --cdc
 # Pack with custom compression and encryption
 hexz data pack \
   --disk ./data \
-  --output encrypted.st \
+  --output encrypted.hxz \
   --compression zstd \
   --encrypt
 ```
@@ -58,10 +58,10 @@ hexz data info dataset.hxz --json
 
 ```bash
 # Boot a VM with 4GB RAM (requires FUSE feature)
-hexz vm boot ubuntu-22.04.st --ram 4G
+hexz vm boot ubuntu-22.04.hxz --ram 4G
 
 # Boot without KVM acceleration
-hexz vm boot snapshot.st --ram 2G --no-kvm
+hexz vm boot snapshot.hxz --ram 2G --no-kvm
 ```
 
 ## Command Reference
@@ -83,10 +83,10 @@ Work with datasets and snapshots for ML/AI workflows:
 **Example:**
 ```bash
 # Pack with deduplication
-hexz data pack --disk ./images --output train.st --cdc
+hexz data pack --disk ./images --output train.hxz --cdc
 
 # View detailed info
-hexz data info train.st --json
+hexz data info train.hxz --json
 ```
 
 ### VM Commands (`hexz vm`)
@@ -103,13 +103,13 @@ Manage virtual machines using Hexz snapshots (requires `fuse` feature):
 **Example:**
 ```bash
 # Install Ubuntu from ISO
-hexz vm install ubuntu-22.04.iso --disk-size 20G --output ubuntu.st
+hexz vm install ubuntu-22.04.iso --disk-size 20G --output ubuntu.hxz
 
 # Boot the installed system
-hexz vm boot ubuntu.st --ram 4G
+hexz vm boot ubuntu.hxz --ram 4G
 
 # Snapshot a running VM
-hexz vm snapshot --socket /tmp/vm.sock --output checkpoint.st
+hexz vm snapshot --socket /tmp/vm.sock --output checkpoint.hxz
 ```
 
 ### System Commands (`hexz sys`)
@@ -135,7 +135,7 @@ Choose compression algorithm with `--compression`:
 - `zstd` - Better compression (~500MB/s), higher ratio
 
 ```bash
-hexz data pack --disk ./data --output data.st --compression zstd
+hexz data pack --disk ./data --output data.hxz --compression zstd
 ```
 
 ### Content-Defined Chunking (CDC)
@@ -144,12 +144,12 @@ Enable deduplication with `--cdc`:
 
 ```bash
 # Use default CDC settings (FastCDC)
-hexz data pack --disk ./data --output data.st --cdc
+hexz data pack --disk ./data --output data.hxz --cdc
 
 # Custom chunk sizes
 hexz data pack \
   --disk ./data \
-  --output data.st \
+  --output data.hxz \
   --cdc \
   --min-chunk 16384 \
   --avg-chunk 65536 \
@@ -162,7 +162,7 @@ Encrypt snapshots with `--encrypt`:
 
 ```bash
 # You'll be prompted for a password
-hexz data pack --disk ./data --output secure.st --encrypt
+hexz data pack --disk ./data --output secure.hxz --encrypt
 ```
 
 ## Architecture

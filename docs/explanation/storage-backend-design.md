@@ -5,8 +5,8 @@ How Hexz abstracts over local files, S3, and HTTP.
 ## Design Goal
 
 Provide unified API for reading snapshots regardless of storage location:
-- Local files (`/path/to/file.st`)
-- S3 buckets (`s3://bucket/key.st`)
+- Local files (`/path/to/file.hxz`)
+- S3 buckets (`s3://bucket/key.hxz`)
 - HTTP servers (`https://example.com/dataset.hxz`)
 
 ## Architecture

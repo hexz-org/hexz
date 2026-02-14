@@ -762,6 +762,20 @@ impl File {
         offset: u64,
         buffer: &mut [MaybeUninit<u8>],
     ) -> Result<()> {
+        self.read_at_uninit_inner(stream, offset, buffer, false)
+    }
+
+    /// Inner implementation of [`read_at_into_uninit`](Self::read_at_into_uninit).
+    ///
+    /// The `is_prefetch` flag prevents recursive prefetch thread spawning:
+    /// when `true`, the prefetch block is skipped to avoid unbounded thread creation.
+    fn read_at_uninit_inner(
+        self: &Arc<Self>,
+        stream: SnapshotStream,
+        offset: u64,
+        buffer: &mut [MaybeUninit<u8>],
+        is_prefetch: bool,
+    ) -> Result<()> {
         // Early validation
         let len = buffer.len();
         if len == 0 {
@@ -825,15 +839,26 @@ impl File {
             }
         }
 
-        // Trigger prefetch for next sequential blocks if enabled
-        if self.prefetcher.is_some() && !work_items.is_empty() {
-            let next_offset = offset + actual_len as u64;
-            let prefetch_len = (self.header.block_size * 4) as usize;
-            let snap = Arc::clone(self);
-            let stream_copy = stream;
-            std::thread::spawn(move || {
-                let _ = snap.read_at(stream_copy, next_offset, prefetch_len);
-            });
+        // Trigger prefetch for next sequential blocks if enabled.
+        // Guards:
+        // 1. `is_prefetch` prevents recursive spawning (prefetch thread spawning another)
+        // 2. `try_start()` limits to one in-flight prefetch at a time, preventing
+        //    unbounded thread creation under rapid sequential reads
+        if let Some(prefetcher) = &self.prefetcher {
+            if !is_prefetch && !work_items.is_empty() && prefetcher.try_start() {
+                let next_offset = offset + actual_len as u64;
+                let prefetch_len = (self.header.block_size * 4) as usize;
+                let snap = Arc::clone(self);
+                let stream_copy = stream;
+                std::thread::spawn(move || {
+                    let mut buf = vec![MaybeUninit::uninit(); prefetch_len];
+                    let _ = snap.read_at_uninit_inner(stream_copy, next_offset, &mut buf, true);
+                    // Release the in-flight guard so the next read can prefetch
+                    if let Some(pf) = &snap.prefetcher {
+                        pf.clear_in_flight();
+                    }
+                });
+            }
         }
 
         Ok(())

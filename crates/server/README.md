@@ -276,10 +276,10 @@ The crate includes example programs:
 
 ```bash
 # HTTP server example
-cargo run --example http_server -- snapshot.st 8080
+cargo run --example http_server -- snapshot.hxz 8080
 
 # NBD server example
-cargo run --example nbd_server -- snapshot.st 10809
+cargo run --example nbd_server -- snapshot.hxz 10809
 ```
 
 ## Dependencies

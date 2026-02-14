@@ -11,8 +11,8 @@ import tempfile
 import time
 from typing import Optional
 
-from .typing import PathLike
 from .exceptions import MountError
+from .typing import PathLike
 
 
 class _MountPoint:
@@ -36,7 +36,7 @@ class _MountPoint:
         """Create a mount point.
 
         Args:
-            snapshot_path: Path to .st file
+            snapshot_path: Path to .hxz file
             mount_point: Directory to mount at (creates temp if None)
             binary: Path to hexz CLI binary
         """
@@ -151,7 +151,7 @@ def mount(
     The snapshot is automatically unmounted when exiting the context manager.
 
     Args:
-        snapshot: Path to .st file
+        snapshot: Path to .hxz file
         mount_point: Directory to mount at (creates temp if None)
         binary: Path to hexz CLI binary
 
@@ -171,8 +171,4 @@ def mount(
     )
 
 
-# unmount() has been removed in v0.1.0-beta
-# Use the mount() context manager which automatically unmounts on exit
-
-
-__all__ = ["mount"]  # Only export mount(), MountPoint is internal
+__all__ = ["mount"]

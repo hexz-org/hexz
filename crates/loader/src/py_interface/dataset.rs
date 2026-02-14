@@ -49,7 +49,7 @@
 //! # Zero-Copy Buffer Operations
 //!
 //! For maximum performance when working with NumPy arrays or other buffer-supporting types,
-//! use `read_at_into()` or `readinto()` to avoid allocating intermediate byte arrays:
+//! use `read(buffer=...)` or `readinto()` to avoid allocating intermediate byte arrays:
 //!
 //! ```python
 //! import numpy as np
@@ -58,7 +58,7 @@
 //! buffer = np.zeros(4096, dtype=np.uint8)
 //!
 //! # Zero-copy read directly into NumPy array
-//! bytes_read = reader.read_at_into(offset=0, buffer=buffer)
+//! bytes_read = reader.read(buffer=buffer, offset=0)
 //! # buffer now contains decompressed data without intermediate copies
 //! ```
 //!
@@ -104,7 +104,7 @@
 //!     def __getitem__(self, idx):
 //!         offset = idx * self.item_size
 //!         buffer = np.zeros(self.item_size, dtype=np.uint8)
-//!         self.reader.read_at_into(offset=offset, buffer=buffer)
+//!         self.reader.read(buffer=buffer, offset=offset)
 //!         return torch.from_numpy(buffer)
 //!
 //! dataset = Dataset("training.hxz", item_size=1024)
@@ -175,9 +175,9 @@ use crate::tensor;
 /// # Constructor Parameters
 ///
 /// - `path` (str): Path to snapshot file. Supports:
-///   - Local paths: `/path/to/file.st`
-///   - HTTP(S) URLs: `https://example.com/data.st`
-///   - S3 URIs: `s3://bucket/key.st`
+///   - Local paths: `/path/to/file.hxz`
+///   - HTTP(S) URLs: `https://example.com/data.hxz`
+///   - S3 URIs: `s3://bucket/key.hxz`
 ///
 /// - `s3_region` (str, optional): AWS region for S3 URIs (e.g., "us-west-2")
 ///
@@ -228,7 +228,7 @@ use crate::tensor;
 ///
 /// # Zero-copy into NumPy array
 /// buffer = np.zeros(4096, dtype=np.uint8)
-/// bytes_read = reader.read_at_into(offset=0, buffer=buffer)
+/// bytes_read = reader.read(buffer=buffer, offset=0)
 ///
 /// # Seek operations
 /// reader.seek(0)  # rewind to start
@@ -380,43 +380,54 @@ impl Reader {
         let inner = self.inner.clone();
         let total_size = self.inner.size(SnapshotStream::Disk);
 
-        let start = match offset {
+        // Compute (start, len, update_cursor) from either the explicit offset
+        // or the internal cursor position.
+        let (start, len, update_cursor) = match offset {
+            Some(at) => {
+                if at >= total_size {
+                    return Ok(PyBytes::new(py, &[]));
+                }
+                let len = match size {
+                    Some(s) => std::cmp::min(s as u64, total_size - at) as usize,
+                    None => (total_size - at) as usize,
+                };
+                (at, len, false)
+            }
             None => {
-                let mut cursor = self
+                let cursor_val = *self
                     .cursor
                     .lock()
                     .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?;
-                if *cursor >= total_size {
+                if cursor_val >= total_size {
                     return Ok(PyBytes::new(py, &[]));
                 }
-                let start = *cursor;
                 let len = match size {
-                    Some(s) => std::cmp::min(s as u64, total_size - *cursor) as usize,
-                    None => (total_size - *cursor) as usize,
+                    Some(s) => std::cmp::min(s as u64, total_size - cursor_val) as usize,
+                    None => (total_size - cursor_val) as usize,
                 };
-                let data = py
-                    .allow_threads({
-                        let inner = inner.clone();
-                        move || inner.read_at(SnapshotStream::Disk, start, len)
-                    })
-                    .map_err(|e| PyIOError::new_err(e.to_string()))?;
-                *cursor += data.len() as u64;
-                return Ok(PyBytes::new(py, &data));
+                (cursor_val, len, true)
             }
-            Some(at) => at,
         };
 
-        if start >= total_size {
-            return Ok(PyBytes::new(py, &[]));
+        // Zero-copy: decompress directly into the PyBytes internal buffer.
+        // One allocation, zero copies. The GIL is held during new_with (can't
+        // call allow_threads inside its closure), but LZ4 decompresses at
+        // ~32 GB/s so a 4 KB sample takes ~0.1 µs.
+        let bytes = PyBytes::new_with(py, len, |buf| {
+            inner
+                .read_at_into_uninit_bytes(SnapshotStream::Disk, start, buf)
+                .map_err(|e| PyIOError::new_err(e.to_string()))
+        })?;
+
+        if update_cursor {
+            let mut cursor = self
+                .cursor
+                .lock()
+                .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?;
+            *cursor = start + len as u64;
         }
-        let len = match size {
-            Some(s) => std::cmp::min(s as u64, total_size - start) as usize,
-            None => (total_size - start) as usize,
-        };
-        let data = py
-            .allow_threads(move || inner.read_at(SnapshotStream::Disk, start, len))
-            .map_err(|e| PyIOError::new_err(e.to_string()))?;
-        Ok(PyBytes::new(py, &data))
+
+        Ok(bytes)
     }
 
     /// Read at `offset` into a writable buffer (e.g. bytearray). Returns number of bytes read.
@@ -437,13 +448,14 @@ impl Reader {
     ///
     /// # Read into a NumPy array (zero-copy)
     /// buffer = np.zeros(4096, dtype=np.uint8)
-    /// bytes_read = reader.read_at_into(offset=0, buffer=buffer)
+    /// bytes_read = reader.read(buffer=buffer, offset=0)
     /// print(f"Read {bytes_read} bytes into NumPy array")
     ///
     /// # Read into a bytearray
     /// ba = bytearray(1024)
-    /// bytes_read = reader.read_at_into(offset=8192, buffer=ba)
+    /// bytes_read = reader.read(buffer=ba, offset=8192)
     /// ```
+    #[pyo3(name = "_read_at_into")]
     fn read_at_into(
         &self,
         py: Python<'_>,

@@ -53,7 +53,7 @@ hexz data pack --disk <INPUT> --output <OUTPUT> [OPTIONS]
 ```bash
 hexz data pack \\
   --disk /data/imagenet \\
-  --output imagenet.st \\
+  --output imagenet.hxz \\
   --compression zstd \\
   --compression-level 9 \\
   --cdc
@@ -125,7 +125,7 @@ hexz vm boot <SNAPSHOT> [OPTIONS]
 
 **Example**:
 ```bash
-hexz vm boot ubuntu.st \\
+hexz vm boot ubuntu.hxz \\
   --ram 4G \\
   --cpus 4 \\
   --net \\
@@ -153,7 +153,7 @@ hexz vm install --iso <ISO> --output <SNAPSHOT> [OPTIONS]
 ```bash
 hexz vm install \\
   --iso ubuntu-22.04.iso \\
-  --output ubuntu.st \\
+  --output ubuntu.hxz \\
   --disk-size 40G \\
   --ram 4G \\
   --vnc
@@ -178,7 +178,7 @@ hexz vm mount <SNAPSHOT> <MOUNTPOINT> [OPTIONS]
 hexz vm mount dataset.hxz /mnt/hexz --readonly
 
 # Read-write with overlay
-hexz vm mount base.st /mnt/hexz --overlay changes.img
+hexz vm mount base.hxz /mnt/hexz --overlay changes.img
 ```
 
 ### `hexz vm commit`
@@ -193,9 +193,9 @@ hexz vm commit --base <BASE> --overlay <OVERLAY> --output <OUTPUT>
 **Example**:
 ```bash
 hexz vm commit \\
-  --base ubuntu-base.st \\
+  --base ubuntu-base.hxz \\
   --overlay changes.img \\
-  --output ubuntu-updated.st
+  --output ubuntu-updated.hxz
 ```
 
 ---

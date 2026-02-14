@@ -1,10 +1,9 @@
 [package]
 name = "hexz-loader"
-version = "0.1.0-alpha"
+version = "0.1.0"
 edition = "2024"
 authors = ["Will McCallion"]
-license = "Apache-2.0"
-repository = "https://github.com/willmccallion/hexz"
+repository = "https://github.com/Alethic-Systems/hexz"
 description = "Python bindings for Hexz - high-performance ML data loading"
 
 [lib]

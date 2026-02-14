@@ -19,7 +19,7 @@ Base Snapshot (read-only) + Overlay (writes) = Running VM State
 ## Create Overlay During Boot
 
 ```bash
-hexz vm boot base-vm.st --overlay changes.img
+hexz vm boot base-vm.hxz --overlay changes.img
 ```
 
 Make changes in the VM, then shutdown.
@@ -28,18 +28,18 @@ Make changes in the VM, then shutdown.
 
 ```bash
 hexz vm commit \\
-  --base base-vm.st \\
+  --base base-vm.hxz \\
   --overlay changes.img \\
-  --output updated-vm.st
+  --output updated-vm.hxz
 ```
 
-**Result**: `updated-vm.st` contains base data + all changes from overlay.
+**Result**: `updated-vm.hxz` contains base data + all changes from overlay.
 
 ## Complete Workflow Example
 
 ```bash
 # 1. Boot with overlay
-hexz vm boot ubuntu-base.st --overlay dev-setup.img
+hexz vm boot ubuntu-base.hxz --overlay dev-setup.img
 ```
 
 Inside VM:
@@ -53,15 +53,15 @@ sudo shutdown -h now
 ```bash
 # 2. Commit changes
 hexz vm commit \\
-  --base ubuntu-base.st \\
+  --base ubuntu-base.hxz \\
   --overlay dev-setup.img \\
-  --output ubuntu-dev.st \\
+  --output ubuntu-dev.hxz \\
   --cdc  # Enable deduplication
 ```
 
 ```bash
 # 3. New snapshot ready to use
-hexz vm boot ubuntu-dev.st
+hexz vm boot ubuntu-dev.hxz
 ```
 
 ## Incremental Updates
@@ -70,15 +70,15 @@ Make additional changes:
 
 ```bash
 # Boot the updated snapshot with new overlay
-hexz vm boot ubuntu-dev.st --overlay new-changes.img
+hexz vm boot ubuntu-dev.hxz --overlay new-changes.img
 
 # Make more changes...
 
 # Commit again
 hexz vm commit \\
-  --base ubuntu-dev.st \\
+  --base ubuntu-dev.hxz \\
   --overlay new-changes.img \\
-  --output ubuntu-dev-v2.st \\
+  --output ubuntu-dev-v2.hxz \\
   --cdc
 ```
 
@@ -99,7 +99,7 @@ Alternative approach using FUSE mount:
 ```bash
 # Mount with overlay
 mkdir /tmp/vm-mount
-hexz vm mount base-vm.st /tmp/vm-mount --overlay changes.img
+hexz vm mount base-vm.hxz /tmp/vm-mount --overlay changes.img
 
 # Make changes to mounted filesystem
 sudo cp /etc/config /tmp/vm-mount/etc/config
@@ -109,9 +109,9 @@ sudo umount /tmp/vm-mount
 
 # Commit
 hexz vm commit \\
-  --base base-vm.st \\
+  --base base-vm.hxz \\
   --overlay changes.img \\
-  --output updated-vm.st
+  --output updated-vm.hxz
 ```
 
 ## Best Practices

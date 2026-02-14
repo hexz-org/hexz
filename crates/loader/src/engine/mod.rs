@@ -195,7 +195,7 @@ pub enum OpenError {
     /// S3 URI does not match the expected `s3://bucket/key` format.
     ///
     /// Valid S3 URIs must include both a bucket name and object key:
-    /// - ✓ `s3://my-bucket/path/to/snapshot.st`
+    /// - ✓ `s3://my-bucket/path/to/snapshot.hxz`
     /// - ✗ `s3://my-bucket` (missing key)
     /// - ✗ `s3:///path` (missing bucket)
     InvalidS3Uri(String),
@@ -295,10 +295,10 @@ pub struct OpenConfig {
     /// Path or URI to the snapshot file.
     ///
     /// Supported formats:
-    /// - **Local**: `/path/to/snap.st` or `./relative/path.st`
-    /// - **HTTP**: `http://example.com/snap.st`
-    /// - **HTTPS**: `https://cdn.example.com/datasets/snap.st`
-    /// - **S3**: `s3://bucket-name/prefix/snap.st`
+    /// - **Local**: `/path/to/snap.hxz` or `./relative/path.hxz`
+    /// - **HTTP**: `http://example.com/snap.hxz`
+    /// - **HTTPS**: `https://cdn.example.com/datasets/snap.hxz`
+    /// - **S3**: `s3://bucket-name/prefix/snap.hxz`
     ///
     /// The scheme determines which backend handles I/O operations.
     pub path: String,

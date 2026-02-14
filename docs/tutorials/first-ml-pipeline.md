@@ -129,7 +129,7 @@ Found 100 images
 ```
 
 **What Just Happened**:
-- All 100 images were packed into a single `.st` file
+- All 100 images were packed into a single `.hxz` file
 - The compression ratio is low (~1.04×) because JPEGs are already compressed
 - However, we now have a **single file** with **random access** instead of 100 separate files
 

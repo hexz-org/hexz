@@ -9,12 +9,17 @@ pub mod args;
 
 /// Command handlers organized by category (data, vm, sys).
 ///
-/// - [`cmd::data`]: Data operations for archives
-/// - [`cmd::vm`]: Virtual machine operations
-/// - [`cmd::sys`]: System utilities
+/// This module contains all the CLI command implementations:
+///
+/// - `data`: Data operations (pack, info, diff, analyze)
+/// - `vm`: Virtual machine operations (boot, commit, snapshot)
+/// - `sys`: System utilities (mount, unmount)
 pub mod cmd;
 
 /// User interface utilities (progress bars, spinners).
 ///
-/// - [`ui::progress`]: Progress bars and spinners for operation feedback
+/// Provides user-facing progress indicators for long-running operations:
+///
+/// - `progress`: Progress bars and spinners
+/// - Consistent styling across all commands
 pub mod ui;

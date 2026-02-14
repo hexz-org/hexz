@@ -262,8 +262,6 @@ Hexz's CDC implementation:
 - Uses BLAKE3 for content hashing (fast, secure)
 - Stores hashes in-memory during packing (for single-snapshot dedup)
 
-Cross-snapshot deduplication (dedup across multiple .st files) is planned for future versions.
-
 ## See Also
 
 - [ADR-0003: BLAKE3 and FastCDC Deduplication](../adr/0003-blake3-fastcdc-deduplication.md) - Decision rationale

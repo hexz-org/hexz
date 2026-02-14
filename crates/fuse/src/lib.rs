@@ -63,19 +63,27 @@
 
 /// Virtual filesystem abstractions (inodes, attributes, overlay).
 ///
-/// - [`vfs::inode`]: Inode numbering, directory entries, inode metadata
-/// - [`vfs::attr`]: File attribute construction (size, mode, timestamps)
-/// - [`vfs::overlay`]: Copy-on-write overlay for writable mounts
+/// This module provides the core VFS primitives for representing snapshot
+/// contents as a filesystem tree.
 ///
-/// Format details: See [`vfs::overlay::Overlay`]
+/// - `inode`: Inode numbering, directory entries, inode metadata
+/// - `attr`: File attribute construction (size, mode, timestamps)
+/// - `overlay`: Copy-on-write overlay for writable mounts
+///
+/// See submodules for detailed specifications.
 pub mod vfs;
 
 /// FUSE filesystem implementation.
 ///
-/// - [`fuse::lookup`]: Inode lookup, directory listing, attribute queries
-/// - [`fuse::read`]: Read operations on disk/memory files
+/// Implements the `fuser::Filesystem` trait to expose snapshots as
+/// mountable filesystems.
 ///
-/// The [`fuse::Hexz`] filesystem struct is `!Send` due to FUSE constraints but
+/// Main components:
+/// - `lookup`: Inode lookup and directory listing
+/// - `read`: Read operations on disk/memory files
+/// - `write`: Write operations with copy-on-write semantics
+///
+/// The filesystem struct is `!Send` due to FUSE library constraints.
 pub mod fuse;
 
 use fuser::MountOption;

@@ -35,7 +35,7 @@ Reads from these files transparently decompress blocks on-the-fly. Optional over
 
 ```bash
 # Mount a snapshot (requires hexz CLI with fuse feature)
-hexz vm mount snapshot.st /mnt/snapshot
+hexz vm mount snapshot.hxz /mnt/snapshot
 
 # Access the disk image
 sudo dd if=/mnt/snapshot/disk of=output.raw bs=1M count=100
@@ -101,13 +101,13 @@ When mounted with an overlay file, the FUSE filesystem provides copy-on-write se
 
 ```bash
 # Mount with overlay
-hexz vm mount base.st /mnt/vm --overlay changes.bin
+hexz vm mount base.hxz /mnt/vm --overlay changes.bin
 
 # Make modifications (e.g., install software in VM)
 # All writes go to changes.bin
 
 # Commit overlay to new snapshot
-hexz vm commit --overlay changes.bin --base base.st --output updated.st
+hexz vm commit --overlay changes.bin --base base.hxz --output updated.hxz
 ```
 
 This is useful for:
@@ -123,7 +123,7 @@ Boot a virtual machine from a Hexz snapshot:
 
 ```bash
 # Mount snapshot
-hexz vm mount ubuntu.st /mnt/ubuntu
+hexz vm mount ubuntu.hxz /mnt/ubuntu
 
 # Boot with QEMU
 qemu-system-x86_64 \
@@ -132,7 +132,7 @@ qemu-system-x86_64 \
   -enable-kvm
 
 # Or use the integrated boot command
-hexz vm boot ubuntu.st --ram 4G
+hexz vm boot ubuntu.hxz --ram 4G
 ```
 
 ### Disk Image Manipulation
@@ -141,7 +141,7 @@ Use standard tools on compressed snapshots:
 
 ```bash
 # Mount snapshot
-hexz vm mount disk.st /mnt/disk
+hexz vm mount disk.hxz /mnt/disk
 
 # Partition with parted
 sudo parted /mnt/disk/disk print
@@ -159,7 +159,7 @@ Access individual files without full decompression:
 
 ```bash
 # Mount snapshot
-hexz vm mount snapshot.st /mnt/snap
+hexz vm mount snapshot.hxz /mnt/snap
 
 # Mount the disk's filesystem (assuming ext4 at offset 0)
 sudo mount -o loop /mnt/snap/disk /mnt/contents

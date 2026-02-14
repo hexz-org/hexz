@@ -11,7 +11,7 @@
 ## Basic Boot
 
 ```bash
-hexz vm boot vm-snapshot.st
+hexz vm boot vm-snapshot.hxz
 ```
 
 This opens a console window with the booted VM.
@@ -19,7 +19,7 @@ This opens a console window with the booted VM.
 ## Boot with Custom Resources
 
 ```bash
-hexz vm boot vm-snapshot.st \\
+hexz vm boot vm-snapshot.hxz \\
   --ram 4G \\
   --cpus 4
 ```
@@ -29,7 +29,7 @@ Supported RAM formats: `512M`, `1G`, `2048M`, `8G`
 ## Boot with Networking
 
 ```bash
-hexz vm boot vm-snapshot.st \\
+hexz vm boot vm-snapshot.hxz \\
   --net \\
   --forward 2222:22
 ```
@@ -42,7 +42,7 @@ ssh -p 2222 user@localhost
 ## Boot Headless (No Display)
 
 ```bash
-hexz vm boot vm-snapshot.st \\
+hexz vm boot vm-snapshot.hxz \\
   --headless \\
   --net \\
   --forward 2222:22
@@ -53,7 +53,7 @@ Useful for server VMs accessed only via SSH.
 ## Boot with VNC
 
 ```bash
-hexz vm boot vm-snapshot.st \\
+hexz vm boot vm-snapshot.hxz \\
   --vnc
 ```
 
@@ -62,7 +62,7 @@ Connect via VNC client to `localhost:5900`.
 ## Boot in Snapshot Mode (Ephemeral)
 
 ```bash
-hexz vm boot vm-snapshot.st --snapshot
+hexz vm boot vm-snapshot.hxz --snapshot
 ```
 
 All changes discarded on VM shutdown. Useful for testing.
@@ -70,7 +70,7 @@ All changes discarded on VM shutdown. Useful for testing.
 ## Complete Example
 
 ```bash
-hexz vm boot ubuntu-dev.st \\
+hexz vm boot ubuntu-dev.hxz \\
   --ram 8G \\
   --cpus 4 \\
   --net \\
@@ -96,8 +96,8 @@ newgrp kvm
 ```
 
 **"Snapshot not found"**:
-- Verify file exists: `ls -lh vm-snapshot.st`
-- Use absolute path: `/home/user/vm-snapshot.st`
+- Verify file exists: `ls -lh vm-snapshot.hxz`
+- Use absolute path: `/home/user/vm-snapshot.hxz`
 
 **VM boots slowly**:
 - Ensure KVM enabled (not emulation)

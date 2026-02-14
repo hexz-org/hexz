@@ -62,15 +62,40 @@ pub mod utils;
 ///
 /// Provides `StorageBackend` implementations that read directly from local
 /// files or memory-mapped regions.
+///
+/// - `FileBackend`: Traditional file I/O using `pread(2)` system calls
+/// - `MmapBackend`: Memory-mapped file access leveraging the OS page cache
+///
+/// ## Choosing a Backend
+///
+/// | Scenario | Recommended Backend | Rationale |
+/// |----------|-------------------|-----------|
+/// | Sequential scans | `FileBackend` | Lower kernel overhead, predictable I/O scheduling |
+/// | Random access with locality | `MmapBackend` | OS page cache provides transparent prefetch and caching |
+/// | Small files (<100MB) | `MmapBackend` | Entire file likely stays resident, near-zero overhead |
+/// | Large files (>1GB) with sparse access | `FileBackend` | Avoids address space fragmentation, explicit control |
+/// | Containers/restricted environments | `FileBackend` | No special kernel capabilities required |
+///
+/// ## Thread Safety
+///
+/// Both backends are fully thread-safe:
+/// - `FileBackend` uses offset-based I/O (`pread`) that bypasses file cursor state
+/// - `MmapBackend` wraps the memory map in `Arc<Mmap>` for safe shared access
 pub mod local;
 
 /// HTTP storage backends (blocking and async).
 ///
 /// Enables reading snapshots served over HTTP using range requests.
+///
+/// The `HttpBackend` type wraps the `reqwest` async client in an embedded Tokio runtime,
+/// allowing synchronous callers to use HTTP without managing an async runtime.
 pub mod http;
 
 /// S3-compatible object storage backends.
 ///
 /// Allows snapshots to be stored and accessed from S3 or S3-like object
 /// stores while still presenting the `StorageBackend` abstraction.
+///
+/// The `S3Backend` type wraps the `rust-s3` async client in an embedded Tokio runtime,
+/// providing a synchronous interface for snapshot access.
 pub mod s3;

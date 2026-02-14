@@ -117,7 +117,7 @@ Trade-off: Eliminates collision risk but requires reading existing chunks (slowe
 
 ### Cross-Snapshot Deduplication (Future)
 
-**Planned enhancement**: Deduplicate across multiple .st files
+**Planned enhancement**: Deduplicate across multiple .hxz files
 
 **Approach**:
 1. Maintain persistent dedup index (database or index file)
@@ -209,11 +209,11 @@ Deduplication reduces I/O:
 Packing multiple files separately creates separate snapshots:
 
 ```bash
-hexz data pack --disk file1.bin --output snapshot1.st --cdc
-hexz data pack --disk file2.bin --output snapshot2.st --cdc
+hexz data pack --disk file1.bin --output snapshot1.hxz --cdc
+hexz data pack --disk file2.bin --output snapshot2.hxz --cdc
 ```
 
-Even if file1 and file2 have identical content, no deduplication between snapshot1.st and snapshot2.st.
+Even if file1 and file2 have identical content, no deduplication between snapshot1.hxz and snapshot2.hxz
 
 **Workaround**: Pack files together:
 
@@ -223,7 +223,7 @@ mkdir /tmp/combined
 cp file1.bin file2.bin /tmp/combined/
 
 # Pack directory (dedup within snapshot)
-hexz data pack --disk /tmp/combined/ --output snapshot.st --cdc
+hexz data pack --disk /tmp/combined/ --output snapshot.hxz --cdc
 ```
 
 ### Thin Snapshots
@@ -231,10 +231,10 @@ hexz data pack --disk /tmp/combined/ --output snapshot.st --cdc
 Thin snapshots reference parent snapshot:
 
 ```bash
-hexz data pack --disk v2/ --output v2.st --parent v1.st --cdc
+hexz data pack --disk v2/ --output v2.hxz --parent v1.hxz --cdc
 ```
 
-**Limitation**: v2.st depends on v1.st existing at same path
+**Limitation**: v2.hxz depends on v1.hxz existing at same path
 
 **Trade-off**: Space savings vs dependency management complexity
 

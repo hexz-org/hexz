@@ -90,7 +90,7 @@ This documentation follows the [Diátaxis framework](https://diataxis.fr/), orga
 
 - [Python API Reference](reference/python-api.md) — Complete Python API
 - [CLI Command Reference](reference/cli-reference.md) — All CLI commands and flags
-- [File Format Specification](reference/file-format-spec.md) — `.st` file format details
+- [File Format Specification](reference/file-format-spec.md) — `.hxz` file format details
 - [Compression Algorithms](reference/compression-algorithms.md) — LZ4 vs Zstd comparison
 - [Configuration Options](reference/configuration.md) — Environment variables and config
 - [Version Compatibility](reference/version-compatibility.md) — Python/PyTorch versions
@@ -130,7 +130,7 @@ This documentation follows the [Diátaxis framework](https://diataxis.fr/), orga
 
 ### What is a Snapshot?
 
-A **snapshot** (`.st` file) is an immutable, compressed archive with:
+A **snapshot** (`.hxz` file) is an immutable, compressed archive with:
 - **Block-level compression**: Random access without full decompression
 - **Content-defined chunking**: Deduplication across versions
 - **Seekable index**: O(log N) lookup for any offset
@@ -165,7 +165,7 @@ for batch in loader:
 **VM Boot**:
 ```bash
 # Boot Ubuntu directly from compressed snapshot
-hexz vm boot ubuntu.st --ram 4G --net
+hexz vm boot ubuntu.hxz --ram 4G --net
 ```
 
 ---
@@ -221,7 +221,7 @@ hexz.build(
 ```bash
 hexz data pack \\
   --disk /data/imagenet \\
-  --output imagenet.st \\
+  --output imagenet.hxz \\
   --compression zstd \\
   --cdc
 ```
@@ -240,7 +240,7 @@ with hexz.open("s3://bucket/dataset.hxz", s3_region="us-west-2") as reader:
 ### Boot a VM
 
 ```bash
-hexz vm boot ubuntu.st \\
+hexz vm boot ubuntu.hxz \\
   --ram 4G \\
   --cpus 4 \\
   --net \\

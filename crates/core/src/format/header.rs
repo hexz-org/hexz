@@ -8,7 +8,7 @@ use super::magic::{FORMAT_VERSION, MAGIC_BYTES};
 
 /// On-disk snapshot file header containing format metadata.
 ///
-/// This structure is serialized at the beginning of every `.st` file and
+/// This structure is serialized at the beginning of every `.hxz` file and
 /// describes the format version, compression settings, encryption parameters,
 /// and locations of key data structures within the file.
 ///
@@ -32,7 +32,7 @@ use super::magic::{FORMAT_VERSION, MAGIC_BYTES};
 ///
 /// The version field enables forward compatibility. Readers check this field
 /// and reject files with incompatible versions. The current format version is
-/// defined in [`super::magic::FORMAT_VERSION`].
+/// defined in the `magic` module.
 ///
 /// # Thin Provisioning
 ///
@@ -123,7 +123,7 @@ pub struct FeatureFlags {
 }
 
 impl Header {
-    /// Read and deserialize a header from a [`Read`] source.
+    /// Read and deserialize a header from a [`std::io::Read`] source.
     pub fn read_from<R: std::io::Read>(reader: &mut R) -> hexz_common::Result<Self> {
         let mut header_bytes = [0u8; super::magic::HEADER_SIZE];
         reader.read_exact(&mut header_bytes)?;

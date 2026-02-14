@@ -120,7 +120,7 @@ use std::path::PathBuf;
 ///
 /// # Arguments
 ///
-/// - `output` (str): Output path for the `.st` snapshot file
+/// - `output` (str): Output path for the `.hxz` snapshot file
 ///
 /// - `disk` (str, optional): Path to disk image file to pack. Supports raw images, qcow2,
 ///   and other formats that can be read as raw bytes.

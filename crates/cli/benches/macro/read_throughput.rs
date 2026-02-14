@@ -39,7 +39,7 @@ mod common;
 /// creation causes a panic via `unwrap()`.
 ///
 /// **Side effects:** Writes a large input file to a temporary location and generates a
-/// corresponding `.st` file, consuming disk space and I/O bandwidth during setup.
+/// corresponding `.hxz` file, consuming disk space and I/O bandwidth during setup.
 fn setup_benchmark(size: usize) -> (NamedTempFile, NamedTempFile) {
     let input_file = NamedTempFile::new().unwrap();
     let output_file = NamedTempFile::new().unwrap();
@@ -67,7 +67,7 @@ fn setup_benchmark(size: usize) -> (NamedTempFile, NamedTempFile) {
 /// Benchmarks end-to-end read throughput for snapshots of varying sizes.
 ///
 /// **Architectural intent:** Measures how read performance scales with total snapshot
-/// size by constructing multiple `.st` files and timing sequential reads over the
+/// size by constructing multiple `.hxz` files and timing sequential reads over the
 /// disk stream using the standard `File` interface.
 ///
 /// **Constraints:** The benchmark currently exercises only two sizes (100 MiB and

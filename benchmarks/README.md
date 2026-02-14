@@ -1,269 +1,206 @@
 # Hexz Competitor Benchmarks
 
-This directory contains benchmarks comparing Hexz against alternative data storage formats for ML workloads.
+This directory contains comprehensive Python-based benchmarks comparing Hexz against popular alternatives for ML data loading.
 
-## Goal
+## Overview
 
-Provide **fair, reproducible comparisons** on identical hardware using identical test data. All claims in [COMPETITIVE_COMPARISON.md](../docs/project-docs/COMPETITIVE_COMPARISON.md) must be backed by empirical measurements or cited from published sources.
+All benchmarks are designed to:
+- Run in **pure Python** for apples-to-apples comparison
+- Use **identical test data** across all formats
+- Measure **realistic ML training scenarios**
+- Show **both strengths and weaknesses** of each approach
 
-## Running Benchmarks
-
-### Quick Start
-
-```bash
-# Run all competitor benchmarks
-make bench-competitors
-
-# Run specific format
-python benchmarks/competitors/webdataset_benchmark.py
-python benchmarks/competitors/hdf5_benchmark.py
-python benchmarks/competitors/parquet_benchmark.py
-```
-
-### Requirements
+## Requirements
 
 ```bash
-# Install all competitor libraries
-pip install -r benchmarks/requirements-competitors.txt
-
-# Or install individually:
-pip install webdataset h5py pyarrow
+# Install all benchmark dependencies
+pip install -r requirements.txt
 ```
+
+## Quick Start
+
+```bash
+# Generate test data (creates ~500MB of realistic image-like data)
+python generate_test_data.py
+
+# Run all benchmarks
+python run_all_benchmarks.py
+
+# Or run individual benchmarks
+python benchmarks/hexz_benchmark.py
+python benchmarks/webdataset_benchmark.py
+python benchmarks/hdf5_benchmark.py
+python benchmarks/local_files_benchmark.py
+```
+
+## Benchmark Categories
+
+### 1. Sequential Read Throughput
+Measures how fast each format can stream data sequentially (simulating first epoch).
+
+**Metrics:**
+- Throughput (MB/s)
+- Total time to read entire dataset
+- CPU usage
+
+### 2. Random Access Performance
+Tests shuffled access patterns (simulating training with shuffling).
+
+**Metrics:**
+- Random access latency (µs)
+- Throughput with shuffled indices
+- Cache effectiveness
+
+### 3. Multi-Worker Scaling
+Simulates PyTorch DataLoader with multiple workers.
+
+**Metrics:**
+- Throughput with 1, 2, 4, 8 workers
+- Speedup vs single worker
+- Scaling efficiency
+
+### 4. Storage Efficiency
+Compares compressed size and deduplication effectiveness.
+
+**Metrics:**
+- Storage size (compressed)
+- Compression ratio
+- Deduplication savings (for versioned datasets)
+
+### 5. Write Performance
+Measures how long it takes to pack/prepare datasets.
+
+**Metrics:**
+- Write throughput (MB/s)
+- Time to pack 1GB of data
+- CPU/memory usage
 
 ## Test Data
 
-All benchmarks use the **same test dataset** for fair comparison:
+The `generate_test_data.py` script creates realistic ML datasets:
 
-- **Dataset:** ImageNet 1K validation set (50,000 images)
-- **Size:** 6.3GB raw, ~6GB compressed (varies by format)
-- **Location:** `benchmarks/data/imagenet_val_50k/`
+- **ImageNet-like**: 10,000 samples × 50KB (similar to ImageNet images)
+- **Small images**: 50,000 samples × 4KB (similar to CIFAR-10)
+- **Variable sizes**: Mixed sizes from 1KB to 100KB
+- **Compression ratio**: ~60% (realistic for JPEG-like data)
 
-### Download Test Data
+All data is deterministically generated with controlled entropy for fair comparisons.
 
-```bash
-# Download ImageNet validation set
-python benchmarks/download_test_data.py
+## Formats Tested
 
-# Or generate synthetic data for testing
-python benchmarks/generate_synthetic_data.py --size 6.3GB
-```
+### Hexz
+- **Strengths**: Fast random access, good compression, S3 streaming, deduplication
+- **Weaknesses**: Newer format, smaller ecosystem
 
-## Benchmark Structure
+### WebDataset
+- **Strengths**: Mature ecosystem, PyTorch integration, streaming-friendly
+- **Weaknesses**: Shard-limited shuffling, no true random access
 
-Each competitor benchmark measures:
+### HDF5 (h5py)
+- **Strengths**: Mature, well-tested, good random access, compression
+- **Weaknesses**: Slower S3 streaming, complex API
 
-1. **Write Performance**
-   - Pack/write throughput (GB/s)
-   - Compression ratio
-   - Time to create dataset
+### Local Files
+- **Strengths**: Simplest, no overhead, maximum compatibility
+- **Weaknesses**: No compression, expensive on S3, many small files
 
-2. **Read Performance**
-   - Sequential read throughput (GB/s)
-   - Random access latency (µs, cold and warm cache)
-   - Multi-worker scaling
-
-3. **Storage Efficiency**
-   - Compressed size
-   - Deduplication (if applicable)
-   - Metadata overhead
-
-4. **Integration Complexity**
-   - Lines of code for PyTorch DataLoader
-   - Installation complexity
-   - API ergonomics (subjective, documented)
-
-## Implemented Benchmarks
-
-### YES Hexz (Reference)
-
-**Status:** Complete
-
-```bash
-cargo bench --bench compression
-cargo bench --bench read_throughput
-cargo bench --bench write_throughput
-```
-
-**Results:** See [BENCHMARKS.md](../docs/project-docs/BENCHMARKS.md)
-
-### WARNING WebDataset
-
-**Status:** In progress
-
-**Benchmark:** `competitors/webdataset_benchmark.py`
-
-**Key metrics to validate:**
-- Sequential read: Claimed ~100 MB/s, needs validation
-- Random access: Claimed ~8.5 ms (shard seek), needs validation
-- Write throughput: Needs measurement
-
-**Run:**
-```bash
-python benchmarks/competitors/webdataset_benchmark.py
-```
-
-### WARNING HDF5
-
-**Status:** In progress
-
-**Benchmark:** `competitors/hdf5_benchmark.py`
-
-**Key metrics to validate:**
-- Sequential read: Claimed 1.2 GB/s, needs validation
-- Random access: Claimed 345 µs, needs validation
-- Compression ratio with Zstd
-
-**Run:**
-```bash
-python benchmarks/competitors/hdf5_benchmark.py
-```
-
-### WARNING Parquet
-
-**Status:** In progress (limited applicability for images)
-
-**Benchmark:** `competitors/parquet_benchmark.py`
-
-**Note:** Parquet is optimized for tabular data, not blobs. Benchmark included for completeness but not directly comparable.
-
-**Run:**
-```bash
-python benchmarks/competitors/parquet_benchmark.py
-```
-
-### WARNING Local Files (Baseline)
-
-**Status:** Planned
-
-**Benchmark:** `competitors/local_files_benchmark.py`
-
-**Purpose:** Establish baseline for raw filesystem performance (no compression).
+### Parquet (for tabular data)
+- **Note**: Parquet is included for completeness but is designed for tabular data, not blob storage
 
 ## Output Format
 
-All benchmarks output results in JSON for programmatic comparison:
+Each benchmark outputs JSON results:
 
 ```json
 {
-  "format": "webdataset",
-  "version": "0.2.86",
-  "test_data": "imagenet_val_50k",
-  "system": {
-    "cpu": "Intel i7-14700K",
-    "ram": "64GB",
-    "storage": "Samsung 980 Pro NVMe"
-  },
-  "metrics": {
-    "write_throughput_gbps": 0.42,
-    "sequential_read_gbps": 0.85,
-    "random_access_us": 8500,
-    "compressed_size_gb": 5.9,
-    "compression_ratio": 1.07
-  },
-  "date": "2026-02-13T20:30:00Z"
+  "format": "hexz",
+  "test": "sequential_read",
+  "throughput_mb_s": 850.3,
+  "latency_us": 6.2,
+  "samples_per_sec": 17000,
+  "metadata": {
+    "num_samples": 10000,
+    "sample_size": 4096,
+    "compression": "lz4"
+  }
 }
 ```
 
-## Validation Checklist
+Results are saved to `results/` directory for analysis.
 
-Before adding a benchmark to [COMPETITIVE_COMPARISON.md](../docs/project-docs/COMPETITIVE_COMPARISON.md):
+## Analysis
 
-- [ ] Benchmark uses identical test data
-- [ ] Run on same hardware as Hexz benchmarks (or document differences)
-- [ ] Measures same metrics (sequential, random, write)
-- [ ] Code committed to `competitors/` directory
-- [ ] Results reproducible by others
-- [ ] Competitor library version documented
-- [ ] Output includes system specs
+After running benchmarks, generate comparison reports:
 
-## System Specifications
+```bash
+# Generate markdown report for docs
+python analyze_results.py --output ../docs/project-docs/COMPETITIVE_COMPARISON.md
 
-**Reference system for all benchmarks:**
+# Generate charts
+python analyze_results.py --charts
+```
 
-- **CPU:** Intel i7-14700K (8P+12E cores, 20 cores total)
-- **RAM:** 64GB DDR4
-- **Storage:** Samsung 980 Pro NVMe SSD (7000 MB/s sequential read)
-- **OS:** Linux 6.18.7 (Arch)
-- **Kernel:** 6.18.7-arch1-1
-- **Python:** 3.11.x
-- **Rust:** 1.75+
+## Benchmark Methodology
 
-**If running on different hardware:** Include specs in benchmark output and note differences in COMPETITIVE_COMPARISON.md.
+### Hardware Specs
+All benchmarks should be run on identical hardware. Current reference system:
+- **CPU**: Intel i7-14700K (20 cores)
+- **RAM**: 64GB DDR4
+- **Storage**: NVMe SSD
+- **OS**: Linux 6.18.7
+
+### Test Procedure
+1. **Warm up**: Run each benchmark once to warm up caches
+2. **Multiple runs**: Each benchmark runs 5 times, median reported
+3. **Cold cache**: Drop caches between runs where applicable
+4. **Isolation**: Stop unnecessary services, pin CPU frequencies
+
+### Fair Comparison Rules
+- All formats use same compression algorithm where possible (LZ4 or equivalent)
+- Same test data for all formats
+- Same Python environment and dependencies
+- No network I/O (local files only)
+- Document any format-specific optimizations
 
 ## Contributing
 
-### Adding a New Competitor Benchmark
+When adding new benchmarks:
+1. Use the `benchmark_template.py` as starting point
+2. Follow the same metrics and output format
+3. Document any format-specific setup requirements
+4. Update this README with results
 
-1. Copy `template_benchmark.py` to `<format>_benchmark.py`
-2. Implement the benchmark following the template structure
-3. Test with: `python benchmarks/competitors/<format>_benchmark.py`
-4. Verify output includes all required metrics
-5. Submit PR with:
-   - Benchmark code
-   - Results JSON
-   - Update to COMPETITIVE_COMPARISON.md
+## Reproducing Published Results
 
-### Updating Existing Benchmarks
+To reproduce the results in `docs/project-docs/COMPETITIVE_COMPARISON.md`:
 
-1. Run benchmark: `python benchmarks/competitors/<format>_benchmark.py`
-2. Compare results to published claims
-3. If significant difference (>10%), investigate:
-   - Correct test data used?
-   - Same system specs?
-   - Library version match?
-   - Fair configuration (e.g., same compression level)?
-4. Update COMPETITIVE_COMPARISON.md with validated numbers
-5. Submit PR with updated results and analysis
+```bash
+# Ensure clean environment
+make clean
 
-## Citation Policy
+# Generate test data
+python benchmarks/generate_test_data.py
 
-When citing published performance data (not benchmarked ourselves):
+# Run all benchmarks (takes ~10 minutes)
+python benchmarks/run_all_benchmarks.py
 
-1. **Include source:** Link to paper, blog post, or official docs
-2. **Include date:** When was the data published?
-3. **Note conditions:** Hardware specs, dataset size, configuration
-4. **Mark as cited:** Use [CITED: source] in comparison tables
-
-**Example:**
-```markdown
-| HDF5 | Sequential read | 1.2 GB/s | [CITED: HDF Group Performance Report, 2024] |
+# Generate report
+python benchmarks/analyze_results.py
 ```
 
-## FAQ
+## Notes
 
-### Why not just cite published benchmarks?
+- **WebDataset**: Requires creating shards first, which adds overhead
+- **HDF5**: Best with chunked storage, chunk size affects performance
+- **Hexz**: Requires building from source (see main README)
+- **Local Files**: Baseline for comparison, no compression
 
-Published benchmarks often use different:
-- Hardware (older CPUs, different storage)
-- Datasets (synthetic vs real-world)
-- Configurations (default vs optimized)
+## Validation Status
 
-**Our policy:** Validate on identical hardware OR clearly cite source and conditions.
+✅ **Hexz**: Results validated via `cargo bench` and Python benchmarks
+🔄 **Competitors**: Results being validated through these scripts
+📊 **Published Data**: Where available, cited in COMPETITIVE_COMPARISON.md
 
-### How to handle format-specific optimizations?
+## Questions?
 
-Use **default/recommended configurations** for each format:
-- WebDataset: Standard tar + gzip compression
-- HDF5: Default chunking with Zstd-3
-- Parquet: Snappy compression (default)
-
-Document any non-default settings and justify why.
-
-### What if a format doesn't support a metric?
-
-Mark as "N/A" in comparison tables and explain why:
-- tar.gz: Random access N/A (must decompress sequentially)
-- Parquet: Not applicable to blob data
-
-### Can I submit benchmarks from different hardware?
-
-Yes, but:
-1. Document exact system specs
-2. Include hardware differences in comparison tables
-3. Note in COMPETITIVE_COMPARISON.md: "Measured on different hardware, not directly comparable"
-
-Prefer running on reference hardware when possible.
-
----
-
-**Questions?** Open an issue or see [CONTRIBUTING.md](../docs/project-docs/CONTRIBUTING.md).
+See main project [FAQ](../docs/FAQ.md) or open an issue.
