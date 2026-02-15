@@ -35,16 +35,15 @@ Hexz acts as a drop-in replacement for standard PyTorch datasets.
 
 ### 1. Installation
 
-**Note:** Hexz is currently in development (pre-release). To try it out, build from source:
-
 ```bash
-# Clone the repository
-git clone https://github.com/hexz-org/hexz.git
-cd hexz
+# Python library (PyTorch Dataset, readers, writers)
+pip install hexz
 
-# Build and install the Python loader
-make develop
+# CLI tool (pack, build, convert, inspect, VM management)
+cargo install hexz-cli
 ```
+
+Pre-built binaries are also available on the [GitHub releases](https://github.com/hexz-org/hexz/releases) page.
 
 ### 2. Stream data directly to GPU
 
@@ -131,7 +130,7 @@ The project is organized as a high-performance Rust Workspace:
 
 ## Documentation
 
-* **[Live Documentation](https://alethic-systems.github.io/hexz/)** — Comprehensive guides and API reference.
+* **[Live Documentation](https://hexz-org.github.io/hexz/)** — Comprehensive guides and API reference.
 * **[Quick start](docs/tutorials/getting-started.md)** — Create a snapshot and read it in 5 minutes.
 * **[Contributing](docs/project-docs/CONTRIBUTING.md)** — Setup, branching, and PR checklist (all Makefile-based).
 
