@@ -187,19 +187,16 @@ Choose based on access frequency:
 
 ### Can Hexz deduplicate across multiple files/snapshots?
 
-**Currently:** Deduplication works **within a single pack operation**.
+**Yes — thin snapshots** already support parent-child deduplication. A child snapshot references its parent and only stores blocks that changed:
 
-**Roadmap:** Cross-snapshot deduplication is planned (requires external index).
-
-**Workaround:** Pack related data together:
 ```bash
-# Instead of separate packs:
 hexz pack v1/ -o v1.hxz
-hexz pack v2/ -o v2.hxz  # No cross-dedup
-
-# Pack together for deduplication:
-hexz pack v1/ v2/ -o combined.hxz --cdc
+hexz pack v2/ -o v2.hxz --parent v1.hxz  # Only stores blocks not in v1
 ```
+
+Blocks that haven't changed are read from the parent at access time, so v2 is much smaller.
+
+**Unrelated snapshots:** Deduplication currently works within a single pack operation. Cross-snapshot deduplication across unrelated snapshots (via a shared external index) is planned for v0.3.0.
 
 ### How does Hexz handle encryption?
 
@@ -779,9 +776,9 @@ hexz merge base.hxz delta.hxz -o combined.hxz
 
 ### Will Hexz support cross-snapshot deduplication?
 
-**Planned:** Yes, requires external deduplication index.
+**Parent-child deduplication already works** via thin snapshots — a child snapshot only stores blocks that differ from its parent (see above).
 
-**Design:**
+**Planned:** A shared external deduplication index for unrelated snapshots:
 ```bash
 # Pack with global dedup index
 hexz pack v1/ -o v1.hxz --dedup-index global.idx
