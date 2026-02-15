@@ -114,6 +114,7 @@ fn main() -> anyhow::Result<()> {
                 hexz_cli::cmd::vm::install::run(iso, disk_size, ram, output, no_graphics, vnc, cdc)
             }
 
+            #[cfg(unix)]
             VmCommands::Snap {
                 socket,
                 base,

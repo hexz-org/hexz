@@ -62,6 +62,7 @@ fn hexz_loader(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_interface::ops::sign_image, m)?)?;
     #[cfg(feature = "signing")]
     m.add_function(wrap_pyfunction!(py_interface::ops::verify_image, m)?)?;
+    #[cfg(unix)]
     m.add_function(wrap_pyfunction!(py_interface::ops::snapshot_vm, m)?)?;
 
     // Version info functions

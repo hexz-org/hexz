@@ -22,6 +22,14 @@ RUFF            := $(shell [ -f .venv/bin/ruff ] && echo .venv/bin/ruff || echo 
 PYTHON          ?= $(shell [ -f .venv/bin/python3 ] && echo .venv/bin/python3 || ([ -f .venv/bin/python ] && echo .venv/bin/python || echo python3))
 MKDOCS          := $(shell [ -f .venv/bin/mkdocs ] && echo .venv/bin/mkdocs || echo mkdocs)
 
+# ── Cross-compilation (pre-release) ──────────────────────────────────────
+CROSS_AARCH64       := aarch64-unknown-linux-gnu
+CROSS_WINDOWS       := x86_64-pc-windows-gnu
+AARCH64_CLI_FEAT    := server,compression-zstd,encryption,diagnostics,signing,s3
+WINDOWS_CLI_FEAT    := compression-zstd,encryption,diagnostics,signing,s3
+AARCH64_LINKER      := aarch64-linux-gnu-gcc
+WINDOWS_LINKER      := x86_64-w64-mingw32-gcc
+
 # ── Feature flags ─────────────────────────────────────────────────────────────
 #  Override with: make develop FEATURES=full
 #  Or:            make python FEATURES="s3 compression-zstd"
@@ -87,7 +95,8 @@ endif
 .PHONY: lint fmt fmt-check clippy deny check
 .PHONY: bench bench-list bench-compare save-baseline archive-baseline restore-baseline compare-baseline fuzz
 .PHONY: bench-competitors bench-competitors-small
-.PHONY: docker-dev docker-bench docs docs-python setup setup-check ci
+.PHONY: docker-dev docker-bench docs docs-python setup setup-check setup-cross ci
+.PHONY: pre-release _cross-aarch64 _cross-windows _wheel-check
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Help
@@ -141,6 +150,8 @@ help:
 	@printf "    %-$(HELP_W)s  Dev tools + Python venv\n" "make setup"
 	@printf "    %-$(HELP_W)s  Verify system deps\n" "make setup-check"
 	@printf "    %-$(HELP_W)s  Full CI (lint + test + build)\n" "make ci"
+	@printf "    %-$(HELP_W)s  Full release validation (all targets)\n" "make pre-release"
+	@printf "    %-$(HELP_W)s  Install cross-compilation toolchains\n" "make setup-cross"
 	@printf "\n  $(CYAN)Housekeeping$(RESET)\n"
 	@printf "    %-$(HELP_W)s  Remove build artifacts\n" "make clean"
 	@printf "\n"
@@ -533,6 +544,66 @@ setup: setup-check
 # ═══════════════════════════════════════════════════════════════════════════════
 ci: lint test build
 	@printf "$(GREEN)CI pipeline passed.$(RESET)\n"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Pre-release Validation
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Cross-compiles for all CI targets to catch platform-specific errors before
+#  pushing a release tag. Uses cargo check (no linking) with cross-compilers
+#  for C dependencies (ring, etc).
+#
+#  Requires cross-compilers: run  make setup-cross  first.
+#
+#  Checks match CI exactly:
+#    - aarch64-unknown-linux-gnu  (binary + wheel)
+#    - x86_64-pc-windows-gnu     (binary + wheel, stands in for MSVC)
+#    - native x86_64 Linux       (full test suite + clippy + fmt)
+# ═══════════════════════════════════════════════════════════════════════════════
+pre-release: lint test _cross-aarch64 _cross-windows _wheel-check
+	@printf "\n$(BOLD)$(GREEN)Pre-release validation passed — ready to tag and release$(RESET)\n"
+
+_cross-aarch64:
+	@printf "\n$(GREEN)[cross] Checking $(CROSS_AARCH64) (binary)…$(RESET)\n"
+	@command -v $(AARCH64_LINKER) >/dev/null 2>&1 || { \
+		printf "$(BOLD)Missing:$(RESET) $(AARCH64_LINKER)\nRun $(CYAN)make setup-cross$(RESET) for install instructions.\n"; \
+		exit 1; \
+	}
+	CC_aarch64_unknown_linux_gnu=$(AARCH64_LINKER) \
+	CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=$(AARCH64_LINKER) \
+	CFLAGS_aarch64_unknown_linux_gnu="-D__ARM_ARCH=8" \
+	$(CARGO) check -p hexz --target $(CROSS_AARCH64) --no-default-features --features $(AARCH64_CLI_FEAT)
+	@printf "$(GREEN)[cross] Checking $(CROSS_AARCH64) (wheel)…$(RESET)\n"
+	CC_aarch64_unknown_linux_gnu=$(AARCH64_LINKER) \
+	CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=$(AARCH64_LINKER) \
+	CFLAGS_aarch64_unknown_linux_gnu="-D__ARM_ARCH=8" \
+	$(CARGO) check -p hexz-loader --target $(CROSS_AARCH64)
+
+_cross-windows:
+	@printf "\n$(GREEN)[cross] Checking $(CROSS_WINDOWS) (binary)…$(RESET)\n"
+	@command -v $(WINDOWS_LINKER) >/dev/null 2>&1 || { \
+		printf "$(BOLD)Missing:$(RESET) $(WINDOWS_LINKER)\nRun $(CYAN)make setup-cross$(RESET) for install instructions.\n"; \
+		exit 1; \
+	}
+	CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=$(WINDOWS_LINKER) \
+	CC_x86_64_pc_windows_gnu=$(WINDOWS_LINKER) \
+	$(CARGO) check -p hexz --target $(CROSS_WINDOWS) --no-default-features --features $(WINDOWS_CLI_FEAT)
+	@printf "$(GREEN)[cross] Checking $(CROSS_WINDOWS) (wheel)…$(RESET)\n"
+	CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=$(WINDOWS_LINKER) \
+	CC_x86_64_pc_windows_gnu=$(WINDOWS_LINKER) \
+	$(CARGO) check -p hexz-loader --target $(CROSS_WINDOWS)
+
+_wheel-check:
+	@printf "\n$(GREEN)[wheel] Building native Python wheel…$(RESET)\n"
+	$(MATURIN) build --release --manifest-path $(LOADER_CRATE)/Cargo.toml
+
+setup-cross:
+	@printf "$(GREEN)Adding Rust cross-compilation targets…$(RESET)\n"
+	rustup target add $(CROSS_AARCH64) $(CROSS_WINDOWS)
+	@printf "\n$(BOLD)System cross-compilers also required:$(RESET)\n"
+	@printf "  $(CYAN)Arch:$(RESET)     sudo pacman -S aarch64-linux-gnu-gcc mingw-w64-gcc\n"
+	@printf "  $(CYAN)Ubuntu:$(RESET)   sudo apt install gcc-aarch64-linux-gnu gcc-mingw-w64-x86-64\n"
+	@printf "  $(CYAN)Fedora:$(RESET)   sudo dnf install gcc-aarch64-linux-gnu-gcc mingw64-gcc\n"
+	@printf "\nThen run $(BOLD)make pre-release$(RESET) to validate.\n"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Clean

@@ -135,10 +135,9 @@
 //! - **sign_image()**: Requires reading entire index for SHA-256 hashing
 //! - **snapshot_vm()**: Blocks until VM memory dump completes (can take seconds to minutes)
 
-use hexz_common::constants::{
-    DEFAULT_CDC_AVG_CHUNK, DEFAULT_CDC_MAX_CHUNK, DEFAULT_CDC_MIN_CHUNK, META_ENTRY_SIZE,
-    OVERLAY_BLOCK_SIZE,
-};
+#[cfg(unix)]
+use hexz_common::constants::{DEFAULT_CDC_AVG_CHUNK, DEFAULT_CDC_MAX_CHUNK, DEFAULT_CDC_MIN_CHUNK};
+use hexz_common::constants::{META_ENTRY_SIZE, OVERLAY_BLOCK_SIZE};
 #[cfg(feature = "signing")]
 use hexz_common::sign;
 use hexz_core::algo::dedup::{cdc, dcam};
@@ -153,10 +152,12 @@ use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom, Write};
-use std::os::unix::net::UnixStream;
+#[cfg(unix)]
+use std::io::Write;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 
+#[cfg(unix)]
 use super::builder::Builder;
 
 /// Generate an Ed25519 keypair for signing snapshots.
@@ -698,8 +699,9 @@ pub fn verify_image(image_path: String, key_path: String) -> PyResult<()> {
         .map_err(|e| PyValueError::new_err(format!("Verification failed: {}", e)))
 }
 
+#[cfg(unix)]
 fn send_qmp(
-    stream: &mut UnixStream,
+    stream: &mut std::os::unix::net::UnixStream,
     cmd: &str,
     args: Option<serde_json::Value>,
 ) -> PyResult<serde_json::Value> {
@@ -714,7 +716,8 @@ fn send_qmp(
     read_qmp(stream)
 }
 
-fn read_qmp(stream: &mut UnixStream) -> PyResult<serde_json::Value> {
+#[cfg(unix)]
+fn read_qmp(stream: &mut std::os::unix::net::UnixStream) -> PyResult<serde_json::Value> {
     let mut all_data = Vec::new();
     let mut buf = [0u8; 65536];
     loop {
@@ -805,6 +808,7 @@ fn read_qmp(stream: &mut UnixStream) -> PyResult<serde_json::Value> {
 /// - VM is automatically resumed even if snapshot creation fails
 /// - Uses thick merge by default (independent snapshot)
 /// - Memory dump is written to secure temporary file
+#[cfg(unix)]
 #[pyfunction]
 pub fn snapshot_vm(
     py: Python<'_>,
@@ -815,7 +819,7 @@ pub fn snapshot_vm(
 ) -> PyResult<()> {
     let socket_path = PathBuf::from(qmp_socket);
 
-    let mut stream = UnixStream::connect(&socket_path)
+    let mut stream = std::os::unix::net::UnixStream::connect(&socket_path)
         .map_err(|e| PyIOError::new_err(format!("Failed to connect to QMP: {}", e)))?;
 
     let _ = read_qmp(&mut stream)?;

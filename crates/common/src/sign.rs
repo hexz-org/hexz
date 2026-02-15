@@ -8,7 +8,6 @@ use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 /// Generates an Ed25519 keypair and writes raw 32-byte keys to disk.
@@ -20,12 +19,14 @@ pub fn generate_keypair(private_out: &Path, public_out: &Path) -> Result<()> {
     let priv_bytes = signing_key.to_bytes();
     let pub_bytes = verifying_key.to_bytes();
 
-    let mut priv_file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(private_out)?;
+    let mut opts = OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut priv_file = opts.open(private_out)?;
     priv_file.write_all(&priv_bytes)?;
 
     let mut pub_file = File::create(public_out)?;

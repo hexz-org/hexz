@@ -529,6 +529,7 @@ use crate::format::index::BlockInfo;
 /// For parallel writing, use separate output files or implement external synchronization.
 ///
 /// The dedup_map must also be externally synchronized for concurrent access.
+#[allow(clippy::too_many_arguments)]
 pub fn write_block<W: Write>(
     out: &mut W,
     chunk: &[u8],

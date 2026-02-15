@@ -249,6 +249,7 @@ pub enum VmCommands {
     },
 
     /// Create snapshot via QMP
+    #[cfg(unix)]
     Snap {
         /// QMP socket path
         #[arg(long)]

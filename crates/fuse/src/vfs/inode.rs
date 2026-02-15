@@ -604,6 +604,7 @@ impl InodeMap {
     ///
     /// - Time complexity: O(1) - enum match
     /// - Typical latency: < 10 nanoseconds
+    ///
     /// Returns whether the given inode number is valid (root, disk, or memory).
     pub fn is_valid_inode(&self, ino: u64) -> bool {
         match InodeType::from_u64(ino) {

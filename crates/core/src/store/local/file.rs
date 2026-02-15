@@ -85,7 +85,32 @@ use crate::store::StorageBackend;
 use bytes::{Bytes, BytesMut};
 use hexz_common::Result;
 use std::fs::File;
-use std::os::unix::fs::FileExt;
+
+/// Reads exactly `buffer.len()` bytes from `file` at the given `offset`.
+/// Uses `pread` on Unix and `seek_read` on Windows for position-independent I/O.
+#[cfg(unix)]
+fn read_exact_at(file: &File, buffer: &mut [u8], offset: u64) -> std::io::Result<()> {
+    use std::os::unix::fs::FileExt;
+    file.read_exact_at(buffer, offset)
+}
+
+#[cfg(windows)]
+fn read_exact_at(file: &File, buffer: &mut [u8], mut offset: u64) -> std::io::Result<()> {
+    use std::os::windows::fs::FileExt;
+    let mut pos = 0;
+    while pos < buffer.len() {
+        let n = file.seek_read(&mut buffer[pos..], offset)?;
+        if n == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "unexpected eof",
+            ));
+        }
+        pos += n;
+        offset += n as u64;
+    }
+    Ok(())
+}
 
 /// A storage backend implementation backed by a local file.
 ///
@@ -230,7 +255,7 @@ impl StorageBackend for FileBackend {
             buffer.set_len(len);
         }
 
-        match self.inner.read_exact_at(&mut buffer, offset) {
+        match read_exact_at(&self.inner, &mut buffer, offset) {
             Ok(_) => Ok(buffer.freeze()),
             Err(e) => Err(hexz_common::Error::Io(e)),
         }

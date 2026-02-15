@@ -87,6 +87,7 @@ pub mod boot;
 pub mod install;
 
 pub mod commit;
+#[cfg(unix)]
 pub mod snap;
 
 #[cfg(feature = "fuse")]

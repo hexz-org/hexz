@@ -65,7 +65,7 @@ Desktop.ini
 .make.env
 
 # Project Specific
-vm/
+/vm/
 /data/
 test_artifacts/
 mnt_large_test/
