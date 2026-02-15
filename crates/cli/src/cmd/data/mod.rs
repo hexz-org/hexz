@@ -51,3 +51,5 @@ pub mod diff;
 pub mod analyze;
 
 pub mod build;
+
+pub mod convert;

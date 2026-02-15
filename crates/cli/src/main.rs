@@ -57,6 +57,24 @@ fn main() -> anyhow::Result<()> {
 
             #[cfg(feature = "diagnostics")]
             DataCommands::Analyze { input } => hexz_cli::cmd::data::analyze::run(input),
+
+            DataCommands::Convert {
+                format,
+                input,
+                output,
+                compression,
+                block_size,
+                profile,
+                silent,
+            } => hexz_cli::cmd::data::convert::run(
+                format,
+                input,
+                output,
+                compression,
+                block_size,
+                profile,
+                silent,
+            ),
         },
 
         Commands::Vm(vm_cmd) => match vm_cmd {

@@ -145,6 +145,34 @@ pub enum DataCommands {
         /// Archive to analyze
         input: PathBuf,
     },
+
+    /// Convert external formats to Hexz snapshot
+    Convert {
+        /// Source format (tar, hdf5, webdataset)
+        format: String,
+
+        /// Input file path
+        input: PathBuf,
+
+        /// Output snapshot path (.hxz)
+        output: PathBuf,
+
+        /// Compression algorithm (lz4, zstd)
+        #[arg(long, default_value = "lz4")]
+        compression: String,
+
+        /// Block size in bytes
+        #[arg(long, default_value_t = 65536)]
+        block_size: u32,
+
+        /// Build profile (ml, eda, embedded, generic, archival)
+        #[arg(long)]
+        profile: Option<String>,
+
+        /// Suppress output
+        #[arg(long, short)]
+        silent: bool,
+    },
 }
 
 #[derive(Subcommand)]

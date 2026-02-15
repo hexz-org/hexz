@@ -23,11 +23,17 @@ numpy = ["numpy>=1.20"]
 torch = ["torch>=2.0"]
 tensorflow = ["tensorflow>=2.13"]
 
+# HDF5 conversion support
+hdf5 = ["h5py>=3.0"]
+
 # Common ML combinations
 ml = ["numpy>=1.20", "torch>=2.0"]
 
+# Conversion with all optional format support
+convert = ["h5py>=3.0"]
+
 # All features
-full = ["numpy>=1.20", "torch>=2.0", "tensorflow>=2.13"]
+full = ["numpy>=1.20", "torch>=2.0", "tensorflow>=2.13", "h5py>=3.0"]
 
 # Development and testing
 dev = [

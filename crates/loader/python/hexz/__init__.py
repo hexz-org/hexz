@@ -80,6 +80,9 @@ from .utils import (
 )
 from .writer import Writer
 
+# Conversion utilities (always available)
+from .convert import convert
+
 # Optional: ML Integration (requires torch/tensorflow)
 try:
     from .dataset import Dataset
@@ -184,6 +187,8 @@ __all__ = [
     # === Build (2) ===
     "build",
     "PROFILES",
+    # === Conversion (1) ===
+    "convert",
     # === Inspection (1) ===
     "inspect",
     # === Utilities (1) ===
