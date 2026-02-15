@@ -1,9 +1,10 @@
 [package]
 name = "hexz-core"
-version = "0.1.0"
-edition = "2024"
-authors = ["Will McCallion"]
-repository = "https://github.com/Alethic-Systems/hexz"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
 description = "Core engine for high-performance data streaming and compression"
 
 [dependencies]
@@ -15,7 +16,7 @@ serde.workspace = true
 bincode.workspace = true
 bytes.workspace = true
 tokio.workspace = true
-reqwest = { version = "0.11" }
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "stream", "json"] }
 
 # Compression
 lz4_flex = "0.11"
@@ -35,8 +36,7 @@ lru = "0.12"
 rayon = "1.8"
 dashmap = "5.5"
 memmap2 = "0.9"
-rust-s3 = { version = "0.33", features = ["tokio", "fail-on-err"], optional = true }
-openssl = { version = "0.10", features = ["vendored"] }
+rust-s3 = { version = "0.33", default-features = false, features = ["tokio-rustls-tls", "fail-on-err"], optional = true }
 url = "2.5"
 fastcdc = "3.1"
 

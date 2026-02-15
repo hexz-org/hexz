@@ -1,9 +1,10 @@
 [package]
 name = "hexz-fuse"
-version = "0.1.0"
-edition = "2024"
-authors = ["Will McCallion"]
-repository = "https://github.com/Alethic-Systems/hexz"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
 description = "FUSE filesystem adapter for Hexz snapshots"
 
 [dependencies]

@@ -45,6 +45,9 @@ from typing import Any, Union
 # Arrays (always available)
 from .array import ArrayView, read_array, write_array
 
+# Conversion utilities (always available)
+from .convert import convert
+
 # Exceptions (always available)
 from .exceptions import (
     CacheError,
@@ -79,9 +82,6 @@ from .utils import (
     verify,
 )
 from .writer import Writer
-
-# Conversion utilities (always available)
-from .convert import convert
 
 # Optional: ML Integration (requires torch/tensorflow)
 try:
@@ -164,7 +164,7 @@ def open(path: PathLike, *, mode: str = "r", **options: Any) -> Union[Reader, Wr
         raise ValueError(f"Invalid mode: {mode}")
 
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 
 def version() -> str:

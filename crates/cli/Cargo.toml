@@ -1,10 +1,11 @@
 [package]
 name = "hexz"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 autobenches = false
-authors = ["Will McCallion"]
-repository = "https://github.com/Alethic-Systems/hexz"
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
 description = "CLI tool for managing Hexz snapshots and datasets"
 
 [dependencies]

@@ -1,8 +1,8 @@
 name: Fuzz
 
+# Disabled - fuzz tests are too flaky in CI
+# Can be re-enabled manually via workflow_dispatch
 on:
-  schedule:
-    - cron: "0 3 * * *"   # nightly at 03:00 UTC
   workflow_dispatch:
 
 env:

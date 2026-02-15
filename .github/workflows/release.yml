@@ -15,7 +15,9 @@ jobs:
   wheels:
     name: Wheels (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -35,6 +37,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - uses: Swatinem/rust-cache@v2
+        if: runner.os != 'Linux'
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libfuse-dev pkg-config
@@ -44,6 +48,9 @@ jobs:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
           args: --release --out dist --manifest-path crates/loader/Cargo.toml
+          before-script-linux: |
+            # Fix ring crate aarch64 cross-compilation (GCC doesn't define __ARM_ARCH)
+            export CFLAGS_aarch64_unknown_linux_gnu="-D__ARM_ARCH=8"
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.target }}
@@ -69,15 +76,21 @@ jobs:
   binaries:
     name: Binary (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            features: default
           - os: macos-latest
             target: x86_64-apple-darwin
+            # No fuse on macOS CI (macfuse requires kernel extension)
+            features: server,compression-zstd,encryption,diagnostics,signing,s3
           - os: macos-latest
             target: aarch64-apple-darwin
+            features: server,compression-zstd,encryption,diagnostics,signing,s3
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -88,7 +101,12 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libfuse-dev pkg-config
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }} --package hexz
+        run: |
+          if [ "${{ matrix.features }}" = "default" ]; then
+            cargo build --release --target ${{ matrix.target }} --package hexz
+          else
+            cargo build --release --target ${{ matrix.target }} --package hexz --no-default-features --features ${{ matrix.features }}
+          fi
       - name: Archive
         run: |
           mkdir -p dist
