@@ -1,346 +1,184 @@
 # Hexz Development Roadmap
 
-> **Last Updated:** 2026-02-08
-> **Status:** Core refactoring complete. Ready for production hardening and feature expansion.
-
-## Project Status
-
-Hexz has completed major architectural refactoring and is now a modular, well-documented system with:
-- Clean separation between core engine, storage backends, and interfaces
-- Python bindings for ML data loading
-- CLI tool with nested subcommands
-- FUSE filesystem for VM support
-- Comprehensive documentation and examples
-
-**Current Focus:** Testing, optimization, and preparing for v0.1.0 release.
+> **Last Updated:** 2026-02-15
+> **Current Release:** v0.1.2
+> **Status:** Core engine stable. Python wheels and CLI binaries shipping for Linux, macOS, and Windows.
 
 ---
 
-## Short-Term Goals (Next 1-2 Weeks)
+## What's Done
 
-### Testing & Verification
-- [ ] **E2E Test Suite**: Create comprehensive end-to-end tests
-  - Generate synthetic datasets (various sizes, patterns)
-  - Pack with CLI, verify with Python loader
-  - Round-trip verification (data integrity checks)
-  - Test all compression algorithms (LZ4, Zstd)
-  - Test with/without deduplication
+These features are implemented and shipping in v0.1.2:
 
-- [ ] **Integration Tests**: Expand test coverage
-  - Full PyTorch training loop (multiple epochs)
-  - S3 backend with retry logic
-  - HTTP backend with connection failures
-  - FUSE mount operations
-  - Concurrent access patterns
-
-- [ ] **Edge Case Testing**
-  - Empty datasets
-  - Single-file datasets
-  - Very large files (>10GB per file)
-  - Binary files vs text files
-  - Files with high/low entropy
-
-### Documentation Polish
-- [ ] **API Documentation**: Add missing docstrings
-  - Complete Python API documentation
-  - Rust API docs for public interfaces
-  - Code examples in all doc comments
-
-- [ ] **User Guides**
-  - Quick start guide (5 minutes to first result)
-  - Migration guides (from tar, HDF5, WebDataset)
-  - Troubleshooting common issues
-
-### Bug Fixes
-- [ ] Address any issues found during E2E testing
-- [ ] Fix compiler warnings if any new ones appear
-- [ ] Memory leak detection (valgrind)
+- **Core format**: Seekable block-based snapshots with two-level index
+- **Compression**: LZ4, Zstd, Zstd dictionary training (`--train-dict`)
+- **Encryption**: AES-256-GCM per-block encryption with PBKDF2 key derivation
+- **Signing**: Ed25519 keypair generation, signing, and verification (`hexz sys keygen/sign/verify`)
+- **Deduplication**: BLAKE3-based block dedup, FastCDC content-defined chunking, DCAM parameter optimization
+- **Thin snapshots**: Parent-child delta storage (v2 only stores blocks that changed from v1)
+- **Python bindings**: Reader, AsyncReader, Writer, Dataset (PyTorch), ArrayView, build, convert, inspect
+- **CLI**: `data pack`, `data build`, `data info`, `data convert`, `data analyze`, `vm boot/install/mount/snap/commit`, `sys doctor/bench/serve/keygen/sign/verify`
+- **Storage backends**: Local file, mmap, S3 (+ S3-compatible), HTTP with range requests
+- **Performance**: Parallel decompression (Rayon), fixed-window prefetch, sharded LRU cache, GIL release in all I/O paths
+- **Conversion**: tar (.tar/.tar.gz/.tar.bz2/.tar.xz), HDF5, WebDataset
+- **FUSE**: Read-only mount with copy-on-write overlay for VMs
+- **Cross-platform**: Linux (x86_64, aarch64), macOS (x86_64, Apple Silicon), Windows (x86_64)
+- **CI/CD**: Automated wheel builds, binary releases, PyPI publishing, GitHub releases
+- **Documentation**: mkdocs site, ADRs, contributing guide, quickstart, examples, API reference
+- **Website**: GitHub Pages deployment
 
 ---
 
-## Medium-Term Goals (Next 1-2 Months)
+## v0.2.0 — Performance & Reliability
 
-### Performance Optimization
+Focus: Make what exists faster and more robust.
 
-#### Profiling & Baseline
-- [ ] **Establish Baselines**: Benchmark current performance
-  - Random read latency (p50, p95, p99)
-  - Sequential read throughput
-  - Compression/decompression speed
-  - Memory usage patterns
-  - CPU utilization
+### High Priority
 
-- [ ] **Profile Hot Paths**
-  - Use `perf` and flamegraph to identify bottlenecks
-  - Memory allocation profiling
-  - Cache miss analysis
-  - Lock contention analysis
+| Issue | Description |
+|---|---|
+| [#113](https://github.com/hexz-org/hexz/issues/113) | Replace `block_on` in S3/HTTP storage with proper async runtime |
+| [#114](https://github.com/hexz-org/hexz/issues/114) | Shard the page cache Mutex (single global lock is a bottleneck) |
+| [#115](https://github.com/hexz-org/hexz/issues/115) | Reduce per-call locking overhead in Python loader cursor |
+| [#122](https://github.com/hexz-org/hexz/issues/122) | Reusable buffer pool for decompression (reduce allocator pressure) |
+| [#86](https://github.com/hexz-org/hexz/issues/86) | Error recovery: retry with exponential backoff, circuit breaker |
+| [#127](https://github.com/hexz-org/hexz/issues/127) | SLA/reliability testing suite |
+| [#144](https://github.com/hexz-org/hexz/issues/144) | Improve mutation testing for Python and Rust |
 
-#### I/O Optimization
-- [ ] **Async I/O Improvements**
-  - Optimize prefetch scheduling
-  - Implement adaptive prefetch based on access patterns
-  - Batch small reads into larger requests
-  - Parallel block decompression
+### Medium Priority
 
-- [ ] **Cache Tuning**
-  - Adaptive cache sizing based on workload
-  - Better eviction policy (consider frequency + recency)
-  - Per-dataset cache statistics and tuning
+| Issue | Description |
+|---|---|
+| [#73](https://github.com/hexz-org/hexz/issues/73) | Profile hot paths with perf/flamegraph, identify cache misses |
+| [#74](https://github.com/hexz-org/hexz/issues/74) | Adaptive prefetch based on access patterns (currently fixed window) |
+| [#75](https://github.com/hexz-org/hexz/issues/75) | Batch small reads into larger backend requests |
+| [#78](https://github.com/hexz-org/hexz/issues/78) | Further reduce GIL contention in Python read path |
+| [#79](https://github.com/hexz-org/hexz/issues/79) | Zero-copy buffer sharing with NumPy/PyTorch |
+| [#116](https://github.com/hexz-org/hexz/issues/116) | Cap deduplication map memory growth for very large packs |
+| [#106](https://github.com/hexz-org/hexz/issues/106) | CI benchmark baseline comparison (detect regressions) |
+| [#128](https://github.com/hexz-org/hexz/issues/128) | Performance regression testing in CI |
+| [#56](https://github.com/hexz-org/hexz/issues/56) | `Writer.add_bytes()` without temporary file (direct Rust API) |
+| [#101](https://github.com/hexz-org/hexz/issues/101) | Fuzz testing for parsers and format (infrastructure exists, needs targets) |
+| [#102](https://github.com/hexz-org/hexz/issues/102) | Security audit and dependency review |
+| [#69](https://github.com/hexz-org/hexz/issues/69) | Edge case tests: empty dataset, single-file, very large file |
+| [#68](https://github.com/hexz-org/hexz/issues/68) | Integration test: concurrent access patterns |
+| [#64](https://github.com/hexz-org/hexz/issues/64) | Integration test: full PyTorch training loop (multiple epochs) |
 
-#### Python Binding Optimization
-- [ ] **Reduce GIL Contention**
-  - Keep more work in Rust threads
-  - Minimize Python callback overhead
-  - Batch operations to reduce crossings
+### Low Priority
 
-- [ ] **Zero-Copy Improvements**
-  - Direct buffer sharing with NumPy/PyTorch
-  - Avoid unnecessary memcpy operations
-
-### Feature Additions
-
-#### Advanced Deduplication
-- [ ] **DCAM Parameter Tuning**
-  - Implement automatic parameter selection
-  - Add dry-run mode to estimate savings before packing
-  - CLI command: `hexz analyze <input> --estimate-savings`
-
-- [ ] **Dedup Statistics**
-  - Show deduplication ratio in `hexz inspect`
-  - Track per-block dedup hits during reads
-  - Generate dedup efficiency reports
-
-#### Compression Enhancements
-- [ ] **Compression Dictionary Training**
-  - ZSTD dictionary training for better ratios
-  - Sample-based dictionary generation
-  - Store dictionary in snapshot header
-
-- [ ] **Per-Block Compression Selection**
-  - Detect incompressible blocks (skip compression)
-  - Choose algorithm based on block entropy
-  - Store compression method per-block
-
-#### Encryption Improvements
-- [ ] **Key Management**
-  - Support for key rotation
-  - Multiple encryption key support
-  - Integration with system keychains
-
-- [ ] **Signed Snapshots**
-  - Cryptographic signatures for tamper detection
-  - Verify signature on read
-  - CLI commands for signing/verification
-
-### Reliability & Robustness
-- [ ] **Error Recovery**
-  - Automatic retry with exponential backoff
-  - Graceful degradation on backend failures
-  - Circuit breaker pattern for flaky backends
-
-- [ ] **Corruption Detection**
-  - Verify checksums on read
-  - Detect truncated files
-  - Self-healing index reconstruction
-
-- [ ] **Monitoring & Observability**
-  - Structured logging with tracing
-  - Metrics export (Prometheus format)
-  - Performance counters for debugging
+| Issue | Description |
+|---|---|
+| [#77](https://github.com/hexz-org/hexz/issues/77) | Adaptive cache sizing and eviction policy |
+| [#118](https://github.com/hexz-org/hexz/issues/118) | Benchmark/document memory usage for large packs |
+| [#54](https://github.com/hexz-org/hexz/issues/54) | Profile and optimize async I/O paths |
+| [#70](https://github.com/hexz-org/hexz/issues/70) | Edge case tests: binary vs text, high vs low entropy |
+| [#65](https://github.com/hexz-org/hexz/issues/65) | Integration test: S3 backend with retry logic |
+| [#66](https://github.com/hexz-org/hexz/issues/66) | Integration test: HTTP backend with connection failures |
+| [#67](https://github.com/hexz-org/hexz/issues/67) | Integration test: FUSE mount operations |
 
 ---
 
-## Long-Term Goals (Next 3-12 Months)
+## v0.3.0 — Ecosystem Integrations
 
-### Ecosystem & Integrations
+Focus: Make Hexz work with popular ML frameworks and cloud providers.
 
-#### Framework Support
-- [ ] **TensorFlow Integration**
-  - Create `tf.data.Dataset` wrapper
-  - Optimize for TF's data pipeline
-  - Benchmark vs tfrecords
+### High Priority
 
-- [ ] **JAX Support**
-  - JAX-compatible dataset wrapper
-  - Integration with grain library
+| Issue | Description |
+|---|---|
+| [#139](https://github.com/hexz-org/hexz/issues/139) | Hugging Face Datasets integration (plugin for `datasets` library) |
 
-- [ ] **Hugging Face Datasets**
-  - Plugin for `datasets` library
-  - Enable streaming HF datasets via Hexz
+### Medium Priority
 
-#### Cloud Backend Expansion
-- [ ] **Azure Blob Storage Backend**
-  - Implement StorageBackend trait
-  - Handle authentication
-  - Optimize for Azure-specific features
+| Issue | Description |
+|---|---|
+| [#140](https://github.com/hexz-org/hexz/issues/140) | PyTorch Hub integration |
+| [#50](https://github.com/hexz-org/hexz/issues/50) | TensorFlow `tf.data.Dataset` wrapper (currently stubbed) |
+| [#88](https://github.com/hexz-org/hexz/issues/88) | Azure Blob Storage backend |
+| [#89](https://github.com/hexz-org/hexz/issues/89) | Google Cloud Storage backend |
+| [#47](https://github.com/hexz-org/hexz/issues/47) | `hexz data diff` — compare two snapshots |
+| [#95](https://github.com/hexz-org/hexz/issues/95) | `hexz data merge` — merge two snapshots |
+| [#96](https://github.com/hexz-org/hexz/issues/96) | `hexz data repair` — repair corrupted snapshots |
+| [#135](https://github.com/hexz-org/hexz/issues/135) | Streaming writer / append mode |
+| [#136](https://github.com/hexz-org/hexz/issues/136) | Snapshot versioning and lineage tracking |
+| [#80](https://github.com/hexz-org/hexz/issues/80) | DCAM `--estimate-savings` dry-run mode |
+| [#129](https://github.com/hexz-org/hexz/issues/129) | Access control and audit logging |
 
-- [ ] **Google Cloud Storage Backend**
-  - GCS StorageBackend implementation
-  - Service account authentication
-  - Regional optimization
+### Low Priority
 
-- [ ] **MinIO Optimization**
-  - Test and optimize for MinIO (S3-compatible)
-  - Handle MinIO-specific quirks
-
-#### CLI Enhancements
-- [ ] **Interactive TUI Mode**
-  - Browse snapshots interactively
-  - View statistics and metadata
-  - Live progress monitoring
-
-- [ ] **Data Migration Tools**
-  - `hexz convert tar <input> <output>` - Convert tar archives
-  - `hexz convert hdf5 <input> <output>` - Convert HDF5 files
-  - `hexz convert webdataset <input> <output>` - Convert WebDataset shards
-
-- [ ] **Snapshot Management**
-  - `hexz diff <snap1> <snap2>` - Compare snapshots
-  - `hexz merge <snap1> <snap2> <output>` - Merge snapshots
-  - `hexz repair <snapshot>` - Repair corrupted snapshots
-
-### Advanced Features
-
-#### Multi-Stream Snapshots
-- [ ] **Named Streams**
-  - Store multiple logical streams in one file
-  - Example: images + labels + metadata as separate streams
-  - Efficient stream switching
-
-- [ ] **Virtual Concatenation**
-  - Treat multiple snapshots as one logical dataset
-  - Transparent boundary crossing
-  - Useful for incremental dataset updates
-
-#### Incremental Updates
-- [ ] **Delta Encoding**
-  - Binary diff between snapshot versions
-  - Efficient patch generation
-  - Apply patches to create new snapshots
-
-- [ ] **Rolling Hash Optimization**
-  - Better CDC parameters for version control
-  - Track file moves and renames
-
-#### Smart Tiering
-- [ ] **Hot/Cold Data Management**
-  - Automatic classification based on access patterns
-  - Move cold data to cheaper storage
-  - Keep hot data in fast cache
-
-- [ ] **Predictive Prefetching**
-  - ML-based prefetch predictor
-  - Learn from access patterns
-  - Minimize cache misses
-
-### Production Hardening
-
-#### Security
-- [ ] **Security Audit**
-  - Review code for vulnerabilities
-  - Fuzz testing all parsers
-  - Third-party security review
-
-- [ ] **Supply Chain Security**
-  - Pin dependencies
-  - Verify checksums
-  - Signed releases
-
-#### Scalability Testing
-- [ ] **Large-Scale Tests**
-  - 1TB+ snapshots
-  - 100M+ samples
-  - 1000+ concurrent readers
-  - Multi-day stress tests
-
-#### Compliance & Governance
-- [ ] **Data Retention Policies**
-  - Automatic expiration
-  - Audit logging
-  - Compliance reporting
+| Issue | Description |
+|---|---|
+| [#91](https://github.com/hexz-org/hexz/issues/91) | JAX / grain dataset support |
+| [#90](https://github.com/hexz-org/hexz/issues/90) | MinIO optimization and compatibility testing |
+| [#81](https://github.com/hexz-org/hexz/issues/81) | Dedup statistics in `hexz data info` output |
+| [#82](https://github.com/hexz-org/hexz/issues/82) | Zstd dictionary training improvements |
+| [#83](https://github.com/hexz-org/hexz/issues/83) | Per-block compression selection (skip incompressible) |
+| [#55](https://github.com/hexz-org/hexz/issues/55) | Python `verify()`: checksum-only path without signature |
 
 ---
 
-## Research & Experimental (1+ Year)
+## v0.4.0 — Advanced Features
 
-### Advanced Research Directions
+Focus: Format extensions and power-user capabilities.
 
-#### GPU-Accelerated Decompression
-- Investigate GPU-direct decompression
-- CUDA kernel for LZ4/Zstd
-- Direct GPU memory loading
-
-#### Learned Compression & Indexes
-- Neural compression for domain-specific data
-- Learned index structures for faster lookup
-- Adaptive algorithms based on dataset characteristics
-
-#### Distributed Hexz
-- Multi-writer coordination
-- Distributed caching
-- Global deduplication across machines
-
-#### Content-Addressable Storage
-- CAS integration for datasets
-- Global deduplication namespace
-- P2P dataset sharing
+| Issue | Description | Priority |
+|---|---|---|
+| [#97](https://github.com/hexz-org/hexz/issues/97) | Named streams (multi-stream in one snapshot) | Low |
+| [#98](https://github.com/hexz-org/hexz/issues/98) | Virtual concatenation of multiple snapshots | Low |
+| [#99](https://github.com/hexz-org/hexz/issues/99) | Delta encoding / binary diff between snapshots | Low |
+| [#100](https://github.com/hexz-org/hexz/issues/100) | Hot/cold data tiering | Low |
+| [#84](https://github.com/hexz-org/hexz/issues/84) | Key rotation, multiple keys, keychain integration | Low |
+| [#45](https://github.com/hexz-org/hexz/issues/45) | Handle parent encryption in thin snapshots | Low |
+| [#87](https://github.com/hexz-org/hexz/issues/87) | Structured logging and Prometheus metrics | Low |
+| [#93](https://github.com/hexz-org/hexz/issues/93) | CLI interactive TUI mode | Low |
+| [#137](https://github.com/hexz-org/hexz/issues/137) | Bandwidth throttling and rate limiting | Low |
 
 ---
 
-## Community & Adoption
+## Documentation & Community
 
-### Short-Term
-- [ ] Prepare v0.1.0 release
-- [ ] Create release notes and migration guide
-- [ ] Set up issue templates and contribution guidelines
-- [ ] Create example notebooks (Jupyter, Colab)
+Ongoing across all versions.
 
-### Medium-Term
-- [ ] Conference talks and papers
-- [ ] Blog posts and tutorials
-- [ ] Integration examples (real ML projects)
-- [ ] Video demonstrations
+| Issue | Description | Priority |
+|---|---|---|
+| [#104](https://github.com/hexz-org/hexz/issues/104) | Issue and PR templates | Medium |
+| [#105](https://github.com/hexz-org/hexz/issues/105) | Example notebooks (Jupyter, Colab) | Medium |
+| [#59](https://github.com/hexz-org/hexz/issues/59) | Migration guides: tar, HDF5, WebDataset | Medium |
+| [#60](https://github.com/hexz-org/hexz/issues/60) | Troubleshooting common issues doc | Medium |
+| [#126](https://github.com/hexz-org/hexz/issues/126) | Production deploy guide | Medium |
+| [#125](https://github.com/hexz-org/hexz/issues/125) | Landing page with comparison benchmarks | Medium |
+| [#124](https://github.com/hexz-org/hexz/issues/124) | ROI/cost saving calculator | Medium |
+| [#132](https://github.com/hexz-org/hexz/issues/132) | Quick start video | Low |
+| [#130](https://github.com/hexz-org/hexz/issues/130) | Multi-cloud cost optimization guide | Low |
 
-### Long-Term
-- [ ] Build community around Hexz
-- [ ] Commercial support options
-- [ ] Managed hosting service
-- [ ] Enterprise features
+---
+
+## Backlog / Future
+
+Ideas that don't have a version target yet.
+
+| Issue | Description | Priority |
+|---|---|---|
+| [#46](https://github.com/hexz-org/hexz/issues/46) | Firecracker boot orchestration | Low |
+| [#107](https://github.com/hexz-org/hexz/issues/107) | Large-scale tests: 1TB+ snapshot, 100M+ samples | Low |
+| [#108](https://github.com/hexz-org/hexz/issues/108) | Stress test: 1000+ concurrent readers | Low |
+| [#131](https://github.com/hexz-org/hexz/issues/131) | Managed service / SaaS offering design | Low |
+| [#133](https://github.com/hexz-org/hexz/issues/133) | VS Code / PyCharm plugins | Low |
+| [#134](https://github.com/hexz-org/hexz/issues/134) | Dataset registry / catalog | Low |
+| [#141](https://github.com/hexz-org/hexz/issues/141) | Anonymous usage telemetry (opt-in) | Low |
+| [#142](https://github.com/hexz-org/hexz/issues/142) | Cost analytics dashboard | Low |
+
+### Research
+
+- GPU-accelerated decompression (nvCOMP / CUDA kernels for LZ4/Zstd)
+- Learned compression and index structures
+- Distributed multi-writer coordination and global deduplication
+- Content-addressable storage / P2P dataset sharing
 
 ---
 
 ## Contributing
 
-Priority areas for contributions:
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
 
-**High Priority:**
-- Testing and bug reports
-- Performance benchmarking
-- Documentation improvements
-- Example projects and tutorials
-
-**Medium Priority:**
-- New backend implementations (Azure, GCS)
-- Framework integrations (TensorFlow, JAX)
-- CLI enhancements
-- Monitoring and observability
-
-**Research:**
-- Novel compression algorithms
-- ML-based optimization
-- Distributed systems features
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
-
----
-
-## Versioning Strategy
-
-**v0.1.x** - Core stability, bug fixes, testing
-**v0.2.x** - Performance optimizations, DCAM tuning
-**v0.3.x** - Framework integrations, cloud backends
-**v0.4.x** - Advanced features (multi-stream, incremental)
-**v1.0.0** - Production-ready stable release
-
-Current target: **v0.1.0** by end of March 2026
+**Good first issues:** [#104](https://github.com/hexz-org/hexz/issues/104), [#118](https://github.com/hexz-org/hexz/issues/118), [#132](https://github.com/hexz-org/hexz/issues/132)
