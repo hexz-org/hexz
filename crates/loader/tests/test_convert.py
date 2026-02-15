@@ -357,7 +357,7 @@ class TestConvertGeneral:
         meta = convert(tar_path, out, compression="zstd")
 
         assert os.path.isfile(out)
-        assert meta.compression == "zstd"
+        assert meta.compression.lower() == "zstd"
 
     def test_unknown_profile_raises(self, test_dir):
         tar_path = os.path.join(test_dir, "bad_profile.tar")

@@ -82,6 +82,7 @@ def test_numpy_integration(sample_snapshot):
     np.testing.assert_array_equal(arr, expected)
 
 
+@pytest.mark.timeout(15)
 def test_http_backend(sample_snapshot):
     """
     Tests reading a snapshot over HTTP using a local background server.
@@ -145,8 +146,13 @@ def test_http_backend(sample_snapshot):
             # Fallback for non-range requests (e.g. HEAD or full GET)
             super().do_GET()
 
-    # Bind to port 0 to get a free port
-    httpd = socketserver.TCPServer(("127.0.0.1", 0), RangeRequestHandler)
+    # Use ThreadingTCPServer so the Rust HTTP client can make
+    # concurrent/pipelined requests without deadlocking.
+    class ThreadedServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+        allow_reuse_address = True
+        daemon_threads = True
+
+    httpd = ThreadedServer(("127.0.0.1", 0), RangeRequestHandler)
     port = httpd.server_address[1]
 
     server_thread = threading.Thread(target=httpd.serve_forever)

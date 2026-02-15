@@ -410,13 +410,18 @@ impl Reader {
         };
 
         // Zero-copy: decompress directly into the PyBytes internal buffer.
-        // One allocation, zero copies. The GIL is held during new_with (can't
-        // call allow_threads inside its closure), but LZ4 decompresses at
-        // ~32 GB/s so a 4 KB sample takes ~0.1 µs.
+        // Release the GIL during I/O so HTTP-backend readers don't deadlock
+        // when the server runs in a Python thread (same usize pointer pattern
+        // used by read_at_into below).
         let bytes = PyBytes::new_with(py, len, |buf| {
-            inner
-                .read_at_into_uninit_bytes(SnapshotStream::Disk, start, buf)
-                .map_err(|e| PyIOError::new_err(e.to_string()))
+            let ptr_addr = buf.as_mut_ptr() as usize;
+            let buf_len = buf.len();
+            py.allow_threads(move || {
+                let slice = unsafe { std::slice::from_raw_parts_mut(ptr_addr as *mut u8, buf_len) };
+                inner
+                    .read_at_into_uninit_bytes(SnapshotStream::Disk, start, slice)
+                    .map_err(|e| PyIOError::new_err(e.to_string()))
+            })
         })?;
 
         if update_cursor {
