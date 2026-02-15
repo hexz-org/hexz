@@ -39,7 +39,7 @@ Hexz acts as a drop-in replacement for standard PyTorch datasets.
 
 ```bash
 # Clone the repository
-git clone https://github.com/Alethic-Systems/hexz.git
+git clone https://github.com/hexz-org/hexz.git
 cd hexz
 
 # Build and install the Python loader
