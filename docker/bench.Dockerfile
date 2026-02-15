@@ -5,7 +5,7 @@
 # no dev tools — just the Rust workspace and criterion benchmarks.
 #
 #   docker build -f docker/bench.Dockerfile -t hexz-bench .
-#   docker run --rm hexz-bench cargo bench --package hexz
+#   docker run --rm hexz-bench cargo bench --package hexz-cli
 # ──────────────────────────────────────────────────────────────────────────────
 
 FROM rust:1.85-slim-bookworm AS builder

@@ -571,7 +571,7 @@ _cross-aarch64:
 	CC_aarch64_unknown_linux_gnu=$(AARCH64_LINKER) \
 	CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=$(AARCH64_LINKER) \
 	CFLAGS_aarch64_unknown_linux_gnu="-D__ARM_ARCH=8" \
-	$(CARGO) check -p hexz --target $(CROSS_AARCH64) --no-default-features --features $(AARCH64_CLI_FEAT)
+	$(CARGO) check -p hexz-cli --target $(CROSS_AARCH64) --no-default-features --features $(AARCH64_CLI_FEAT)
 	@printf "$(GREEN)[cross] Checking $(CROSS_AARCH64) (wheel)…$(RESET)\n"
 	CC_aarch64_unknown_linux_gnu=$(AARCH64_LINKER) \
 	CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=$(AARCH64_LINKER) \
@@ -586,7 +586,7 @@ _cross-windows:
 	}
 	CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=$(WINDOWS_LINKER) \
 	CC_x86_64_pc_windows_gnu=$(WINDOWS_LINKER) \
-	$(CARGO) check -p hexz --target $(CROSS_WINDOWS) --no-default-features --features $(WINDOWS_CLI_FEAT)
+	$(CARGO) check -p hexz-cli --target $(CROSS_WINDOWS) --no-default-features --features $(WINDOWS_CLI_FEAT)
 	@printf "$(GREEN)[cross] Checking $(CROSS_WINDOWS) (wheel)…$(RESET)\n"
 	CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=$(WINDOWS_LINKER) \
 	CC_x86_64_pc_windows_gnu=$(WINDOWS_LINKER) \

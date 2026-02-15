@@ -13,14 +13,14 @@ members = [
 version = "0.1.2"
 edition = "2024"
 authors = ["Will McCallion"]
-repository = "https://github.com/Alethic-Systems/hexz"
+repository = "https://github.com/hexz-org/hexz"
 license = "Apache-2.0"
 
 [workspace.dependencies]
-hexz-common = { path = "crates/common", default-features = false }
-hexz-core = { path = "crates/core" }
-hexz-fuse = { path = "crates/fuse" }
-hexz-server = { path = "crates/server" }
+hexz-common = { path = "crates/common", version = "0.1.2", default-features = false }
+hexz-core = { path = "crates/core", version = "0.1.2" }
+hexz-fuse = { path = "crates/fuse", version = "0.1.2" }
+hexz-server = { path = "crates/server", version = "0.1.2" }
 
 anyhow = "1.0"
 thiserror = "1.0"
