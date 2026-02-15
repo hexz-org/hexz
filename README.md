@@ -1,7 +1,7 @@
 
 # Hexz: High-Performance Data Streaming Engine
 
-[![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://alethic-systems.github.io/hexz/)
+[![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://hexz-org.github.io/hexz/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 **Hexz** is a Rust-based streaming engine designed to eliminate "GPU Starvation" in AI training. It allows PyTorch to stream massive datasets directly from compressed S3 storage into GPU memory, bypassing the Python GIL and OS page cache.
