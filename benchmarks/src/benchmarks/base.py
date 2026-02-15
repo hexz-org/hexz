@@ -286,6 +286,8 @@ class BenchmarkBase(ABC):
         Args:
             dataset_name: Name of dataset to use
         """
+        self._current_dataset = dataset_name
+        self.results = []  # Reset results for this dataset
         print(f"\n{'=' * 60}")
         print(f"Benchmarking: {self.format_name()}")
         print(f"Dataset: {dataset_name}")
@@ -355,7 +357,13 @@ class BenchmarkBase(ABC):
 
     def save_results(self):
         """Save results to JSON file."""
-        output_file = self.results_dir / f"{self.format_name()}_results.json"
+        dataset = getattr(self, "_current_dataset", None)
+        if dataset:
+            output_file = (
+                self.results_dir / f"{self.format_name()}_{dataset}_results.json"
+            )
+        else:
+            output_file = self.results_dir / f"{self.format_name()}_results.json"
         results_dict = [r.to_dict() for r in self.results]
 
         with open(output_file, "w") as f:

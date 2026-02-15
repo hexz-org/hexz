@@ -1,260 +1,257 @@
 #!/usr/bin/env python3
 """
-Generate realistic test data for benchmarking.
+Download real datasets for benchmarking.
 
-Creates deterministic, moderately compressible data that mimics real ML datasets.
+Uses actual CIFAR-10, STL-10, and CIFAR-100 images so compression
+characteristics reflect real-world ML workloads.
 """
 
 import argparse
+import io
 import json
 from pathlib import Path
 from typing import Dict
 
-import numpy as np
+from PIL import Image
 from tqdm import tqdm
 
 
-def generate_compressible_data(
-    size: int, seed: int = 42, entropy: float = 0.6
-) -> bytes:
-    """
-    Generate data with controlled entropy (compressibility).
-
-    Args:
-        size: Number of bytes to generate
-        seed: Random seed for reproducibility
-        entropy: Entropy level (0.0 = highly compressible, 1.0 = incompressible)
-
-    Returns:
-        Bytes with specified entropy level
-    """
-    rng = np.random.RandomState(seed)
-
-    if entropy < 0.3:
-        # Highly compressible: repeating patterns
-        pattern_size = max(1, int(size * (1 - entropy)))
-        pattern = rng.bytes(pattern_size)
-        num_repeats = (size // pattern_size) + 1
-        data = (pattern * num_repeats)[:size]
-    elif entropy < 0.7:
-        # Moderately compressible: mix of patterns and random
-        # Simulates JPEG-like data
-        num_blocks = size // 64
-        blocks = []
-        for i in range(num_blocks):
-            if i % 3 == 0:
-                # Repeating block
-                block = b"\x00" * 64 if i % 6 == 0 else rng.bytes(16) * 4
-            else:
-                # Random block
-                block = rng.bytes(64)
-            blocks.append(block)
-
-        # Fill remainder
-        remainder = size - (num_blocks * 64)
-        if remainder > 0:
-            blocks.append(rng.bytes(remainder))
-
-        data = b"".join(blocks)
-    else:
-        # Low compressibility: mostly random
-        data = rng.bytes(size)
-
-    return data
-
-
-def generate_image_like_sample(
-    width: int, height: int, channels: int, seed: int
-) -> bytes:
-    """
-    Generate image-like data with spatial correlation.
-
-    Simulates compressed image data (like JPEG) with:
-    - Smooth gradients (low frequency)
-    - Some high-frequency details
-    - Moderate compressibility (~60%)
-    """
-    rng = np.random.RandomState(seed)
-
-    # Create smooth base with gradients
-    x = np.linspace(0, 1, width)
-    y = np.linspace(0, 1, height)
-    xx, yy = np.meshgrid(x, y)
-
-    image = np.zeros((height, width, channels), dtype=np.uint8)
-
-    for c in range(channels):
-        # Smooth gradient
-        gradient = (
-            np.sin(xx * 2 * np.pi + c) * 0.3 + np.cos(yy * 2 * np.pi + c) * 0.3 + 0.5
-        )
-
-        # Add some noise
-        noise = rng.randn(height, width) * 0.1
-
-        # Combine and normalize to uint8
-        channel_data = gradient + noise
-        channel_data = np.clip(channel_data * 255, 0, 255).astype(np.uint8)
-        image[:, :, c] = channel_data
-
-    return image.tobytes()
-
-
-class TestDataGenerator:
-    """Generate realistic test datasets for benchmarking."""
+class RealDataGenerator:
+    """Download and prepare real datasets for benchmarking."""
 
     def __init__(self, output_dir: Path):
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.raw_dir = output_dir / "raw"
         self.raw_dir.mkdir(exist_ok=True)
+        # Cache dir for torchvision downloads
+        self._cache_dir = output_dir / ".cache"
+        self._cache_dir.mkdir(exist_ok=True)
 
-    def generate_dataset(
-        self,
-        name: str,
-        num_samples: int,
-        sample_size: int,
-        variable_size: bool = False,
-        image_like: bool = False,
-    ) -> Dict:
+    def _save_image_as_bytes(
+        self, img: Image.Image, path: Path, fmt: str = "PNG"
+    ) -> int:
+        """Save a PIL image to disk and return the file size in bytes."""
+        buf = io.BytesIO()
+        img.save(buf, format=fmt)
+        data = buf.getvalue()
+        with open(path, "wb") as f:
+            f.write(data)
+        return len(data)
+
+    def prepare_cifar10(self, name: str = "cifar10", max_samples: int = 50000) -> Dict:
         """
-        Generate a complete dataset.
+        Download CIFAR-10 and save each image as a PNG file.
 
-        Args:
-            name: Dataset name
-            num_samples: Number of samples
-            sample_size: Base size per sample in bytes
-            variable_size: If True, vary sample sizes ±50%
-            image_like: If True, generate image-like patterns
-
-        Returns:
-            Metadata dict with dataset info
+        CIFAR-10: 50,000 training images, 32x32x3, 10 classes.
+        PNG files are ~1-3KB each — real compression characteristics.
         """
-        print(f"\n📦 Generating dataset: {name}")
-        print(f"   Samples: {num_samples:,}")
-        print(f"   Size per sample: {sample_size:,} bytes")
+        from torchvision.datasets import CIFAR10
+
+        print(f"\n📦 Downloading CIFAR-10 ({max_samples} samples)...")
+        dataset = CIFAR10(root=str(self._cache_dir), train=True, download=True)
 
         dataset_dir = self.raw_dir / name
         dataset_dir.mkdir(exist_ok=True)
 
         manifest = []
         total_bytes = 0
+        num_samples = min(max_samples, len(dataset))
 
-        for i in tqdm(range(num_samples), desc=f"  Creating {name}"):
-            # Determine sample size
-            if variable_size:
-                # Vary size by ±50%
-                size = int(sample_size * (0.5 + np.random.rand()))
-            else:
-                size = sample_size
-
-            # Generate sample data
-            if image_like and size >= 256:
-                # Generate as small image
-                channels = 3
-                pixels = size // channels
-                side = int(np.sqrt(pixels))
-                if side * side * channels <= size:
-                    data = generate_image_like_sample(side, side, channels, seed=i)
-                    # Pad if needed
-                    if len(data) < size:
-                        data += b"\x00" * (size - len(data))
-                    else:
-                        data = data[:size]
-                else:
-                    data = generate_compressible_data(size, seed=i, entropy=0.6)
-            else:
-                # Generate compressible data
-                data = generate_compressible_data(size, seed=i, entropy=0.6)
-
-            # Write sample
-            sample_path = dataset_dir / f"sample_{i:06d}.bin"
-            with open(sample_path, "wb") as f:
-                f.write(data)
-
-            # Create label (synthetic)
-            label = i % 1000  # 1000 classes
+        for i in tqdm(range(num_samples), desc=f"  Saving {name}"):
+            img, label = dataset[i]
+            sample_path = dataset_dir / f"sample_{i:06d}.png"
+            size = self._save_image_as_bytes(img, sample_path)
 
             manifest.append(
                 {
                     "id": i,
                     "path": str(sample_path.relative_to(self.output_dir)),
-                    "size": len(data),
-                    "label": label,
+                    "size": size,
+                    "label": int(label),
                 }
             )
-            total_bytes += len(data)
+            total_bytes += size
 
-        # Write manifest
         manifest_path = dataset_dir / "manifest.json"
         with open(manifest_path, "w") as f:
             json.dump(manifest, f, indent=2)
 
+        avg_size = total_bytes // num_samples if num_samples > 0 else 0
         metadata = {
             "name": name,
             "num_samples": num_samples,
             "total_size": total_bytes,
-            "avg_size": total_bytes // num_samples,
-            "variable_size": variable_size,
-            "image_like": image_like,
+            "avg_size": avg_size,
+            "variable_size": True,  # PNG sizes vary per image content
+            "image_like": True,
             "manifest": str(manifest_path.relative_to(self.output_dir)),
+            "source": "CIFAR-10 (torchvision)",
         }
 
-        print(f"   ✓ Generated {total_bytes / 1024 / 1024:.1f} MB")
-
+        print(
+            f"   ✓ {num_samples} images, {total_bytes / 1024 / 1024:.1f} MB total, ~{avg_size} bytes avg"
+        )
         return metadata
 
+    def prepare_stl10(self, name: str = "stl10", max_samples: int = 10000) -> Dict:
+        """
+        Download STL-10 and save each image as a JPEG file.
+
+        STL-10: 5,000 labeled train + 100,000 unlabeled images, 96x96x3.
+        JPEG files are ~5-15KB each — closer to ImageNet-scale sample sizes.
+        Uses the unlabeled split for more data.
+        """
+        from torchvision.datasets import STL10
+
+        print(f"\n📦 Downloading STL-10 ({max_samples} samples)...")
+        # Use unlabeled split for larger dataset
+        dataset = STL10(root=str(self._cache_dir), split="unlabeled", download=True)
+
+        dataset_dir = self.raw_dir / name
+        dataset_dir.mkdir(exist_ok=True)
+
+        manifest = []
+        total_bytes = 0
+        num_samples = min(max_samples, len(dataset))
+
+        for i in tqdm(range(num_samples), desc=f"  Saving {name}"):
+            img, label = dataset[i]
+            sample_path = dataset_dir / f"sample_{i:06d}.jpg"
+            size = self._save_image_as_bytes(img, sample_path, fmt="JPEG")
+
+            manifest.append(
+                {
+                    "id": i,
+                    "path": str(sample_path.relative_to(self.output_dir)),
+                    "size": size,
+                    "label": int(label),
+                }
+            )
+            total_bytes += size
+
+        manifest_path = dataset_dir / "manifest.json"
+        with open(manifest_path, "w") as f:
+            json.dump(manifest, f, indent=2)
+
+        avg_size = total_bytes // num_samples if num_samples > 0 else 0
+        metadata = {
+            "name": name,
+            "num_samples": num_samples,
+            "total_size": total_bytes,
+            "avg_size": avg_size,
+            "variable_size": True,
+            "image_like": True,
+            "manifest": str(manifest_path.relative_to(self.output_dir)),
+            "source": "STL-10 unlabeled (torchvision)",
+        }
+
+        print(
+            f"   ✓ {num_samples} images, {total_bytes / 1024 / 1024:.1f} MB total, ~{avg_size} bytes avg"
+        )
+        return metadata
+
+    def prepare_cifar100(
+        self, name: str = "cifar100", max_samples: int = 20000
+    ) -> Dict:
+        """
+        Download CIFAR-100 and save images as JPEG at varying quality levels.
+
+        This creates a variable-size dataset with realistic content.
+        Quality varies from 50-95 to produce files from ~500B to ~3KB.
+        """
+        from torchvision.datasets import CIFAR100
+
+        print(
+            f"\n📦 Downloading CIFAR-100 ({max_samples} samples, variable JPEG quality)..."
+        )
+        dataset = CIFAR100(root=str(self._cache_dir), train=True, download=True)
+
+        dataset_dir = self.raw_dir / name
+        dataset_dir.mkdir(exist_ok=True)
+
+        manifest = []
+        total_bytes = 0
+        num_samples = min(max_samples, len(dataset))
+
+        # Vary JPEG quality to create variable file sizes
+        import random
+
+        rng = random.Random(42)
+
+        for i in tqdm(range(num_samples), desc=f"  Saving {name}"):
+            img, label = dataset[i]
+            sample_path = dataset_dir / f"sample_{i:06d}.jpg"
+
+            quality = rng.randint(50, 95)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=quality)
+            data = buf.getvalue()
+            with open(sample_path, "wb") as f:
+                f.write(data)
+            size = len(data)
+
+            manifest.append(
+                {
+                    "id": i,
+                    "path": str(sample_path.relative_to(self.output_dir)),
+                    "size": size,
+                    "label": int(label),
+                }
+            )
+            total_bytes += size
+
+        manifest_path = dataset_dir / "manifest.json"
+        with open(manifest_path, "w") as f:
+            json.dump(manifest, f, indent=2)
+
+        avg_size = total_bytes // num_samples if num_samples > 0 else 0
+        metadata = {
+            "name": name,
+            "num_samples": num_samples,
+            "total_size": total_bytes,
+            "avg_size": avg_size,
+            "variable_size": True,
+            "image_like": True,
+            "manifest": str(manifest_path.relative_to(self.output_dir)),
+            "source": "CIFAR-100 (torchvision), variable JPEG quality",
+        }
+
+        print(
+            f"   ✓ {num_samples} images, {total_bytes / 1024 / 1024:.1f} MB total, ~{avg_size} bytes avg"
+        )
+        return metadata
+
+    def prepare_tiny(self, name: str = "tiny", max_samples: int = 1000) -> Dict:
+        """Small subset of CIFAR-10 for quick smoke tests."""
+        return self.prepare_cifar10(name=name, max_samples=max_samples)
+
     def generate_all(self) -> Dict:
-        """Generate all test datasets."""
+        """Download and prepare all benchmark datasets."""
         datasets = {}
 
-        # 1. Small fixed-size samples (like CIFAR-10)
-        datasets["cifar_like"] = self.generate_dataset(
-            name="cifar_like",
-            num_samples=50000,
-            sample_size=4096,  # 4KB ~= 32x32x3
-            variable_size=False,
-            image_like=True,
-        )
+        # 1. CIFAR-10: 50K small PNG images (~1-3KB each, ~80MB total)
+        datasets["cifar10"] = self.prepare_cifar10()
 
-        # 2. Medium images (like ImageNet)
-        datasets["imagenet_like"] = self.generate_dataset(
-            name="imagenet_like",
-            num_samples=10000,
-            sample_size=51200,  # 50KB (typical compressed JPEG)
-            variable_size=False,
-            image_like=True,
-        )
+        # 2. STL-10: 10K medium JPEG images (~5-15KB each, ~60-100MB total)
+        datasets["stl10"] = self.prepare_stl10()
 
-        # 3. Variable-size dataset
-        datasets["variable_size"] = self.generate_dataset(
-            name="variable_size",
-            num_samples=20000,
-            sample_size=8192,  # 8KB average
-            variable_size=True,
-            image_like=False,
-        )
+        # 3. CIFAR-100: 20K variable-quality JPEGs (~500B-3KB each, ~25MB total)
+        datasets["cifar100"] = self.prepare_cifar100()
 
-        # 4. Small dataset for quick tests
-        datasets["tiny"] = self.generate_dataset(
-            name="tiny",
-            num_samples=1000,
-            sample_size=4096,
-            variable_size=False,
-            image_like=True,
-        )
+        # 4. Tiny: 1K images for quick tests
+        datasets["tiny"] = self.prepare_tiny()
 
         # Save overall metadata
         metadata_path = self.output_dir / "datasets.json"
         with open(metadata_path, "w") as f:
             json.dump(datasets, f, indent=2)
 
-        # Print summary
         total_size = sum(d["total_size"] for d in datasets.values())
         total_samples = sum(d["num_samples"] for d in datasets.values())
 
         print("\n" + "=" * 60)
-        print("📊 Summary")
+        print("Summary")
         print("=" * 60)
         print(f"Total datasets: {len(datasets)}")
         print(f"Total samples: {total_samples:,}")
@@ -266,7 +263,9 @@ class TestDataGenerator:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate test data for benchmarks")
+    parser = argparse.ArgumentParser(
+        description="Download real datasets for benchmarks"
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -276,36 +275,27 @@ def main():
     parser.add_argument(
         "--quick",
         action="store_true",
-        help="Generate only tiny dataset for quick testing",
+        help="Download only tiny dataset for quick testing",
     )
 
     args = parser.parse_args()
 
-    print("🔧 Test Data Generator")
+    print("Real Dataset Downloader")
     print(f"Output directory: {args.output_dir}")
 
-    generator = TestDataGenerator(args.output_dir)
+    generator = RealDataGenerator(args.output_dir)
 
     if args.quick:
-        # Just generate tiny dataset
-        datasets = {
-            "tiny": generator.generate_dataset(
-                name="tiny",
-                num_samples=100,
-                sample_size=4096,
-                variable_size=False,
-                image_like=True,
-            )
-        }
+        datasets = {"tiny": generator.prepare_tiny()}
         metadata_path = args.output_dir / "datasets.json"
         with open(metadata_path, "w") as f:
             json.dump(datasets, f, indent=2)
     else:
-        datasets = generator.generate_all()
+        generator.generate_all()
 
-    print("\n✅ Test data generation complete!")
+    print("\nTest data ready!")
     print("\nNext steps:")
-    print("  1. Run benchmarks: python run_all_benchmarks.py")
+    print("  1. Run benchmarks: python run_benchmarks.py --dataset all")
     print("  2. View results: cat results/*.json")
 
 

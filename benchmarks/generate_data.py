@@ -4,12 +4,11 @@
 import sys
 from pathlib import Path
 
-from benchmarks.utils.data_generator import main
-
-# Add src to path
+# Add src to path before importing
 benchmarks_root = Path(__file__).parent
 sys.path.insert(0, str(benchmarks_root / "src"))
 
+from benchmarks.utils.data_generator import main
 
 if __name__ == "__main__":
     # Set default output dir to benchmarks/data/ if not explicitly specified

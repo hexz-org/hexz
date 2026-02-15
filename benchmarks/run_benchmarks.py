@@ -20,9 +20,10 @@ def main():
     parser = argparse.ArgumentParser(description="Run format benchmarks")
     parser.add_argument(
         "--dataset",
-        default="tiny",
-        choices=["tiny", "cifar_like", "imagenet_like", "variable_size"],
-        help="Dataset to benchmark",
+        nargs="+",
+        default=["tiny"],
+        choices=["tiny", "cifar10", "stl10", "cifar100", "all"],
+        help="Dataset(s) to benchmark (use 'all' for all datasets)",
     )
     parser.add_argument(
         "--formats",
@@ -67,24 +68,32 @@ def main():
     if args.skip:
         benchmarks = {k: v for k, v in benchmarks.items() if k not in args.skip}
 
-    print(f"\n🏃 Running {len(benchmarks)} benchmarks on '{args.dataset}' dataset")
+    # Resolve dataset list
+    datasets = args.dataset
+    if "all" in datasets:
+        datasets = ["tiny", "cifar10", "stl10", "cifar100"]
+
+    print(
+        f"\n🏃 Running {len(benchmarks)} benchmarks on {len(datasets)} dataset(s): {datasets}"
+    )
     print(f"Results will be saved to: {results_dir}\n")
 
-    # Run each benchmark
-    for name, benchmark_class in benchmarks.items():
-        try:
-            print(f"{'=' * 60}")
-            print(f"Running: {name}")
-            print(f"{'=' * 60}\n")
+    # Run each benchmark on each dataset
+    for dataset_name in datasets:
+        for name, benchmark_class in benchmarks.items():
+            try:
+                print(f"{'=' * 60}")
+                print(f"Running: {name} on {dataset_name}")
+                print(f"{'=' * 60}\n")
 
-            benchmark = benchmark_class(data_dir, results_dir)
-            benchmark.run_all_benchmarks(args.dataset)
+                benchmark = benchmark_class(data_dir, results_dir)
+                benchmark.run_all_benchmarks(dataset_name)
 
-        except Exception as e:
-            print(f"\n❌ Error running {name}: {e}")
-            import traceback
+            except Exception as e:
+                print(f"\n❌ Error running {name} on {dataset_name}: {e}")
+                import traceback
 
-            traceback.print_exc()
+                traceback.print_exc()
 
     print(f"\n{'=' * 60}")
     print("✅ All benchmarks complete!")

@@ -1,6 +1,6 @@
 """Utility modules for benchmarking."""
 
-from .data_generator import TestDataGenerator
+from .data_generator import RealDataGenerator
 from .analysis import (
     load_results,
     generate_comparison_table,
@@ -10,7 +10,7 @@ from .analysis import (
 )
 
 __all__ = [
-    "TestDataGenerator",
+    "RealDataGenerator",
     "load_results",
     "generate_comparison_table",
     "generate_summary_table",

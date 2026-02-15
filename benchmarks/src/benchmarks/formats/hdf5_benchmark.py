@@ -5,6 +5,8 @@ import json
 import sys
 from pathlib import Path
 
+import numpy as np
+
 try:
     import h5py
 except ImportError:
@@ -50,8 +52,9 @@ class HDF5Benchmark(BenchmarkBase):
             size_variance = max(entry["size"] for entry in manifest) / avg_size
 
             if size_variance > 1.5:
-                # Variable-length dataset
-                dt = h5py.special_dtype(vlen=bytes)
+                # Variable-length dataset (use uint8 arrays, not vlen strings,
+                # to handle binary data with embedded nulls)
+                dt = h5py.vlen_dtype(np.uint8)
                 data_ds = hf.create_dataset(
                     "data",
                     (num_samples,),
@@ -78,7 +81,7 @@ class HDF5Benchmark(BenchmarkBase):
                     data = f.read()
 
                 if size_variance > 1.5:
-                    data_ds[i] = data
+                    data_ds[i] = np.frombuffer(data, dtype=np.uint8)
                 else:
                     # Pad to max_size
                     padded = data + b"\x00" * (max_size - len(data))
@@ -99,15 +102,8 @@ class HDF5Benchmark(BenchmarkBase):
 
     def _read_sample(self, dataset_handle, index: int) -> bytes:
         """Read a single sample from HDF5 file."""
-        data_ds = dataset_handle["data"]
-
-        # Read sample
-        if data_ds.dtype == h5py.special_dtype(vlen=bytes):
-            # Variable-length
-            return bytes(data_ds[index])
-        else:
-            # Fixed-length
-            return bytes(data_ds[index])
+        data = dataset_handle["data"][index]
+        return bytes(data)
 
 
 def main():
