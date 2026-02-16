@@ -219,5 +219,11 @@ fn bench_chunk_sizes(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_fastcdc, bench_chunk_sizes);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(50)
+        .measurement_time(std::time::Duration::from_secs(3));
+    targets = bench_fastcdc, bench_chunk_sizes
+}
 criterion_main!(benches);

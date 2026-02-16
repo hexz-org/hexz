@@ -183,5 +183,11 @@ fn bench_read_api_comparison(c: &mut Criterion) {
     multi.finish();
 }
 
-criterion_group!(benches, bench_read_api_comparison);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(50)
+        .measurement_time(std::time::Duration::from_secs(3));
+    targets = bench_read_api_comparison
+}
 criterion_main!(benches);

@@ -329,9 +329,16 @@ impl File {
             }
         }
 
+        let file_len = backend.len();
+        if header.index_offset >= file_len {
+            return Err(Error::Format(format!(
+                "index_offset ({}) is at or past end of file ({})",
+                header.index_offset, file_len
+            )));
+        }
         let index_bytes = backend.read_exact(
             header.index_offset,
-            (backend.len() - header.index_offset) as usize,
+            (file_len - header.index_offset) as usize,
         )?;
 
         let master: MasterIndex = bincode::deserialize(&index_bytes)?;

@@ -442,6 +442,17 @@ impl Compressor for Lz4Compressor {
     /// - **Throughput**: ~3000 MB/s on modern CPUs (single-threaded)
     /// - **Memory usage**: Exact uncompressed size (read from header) + ~64 KB dictionary window
     fn decompress(&self, data: &[u8]) -> Result<Vec<u8>> {
+        // Guard against crafted size headers that would cause multi-GB allocations.
+        // The first 4 bytes encode the uncompressed size as little-endian u32.
+        const MAX_DECOMPRESSED: u32 = 128 * 1024 * 1024; // 128 MB
+        if data.len() >= 4 {
+            let claimed = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+            if claimed > MAX_DECOMPRESSED {
+                return Err(Error::Compression(format!(
+                    "claimed uncompressed size ({claimed} bytes) exceeds limit ({MAX_DECOMPRESSED} bytes)"
+                )));
+            }
+        }
         lz4_flex::decompress_size_prepended(data).map_err(|e| Error::Compression(e.to_string()))
     }
 

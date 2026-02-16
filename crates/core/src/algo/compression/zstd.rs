@@ -832,12 +832,21 @@ impl Compressor for ZstdCompressor {
     }
 
     fn decompress(&self, data: &[u8]) -> Result<Vec<u8>> {
+        const MAX_DECOMPRESSED: u64 = 128 * 1024 * 1024; // 128 MB
+
         if let Some(dict) = &self.decoder_dict {
-            // Pre-allocate output buffer using frame content size when available
-            let prealloc_cap = zstd::zstd_safe::get_frame_content_size(data)
+            // Pre-allocate output buffer using frame content size when available,
+            // capped to prevent OOM from crafted frame headers.
+            let frame_size = zstd::zstd_safe::get_frame_content_size(data)
                 .ok()
                 .flatten()
-                .unwrap_or(data.len() as u64 * 2) as usize;
+                .unwrap_or(data.len() as u64 * 2);
+            if frame_size > MAX_DECOMPRESSED {
+                return Err(Error::Compression(format!(
+                    "claimed decompressed size ({frame_size} bytes) exceeds limit ({MAX_DECOMPRESSED} bytes)"
+                )));
+            }
+            let prealloc_cap = frame_size as usize;
 
             let mut decoder =
                 zstd::stream::read::Decoder::with_prepared_dictionary(Cursor::new(data), dict)
@@ -849,6 +858,14 @@ impl Compressor for ZstdCompressor {
                 .map_err(|e| Error::Compression(e.to_string()))?;
             Ok(out)
         } else {
+            // Check frame content size for the non-dictionary path too.
+            if let Some(frame_size) = zstd::zstd_safe::get_frame_content_size(data).ok().flatten() {
+                if frame_size > MAX_DECOMPRESSED {
+                    return Err(Error::Compression(format!(
+                        "claimed decompressed size ({frame_size} bytes) exceeds limit ({MAX_DECOMPRESSED} bytes)"
+                    )));
+                }
+            }
             // decode_all is a highly optimized single-call API — faster than
             // Decoder::new() + read_to_end() for the non-dictionary path.
             zstd::stream::decode_all(Cursor::new(data))

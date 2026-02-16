@@ -319,13 +319,12 @@ fn bench_tensor_concat(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_tensor_sizes,
-    bench_zero_copy_vs_copy,
-    bench_batch_tensor_loading,
-    bench_tensor_preprocessing,
-    bench_tensor_alignment,
-    bench_tensor_concat
-);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(10)
+        .warm_up_time(std::time::Duration::from_secs(2));
+    targets = bench_tensor_sizes, bench_zero_copy_vs_copy, bench_batch_tensor_loading,
+              bench_tensor_preprocessing, bench_tensor_alignment, bench_tensor_concat
+}
 criterion_main!(benches);

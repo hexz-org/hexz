@@ -513,10 +513,11 @@ fn bench_dedup_shifted(c: &mut Criterion) {
     }
 }
 
-criterion_group!(
-    benches,
-    bench_dedup_no_duplication,
-    bench_dedup_25_percent,
-    bench_dedup_shifted
-);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(20)
+        .measurement_time(std::time::Duration::from_secs(10));
+    targets = bench_dedup_no_duplication, bench_dedup_25_percent, bench_dedup_shifted
+}
 criterion_main!(benches);

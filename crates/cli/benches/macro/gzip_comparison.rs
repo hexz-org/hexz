@@ -155,5 +155,11 @@ fn bench_page_fault(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_page_fault);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(20)
+        .measurement_time(std::time::Duration::from_secs(10));
+    targets = bench_page_fault
+}
 criterion_main!(benches);

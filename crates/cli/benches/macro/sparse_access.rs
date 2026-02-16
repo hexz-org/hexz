@@ -143,5 +143,11 @@ fn bench_cache_performance(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_sparse_access, bench_cache_performance);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(20)
+        .measurement_time(std::time::Duration::from_secs(10));
+    targets = bench_sparse_access, bench_cache_performance
+}
 criterion_main!(benches);

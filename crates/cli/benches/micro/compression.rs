@@ -82,5 +82,11 @@ fn bench_compression(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_compression);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(50)
+        .measurement_time(std::time::Duration::from_secs(3));
+    targets = bench_compression
+}
 criterion_main!(benches);

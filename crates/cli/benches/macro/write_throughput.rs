@@ -198,10 +198,11 @@ fn bench_write_cdc_overhead(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_write_lz4,
-    bench_write_zstd3,
-    bench_write_cdc_overhead
-);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(20)
+        .measurement_time(std::time::Duration::from_secs(10));
+    targets = bench_write_lz4, bench_write_zstd3, bench_write_cdc_overhead
+}
 criterion_main!(benches);

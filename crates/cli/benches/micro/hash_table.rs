@@ -139,12 +139,11 @@ fn bench_memory(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_insert,
-    bench_lookup,
-    bench_mixed,
-    bench_high_load,
-    bench_memory
-);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(50)
+        .measurement_time(std::time::Duration::from_secs(3));
+    targets = bench_insert, bench_lookup, bench_mixed, bench_high_load, bench_memory
+}
 criterion_main!(benches);

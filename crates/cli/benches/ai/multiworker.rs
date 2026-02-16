@@ -399,12 +399,12 @@ fn bench_worker_lifecycle(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_worker_scaling,
-    bench_worker_contention,
-    bench_round_robin_distribution,
-    bench_load_imbalance,
-    bench_worker_lifecycle
-);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(10)
+        .warm_up_time(std::time::Duration::from_secs(2));
+    targets = bench_worker_scaling, bench_worker_contention, bench_round_robin_distribution,
+              bench_load_imbalance, bench_worker_lifecycle
+}
 criterion_main!(benches);

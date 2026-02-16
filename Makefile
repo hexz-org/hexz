@@ -80,11 +80,16 @@ else
   RESET  :=
 endif
 
+# ── Fuzz configuration ───────────────────────────────────────────────────────
+FUZZ_TARGETS    ?= decompress_lz4 decompress_zstd header_parse index_parse decrypt_arbitrary ed25519_verify header_validation master_index_load zstd_dictionary
+FUZZ_TIME       ?= 60
+
 # ── Phony ────────────────────────────────────────────────────────────────────
 .PHONY: help build rust python develop install run clean
-.PHONY: test test-rust test-python test-integration test-list test-cov test-cov-rust test-cov-python mutants
+.PHONY: test test-rust test-python test-integration test-list test-nextest test-cov test-cov-rust test-cov-python mutants mutants-quick mutants-file
 .PHONY: lint fmt fmt-check clippy deny check
-.PHONY: bench bench-list bench-compare save-baseline archive-baseline restore-baseline compare-baseline bench-flamegraph fuzz
+.PHONY: bench bench-micro bench-macro bench-ai bench-quick bench-list bench-compare save-baseline archive-baseline restore-baseline compare-baseline bench-flamegraph fuzz fuzz-long
+.PHONY: bench-boot bench-compression-ratio bench-large-scale
 .PHONY: perf-python perf-rust perf-clean
 .PHONY: bench-competitors bench-competitors-small
 .PHONY: docker-dev docker-bench docs docs-serve setup setup-check setup-cross ci
@@ -117,6 +122,9 @@ help:
 	@printf "    %-$(HELP_W)s  Rust coverage only (cargo-llvm-cov)\n" "make test-cov-rust"
 	@printf "    %-$(HELP_W)s  Python coverage only (pytest-cov)\n" "make test-cov-python"
 	@printf "    %-$(HELP_W)s  Mutation testing (cargo-mutants)\n" "make mutants"
+	@printf "    %-$(HELP_W)s  Mutants on recent changes only\n" "make mutants-quick"
+	@printf "    %-$(HELP_W)s  Mutants on a single file\n" "make mutants-file FILE=..."
+	@printf "    %-$(HELP_W)s  Run tests via cargo-nextest\n" "make test-nextest"
 	@printf "\n  $(CYAN)Quality$(RESET)\n"
 	@printf "    %-$(HELP_W)s  Format check + clippy\n" "make lint"
 	@printf "    %-$(HELP_W)s  Auto-format Rust + Python\n" "make fmt"
@@ -125,16 +133,24 @@ help:
 	@printf "    %-$(HELP_W)s  Fast workspace type check\n" "make check"
 	@printf "\n  $(CYAN)Performance$(RESET)\n"
 	@printf "    %-$(HELP_W)s  Run benchmarks; optional filter\n" "make bench [filter]"
+	@printf "    %-$(HELP_W)s  Run micro benchmarks only\n" "make bench-micro"
+	@printf "    %-$(HELP_W)s  Run macro benchmarks only\n" "make bench-macro"
+	@printf "    %-$(HELP_W)s  Run AI benchmarks only\n" "make bench-ai"
+	@printf "    %-$(HELP_W)s  Run all benchmarks with quick profile\n" "make bench-quick"
 	@printf "    %-$(HELP_W)s  List benchmark categories for filtering\n" "make bench-list"
 	@printf "    %-$(HELP_W)s  Run benchmarks [filter], compare to archived baseline\n" "make bench-compare <name> [filter]"
 	@printf "    %-$(HELP_W)s  Benchmark vs competitors (WebDataset, HDF5, full dataset)\n" "make bench-competitors"
 	@printf "    %-$(HELP_W)s  Quick competitor benchmark (1K images, ~2 min)\n" "make bench-competitors-small"
+	@printf "    %-$(HELP_W)s  Shell: boot performance timing\n" "make bench-boot"
+	@printf "    %-$(HELP_W)s  Shell: compression ratio analysis\n" "make bench-compression-ratio"
+	@printf "    %-$(HELP_W)s  Shell: large-scale stress test\n" "make bench-large-scale"
 	@printf "    %-$(HELP_W)s  Save current run as baseline\n" "make save-baseline <name>"
 	@printf "    %-$(HELP_W)s  Archive baseline to .criterion/\n" "make archive-baseline <name>"
 	@printf "    %-$(HELP_W)s  Restore baseline from archive\n" "make restore-baseline <name>"
 	@printf "    %-$(HELP_W)s  Compare two archived baselines (critcmp)\n" "make compare-baseline <a> <b>"
 	@printf "    %-$(HELP_W)s  Generate flamegraph SVG from benchmarks\n" "make bench-flamegraph [filter]"
-	@printf "    %-$(HELP_W)s  Fuzz targets (cargo-fuzz)\n" "make fuzz"
+	@printf "    %-$(HELP_W)s  Fuzz targets (cargo-fuzz, $(FUZZ_TIME)s each)\n" "make fuzz"
+	@printf "    %-$(HELP_W)s  Extended fuzz run (600s, all targets)\n" "make fuzz-long"
 	@printf "\n  $(CYAN)Profiling$(RESET)  (samply → Firefox Profiler flamegraphs)\n"
 	@printf "    %-$(HELP_W)s  Flamegraph: Python ML workload\n" "make perf-python"
 	@printf "    %-$(HELP_W)s  Flamegraph: Rust CLI data pack\n" "make perf-rust"
@@ -225,6 +241,15 @@ test-integration:
 test-list:
 	@cargo xtask test list
 
+test-nextest:
+	@command -v cargo-nextest >/dev/null 2>&1 || { \
+		printf "$(BOLD)cargo-nextest not installed.$(RESET)\n"; \
+		printf "Install with: $(CYAN)cargo install cargo-nextest$(RESET)\n"; \
+		exit 1; \
+	}
+	@printf "$(GREEN)Running tests via nextest…$(RESET)\n"
+	$(CARGO) nextest run --workspace
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Coverage
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -259,6 +284,25 @@ mutants:
 	}
 	@printf "$(GREEN)Running mutation testing…$(RESET)\n"
 	$(CARGO) mutants --no-shuffle --exclude 'py_interface/**' $(MUTANTS_ARGS)
+
+mutants-quick:
+	@command -v cargo-mutants >/dev/null 2>&1 || { \
+		printf "$(BOLD)cargo-mutants not installed.$(RESET)\n"; \
+		printf "Install with: $(CYAN)cargo install cargo-mutants$(RESET)\n"; \
+		exit 1; \
+	}
+	@printf "$(GREEN)Running mutation testing on recent changes…$(RESET)\n"
+	$(CARGO) mutants --no-shuffle --exclude 'py_interface/**' --in-diff HEAD~5
+
+mutants-file:
+	@command -v cargo-mutants >/dev/null 2>&1 || { \
+		printf "$(BOLD)cargo-mutants not installed.$(RESET)\n"; \
+		printf "Install with: $(CYAN)cargo install cargo-mutants$(RESET)\n"; \
+		exit 1; \
+	}
+	@test -n "$(FILE)" || { printf "$(RED)Usage: make mutants-file FILE=path/to/file.rs$(RESET)\n"; exit 1; }
+	@printf "$(GREEN)Running mutation testing on $(FILE)…$(RESET)\n"
+	$(CARGO) mutants --no-shuffle --file "$(FILE)"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Quality
@@ -300,6 +344,18 @@ bench:
 	else \
 		$(CARGO) bench --package $(BENCH_PACKAGE) -- $(BENCH_ARGS); \
 	fi
+
+bench-micro:
+	@cargo xtask bench run --group micro
+
+bench-macro:
+	@cargo xtask bench run --group macro
+
+bench-ai:
+	@cargo xtask bench run --group ai
+
+bench-quick:
+	@cargo xtask bench run --group all --profile quick
 
 bench-list:
 	@cargo xtask bench list
@@ -348,10 +404,31 @@ bench-flamegraph:
 	fi
 	@printf "$(GREEN)Flamegraph written to flamegraph.svg$(RESET)\n"
 
+bench-boot:
+	@printf "$(GREEN)Running boot performance benchmark…$(RESET)\n"
+	bash tools/bench/boot_performance.sh
+
+bench-compression-ratio:
+	@printf "$(GREEN)Running compression ratio benchmark…$(RESET)\n"
+	bash tools/bench/compression_ratio.sh
+
+bench-large-scale:
+	@printf "$(GREEN)Running large-scale benchmark…$(RESET)\n"
+	bash tools/bench/large_scale.sh
+
 fuzz:
-	@printf "$(GREEN)Running fuzz targets (60 s each)…$(RESET)\n"
-	cd fuzz && $(CARGO) +nightly fuzz run decompress -- -max_total_time=60
-	cd fuzz && $(CARGO) +nightly fuzz run index_parser -- -max_total_time=60
+	@printf "$(GREEN)Running fuzz targets ($(FUZZ_TIME)s each)…$(RESET)\n"
+	@for target in $(FUZZ_TARGETS); do \
+		printf "$(CYAN)▶ fuzzing $$target$(RESET)\n"; \
+		(cd fuzz && $(CARGO) +nightly fuzz run $$target -- -max_total_time=$(FUZZ_TIME)); \
+	done
+
+fuzz-long:
+	@printf "$(GREEN)Running extended fuzz (600s, all targets)…$(RESET)\n"
+	@for target in decompress_lz4 decompress_zstd header_parse index_parse cdc_chunking encryption_roundtrip decrypt_arbitrary ed25519_verify header_validation master_index_load zstd_dictionary; do \
+		printf "$(CYAN)▶ fuzzing $$target$(RESET)\n"; \
+		(cd fuzz && $(CARGO) +nightly fuzz run $$target -- -max_total_time=600); \
+	done
 
 # ── Profiling ────────────────────────────────────────────────────────────────
 perf-python: develop

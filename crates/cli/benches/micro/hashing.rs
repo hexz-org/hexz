@@ -145,5 +145,11 @@ fn bench_dedup_workflow(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_hashing, bench_dedup_workflow);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(50)
+        .measurement_time(std::time::Duration::from_secs(3));
+    targets = bench_hashing, bench_dedup_workflow
+}
 criterion_main!(benches);

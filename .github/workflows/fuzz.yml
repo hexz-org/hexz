@@ -14,7 +14,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: [decompress, index_parser]
+        target:
+          - decompress_lz4
+          - decompress_zstd
+          - header_parse
+          - index_parse
+          - cdc_chunking
+          - encryption_roundtrip
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly

@@ -228,12 +228,12 @@ fn bench_cache_warmup(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_sequential_iteration,
-    bench_random_access,
-    bench_batch_loading,
-    bench_sample_sizes,
-    bench_cache_warmup
-);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(10)
+        .warm_up_time(std::time::Duration::from_secs(2));
+    targets = bench_sequential_iteration, bench_random_access, bench_batch_loading,
+              bench_sample_sizes, bench_cache_warmup
+}
 criterion_main!(benches);

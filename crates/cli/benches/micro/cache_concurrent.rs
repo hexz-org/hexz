@@ -201,9 +201,11 @@ fn bench_concurrent_read_miss(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_concurrent_read_hit,
-    bench_concurrent_read_miss
-);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(50)
+        .measurement_time(std::time::Duration::from_secs(3));
+    targets = bench_concurrent_read_hit, bench_concurrent_read_miss
+}
 criterion_main!(benches);

@@ -23,3 +23,6 @@ mod thin_snapshot_tests;
 
 #[path = "integration/file_coverage_tests.rs"]
 mod file_coverage_tests;
+
+#[path = "integration/crash_safety_tests.rs"]
+mod crash_safety_tests;

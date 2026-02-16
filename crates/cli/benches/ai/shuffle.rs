@@ -243,12 +243,12 @@ fn bench_shuffle_access_pattern(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_shuffle_scaling,
-    bench_shuffle_components,
-    bench_shuffle_determinism,
-    bench_shuffle_prng_comparison,
-    bench_shuffle_access_pattern
-);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(10)
+        .warm_up_time(std::time::Duration::from_secs(2));
+    targets = bench_shuffle_scaling, bench_shuffle_components, bench_shuffle_determinism,
+              bench_shuffle_prng_comparison, bench_shuffle_access_pattern
+}
 criterion_main!(benches);

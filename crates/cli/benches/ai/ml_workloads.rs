@@ -417,14 +417,13 @@ fn bench_subset_sampling(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_multi_epoch_training,
-    bench_train_val_split,
-    bench_batch_size_scaling,
-    bench_checkpoint_resume,
-    bench_augmentation_pipeline,
-    bench_drop_last_batch,
-    bench_subset_sampling
-);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(10)
+        .warm_up_time(std::time::Duration::from_secs(2));
+    targets = bench_multi_epoch_training, bench_train_val_split, bench_batch_size_scaling,
+              bench_checkpoint_resume, bench_augmentation_pipeline, bench_drop_last_batch,
+              bench_subset_sampling
+}
 criterion_main!(benches);

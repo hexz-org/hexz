@@ -107,5 +107,11 @@ fn bench_scatter_gather_latency(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_scatter_gather_latency);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(50)
+        .measurement_time(std::time::Duration::from_secs(3));
+    targets = bench_scatter_gather_latency
+}
 criterion_main!(benches);

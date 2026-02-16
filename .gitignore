@@ -82,6 +82,15 @@ criterion/
 .criterion/
 tools/perf/results/
 
+# Fuzzing artifacts (corpus seeds are committed, but runtime artifacts are not)
+fuzz/artifacts/
+fuzz/corpus/*
+
+# Mutation testing
+mutants.out/
+mutants.out.old/
+mutants.out*.json
+
 # Documentation builds
 docs/_build/
 site/

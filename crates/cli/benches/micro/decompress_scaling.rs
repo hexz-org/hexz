@@ -141,9 +141,11 @@ fn bench_decompress_scaling_lz4(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_decompress_scaling_zstd,
-    bench_decompress_scaling_lz4
-);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(50)
+        .measurement_time(std::time::Duration::from_secs(3));
+    targets = bench_decompress_scaling_zstd, bench_decompress_scaling_lz4
+}
 criterion_main!(benches);

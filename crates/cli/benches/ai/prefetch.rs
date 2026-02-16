@@ -308,12 +308,12 @@ fn bench_prefetch_hit_rate(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_prefetch_window_sizes,
-    bench_prefetch_strided_access,
-    bench_adaptive_prefetch,
-    bench_prefetch_block_sizes,
-    bench_prefetch_hit_rate
-);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(10)
+        .warm_up_time(std::time::Duration::from_secs(2));
+    targets = bench_prefetch_window_sizes, bench_prefetch_strided_access,
+              bench_adaptive_prefetch, bench_prefetch_block_sizes, bench_prefetch_hit_rate
+}
 criterion_main!(benches);

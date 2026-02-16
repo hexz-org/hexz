@@ -377,6 +377,7 @@ impl SnapshotWriter {
         self.out.seek(SeekFrom::Start(0))?;
         self.out.write_all(&bincode::serialize(&header)?)?;
         self.out.flush()?;
+        self.out.sync_all()?;
 
         Ok(())
     }

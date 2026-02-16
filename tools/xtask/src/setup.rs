@@ -160,7 +160,15 @@ fn install() -> Result<()> {
         .run()?;
 
     cmd(cargo())
-        .args(["install", "cargo-deny", "cargo-fuzz", "maturin", "critcmp"])
+        .args([
+            "install",
+            "cargo-deny",
+            "cargo-fuzz",
+            "maturin",
+            "critcmp",
+            "cargo-mutants",
+            "cargo-nextest",
+        ])
         .run()?;
 
     let root = find_workspace_root()?;
