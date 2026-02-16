@@ -218,9 +218,10 @@ test: test-rust test-python
 test-rust:
 	@printf "$(GREEN)Running Rust tests…$(RESET)\n"
 	@if [ -z "$(TEST_ARGS)" ]; then \
-		$(CARGO) test --workspace -- $(TEST_ARGS); \
+		$(CARGO) test --workspace --lib --bins --tests && \
+		$(CARGO) test --workspace --doc; \
 	else \
-		$(CARGO) test --workspace -- $(TEST_ARGS) 2>&1 | awk '\
+		$(CARGO) test --workspace --lib --bins --tests -- $(TEST_ARGS) 2>&1 | awk '\
 /^[[:space:]]+Running/ { \
 	if (buf != "") { if (!skip) printf "%s", buf; buf = "" } \
 	skip = 0; buf = $$0 "\n"; next \
@@ -232,7 +233,7 @@ END { if (buf != "" && !skip) printf "%s", buf }'; \
 
 test-python:
 	@printf "$(GREEN)Running Python tests…$(RESET)\n"
-	cd $(LOADER_CRATE) && $(MATURIN) develop -E test,numpy && ../../$(PYTHON) -m pytest tests/ -v $(if $(TEST_ARGS),-k "$(TEST_ARGS)",)
+	VIRTUAL_ENV=$(CURDIR)/.venv $(MATURIN) develop --manifest-path $(LOADER_CRATE)/Cargo.toml -E test,numpy && $(PYTHON) -m pytest $(LOADER_CRATE)/tests/ -v $(if $(TEST_ARGS),-k "$(TEST_ARGS)",)
 
 test-integration:
 	@printf "$(GREEN)Running integration tests…$(RESET)\n"

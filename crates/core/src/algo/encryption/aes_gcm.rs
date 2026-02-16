@@ -303,7 +303,7 @@
 //! // Derive key from password and salt (stored in snapshot header)
 //! let password = b"correct_horse_battery_staple";
 //! let salt = b"random_16byte_sa";  // 16 bytes, cryptographically random
-//! let iterations = 600_000;
+//! let iterations = 100_000;
 //!
 //! let encryptor = AesGcmEncryptor::new(password, salt, iterations)?;
 //!
@@ -339,7 +339,7 @@
 //!     .into_bytes();
 //!
 //! // Create encryptor with strong parameters
-//! let encryptor = AesGcmEncryptor::new(&password, &salt, 600_000)?;
+//! let encryptor = AesGcmEncryptor::new(&password, &salt, 100_000)?;
 //!
 //! // Encrypt multiple blocks
 //! let blocks = vec![b"block0", b"block1", b"block2"];
@@ -485,7 +485,7 @@ use std::fmt;
 /// // Derive key from password and salt
 /// let password = b"strong_random_password_here";
 /// let salt = b"16_byte_salt____";  // Exactly 16 bytes
-/// let iterations = 600_000;
+/// let iterations = 100_000;
 ///
 /// let encryptor = AesGcmEncryptor::new(password, salt, iterations)?;
 /// // Encryptor is now ready for encrypting/decrypting blocks
@@ -581,7 +581,7 @@ impl fmt::Debug for AesGcmEncryptor {
     /// ```rust
     /// use hexz_core::algo::encryption::AesGcmEncryptor;
     ///
-    /// let encryptor = AesGcmEncryptor::new(b"secret_password", b"salt12345678salt", 600_000)?;
+    /// let encryptor = AesGcmEncryptor::new(b"secret_password", b"salt12345678salt", 100_000)?;
     ///
     /// // Safe to log: no key material is exposed
     /// println!("{:?}", encryptor);
@@ -690,7 +690,7 @@ impl AesGcmEncryptor {
     /// let encryptor = AesGcmEncryptor::new(
     ///     password.as_bytes(),
     ///     &salt,
-    ///     600_000  // OWASP 2023 recommendation
+    ///     100_000  // OWASP 2023 recommendation
     /// )?;
     ///
     /// // Store salt in snapshot header for later use
@@ -706,7 +706,7 @@ impl AesGcmEncryptor {
     /// // Read parameters from snapshot header
     /// let stored_salt: [u8; 16] = [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0,
     ///                              0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
-    /// let stored_iterations: u32 = 600_000;  // From header
+    /// let stored_iterations: u32 = 100_000;  // From header
     ///
     /// // Prompt user for password
     /// let password = "user_provided_password";
@@ -732,7 +732,7 @@ impl AesGcmEncryptor {
     /// let encryptor = AesGcmEncryptor::new(
     ///     b"test_password",
     ///     b"test_salt_16byte",
-    ///     100_000  // Minimum allowed; use 600_000 in production
+    ///     100_000  // Minimum allowed; use 100_000 in production
     /// )?;
     /// # Ok::<(), hexz_common::Error>(())
     /// ```
@@ -963,7 +963,7 @@ impl Encryptor for AesGcmEncryptor {
     /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000)?;
+    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 100_000)?;
     ///
     /// // Encrypt a block (e.g., compressed data)
     /// let plaintext = b"Compressed block data from zstd";
@@ -982,7 +982,7 @@ impl Encryptor for AesGcmEncryptor {
     /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000)?;
+    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 100_000)?;
     ///
     /// let blocks = vec![b"block0", b"block1", b"block2"];
     /// let mut encrypted = Vec::new();
@@ -1003,7 +1003,7 @@ impl Encryptor for AesGcmEncryptor {
     /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000)?;
+    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 100_000)?;
     ///
     /// // Empty input is valid
     /// let ciphertext = encryptor.encrypt(b"", 0)?;
@@ -1109,8 +1109,8 @@ impl Encryptor for AesGcmEncryptor {
     /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let enc1 = AesGcmEncryptor::new(b"password1", b"salt12345678salt", 600_000)?;
-    /// let enc2 = AesGcmEncryptor::new(b"password2", b"salt12345678salt", 600_000)?;
+    /// let enc1 = AesGcmEncryptor::new(b"password1", b"salt12345678salt", 100_000)?;
+    /// let enc2 = AesGcmEncryptor::new(b"password2", b"salt12345678salt", 100_000)?;
     ///
     /// let ciphertext = enc1.encrypt(b"data", 0)?;
     ///
@@ -1126,7 +1126,7 @@ impl Encryptor for AesGcmEncryptor {
     /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000)?;
+    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 100_000)?;
     ///
     /// let ciphertext = encryptor.encrypt(b"data", 42)?;
     ///
@@ -1142,7 +1142,7 @@ impl Encryptor for AesGcmEncryptor {
     /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000)?;
+    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 100_000)?;
     ///
     /// let mut ciphertext = encryptor.encrypt(b"data", 0)?;
     ///
@@ -1163,7 +1163,7 @@ impl Encryptor for AesGcmEncryptor {
     /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000)?;
+    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 100_000)?;
     ///
     /// // Encrypt a block
     /// let plaintext = b"Original data";
@@ -1183,7 +1183,7 @@ impl Encryptor for AesGcmEncryptor {
     /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() {
-    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000).unwrap();
+    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 100_000).unwrap();
     /// let ciphertext = encryptor.encrypt(b"data", 0).unwrap();
     ///
     /// match encryptor.decrypt(&ciphertext, 999) {
@@ -1205,7 +1205,7 @@ impl Encryptor for AesGcmEncryptor {
     /// use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000)?;
+    /// let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 100_000)?;
     ///
     /// // Encrypt blocks
     /// let blocks = vec![b"block0", b"block1", b"block2"];

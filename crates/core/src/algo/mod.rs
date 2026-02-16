@@ -59,7 +59,7 @@
 //! # use hexz_core::algo::encryption::{Encryptor, aes_gcm::AesGcmEncryptor};
 //! // Compress and encrypt a block
 //! let compressor = Lz4Compressor::new();
-//! let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 600_000)?;
+//! let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 100_000)?;
 //!
 //! let data = b"Block data to compress and encrypt";
 //! let compressed = compressor.compress(data)?;

@@ -153,43 +153,77 @@ fn check_fuse() -> bool {
 fn install() -> Result<()> {
     check()?;
 
-    println!("{GREEN}Installing development tools\u{2026}{RESET}");
+    let root = find_workspace_root()?;
 
+    // ── Rust components ──────────────────────────────────────────────────
+    println!("{GREEN}Installing Rust components\u{2026}{RESET}");
     cmd("rustup")
         .args(["component", "add", "rustfmt", "clippy"])
         .run()?;
 
-    cmd(cargo())
-        .args([
-            "install",
-            "cargo-deny",
-            "cargo-fuzz",
-            "maturin",
-            "critcmp",
-            "cargo-mutants",
-            "cargo-nextest",
-        ])
-        .run()?;
+    // Install each cargo tool individually so a single yanked-dep
+    // failure doesn't block the rest.
+    let tools = [
+        "cargo-deny",
+        "cargo-fuzz",
+        "maturin",
+        "critcmp",
+        "cargo-mutants",
+        "cargo-nextest",
+    ];
+    let mut failed = Vec::new();
+    for tool in tools {
+        print!("  {tool} ");
+        let ok = cmd(cargo())
+            .args(["install", tool])
+            .run_with_status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if ok {
+            println!("{}", check_mark(true));
+        } else {
+            println!("{}", check_mark(false));
+            failed.push(tool);
+        }
+    }
+    if !failed.is_empty() {
+        println!(
+            "\n{BOLD}Warning:{RESET} failed to install: {}",
+            failed.join(", ")
+        );
+        println!("These may have yanked dependencies; try again later or install manually.\n");
+    }
 
-    let root = find_workspace_root()?;
+    // ── Python venv ──────────────────────────────────────────────────────
     let venv = root.join(".venv");
     if !venv.exists() {
         println!("{GREEN}Creating Python venv\u{2026}{RESET}");
-        let status = cmd("python3")
+        let ok = cmd("python3")
             .args(["-m", "venv"])
             .arg(&venv)
-            .run_with_status();
-        if status.map(|s| s.success()).unwrap_or(false) {
-            // ok
-        } else {
+            .run_with_status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !ok {
             cmd("python").args(["-m", "venv"]).arg(&venv).run()?;
         }
     }
 
-    let req_file = root.join("docs/requirements.txt");
-    if req_file.exists() {
-        let pip = venv.join("bin/pip");
-        if pip.exists() {
+    let pip = venv.join("bin/pip");
+    if pip.exists() {
+        // Install loader with dev/test extras
+        let loader = root.join("crates/loader");
+        if loader.join("pyproject.toml").exists() {
+            println!("{GREEN}Installing Python dev dependencies\u{2026}{RESET}");
+            cmd(pip.to_str().unwrap())
+                .args(["install", "-q", "-e"])
+                .arg(format!("{}[dev,test,numpy]", loader.display()))
+                .run()?;
+        }
+
+        // Docs requirements (if present)
+        let req_file = root.join("docs/requirements.txt");
+        if req_file.exists() {
             let _ = cmd(pip.to_str().unwrap())
                 .args(["install", "-q", "-r"])
                 .arg(req_file.to_str().unwrap())

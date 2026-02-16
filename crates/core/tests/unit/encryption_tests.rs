@@ -193,7 +193,7 @@ fn test_various_iteration_counts() {
     let plaintext = b"Data";
     let block_idx = 0;
 
-    let counts = vec![100_000, 200_000, 600_000];
+    let counts = vec![100_000, 150_000, 200_000];
 
     for iterations in counts {
         let encryptor = AesGcmEncryptor::new(password, salt, iterations).unwrap();

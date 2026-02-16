@@ -67,7 +67,10 @@ fn test_crash_empty_file() {
     let temp_dir = TempDir::new().unwrap();
     let path = temp_dir.path().join("empty.hxz");
     fs::write(&path, &[]).unwrap();
-    assert!(try_open_snapshot(&path).is_err(), "empty file should be rejected");
+    assert!(
+        try_open_snapshot(&path).is_err(),
+        "empty file should be rejected"
+    );
 }
 
 #[test]
@@ -76,7 +79,10 @@ fn test_crash_zeroed_header_only() {
     let path = temp_dir.path().join("zeroed.hxz");
     // Simulate: process crashed right after reserving header space
     fs::write(&path, &[0u8; HEADER_SIZE]).unwrap();
-    assert!(try_open_snapshot(&path).is_err(), "zeroed header should be rejected");
+    assert!(
+        try_open_snapshot(&path).is_err(),
+        "zeroed header should be rejected"
+    );
 }
 
 // ── Truncated at various stages ─────────────────────────────────────────────
@@ -87,7 +93,10 @@ fn test_crash_truncated_mid_header() {
     let path = temp_dir.path().join("truncated_header.hxz");
     // File shorter than HEADER_SIZE — simulates crash during initial header reserve
     fs::write(&path, &[0u8; 100]).unwrap();
-    assert!(try_open_snapshot(&path).is_err(), "truncated header should be rejected");
+    assert!(
+        try_open_snapshot(&path).is_err(),
+        "truncated header should be rejected"
+    );
 }
 
 #[test]
