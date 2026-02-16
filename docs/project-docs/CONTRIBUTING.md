@@ -121,7 +121,7 @@ make test-python
 Requires Linux and QEMU. From repo root:
 
 ```bash
-./scripts/test_vm_boot.sh
+cargo xtask vm-test
 ```
 
 ---
@@ -164,7 +164,7 @@ Before submitting to dev:
 1. **Core logic** goes in `crates/core/` (file format, compression, algorithms)
 2. **Python bindings** go in `crates/loader/` (PyO3 wrappers)
 3. **CLI commands** go in `crates/cli/src/commands/`
-4. **Examples** should be self-contained in `examples/<name>/`
+4. **Examples** should be self-contained in `examples/`
 
 ### Writing Tests
 - Unit tests go in the same file as the code (Rust convention)

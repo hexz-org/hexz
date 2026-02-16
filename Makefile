@@ -12,23 +12,11 @@ SHELL           := /bin/bash
 # ── Paths & tools ─────────────────────────────────────────────────────────────
 LOADER_CRATE    := crates/loader
 BENCH_PACKAGE   := hexz
-CRITERION_DIR   := target/criterion
-BENCH_STORE_DIR := .criterion
-BENCH_CMP_TMP   := _cmp
 
 MATURIN         ?= maturin
 CARGO           ?= cargo
 RUFF            := $(shell [ -f .venv/bin/ruff ] && echo .venv/bin/ruff || echo ruff)
 PYTHON          ?= $(shell [ -f .venv/bin/python3 ] && echo .venv/bin/python3 || ([ -f .venv/bin/python ] && echo .venv/bin/python || echo python3))
-MKDOCS          := $(shell [ -f .venv/bin/mkdocs ] && echo .venv/bin/mkdocs || echo mkdocs)
-
-# ── Cross-compilation (pre-release) ──────────────────────────────────────
-CROSS_AARCH64       := aarch64-unknown-linux-gnu
-CROSS_WINDOWS       := x86_64-pc-windows-gnu
-AARCH64_CLI_FEAT    := server,compression-zstd,encryption,diagnostics,signing,s3
-WINDOWS_CLI_FEAT    := compression-zstd,encryption,diagnostics,signing,s3
-AARCH64_LINKER      := aarch64-linux-gnu-gcc
-WINDOWS_LINKER      := x86_64-w64-mingw32-gcc
 
 # ── Feature flags ─────────────────────────────────────────────────────────────
 #  Override with: make develop FEATURES=full
@@ -56,9 +44,7 @@ ifneq (,$(filter run,$(firstword $(MAKECMDGOALS))))
   $(foreach a,$(RUN_ARGS),$(eval $a:;@:))
 endif
 
-# ── Baseline args ────────────────────────────────────────────────────────────
-#  save/archive/restore-baseline <name>;  compare-baseline <a> <b>
-#  bench-compare <archived> [filter]  (filter = substring of bench name, e.g. cache)
+# ── Baseline / benchmark-compare args ────────────────────────────────────────
 ifneq (,$(filter save-baseline archive-baseline restore-baseline,$(firstword $(MAKECMDGOALS))))
   BASELINE_NAME := $(word 2,$(MAKECMDGOALS))
   $(eval $(BASELINE_NAME):;@:)
@@ -75,6 +61,9 @@ ifneq (,$(filter compare-baseline,$(firstword $(MAKECMDGOALS))))
   $(eval $(BASE_OLD):;@:)
   $(eval $(BASE_NEW):;@:)
 endif
+
+# ── Profiling size ────────────────────────────────────────────────────────────
+PERF_SIZE_MB    ?= 256
 
 # ── Colors (only when stdout is a terminal) ───────────────────────────────────
 ifneq ($(TERM),)
@@ -98,7 +87,7 @@ endif
 .PHONY: bench bench-list bench-compare save-baseline archive-baseline restore-baseline compare-baseline bench-flamegraph fuzz
 .PHONY: perf-python perf-rust perf-clean
 .PHONY: bench-competitors bench-competitors-small
-.PHONY: docker-dev docker-bench docs docs-python setup setup-check setup-cross ci
+.PHONY: docker-dev docker-bench docs docs-serve setup setup-check setup-cross ci
 .PHONY: pre-release _version-check _cross-aarch64 _cross-windows _wheel-check
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -141,7 +130,7 @@ help:
 	@printf "    %-$(HELP_W)s  Benchmark vs competitors (WebDataset, HDF5, full dataset)\n" "make bench-competitors"
 	@printf "    %-$(HELP_W)s  Quick competitor benchmark (1K images, ~2 min)\n" "make bench-competitors-small"
 	@printf "    %-$(HELP_W)s  Save current run as baseline\n" "make save-baseline <name>"
-	@printf "    %-$(HELP_W)s  Archive baseline to $(BENCH_STORE_DIR)/\n" "make archive-baseline <name>"
+	@printf "    %-$(HELP_W)s  Archive baseline to .criterion/\n" "make archive-baseline <name>"
 	@printf "    %-$(HELP_W)s  Restore baseline from archive\n" "make restore-baseline <name>"
 	@printf "    %-$(HELP_W)s  Compare two archived baselines (critcmp)\n" "make compare-baseline <a> <b>"
 	@printf "    %-$(HELP_W)s  Generate flamegraph SVG from benchmarks\n" "make bench-flamegraph [filter]"
@@ -234,53 +223,19 @@ test-integration:
 	$(CARGO) test --workspace -- --ignored
 
 test-list:
-	@TMP=$$(mktemp); \
-	$(CARGO) test --workspace -- --list > "$$TMP" 2>/dev/null; \
-	printf "$(GREEN)Rust test categories (use with make test <category>)…$(RESET)\n\n"; \
-	sed -n 's/: test$$//p' "$$TMP" | grep '::' | cut -d: -f1 | sort -u; \
-	rm -f "$$TMP"
+	@cargo xtask test list
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Coverage
 # ═══════════════════════════════════════════════════════════════════════════════
 test-cov:
-	@printf "$(GREEN)Generating coverage reports…$(RESET)\n"
-	@printf "$(CYAN)[1/2] Running Rust tests (may take a moment)…$(RESET)\n"
-	@command -v cargo-llvm-cov >/dev/null 2>&1 || { \
-		printf "$(CYAN)Installing cargo-llvm-cov…$(RESET)\n"; \
-		$(CARGO) install cargo-llvm-cov; \
-	}
-	@$(CARGO) llvm-cov --workspace --ignore-filename-regex '(tests/|benches/|py_interface/|cmd/vm/boot\.rs|cmd/vm/install\.rs|cmd/vm/unmount\.rs|cmd/sys/serve\.rs|loader/src/lib\.rs|tensor/numpy\.rs)' --color=always 2>&1 | \
-		awk '/^Filename/,0' | grep -v "^info:\|^  -->\|^   Compiling\|^    Finished\|^     Running" || true
-	@printf "\n$(CYAN)[2/2] Running Python tests (may take a moment)…$(RESET)\n"
-	@cd $(LOADER_CRATE) && \
-		$(MATURIN) develop -q -E test,numpy >/dev/null 2>&1 && \
-		../../$(PYTHON) -m pytest tests/ --cov=python/hexz --cov-report=term-missing --tb=no --color=yes -q -p no:warnings 2>&1 | \
-		sed '/^Requirement already satisfied/d; /^Collecting/d; /^Downloading/d; /^Installing/d; /^Successfully installed/d; /✏️/d; /^Ignoring/d; /^warnings summary/,/^-- Docs:/d' | \
-		awk 'BEGIN{in_cov=0} /^Name/ {in_cov=1} in_cov {print} /^TOTAL/ {in_cov=0; print ""; next} /passed|failed|error|skipped/ && !in_cov {print}'
-	@printf "\n$(GREEN)✓ Coverage complete$(RESET)\n"
-	@printf "$(CYAN)Note: PyO3 bindings (py_interface/) tested via Python integration tests$(RESET)\n"
+	@cargo xtask coverage all
 
 test-cov-rust:
-	@printf "$(GREEN)Generating Rust coverage report…$(RESET)\n"
-	@printf "$(CYAN)Running Rust tests (may take a moment)…$(RESET)\n"
-	@command -v cargo-llvm-cov >/dev/null 2>&1 || { \
-		printf "$(CYAN)Installing cargo-llvm-cov…$(RESET)\n"; \
-		$(CARGO) install cargo-llvm-cov; \
-	}
-	@$(CARGO) llvm-cov --workspace --ignore-filename-regex '(tests/|benches/|py_interface/|cmd/vm/boot\.rs|cmd/vm/install\.rs|cmd/vm/unmount\.rs|cmd/sys/serve\.rs|loader/src/lib\.rs|tensor/numpy\.rs)' --color=always 2>&1 | \
-		awk '/^Filename/,0' | grep -v "^info:\|^  -->\|^   Compiling\|^    Finished\|^     Running" || true
+	@cargo xtask coverage rust
 
 test-cov-python:
-	@printf "$(GREEN)Generating Python coverage report…$(RESET)\n"
-	@printf "$(CYAN)Building Python extension (may take a moment)…$(RESET)\n"
-	@cd $(LOADER_CRATE) && \
-		$(MATURIN) develop -q -E test,numpy >/dev/null 2>&1
-	@printf "$(CYAN)Running Python tests (may take a moment)…$(RESET)\n"
-	@cd $(LOADER_CRATE) && \
-		../../$(PYTHON) -m pytest tests/ --cov=python/hexz --cov-report=term-missing --tb=no --color=yes -q -p no:warnings 2>&1 | \
-		sed '/^Requirement already satisfied/d; /^Collecting/d; /^Downloading/d; /^Installing/d; /^Successfully installed/d; /✏️/d; /^Ignoring/d; /^warnings summary/,/^-- Docs:/d' | \
-		awk 'BEGIN{in_cov=0} /^Name/ {in_cov=1} in_cov {print} /^TOTAL/ {in_cov=0; print ""; next} /passed|failed|error|skipped/ && !in_cov {print}'
+	@cargo xtask coverage python
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Mutation Testing
@@ -288,28 +243,6 @@ test-cov-python:
 # Mutation testing inserts small changes (mutants) into your code to verify that
 # tests catch them. If a mutant survives (tests still pass), it indicates missing
 # or weak test coverage for that code path.
-#
-# Common mutants include:
-#   - Replacing == with !=, < with <=, + with -, etc.
-#   - Removing return values or replacing them with defaults
-#   - Skipping function bodies
-#
-# Output interpretation:
-#   - CAUGHT: Test failed on mutant (good - tests detected the change)
-#   - MISSED: Test passed on mutant (bad - tests didn't detect the change)
-#   - TIMEOUT: Mutant caused infinite loop or very slow execution
-#   - UNVIABLE: Mutant didn't compile (expected for type-safe mutations)
-#
-# Having some missed mutants is normal and acceptable:
-#   - Defensive code (redundant checks) may have missed mutants
-#   - Logging/debug code mutations often aren't caught
-#   - Error messages/formatting changes don't affect behavior
-#   - Some mutations create semantically equivalent code
-#
-# For Python-tested code (py_interface/, loader bindings):
-#   cargo-mutants only runs Rust tests, so it will show many missed mutants
-#   in PyO3 bindings that are actually tested via Python integration tests.
-#   This is expected and acceptable - focus on core algorithm code instead.
 #
 # Usage:
 #   make mutants              # Run on all workspace (slow, ~30-60 min)
@@ -325,9 +258,6 @@ mutants:
 		exit 1; \
 	}
 	@printf "$(GREEN)Running mutation testing…$(RESET)\n"
-	@printf "$(CYAN)This may take 30-60 minutes for full workspace.$(RESET)\n"
-	@printf "$(CYAN)Use MUTANTS_ARGS to filter (see make help for examples).$(RESET)\n"
-	@printf "$(CYAN)Excluding: py_interface/ (tested via Python integration tests)$(RESET)\n"
 	$(CARGO) mutants --no-shuffle --exclude 'py_interface/**' $(MUTANTS_ARGS)
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -372,103 +302,35 @@ bench:
 	fi
 
 bench-list:
-	@BENCH_DIR=""; \
-	if [ -d "$(CRITERION_DIR)" ]; then BENCH_DIR="$(CRITERION_DIR)"; \
-	elif [ -d "$(BENCH_STORE_DIR)" ]; then for d in $(BENCH_STORE_DIR)/*/; do [ -d "$$d" ] && BENCH_DIR="$$d" && break; done; fi; \
-	if [ -z "$$BENCH_DIR" ]; then \
-	  printf "$(BOLD)No criterion data. Run 'make bench' or have a baseline in $(BENCH_STORE_DIR)/$(RESET)\n"; exit 1; \
-	fi; \
-	printf "$(GREEN)Benchmark categories (use with make bench <category> or bench-compare <baseline> <category>)…$(RESET)\n\n"; \
-	find "$$BENCH_DIR" -name 'benchmark.json' 2>/dev/null | sed "s|$$BENCH_DIR/||;s|/[^/]*/benchmark.json||" | cut -d/ -f1 | sort -u
+	@cargo xtask bench list
 
 save-baseline:
-	@if [ -z "$(BASELINE_NAME)" ]; then \
-		echo "$(BOLD)Usage:$(RESET) make save-baseline <name>"; \
-		exit 1; \
-	fi
-	@printf "$(GREEN)Running benchmarks and saving baseline '$(BASELINE_NAME)'…$(RESET)\n"
-	$(CARGO) bench -p $(BENCH_PACKAGE) -- --save-baseline $(BASELINE_NAME)
+	@cargo xtask baseline save $(BASELINE_NAME)
 
 archive-baseline:
-	@if [ -z "$(BASELINE_NAME)" ]; then \
-		echo "$(BOLD)Usage:$(RESET) make archive-baseline <name>"; \
-		exit 1; \
-	fi
-	@printf "$(GREEN)Archiving baseline to $(BENCH_STORE_DIR)/$(BASELINE_NAME)...$(RESET)\n"
-	@mkdir -p $(BENCH_STORE_DIR)/$(BASELINE_NAME)
-	@if [ -d "$(CRITERION_DIR)" ]; then \
-		cp -r $(CRITERION_DIR)/* $(BENCH_STORE_DIR)/$(BASELINE_NAME)/; \
-		printf "$(CYAN)Baseline '$(BASELINE_NAME)' archived to $(BENCH_STORE_DIR)/$(BASELINE_NAME).$(RESET)\n"; \
-	else \
-		echo "$(BOLD)Error:$(RESET) No criterion directory found at $(CRITERION_DIR). Run 'make save-baseline <name>' first."; \
-		exit 1; \
-	fi
+	@cargo xtask baseline archive $(BASELINE_NAME)
 
 restore-baseline:
-	@if [ -z "$(BASELINE_NAME)" ]; then \
-		echo "$(BOLD)Usage:$(RESET) make restore-baseline <name>"; \
-		exit 1; \
-	fi
-	@printf "$(GREEN)Restoring baseline '$(BASELINE_NAME)' from archive...$(RESET)\n"
-	@if [ -d "$(BENCH_STORE_DIR)/$(BASELINE_NAME)" ]; then \
-		rm -rf $(CRITERION_DIR); \
-		mkdir -p $(CRITERION_DIR); \
-		cp -r $(BENCH_STORE_DIR)/$(BASELINE_NAME)/* $(CRITERION_DIR)/; \
-		printf "$(CYAN)Baseline '$(BASELINE_NAME)' restored to $(CRITERION_DIR).$(RESET)\n"; \
-	else \
-		echo "$(BOLD)Error:$(RESET) Baseline archive '$(BASELINE_NAME)' not found in $(BENCH_STORE_DIR)."; \
-		exit 1; \
-	fi
+	@cargo xtask baseline restore $(BASELINE_NAME)
 
 compare-baseline:
-	@if [ -z "$(BASE_OLD)" ] || [ -z "$(BASE_NEW)" ]; then \
-		echo "$(BOLD)Usage:$(RESET) make compare-baseline <old> <new>"; \
-		exit 1; \
-	fi
-	@command -v critcmp >/dev/null 2>&1 || { echo "$(BOLD)Error:$(RESET) critcmp not found. Install with 'cargo install critcmp'."; exit 1; }
-	@printf "$(GREEN)Preparing to compare '$(BASE_OLD)' vs '$(BASE_NEW)'...$(RESET)\n"
-	@mkdir -p $(CRITERION_DIR)
-	@if [ -d "$(BENCH_STORE_DIR)/$(BASE_OLD)" ]; then \
-		cp -rn $(BENCH_STORE_DIR)/$(BASE_OLD)/* $(CRITERION_DIR)/ 2>/dev/null || true; \
-	fi
-	@if [ -d "$(BENCH_STORE_DIR)/$(BASE_NEW)" ]; then \
-		cp -rn $(BENCH_STORE_DIR)/$(BASE_NEW)/* $(CRITERION_DIR)/ 2>/dev/null || true; \
-	fi
-	@printf "$(GREEN)Running critcmp...$(RESET)\n"
-	critcmp $(BASE_OLD) $(BASE_NEW)
+	@cargo xtask baseline compare $(BASE_OLD) $(BASE_NEW)
 
-# Run current benchmarks (optionally filtered), then compare to an archived baseline.
-#  make bench-compare v0.1.0-alpha         →  all benches, then critcmp
-#  make bench-compare v0.1.0-alpha cache   →  only benches matching "cache", then critcmp
 bench-compare:
-	@if [ -z "$(BENCH_CMP_ARCHIVED)" ]; then \
-		printf "$(BOLD)Usage:$(RESET) make bench-compare <archived> [filter]\n"; \
-		printf "  Run benchmarks (optional filter, e.g. cache) then compare to archived baseline.\n"; \
-		exit 1; \
-	fi
-	@command -v critcmp >/dev/null 2>&1 || { printf "$(BOLD)Error:$(RESET) critcmp not found. Install with 'cargo install critcmp'.\n"; exit 1; }
-	@if [ ! -d "$(BENCH_STORE_DIR)/$(BENCH_CMP_ARCHIVED)" ]; then \
-		printf "$(BOLD)Error:$(RESET) Baseline '$(BENCH_CMP_ARCHIVED)' not found in $(BENCH_STORE_DIR)/\n"; \
-		exit 1; \
-	fi
-	@printf "$(GREEN)Running benchmarks$(if $(BENCH_CMP_FILTER), matching '$(BENCH_CMP_FILTER)') (saving as $(BENCH_CMP_TMP))…$(RESET)\n"
-	$(CARGO) bench --package $(BENCH_PACKAGE) $(BENCH_CMP_FILTER) -- --save-baseline $(BENCH_CMP_TMP)
-	@printf "$(GREEN)Comparing to archived baseline '$(BENCH_CMP_ARCHIVED)'…$(RESET)\n"
-	@mkdir -p $(CRITERION_DIR) && cp -rn $(BENCH_STORE_DIR)/$(BENCH_CMP_ARCHIVED)/* $(CRITERION_DIR)/ 2>/dev/null || true
-	critcmp $(BENCH_CMP_ARCHIVED) $(BENCH_CMP_TMP)$(if $(BENCH_CMP_FILTER), -f '$(BENCH_CMP_FILTER)',)
+	@cargo xtask baseline bench-compare $(BENCH_CMP_ARCHIVED) $(BENCH_CMP_FILTER)
 
 bench-competitors:
 	@printf "$(GREEN)Running competitor benchmarks (WebDataset, HDF5, Local Files)…$(RESET)\n"
 	@printf "$(CYAN)This will take 30-60 minutes with full dataset (50K images, ~6.3GB)$(RESET)\n"
 	@command -v $(PYTHON) >/dev/null 2>&1 || (echo "Error: Python not found" && exit 1)
 	@$(PYTHON) -c "import webdataset" 2>/dev/null || (echo "Error: Install dependencies: pip install -r benchmarks/requirements-competitors.txt" && exit 1)
-	@bash benchmarks/run_all_benchmarks.sh
+	@$(PYTHON) benchmarks/run_benchmarks.py
 	@printf "$(GREEN)Benchmark results: benchmarks/results/COMPARISON.md$(RESET)\n"
 
 bench-competitors-small:
 	@printf "$(GREEN)Running competitor benchmarks (small test dataset)…$(RESET)\n"
 	@printf "$(CYAN)Using 1000 images (~130MB) for quick testing$(RESET)\n"
-	@bash benchmarks/run_all_benchmarks.sh --small
+	@$(PYTHON) benchmarks/run_benchmarks.py --quick
 	@printf "$(GREEN)Benchmark results: benchmarks/results/COMPARISON.md$(RESET)\n"
 
 bench-flamegraph:
@@ -492,49 +354,21 @@ fuzz:
 	cd fuzz && $(CARGO) +nightly fuzz run index_parser -- -max_total_time=60
 
 # ── Profiling ────────────────────────────────────────────────────────────────
-#  Flame-graph profiling of real workloads via samply (Rust-based profiler).
-#  Opens Firefox Profiler in the browser — no perf script, no hanging.
-#
-#  Tool: samply (cargo install samply)
-#  Requires: sudo sysctl kernel.perf_event_paranoid=1  (one-time)
-#
-#  Tune workload size:
-#    make perf PERF_SIZE_MB=512
-#    make perf-python HEXZ_PERF_SAMPLES=50000 HEXZ_PERF_EPOCHS=5
-PERF_SIZE_MB    ?= 256
-
-define _samply_check
+perf-python: develop
 	@command -v samply >/dev/null 2>&1 || { \
 		printf "$(BOLD)samply not found.$(RESET)\n"; \
 		printf "Install with: $(CYAN)cargo install samply$(RESET)\n"; \
 		exit 1; \
 	}
-endef
-
-perf-python: develop
-	$(call _samply_check)
 	@printf "$(GREEN)Profiling Python ML workload (samply)…$(RESET)\n"
-	samply record -- $(PYTHON) perf/ml_workload.py
+	samply record -- $(PYTHON) tools/perf/ml_workload.py
 	@printf "\n$(CYAN)Tip: type $(BOLD)hexz$(RESET)$(CYAN) in the search box to highlight only hexz frames$(RESET)\n"
 
 perf-rust:
-	$(call _samply_check)
-	@printf "$(GREEN)Building Rust CLI (release + frame pointers)…$(RESET)\n"
-	RUSTFLAGS="-C force-frame-pointers=yes" $(CARGO) build --release --package hexz-cli
-	@printf "$(GREEN)Generating $(PERF_SIZE_MB)MB of test data…$(RESET)\n"
-	@mkdir -p /tmp/hexz_perf
-	@dd if=/dev/urandom of=/tmp/hexz_perf/test.bin bs=1M count=$(PERF_SIZE_MB) 2>/dev/null
-	@printf "$(GREEN)Profiling hexz data pack (samply, $(PERF_SIZE_MB)MB)…$(RESET)\n"
-	samply record -- ./target/release/hexz data pack \
-		--disk /tmp/hexz_perf/test.bin \
-		--output /tmp/hexz_perf/output.hxz \
-		--silent
-	@rm -rf /tmp/hexz_perf
-	@printf "\n$(CYAN)Tip: type $(BOLD)hexz$(RESET)$(CYAN) in the search box to highlight only hexz frames$(RESET)\n"
+	@cargo xtask perf rust --size-mb $(PERF_SIZE_MB)
 
 perf-clean:
-	@printf "$(GREEN)Cleaning profiling artifacts…$(RESET)\n"
-	rm -rf perf/results /tmp/hexz_perf
+	@cargo xtask perf clean
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Infrastructure
@@ -548,64 +382,20 @@ docker-bench:
 	docker build -f docker/bench.Dockerfile -t hexz-bench .
 
 docs:
-	@printf "$(GREEN)Building Rust docs…$(RESET)\n"
-	$(CARGO) doc --workspace --no-deps --document-private-items
-	@printf "$(GREEN)Building MkDocs (Guides & Python API)…$(RESET)\n"
-	@command -v $(MKDOCS) >/dev/null 2>&1 || (echo "Install mkdocs: $(PYTHON) -m pip install -r docs/requirements.txt" && exit 1)
-	$(MKDOCS) build
-	@printf "$(GREEN)Stitching Rust docs into main site…$(RESET)\n"
-	@mkdir -p site/rust
-	cp -r target/doc/* site/rust/
-	@printf "$(GREEN)Done! Site built in site/$(RESET)\n"
+	@cargo xtask docs
 
 docs-serve: docs
 	@printf "$(GREEN)Serving unified documentation on port 8000…$(RESET)\n"
 	$(PYTHON) -m http.server 8000 -d site
 
-# Check required system packages; exit with clear install instructions if missing
 setup-check:
-	@MISSING=""; \
-	command -v rustup >/dev/null 2>&1 || MISSING="$${MISSING:+$$MISSING }rustup (Rust toolchain)"; \
-	command -v cargo >/dev/null 2>&1 || MISSING="$${MISSING:+$$MISSING }cargo"; \
-	command -v pkg-config >/dev/null 2>&1 || MISSING="$${MISSING:+$$MISSING }pkg-config"; \
-	command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 || MISSING="$${MISSING:+$$MISSING }python3"; \
-	\
-	FUSE_OK=""; \
-	if pkg-config --exists fuse 2>/dev/null; then FUSE_OK=1; fi; \
-	if [ -z "$$FUSE_OK" ] && [ "$$(uname)" = "Linux" ]; then \
-	  if command -v dpkg >/dev/null 2>&1 && dpkg -s libfuse-dev >/dev/null 2>&1; then FUSE_OK=1; fi; \
-	  if command -v pacman >/dev/null 2>&1 && pacman -Q fuse2 >/dev/null 2>&1; then FUSE_OK=1; fi; \
-	  if command -v pacman >/dev/null 2>&1 && pacman -Q fuse3 >/dev/null 2>&1; then FUSE_OK=1; fi; \
-	fi; \
-	if [ -z "$$FUSE_OK" ] && [ "$$(uname)" = "Darwin" ]; then \
-	  command -v brew >/dev/null 2>&1 && brew list macfuse >/dev/null 2>&1 && FUSE_OK=1; \
-	fi; \
-	[ -z "$$FUSE_OK" ] && MISSING="$${MISSING:+$$MISSING }libfuse (FUSE dev headers)"; \
-	\
-	if [ -n "$$MISSING" ]; then \
-	  printf "$(BOLD)Missing required packages:$(RESET)\n  %s\n\n" "$$MISSING"; \
-	  printf "Install them first, then run $(BOLD)make setup$(RESET) again.\n\n"; \
-	  printf "$(CYAN)Examples:$(RESET)\n"; \
-	  printf "  Rust:        https://rustup.rs  →  curl -sSf https://sh.rustup.rs | sh\n"; \
-	  printf "  Ubuntu/Debian:  sudo apt-get update && sudo apt-get install -y pkg-config libfuse-dev python3 python3-venv\n"; \
-	  printf "  Arch:        sudo pacman -S --needed base-devel fuse3 pkg-config python\n"; \
-	  printf "  Fedora:      sudo dnf install pkg-config fuse-devel python3\n"; \
-	  printf "  macOS:       brew install pkg-config macfuse; Rust from https://rustup.rs\n"; \
-	  printf "\nOn Windows use WSL and follow the Ubuntu/Debian line.\n"; \
-	  exit 1; \
-	fi; \
-	printf "$(GREEN)All required system packages found.$(RESET)\n"
+	@cargo xtask setup check
 
 setup: setup-check
-	@printf "$(GREEN)Installing development tools…$(RESET)\n"
-	rustup component add rustfmt clippy
-	$(CARGO) install cargo-deny cargo-fuzz maturin critcmp
-	@printf "$(GREEN)Creating Python venv (if missing)…$(RESET)\n"
-	@if [ ! -d .venv ]; then python3 -m venv .venv 2>/dev/null || python -m venv .venv; fi; \
-	if [ -f docs/requirements.txt ]; then \
-	  ( [ -f .venv/Scripts/pip ] && .venv/Scripts/pip install -q -r docs/requirements.txt || .venv/bin/pip install -q -r docs/requirements.txt ) 2>/dev/null || true; \
-	fi
-	@printf "$(GREEN)Done. Run 'make check' to verify.$(RESET)\n"
+	@cargo xtask setup install
+
+setup-cross:
+	@cargo xtask setup cross
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  CI Pipeline (runs everything in sequence)
@@ -616,139 +406,21 @@ ci: lint test build
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Pre-release Validation
 # ═══════════════════════════════════════════════════════════════════════════════
-#  Cross-compiles for all CI targets to catch platform-specific errors before
-#  pushing a release tag. Uses cargo check (no linking) with cross-compilers
-#  for C dependencies (ring, etc).
-#
-#  Requires cross-compilers: run  make setup-cross  first.
-#
-#  Checks match CI exactly:
-#    - aarch64-unknown-linux-gnu  (binary + wheel)
-#    - x86_64-pc-windows-gnu     (binary + wheel, stands in for MSVC)
-#    - native x86_64 Linux       (full test suite + clippy + fmt)
-# ═══════════════════════════════════════════════════════════════════════════════
 pre-release: _version-check lint test _cross-aarch64 _cross-windows _wheel-check
 	@printf "\n$(BOLD)$(GREEN)Pre-release validation passed — ready to tag and release$(RESET)\n"
 
 _version-check:
-	@printf "$(GREEN)Checking versions…$(RESET)\n"
-	@FAIL=0; \
-	semver_gt() { \
-		IFS=. read _a1 _a2 _a3 <<< "$$1"; \
-		IFS=. read _b1 _b2 _b3 <<< "$$2"; \
-		if [ "$$_a1" -gt "$$_b1" ] 2>/dev/null; then return 0; fi; \
-		if [ "$$_a1" -lt "$$_b1" ] 2>/dev/null; then return 1; fi; \
-		if [ "$$_a2" -gt "$$_b2" ] 2>/dev/null; then return 0; fi; \
-		if [ "$$_a2" -lt "$$_b2" ] 2>/dev/null; then return 1; fi; \
-		if [ "$$_a3" -gt "$$_b3" ] 2>/dev/null; then return 0; fi; \
-		return 1; \
-	}; \
-	WS_VER=$$(sed -n '/\[workspace\.package\]/,/^\[/{s/^version *= *"\([^"]*\)"/\1/p;}' Cargo.toml); \
-	if [ -z "$$WS_VER" ]; then \
-		printf "  $(RED)✗ Could not extract workspace version from Cargo.toml$(RESET)\n"; \
-		exit 1; \
-	fi; \
-	printf "  Workspace version: %s\n\n" "$$WS_VER"; \
-	printf "  $(BOLD)Consistency$(RESET)\n"; \
-	PY_VER=$$(sed -n 's/^version *= *"\([^"]*\)"/\1/p' $(LOADER_CRATE)/pyproject.toml); \
-	if [ "$$PY_VER" = "$$WS_VER" ]; then \
-		printf "  $(GREEN)!$(RESET) pyproject.toml    %s\n" "$$PY_VER"; \
-	else \
-		printf "  $(RED)! pyproject.toml    %s (expected %s)$(RESET)\n" "$$PY_VER" "$$WS_VER"; \
-		FAIL=1; \
-	fi; \
-	INIT_VER=$$(sed -n 's/^__version__ *= *"\([^"]*\)"/\1/p' $(LOADER_CRATE)/python/hexz/__init__.py); \
-	if [ "$$INIT_VER" = "$$WS_VER" ]; then \
-		printf "  $(GREEN)!$(RESET) __init__.py       %s\n" "$$INIT_VER"; \
-	else \
-		printf "  $(RED)! __init__.py       %s (expected %s)$(RESET)\n" "$$INIT_VER" "$$WS_VER"; \
-		FAIL=1; \
-	fi; \
-	printf "\n  $(BOLD)crates.io$(RESET)\n"; \
-	for CRATE in hexz-common hexz-core hexz-fuse hexz-server hexz-cli hexz-loader; do \
-		RESP=$$(curl -s -H "User-Agent: hexz-version-check" "https://crates.io/api/v1/crates/$$CRATE"); \
-		PUB=$$(echo "$$RESP" | grep -o '"max_version" *: *"[^"]*"' | head -1 | sed 's/"max_version" *: *"//;s/"//'); \
-		if [ -z "$$PUB" ] || echo "$$RESP" | grep -q '"errors"'; then \
-			printf "  $(GREEN)!$(RESET) %-16s not yet published\n" "$$CRATE"; \
-		elif semver_gt "$$WS_VER" "$$PUB"; then \
-			printf "  $(GREEN)!$(RESET) %-16s %s > %s (published)\n" "$$CRATE" "$$WS_VER" "$$PUB"; \
-		else \
-			printf "  $(RED)! %-16s %s <= %s (published)$(RESET)\n" "$$CRATE" "$$WS_VER" "$$PUB"; \
-			FAIL=1; \
-		fi; \
-	done; \
-	printf "\n  $(BOLD)PyPI$(RESET)\n"; \
-	RESP=$$(curl -s "https://pypi.org/pypi/hexz/json"); \
-	PUB=$$(echo "$$RESP" | grep -o '"version" *: *"[^"]*"' | head -1 | sed 's/"version" *: *"//;s/"//'); \
-	if [ -z "$$PUB" ] || echo "$$RESP" | grep -q '"Not Found"'; then \
-		printf "  $(GREEN)!$(RESET) %-16s not yet published\n" "hexz"; \
-	elif semver_gt "$$WS_VER" "$$PUB"; then \
-		printf "  $(GREEN)!$(RESET) %-16s %s > %s (published)\n" "hexz" "$$WS_VER" "$$PUB"; \
-	else \
-		printf "  $(RED)! %-16s %s <= %s (published)$(RESET)\n" "hexz" "$$WS_VER" "$$PUB"; \
-		FAIL=1; \
-	fi; \
-	printf "\n"; \
-	if [ "$$FAIL" -ne 0 ]; then \
-		printf "  $(RED)$(BOLD)Version check failed — fix versions before releasing$(RESET)\n\n"; \
-		exit 1; \
-	fi; \
-	printf "  $(GREEN)$(BOLD)All version checks passed$(RESET)\n\n"
+	@cargo xtask version-check
 
 _cross-aarch64:
-	@printf "\n$(GREEN)[cross] Checking $(CROSS_AARCH64) (binary)…$(RESET)\n"
-	@command -v $(AARCH64_LINKER) >/dev/null 2>&1 || { \
-		printf "$(BOLD)Missing:$(RESET) $(AARCH64_LINKER)\nRun $(CYAN)make setup-cross$(RESET) for install instructions.\n"; \
-		exit 1; \
-	}
-	CC_aarch64_unknown_linux_gnu=$(AARCH64_LINKER) \
-	CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=$(AARCH64_LINKER) \
-	CFLAGS_aarch64_unknown_linux_gnu="-D__ARM_ARCH=8" \
-	$(CARGO) check -p hexz-cli --target $(CROSS_AARCH64) --no-default-features --features $(AARCH64_CLI_FEAT)
-	@printf "$(GREEN)[cross] Checking $(CROSS_AARCH64) (wheel)…$(RESET)\n"
-	CC_aarch64_unknown_linux_gnu=$(AARCH64_LINKER) \
-	CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=$(AARCH64_LINKER) \
-	CFLAGS_aarch64_unknown_linux_gnu="-D__ARM_ARCH=8" \
-	$(CARGO) check -p hexz-loader --target $(CROSS_AARCH64)
+	@cargo xtask cross-check aarch64
 
 _cross-windows:
-	@printf "\n$(GREEN)[cross] Checking $(CROSS_WINDOWS) (binary)…$(RESET)\n"
-	@command -v $(WINDOWS_LINKER) >/dev/null 2>&1 || { \
-		printf "$(BOLD)Missing:$(RESET) $(WINDOWS_LINKER)\nRun $(CYAN)make setup-cross$(RESET) for install instructions.\n"; \
-		exit 1; \
-	}
-	CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=$(WINDOWS_LINKER) \
-	CC_x86_64_pc_windows_gnu=$(WINDOWS_LINKER) \
-	$(CARGO) check -p hexz-cli --target $(CROSS_WINDOWS) --no-default-features --features $(WINDOWS_CLI_FEAT)
-	@printf "$(GREEN)[cross] Checking $(CROSS_WINDOWS) (wheel)…$(RESET)\n"
-	CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=$(WINDOWS_LINKER) \
-	CC_x86_64_pc_windows_gnu=$(WINDOWS_LINKER) \
-	$(CARGO) check -p hexz-loader --target $(CROSS_WINDOWS)
+	@cargo xtask cross-check windows
 
 _wheel-check:
 	@printf "\n$(GREEN)[wheel] Building native Python wheel…$(RESET)\n"
 	$(MATURIN) build --release --manifest-path $(LOADER_CRATE)/Cargo.toml
 
-setup-cross:
-	@printf "$(GREEN)Adding Rust cross-compilation targets…$(RESET)\n"
-	rustup target add $(CROSS_AARCH64) $(CROSS_WINDOWS)
-	@printf "\n$(BOLD)System cross-compilers also required:$(RESET)\n"
-	@printf "  $(CYAN)Arch:$(RESET)     sudo pacman -S aarch64-linux-gnu-gcc mingw-w64-gcc\n"
-	@printf "  $(CYAN)Ubuntu:$(RESET)   sudo apt install gcc-aarch64-linux-gnu gcc-mingw-w64-x86-64\n"
-	@printf "  $(CYAN)Fedora:$(RESET)   sudo dnf install gcc-aarch64-linux-gnu-gcc mingw64-gcc\n"
-	@printf "\nThen run $(BOLD)make pre-release$(RESET) to validate.\n"
-
-# ═══════════════════════════════════════════════════════════════════════════════
-#  Clean
-# ═══════════════════════════════════════════════════════════════════════════════
 clean:
-	@printf "$(GREEN)Cleaning…$(RESET)\n"
-	$(CARGO) clean
-	rm -rf $(LOADER_CRATE)/build $(LOADER_CRATE)/dist
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	find . -type f -name "*.pyc" -delete 2>/dev/null || true
-	find . -type f -name "*.pyo" -delete 2>/dev/null || true
-	find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
-	find . -type d -name ".eggs" -exec rm -rf {} + 2>/dev/null || true
-	rm -rf target/wheels
-	@printf "$(GREEN)Clean complete.$(RESET)\n"
+	@cargo xtask clean

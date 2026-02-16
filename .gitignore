@@ -20,6 +20,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!tools/scripts/lib/
 lib64/
 parts/
 sdist/
@@ -79,7 +80,7 @@ flamegraph.svg
 perf.data*
 criterion/
 .criterion/
-perf/results/
+tools/perf/results/
 
 # Documentation builds
 docs/_build/

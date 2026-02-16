@@ -1,6 +1,6 @@
 # Hexz Examples
 
-This directory contains modular examples demonstrating key features of the Hexz Python API. **All commands assume you are in the repository root** and have run **`make develop`** at least once (see the main [README](../README.md) and **`make help`**).
+Modular examples demonstrating key features of the Hexz Python API. **All commands assume you are in the repository root** and have run **`make develop`** at least once (see the main [README](../README.md) and **`make help`**).
 
 **Reading from snapshots:** Use a single `read()` API. Open with `hexz.open(path)` to get a `Reader`, then:
 - `reader.read(n)` — read `n` bytes from current position (advances cursor).
@@ -8,72 +8,49 @@ This directory contains modular examples demonstrating key features of the Hexz 
 - `reader.read(buffer=buf)` — fill a buffer from cursor; `reader.read(buffer=buf, offset=k)` for offset.
 - `reader.iter_chunks(chunk_size=...)` — iterate in fixed-size chunks with one reused buffer.
 
-## 0. Quick Start (`examples/quickstart.py`)
+## 1. Quick Start (`quickstart.py`)
 
 **Run first.** Creates a tiny snapshot and reads it back — no CLI or extra data required.
 
 ```bash
-# From repo root (after: make develop)
 python examples/quickstart.py
 ```
 
-See [docs/quickstart.md](../docs/quickstart.md) for the full 5-minute guide (install, pack, read).
+See [docs/quickstart.md](../docs/quickstart.md) for the full 5-minute guide.
 
-## 1. Machine Learning Training (`examples/ml_training/`)
+## 2. Build Profiles (`build_profiles.py`)
 
-Demonstrates how to use `hexz.Dataset` with PyTorch for high-performance training loops.
+Demonstrates `hexz.build()` with custom profile overrides (`archival`, `ml`, `eda`) for fine-tuned block size and compression.
 
-- **Files:**
-  - `create_dataset.py`: Generates a dummy dataset (`dataset.hxz`) with variable-length items and an index file (`dataset.idx`).
-  - `train.py`: Loads the dataset using `hexz.Dataset` (with caching & prefetching) and iterates via `torch.utils.data.DataLoader`.
+```bash
+python examples/build_profiles.py
+```
 
-- **Requires:** Hexz from repo root (**`make develop`**); PyTorch (`pip install torch` or from `crates/loader`: `pip install -e ".[torch]"`).
+## 3. Dataset Creation (`create_dataset.py`)
 
-- **Run (from repo root):**
-  ```bash
-  cd examples/ml_training
-  python3 create_dataset.py
-  python3 train.py
-  ```
+Generates a variable-length dataset (`dataset.hxz`) with an index file (`dataset.idx`), ready for use with the training examples.
 
-## 2. Compression Benchmarking (`examples/compression_bench/`)
+```bash
+python examples/create_dataset.py
+```
 
-Benchmarks different build profiles (`ml`, `eda`, `archival`) on real data.
+## 4. PyTorch Training (`train_pytorch.py`)
 
-- **Files:**
-  - `bench.py`: Recursively builds snapshots from a source directory using different profiles and measures build time, file size, and read speed.
+Loads a Hexz dataset using `hexz.Dataset` (with caching and prefetching) via `torch.utils.data.DataLoader`.
 
-- **Run:**
-  ```bash
-  cd examples/compression_bench
-  python3 bench.py
-  ```
+**Requires:** PyTorch (`pip install torch`)
 
-## 3. Advanced Build Configuration (`examples/advanced_build/`)
+```bash
+python examples/create_dataset.py   # generate data first
+python examples/train_pytorch.py
+```
 
-Demonstrates `hexz.build` with custom overrides for fine-tuned control.
+## 5. MNIST Training (`mnist_training.py`)
 
-- **Files:**
-  - `build_with_profiles.py`: Builds a snapshot using the `archival` profile but overrides `block_size` and verifies metadata.
+Complete end-to-end MNIST training pipeline: download, pack into Hexz, train a CNN.
 
-- **Run:**
-  ```bash
-  cd examples/advanced_build
-  python3 build_with_profiles.py
-  ```
+**Requires:** PyTorch, torchvision
 
-## 4. Benchmarks (`examples/benchmarks/`)
-
-Performance testing and data generation scripts.
-
-- **Files:**
-  - `boot_performance.sh`: Measures VM boot times under various conditions.
-  - `compression_ratio.sh`: Analyzes compression efficiency.
-  - `large_scale.sh`: Runs large-scale system tests.
-  - `gen_json_logs.py` / `gen_mixed_data.py`: Utilities for generating synthetic test data.
-
-- **Run:**
-  ```bash
-  cd examples/benchmarks
-  ./boot_performance.sh
-  ```
+```bash
+python examples/mnist_training.py
+```

@@ -3,7 +3,7 @@ set -e
 
 # Load common library
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/../../scripts/lib/common.sh"
+source "$SCRIPT_DIR/../scripts/lib/common.sh"
 
 PROJECT_ROOT="$(get_project_root)"
 BIN="${BIN:-$PROJECT_ROOT/target/release/hexz}"

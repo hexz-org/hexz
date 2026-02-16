@@ -5,7 +5,7 @@ Downloads MNIST via torchvision, packs images+labels into hexz format,
 then trains a small CNN using hexz.Dataset + PyTorch DataLoader.
 
 Usage:
-    python examples/ml_training/mnist.py
+    python examples/mnist_training.py
 """
 
 import os

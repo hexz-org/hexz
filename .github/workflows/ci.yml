@@ -104,10 +104,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 libfuse-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Make script executable
-        run: chmod +x ./scripts/test_vm_boot.sh
-      - name: Run VM Boot Script
-        run: ./scripts/test_vm_boot.sh
+      - name: Run VM Boot Test
+        run: cargo xtask vm-test
 
   # ── Build artifacts ────────────────────────────────────────────────────────
   build:
