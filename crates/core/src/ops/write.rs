@@ -227,7 +227,7 @@
 //! BLAKE3 hashing adds ~5-10% overhead to write operations:
 //!
 //! - **Hash computation**: ~3200 MB/s throughput (BLAKE3 tree-hashed)
-//! - **HashMap lookup**: O(1) average, ~50-100 ns per lookup
+//! - **Hash table lookup**: O(1) average, ~50-100 ns per lookup
 //! - **Memory usage**: ~48 bytes per unique block
 //!
 //! For datasets with <10% duplication, deduplication overhead may exceed savings.
@@ -270,7 +270,7 @@ use hexz_common::Result;
 use std::io::Write;
 
 use crate::algo::compression::Compressor;
-use crate::algo::dedup::hash_table::DedupHashTable;
+use crate::algo::dedup::hash_table::StandardHashTable;
 use crate::algo::encryption::Encryptor;
 use crate::algo::hashing::ContentHasher;
 use crate::format::index::BlockInfo;
@@ -364,7 +364,7 @@ use crate::format::index::BlockInfo;
 /// use hexz_core::ops::write::write_block;
 /// use hexz_core::algo::compression::Lz4Compressor;
 /// use hexz_core::algo::hashing::blake3::Blake3Hasher;
-/// use std::collections::HashMap;
+/// use hexz_core::algo::dedup::hash_table::StandardHashTable;
 /// use std::fs::File;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -375,16 +375,21 @@ use crate::format::index::BlockInfo;
 /// let hasher = Blake3Hasher;
 /// let mut hash_buf = [0u8; 32];
 ///
+/// let mut compress_buf = Vec::new();
+/// let mut encrypt_buf = Vec::new();
+///
 /// let info = write_block(
 ///     &mut out,
 ///     &chunk,
 ///     0,              // block_idx
 ///     &mut offset,
-///     None::<&mut HashMap<[u8; 32], u64>>, // No dedup
+///     None::<&mut StandardHashTable>, // No dedup
 ///     &compressor,
 ///     None,           // No encryption
 ///     &hasher,
 ///     &mut hash_buf,
+///     &mut compress_buf,
+///     &mut encrypt_buf,
 /// )?;
 ///
 /// println!("Block written at offset {}, size {}", info.offset, info.length);
@@ -398,16 +403,18 @@ use crate::format::index::BlockInfo;
 /// use hexz_core::ops::write::write_block;
 /// use hexz_core::algo::compression::Lz4Compressor;
 /// use hexz_core::algo::hashing::blake3::Blake3Hasher;
-/// use std::collections::HashMap;
+/// use hexz_core::algo::dedup::hash_table::StandardHashTable;
 /// use std::fs::File;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let mut out = File::create("output.hxz")?;
 /// let mut offset = 512u64;
-/// let mut dedup_map: HashMap<[u8; 32], u64> = HashMap::new();
+/// let mut dedup_map = StandardHashTable::new();
 /// let compressor = Lz4Compressor::new();
 /// let hasher = Blake3Hasher;
 /// let mut hash_buf = [0u8; 32];
+/// let mut compress_buf = Vec::new();
+/// let mut encrypt_buf = Vec::new();
 ///
 /// // Write first block
 /// let chunk1 = vec![0xAA; 65536];
@@ -421,6 +428,8 @@ use crate::format::index::BlockInfo;
 ///     None,
 ///     &hasher,
 ///     &mut hash_buf,
+///     &mut compress_buf,
+///     &mut encrypt_buf,
 /// )?;
 /// println!("Block 0: offset={}, written", info1.offset);
 ///
@@ -436,6 +445,8 @@ use crate::format::index::BlockInfo;
 ///     None,
 ///     &hasher,
 ///     &mut hash_buf,
+///     &mut compress_buf,
+///     &mut encrypt_buf,
 /// )?;
 /// println!("Block 1: offset={}, deduplicated (no write)", info2.offset);
 /// assert_eq!(info1.offset, info2.offset); // Same offset, block reused
@@ -451,7 +462,7 @@ use crate::format::index::BlockInfo;
 /// use hexz_core::algo::encryption::AesGcmEncryptor;
 /// use hexz_core::algo::hashing::blake3::Blake3Hasher;
 /// use hexz_common::crypto::KeyDerivationParams;
-/// use std::collections::HashMap;
+/// use hexz_core::algo::dedup::hash_table::StandardHashTable;
 /// use std::fs::File;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -469,17 +480,22 @@ use crate::format::index::BlockInfo;
 ///     params.iterations,
 /// )?;
 ///
+/// let mut compress_buf = Vec::new();
+/// let mut encrypt_buf = Vec::new();
+///
 /// let chunk = vec![0x42; 65536];
 /// let info = write_block(
 ///     &mut out,
 ///     &chunk,
 ///     0,
 ///     &mut offset,
-///     None::<&mut HashMap<[u8; 32], u64>>, // Dedup disabled (encryption prevents it)
+///     None::<&mut StandardHashTable>, // Dedup disabled (encryption prevents it)
 ///     &compressor,
 ///     Some(&encryptor),
 ///     &hasher,
 ///     &mut hash_buf,
+///     &mut compress_buf,
+///     &mut encrypt_buf,
 /// )?;
 ///
 /// println!("Encrypted block: offset={}, length={}", info.offset, info.length);
@@ -532,40 +548,44 @@ use crate::format::index::BlockInfo;
 ///
 /// The dedup_map must also be externally synchronized for concurrent access.
 #[allow(clippy::too_many_arguments)]
-pub fn write_block<W: Write, D: DedupHashTable>(
+pub fn write_block<W: Write>(
     out: &mut W,
     chunk: &[u8],
     block_idx: u64,
     current_offset: &mut u64,
-    dedup_map: Option<&mut D>,
+    dedup_map: Option<&mut StandardHashTable>,
     compressor: &dyn Compressor,
     encryptor: Option<&dyn Encryptor>,
     hasher: &dyn ContentHasher,
     hash_buf: &mut [u8; 32],
+    compress_buf: &mut Vec<u8>,
+    encrypt_buf: &mut Vec<u8>,
 ) -> Result<BlockInfo> {
-    // Compress the chunk
-    let compressed = compressor.compress(chunk)?;
+    // Compress the chunk into reusable buffer
+    compressor.compress_into(chunk, compress_buf)?;
 
-    // Encrypt if requested
-    let final_data = if let Some(enc) = encryptor {
-        enc.encrypt(&compressed, block_idx)?
+    // Encrypt if requested, using reusable buffer
+    let final_data: &[u8] = if let Some(enc) = encryptor {
+        enc.encrypt_into(compress_buf, block_idx, encrypt_buf)?;
+        encrypt_buf
     } else {
-        compressed
+        compress_buf
     };
 
-    let checksum = crc32fast::hash(&final_data);
+    let checksum = crc32fast::hash(final_data);
     let chunk_len = chunk.len() as u32;
+    let final_len = final_data.len() as u32;
 
     // Handle deduplication (only if not encrypting)
     let offset = if encryptor.is_some() {
         // No dedup for encrypted data
         let off = *current_offset;
-        out.write_all(&final_data)?;
-        *current_offset += final_data.len() as u64;
+        out.write_all(final_data)?;
+        *current_offset += final_len as u64;
         off
     } else if let Some(map) = dedup_map {
         // Hash directly into the fixed-size buffer (no runtime bounds check).
-        *hash_buf = hasher.hash_fixed(&final_data);
+        *hash_buf = hasher.hash_fixed(final_data);
 
         if let Some(existing_offset) = map.get(hash_buf) {
             // Block already exists, reuse it — no copy needed on hit
@@ -574,21 +594,21 @@ pub fn write_block<W: Write, D: DedupHashTable>(
             // New block: copy hash_buf only on miss (insert needs owned key)
             let off = *current_offset;
             map.insert(*hash_buf, off);
-            out.write_all(&final_data)?;
-            *current_offset += final_data.len() as u64;
+            out.write_all(final_data)?;
+            *current_offset += final_len as u64;
             off
         }
     } else {
         // No dedup, just write
         let off = *current_offset;
-        out.write_all(&final_data)?;
-        *current_offset += final_data.len() as u64;
+        out.write_all(final_data)?;
+        *current_offset += final_len as u64;
         off
     };
 
     Ok(BlockInfo {
         offset,
-        length: final_data.len() as u32,
+        length: final_len,
         logical_len: chunk_len,
         checksum,
     })
@@ -664,7 +684,7 @@ pub fn write_block<W: Write, D: DedupHashTable>(
 /// # use hexz_core::ops::write::{is_zero_chunk, create_zero_block, write_block};
 /// # use hexz_core::algo::compression::Lz4Compressor;
 /// # use hexz_core::algo::hashing::blake3::Blake3Hasher;
-/// # use std::collections::HashMap;
+/// # use hexz_core::algo::dedup::hash_table::StandardHashTable;
 /// # use std::fs::File;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// # let mut out = File::create("output.hxz")?;
@@ -672,6 +692,8 @@ pub fn write_block<W: Write, D: DedupHashTable>(
 /// # let compressor = Lz4Compressor::new();
 /// # let hasher = Blake3Hasher;
 /// # let mut hash_buf = [0u8; 32];
+/// # let mut compress_buf = Vec::new();
+/// # let mut encrypt_buf = Vec::new();
 /// # let chunks: Vec<Vec<u8>> = vec![];
 /// for (idx, chunk) in chunks.iter().enumerate() {
 ///     let info = if is_zero_chunk(chunk) {
@@ -679,7 +701,7 @@ pub fn write_block<W: Write, D: DedupHashTable>(
 ///         create_zero_block(chunk.len() as u32)
 ///     } else {
 ///         // Normal path: Compress and write
-///         write_block(&mut out, chunk, idx as u64, &mut offset, None::<&mut HashMap<[u8; 32], u64>>, &compressor, None, &hasher, &mut hash_buf)?
+///         write_block(&mut out, chunk, idx as u64, &mut offset, None::<&mut StandardHashTable>, &compressor, None, &hasher, &mut hash_buf, &mut compress_buf, &mut encrypt_buf)?
 ///     };
 ///     // Add info to index page...
 /// }
@@ -740,18 +762,20 @@ pub fn create_zero_block(logical_len: u32) -> BlockInfo {
 /// This is a simpler API for tests and one-off writes. For hot paths (like snapshot
 /// packing loops), use `write_block` directly with a reused hasher and buffer.
 #[allow(dead_code)]
-fn write_block_simple<W: Write, D: DedupHashTable>(
+fn write_block_simple<W: Write>(
     out: &mut W,
     chunk: &[u8],
     block_idx: u64,
     current_offset: &mut u64,
-    dedup_map: Option<&mut D>,
+    dedup_map: Option<&mut StandardHashTable>,
     compressor: &dyn Compressor,
     encryptor: Option<&dyn Encryptor>,
 ) -> Result<BlockInfo> {
     use crate::algo::hashing::blake3::Blake3Hasher;
     let hasher = Blake3Hasher;
     let mut hash_buf = [0u8; 32];
+    let mut compress_buf = Vec::new();
+    let mut encrypt_buf = Vec::new();
     write_block(
         out,
         chunk,
@@ -762,6 +786,8 @@ fn write_block_simple<W: Write, D: DedupHashTable>(
         encryptor,
         &hasher,
         &mut hash_buf,
+        &mut compress_buf,
+        &mut encrypt_buf,
     )
 }
 
@@ -823,7 +849,7 @@ fn write_block_simple<W: Write, D: DedupHashTable>(
 /// # use hexz_core::algo::compression::Lz4Compressor;
 /// # use hexz_core::algo::hashing::blake3::Blake3Hasher;
 /// # use hexz_core::format::index::BlockInfo;
-/// # use std::collections::HashMap;
+/// # use hexz_core::algo::dedup::hash_table::StandardHashTable;
 /// # use std::fs::File;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// # let mut out = File::create("output.hxz")?;
@@ -831,6 +857,8 @@ fn write_block_simple<W: Write, D: DedupHashTable>(
 /// # let compressor = Lz4Compressor::new();
 /// # let hasher = Blake3Hasher;
 /// # let mut hash_buf = [0u8; 32];
+/// # let mut compress_buf = Vec::new();
+/// # let mut encrypt_buf = Vec::new();
 /// # let mut index_blocks = Vec::new();
 /// # let chunks: Vec<Vec<u8>> = vec![];
 /// for (idx, chunk) in chunks.iter().enumerate() {
@@ -839,7 +867,7 @@ fn write_block_simple<W: Write, D: DedupHashTable>(
 ///         create_zero_block(chunk.len() as u32)
 ///     } else {
 ///         // Slow path: Compress, write, create metadata
-///         write_block(&mut out, chunk, idx as u64, &mut offset, None::<&mut HashMap<[u8; 32], u64>>, &compressor, None, &hasher, &mut hash_buf)?
+///         write_block(&mut out, chunk, idx as u64, &mut offset, None::<&mut StandardHashTable>, &compressor, None, &hasher, &mut hash_buf, &mut compress_buf, &mut encrypt_buf)?
 ///     };
 ///     index_blocks.push(info);
 /// }
@@ -915,7 +943,6 @@ mod tests {
     use super::*;
     use crate::algo::compression::{Lz4Compressor, ZstdCompressor};
     use crate::algo::encryption::AesGcmEncryptor;
-    use std::collections::HashMap;
     use std::io::Cursor;
 
     /// Convenience wrapper that calls write_block_simple with no dedup map.
@@ -932,7 +959,7 @@ mod tests {
             chunk,
             block_idx,
             current_offset,
-            None::<&mut HashMap<[u8; 32], u64>>,
+            None::<&mut StandardHashTable>,
             compressor,
             encryptor,
         )
@@ -1064,7 +1091,7 @@ mod tests {
     fn test_write_block_with_dedup_unique_blocks() {
         let mut output = Cursor::new(Vec::new());
         let mut offset = 512u64;
-        let mut dedup_map = HashMap::new();
+        let mut dedup_map = StandardHashTable::new();
         let compressor = Lz4Compressor::new();
 
         // Write first block
@@ -1108,7 +1135,7 @@ mod tests {
     fn test_write_block_with_dedup_duplicate_blocks() {
         let mut output = Cursor::new(Vec::new());
         let mut offset = 512u64;
-        let mut dedup_map = HashMap::new();
+        let mut dedup_map = StandardHashTable::new();
         let compressor = Lz4Compressor::new();
 
         // Write first block
@@ -1183,7 +1210,7 @@ mod tests {
     fn test_write_block_encryption_disables_dedup() {
         let mut output = Cursor::new(Vec::new());
         let mut offset = 512u64;
-        let mut dedup_map = HashMap::new();
+        let mut dedup_map = StandardHashTable::new();
         let compressor = Lz4Compressor::new();
         let salt = [0u8; 32];
         let encryptor = AesGcmEncryptor::new(b"test_password", &salt, 100000).unwrap();

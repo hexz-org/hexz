@@ -810,18 +810,47 @@ impl Compressor for ZstdCompressor {
     ///
     /// This method can be called concurrently from multiple threads on the same
     /// `ZstdCompressor` instance. Each call creates an independent decoder.
+    fn compress_into(&self, data: &[u8], out: &mut Vec<u8>) -> Result<()> {
+        out.clear();
+        if let Some(dict) = &self.encoder_dict {
+            let mut encoder =
+                zstd::stream::write::Encoder::with_prepared_dictionary(std::mem::take(out), dict)
+                    .map_err(|e| Error::Compression(e.to_string()))?;
+
+            encoder
+                .write_all(data)
+                .map_err(|e| Error::Compression(e.to_string()))?;
+            *out = encoder
+                .finish()
+                .map_err(|e| Error::Compression(e.to_string()))?;
+        } else {
+            let compressed = zstd::stream::encode_all(Cursor::new(data), self.level)
+                .map_err(|e| Error::Compression(e.to_string()))?;
+            *out = compressed;
+        }
+        Ok(())
+    }
+
     fn decompress(&self, data: &[u8]) -> Result<Vec<u8>> {
         if let Some(dict) = &self.decoder_dict {
+            // Pre-allocate output buffer using frame content size when available
+            let prealloc_cap = zstd::zstd_safe::get_frame_content_size(data)
+                .ok()
+                .flatten()
+                .unwrap_or(data.len() as u64 * 2) as usize;
+
             let mut decoder =
                 zstd::stream::read::Decoder::with_prepared_dictionary(Cursor::new(data), dict)
                     .map_err(|e| Error::Compression(e.to_string()))?;
 
-            let mut out = Vec::with_capacity(data.len() * 2);
+            let mut out = Vec::with_capacity(prealloc_cap);
             decoder
                 .read_to_end(&mut out)
                 .map_err(|e| Error::Compression(e.to_string()))?;
             Ok(out)
         } else {
+            // decode_all is a highly optimized single-call API — faster than
+            // Decoder::new() + read_to_end() for the non-dictionary path.
             zstd::stream::decode_all(Cursor::new(data))
                 .map_err(|e| Error::Compression(e.to_string()))
         }

@@ -816,17 +816,21 @@ pub fn expected_chunk_length(params: &DedupeParams) -> f64 {
     let p = params.p();
     let m = params.m as f64;
     let z = params.z as f64;
+    let one_minus_p = 1.0 - p;
 
     // Sum from i=0 to z-m-1 of: (1-p)^i * p * (m+i)
-    let term1: f64 = (0..(params.z - params.m))
-        .map(|i| {
-            let i_f = i as f64;
-            (1.0 - p).powf(i_f) * p * (m + i_f)
-        })
-        .sum();
+    // Accumulate (1-p)^i iteratively to avoid expensive powf() per iteration.
+    let mut power = 1.0_f64; // (1-p)^0
+    let mut term1 = 0.0_f64;
+    for i in 0..(params.z - params.m) {
+        let i_f = i as f64;
+        term1 += power * p * (m + i_f);
+        power *= one_minus_p;
+    }
 
     // Term for max chunk size: (1-p)^(z-m) * z
-    let term2 = (1.0 - p).powf(z - m) * z;
+    // `power` is now (1-p)^(z-m) from the loop
+    let term2 = power * z;
 
     term1 + term2
 }
@@ -997,18 +1001,27 @@ pub fn expected_duplicate_bytes(c: f64, params: &DedupeParams) -> f64 {
     let m = params.m as f64;
     let z = params.z as f64;
     let w = params.w as f64;
+    let one_minus_p = 1.0 - p;
+    let one_minus_c = 1.0 - c;
 
-    // Sum from i=0 to z-m-1
-    let term1: f64 = (0..(params.z - params.m))
-        .map(|i| {
-            let i_f = i as f64;
-            // (1-p)^i * p * (m+i) * (1-c)^(i+m+w)
-            (1.0 - p).powf(i_f) * p * (m + i_f) * (1.0 - c).powf(i_f + m + w)
-        })
-        .sum();
+    // Precompute (1-c)^(m+w) once; then accumulate (1-c)^i iteratively.
+    let base_change_power = one_minus_c.powf(m + w);
+
+    // Sum from i=0 to z-m-1 of: (1-p)^i * p * (m+i) * (1-c)^(i+m+w)
+    // Accumulate both (1-p)^i and (1-c)^i iteratively.
+    let mut p_power = 1.0_f64; // (1-p)^0
+    let mut c_power = base_change_power; // (1-c)^(0+m+w)
+    let mut term1 = 0.0_f64;
+    for i in 0..(params.z - params.m) {
+        let i_f = i as f64;
+        term1 += p_power * p * (m + i_f) * c_power;
+        p_power *= one_minus_p;
+        c_power *= one_minus_c;
+    }
 
     // Max chunk term: (1-p)^(z-m) * z * (1-c)^(z+w)
-    let term2 = (1.0 - p).powf(z - m) * z * (1.0 - c).powf(z + w);
+    // p_power is now (1-p)^(z-m), c_power is now (1-c)^(z-m+m+w) = (1-c)^(z+w)
+    let term2 = p_power * z * c_power;
 
     term1 + term2
 }

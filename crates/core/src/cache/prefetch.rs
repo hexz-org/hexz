@@ -199,7 +199,7 @@
 //! - **Multi-stream prefetch**: Prefetch from multiple streams (Disk + Memory) simultaneously
 //! - **Priority hints**: Mark prefetch requests as low-priority to avoid evicting hot data
 
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 /// Thread-safe prefetch manager with configurable lookahead window.
 ///
@@ -239,6 +239,10 @@ pub struct Prefetcher {
     /// Guards against concurrent prefetch threads. Only one prefetch operation
     /// can be in flight at a time to prevent unbounded thread spawning.
     in_flight: AtomicBool,
+
+    /// Counts the total number of prefetch operations that were successfully started
+    /// via [`try_start`](Self::try_start). Used for testing and diagnostics.
+    spawn_count: AtomicU64,
 }
 
 impl Prefetcher {
@@ -282,6 +286,7 @@ impl Prefetcher {
         Self {
             window_size: AtomicU32::new(window_size),
             in_flight: AtomicBool::new(false),
+            spawn_count: AtomicU64::new(0),
         }
     }
 
@@ -289,9 +294,19 @@ impl Prefetcher {
     /// won the race and should spawn a prefetch thread. The caller **must** call
     /// [`clear_in_flight`](Self::clear_in_flight) when the prefetch completes.
     pub fn try_start(&self) -> bool {
-        self.in_flight
+        let acquired = self
+            .in_flight
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
-            .is_ok()
+            .is_ok();
+        if acquired {
+            self.spawn_count.fetch_add(1, Ordering::Relaxed);
+        }
+        acquired
+    }
+
+    /// Returns the total number of prefetch operations started since construction.
+    pub fn spawn_count(&self) -> u64 {
+        self.spawn_count.load(Ordering::Relaxed)
     }
 
     /// Clears the in-flight flag, allowing the next read to spawn a prefetch.

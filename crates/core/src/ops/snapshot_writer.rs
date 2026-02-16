@@ -22,10 +22,7 @@ use crate::format::{
 };
 use crate::ops::write::{create_zero_block, is_zero_chunk, write_block};
 
-#[cfg(feature = "elastic-hash")]
-use crate::algo::dedup::hash_table::ElasticHashTable;
-#[cfg(not(feature = "elastic-hash"))]
-use std::collections::HashMap;
+use crate::algo::dedup::hash_table::StandardHashTable;
 
 /// Unified writer for Hexz snapshot files.
 ///
@@ -37,17 +34,19 @@ pub struct SnapshotWriter {
     current_offset: u64,
     master: MasterIndex,
     global_block_idx: u64,
-    #[cfg(feature = "elastic-hash")]
-    dedup_map: ElasticHashTable,
-    #[cfg(not(feature = "elastic-hash"))]
-    dedup_map: HashMap<[u8; 32], u64>,
+    dedup_map: StandardHashTable,
     compressor: Box<dyn Compressor>,
     encryptor: Option<Box<dyn Encryptor>>,
     hasher: Blake3Hasher,
     hash_buf: [u8; 32],
 
+    // Reusable buffers for compression and encryption
+    compress_buf: Vec<u8>,
+    encrypt_buf: Vec<u8>,
+
     // Per-stream page state
     page: IndexPage,
+    page_buf: Vec<u8>,
     page_start_block: u64,
     page_start_logical: u64,
     current_logical_pos: u64,
@@ -196,15 +195,15 @@ impl SnapshotWriter {
             current_offset: HEADER_SIZE as u64,
             master: MasterIndex::default(),
             global_block_idx: 0,
-            #[cfg(feature = "elastic-hash")]
-            dedup_map: ElasticHashTable::with_capacity(4096),
-            #[cfg(not(feature = "elastic-hash"))]
-            dedup_map: HashMap::new(),
+            dedup_map: StandardHashTable::with_capacity(4096),
             compressor,
             encryptor,
             hasher: Blake3Hasher,
             hash_buf: [0u8; 32],
+            compress_buf: Vec::new(),
+            encrypt_buf: Vec::new(),
             page: IndexPage::default(),
+            page_buf: Vec::new(),
             page_start_block: 0,
             page_start_logical: 0,
             current_logical_pos: 0,
@@ -231,12 +230,21 @@ impl SnapshotWriter {
     /// Begins a new stream (disk or memory).
     ///
     /// Must be called before writing blocks or parent references.
-    /// `total_size` is recorded in the master index.
+    /// `total_size` is recorded in the master index and used to pre-size the
+    /// dedup map for reduced rehashing.
     pub fn begin_stream(&mut self, is_disk: bool, total_size: u64) {
         self.is_disk = is_disk;
         self.stream_active = true;
         self.page = IndexPage::default();
         self.page_start_block = self.global_block_idx;
+
+        // Pre-size dedup map based on estimated block count
+        if total_size > 0 && self.block_size > 0 {
+            let estimated_blocks = (total_size / self.block_size as u64) as usize;
+            if estimated_blocks > self.dedup_map.len() {
+                self.dedup_map = StandardHashTable::with_capacity(estimated_blocks);
+            }
+        }
 
         // Continue logical positions from the end of previous streams of the same type.
         let stream_start = if is_disk {
@@ -277,6 +285,8 @@ impl SnapshotWriter {
                 enc_ref,
                 &self.hasher,
                 &mut self.hash_buf,
+                &mut self.compress_buf,
+                &mut self.encrypt_buf,
             )?
         };
 
@@ -384,14 +394,15 @@ impl SnapshotWriter {
     // -- private helpers --
 
     fn flush_page(&mut self) -> Result<()> {
-        let bytes = bincode::serialize(&self.page)?;
+        self.page_buf.clear();
+        bincode::serialize_into(&mut self.page_buf, &self.page)?;
         let p_off = self.current_offset;
-        self.out.write_all(&bytes)?;
-        self.current_offset += bytes.len() as u64;
+        self.out.write_all(&self.page_buf)?;
+        self.current_offset += self.page_buf.len() as u64;
 
         let entry = PageEntry {
             offset: p_off,
-            length: bytes.len() as u32,
+            length: self.page_buf.len() as u32,
             start_block: self.page_start_block,
             start_logical: self.page_start_logical,
         };
@@ -402,7 +413,8 @@ impl SnapshotWriter {
             self.master.memory_pages.push(entry);
         }
 
-        self.page = IndexPage::default();
+        // Clear blocks but preserve Vec capacity for next page
+        self.page.blocks.clear();
         self.page_start_block = self.global_block_idx;
         self.page_start_logical = self.current_logical_pos;
 

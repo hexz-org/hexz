@@ -35,6 +35,19 @@ pub trait Compressor: Send + Sync + Debug {
     /// encoder; malformed data must surface as a `Error::Compression`.
     fn decompress(&self, data: &[u8]) -> Result<Vec<u8>>;
 
+    /// Compresses `data` into a caller-provided buffer, enabling buffer reuse.
+    ///
+    /// **Architectural intent:** Eliminates per-call allocation in hot write
+    /// paths by reusing a `Vec` across iterations.
+    ///
+    /// **Default impl:** Falls back to `compress()` and copies the result.
+    fn compress_into(&self, data: &[u8], out: &mut Vec<u8>) -> Result<()> {
+        let compressed = self.compress(data)?;
+        out.clear();
+        out.extend_from_slice(&compressed);
+        Ok(())
+    }
+
     /// Decompresses an encoded block into a caller-provided buffer.
     ///
     /// **Architectural intent:** Enables buffer reuse for hot paths to reduce

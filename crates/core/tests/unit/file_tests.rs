@@ -346,28 +346,21 @@ fn test_prefetch_does_not_spawn_unbounded_threads() -> Result<(), Box<dyn std::e
     // Small cache + prefetch enabled
     let snapshot = File::with_cache(backend, compressor, None, Some(65536), Some(4))?;
 
-    // Warm up: do an initial read to initialize rayon thread pool and any
-    // one-time background threads, then let everything settle.
-    let _warmup = snapshot.read_at(SnapshotStream::Disk, 0, 65536)?;
-    std::thread::sleep(std::time::Duration::from_millis(500));
-
-    let initial_threads = std::fs::read_dir("/proc/self/task")?.count();
-
     // Read multiple sequential blocks — each should trigger at most 1 prefetch,
     // not a cascade of recursive spawns.
     for i in 0..4 {
         let offset = (i * 65536) as u64;
         let _data = snapshot.read_at(SnapshotStream::Disk, offset, 65536)?;
     }
-    std::thread::sleep(std::time::Duration::from_millis(500));
-    let after_threads = std::fs::read_dir("/proc/self/task")?.count();
+    // Let prefetch threads complete so the in-flight guard is released between reads.
+    std::thread::sleep(std::time::Duration::from_millis(200));
 
-    // With the fix, each read spawns at most 1 prefetch thread (which exits
-    // after completing). Without the fix, thread count would explode.
-    let spawned = after_threads.saturating_sub(initial_threads);
+    // Use the atomic spawn counter instead of counting OS threads, which is
+    // unreliable under concurrent test execution (other tests spawn threads too).
+    let spawned = snapshot.prefetch_spawn_count();
     assert!(
         spawned <= 4,
-        "Prefetch spawned {spawned} threads after 4 reads, expected at most 4 (one per read)"
+        "Prefetch spawned {spawned} times after 4 reads, expected at most 4 (one per read)"
     );
     Ok(())
 }

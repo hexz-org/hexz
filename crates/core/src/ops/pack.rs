@@ -434,29 +434,54 @@ pub fn calculate_entropy(data: &[u8]) -> f64 {
     entropy
 }
 
-/// Trait for chunk iterators (fixed-size or content-defined).
-///
-/// This trait provides a unified interface for both fixed-size and CDC chunkers,
-/// allowing the packing logic to be agnostic to the chunking strategy.
-trait Chunker: Iterator<Item = std::io::Result<Vec<u8>>> {}
-impl<T: Iterator<Item = std::io::Result<Vec<u8>>>> Chunker for T {}
-
-/// Fixed-size block chunker.
+/// Fixed-size block chunker with buffer reuse.
 ///
 /// Splits input into equal-sized blocks (except possibly the last one).
 /// Simpler and faster than CDC, but less effective for deduplication.
 ///
-/// Uses a read loop to guarantee full blocks, avoiding short reads from
-/// pipes, network streams, or OS buffering.
+/// Reuses an internal buffer across calls to `next_chunk()`, eliminating
+/// per-chunk allocation after the first call.
 pub struct FixedChunker<R> {
     reader: R,
     block_size: usize,
+    buffer: Vec<u8>,
+    done: bool,
 }
 
 impl<R: Read> FixedChunker<R> {
     /// Creates a new fixed-size chunker.
     pub fn new(reader: R, block_size: usize) -> Self {
-        Self { reader, block_size }
+        Self {
+            reader,
+            block_size,
+            buffer: vec![0u8; block_size],
+            done: false,
+        }
+    }
+
+    /// Returns the next chunk as a borrowed slice, or `None` at EOF.
+    ///
+    /// Zero allocations after the first call thanks to buffer reuse.
+    fn next_chunk(&mut self) -> std::io::Result<Option<&[u8]>> {
+        if self.done {
+            return Ok(None);
+        }
+        let mut pos = 0;
+        self.buffer.resize(self.block_size, 0);
+        while pos < self.block_size {
+            match self.reader.read(&mut self.buffer[pos..]) {
+                Ok(0) => break,
+                Ok(n) => pos += n,
+                Err(e) => return Err(e),
+            }
+        }
+        if pos == 0 {
+            self.done = true;
+            Ok(None)
+        } else {
+            self.buffer.truncate(pos);
+            Ok(Some(&self.buffer))
+        }
     }
 }
 
@@ -464,20 +489,10 @@ impl<R: Read> Iterator for FixedChunker<R> {
     type Item = std::io::Result<Vec<u8>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut buf = vec![0u8; self.block_size];
-        let mut pos = 0;
-        while pos < self.block_size {
-            match self.reader.read(&mut buf[pos..]) {
-                Ok(0) => break,
-                Ok(n) => pos += n,
-                Err(e) => return Some(Err(e)),
-            }
-        }
-        if pos == 0 {
-            None
-        } else {
-            buf.truncate(pos);
-            Some(Ok(buf))
+        match self.next_chunk() {
+            Ok(Some(slice)) => Some(Ok(slice.to_vec())),
+            Ok(None) => None,
+            Err(e) => Some(Err(e)),
         }
     }
 }
@@ -888,8 +903,9 @@ where
 
     writer.begin_stream(is_disk, len);
 
-    // Choose chunker based on configuration
-    let chunker: Box<dyn Chunker> = if config.cdc_enabled {
+    let mut logical_pos = 0u64;
+
+    if config.cdc_enabled {
         let params = DedupeParams {
             f: (config.avg_chunk as f64).log2() as u32,
             m: config.min_chunk,
@@ -897,21 +913,30 @@ where
             w: 48,
             v: 8,
         };
-        Box::new(StreamChunker::new(f, params))
+        let chunker = StreamChunker::new(f, params);
+        for chunk_res in chunker {
+            let chunk = chunk_res?;
+            logical_pos += chunk.len() as u64;
+            writer.write_data_block(&chunk)?;
+            if let Some(callback) = progress_callback {
+                callback(logical_pos, len);
+            }
+        }
     } else {
-        Box::new(FixedChunker::new(f, config.block_size as usize))
-    };
-
-    let mut logical_pos = 0u64;
-
-    for chunk_res in chunker {
-        let chunk = chunk_res?;
-        logical_pos += chunk.len() as u64;
-
-        writer.write_data_block(&chunk)?;
-
-        if let Some(callback) = progress_callback {
-            callback(logical_pos, len);
+        // Fixed chunker: zero-copy path via next_chunk() buffer reuse
+        let mut chunker = FixedChunker::new(f, config.block_size as usize);
+        loop {
+            match chunker.next_chunk() {
+                Ok(Some(chunk)) => {
+                    logical_pos += chunk.len() as u64;
+                    writer.write_data_block(chunk)?;
+                    if let Some(callback) = progress_callback {
+                        callback(logical_pos, len);
+                    }
+                }
+                Ok(None) => break,
+                Err(e) => return Err(Error::Io(e)),
+            }
         }
     }
 

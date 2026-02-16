@@ -1228,6 +1228,28 @@ impl Encryptor for AesGcmEncryptor {
             .decrypt(&nonce, data)
             .map_err(|e| Error::Encryption(e.to_string()))
     }
+
+    fn encrypt_into(&self, data: &[u8], block_idx: u64, out: &mut Vec<u8>) -> Result<()> {
+        use aes_gcm::aead::AeadInPlace;
+
+        let nonce = self.generate_nonce(block_idx);
+        out.clear();
+        out.extend_from_slice(data);
+        self.cipher
+            .encrypt_in_place(&nonce, b"", out)
+            .map_err(|e| Error::Encryption(e.to_string()))
+    }
+
+    fn decrypt_into(&self, data: &[u8], block_idx: u64, out: &mut Vec<u8>) -> Result<()> {
+        use aes_gcm::aead::AeadInPlace;
+
+        let nonce = self.generate_nonce(block_idx);
+        out.clear();
+        out.extend_from_slice(data);
+        self.cipher
+            .decrypt_in_place(&nonce, b"", out)
+            .map_err(|e| Error::Encryption(e.to_string()))
+    }
 }
 
 #[cfg(test)]

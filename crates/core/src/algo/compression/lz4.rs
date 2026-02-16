@@ -522,6 +522,20 @@ impl Compressor for Lz4Compressor {
     ///
     /// This is the fastest decompression path in Hexz, used by the block cache to
     /// decompress directly into cache-allocated buffers.
+    fn compress_into(&self, data: &[u8], out: &mut Vec<u8>) -> Result<()> {
+        out.clear();
+        // Prepend 4-byte little-endian uncompressed size header
+        let uncompressed_len = data.len() as u32;
+        out.extend_from_slice(&uncompressed_len.to_le_bytes());
+        // Reserve worst-case compressed size
+        let max_compressed = lz4_flex::block::get_maximum_output_size(data.len());
+        out.resize(4 + max_compressed, 0);
+        let compressed_len = lz4_flex::compress_into(data, &mut out[4..])
+            .map_err(|e| Error::Compression(e.to_string()))?;
+        out.truncate(4 + compressed_len);
+        Ok(())
+    }
+
     fn decompress_into(&self, data: &[u8], out: &mut [u8]) -> Result<usize> {
         if data.len() < 4 {
             return Err(Error::Compression("Data too short".into()));

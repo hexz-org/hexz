@@ -380,6 +380,12 @@ impl File {
     /// println!("Memory: {} MB", mem_bytes / (1024 * 1024));
     /// # }
     /// ```
+    /// Returns the total number of prefetch operations spawned since this file was opened.
+    /// Returns 0 if prefetching is disabled.
+    pub fn prefetch_spawn_count(&self) -> u64 {
+        self.prefetcher.as_ref().map_or(0, |p| p.spawn_count())
+    }
+
     pub fn size(&self, stream: SnapshotStream) -> u64 {
         match stream {
             SnapshotStream::Disk => self.master.disk_size,

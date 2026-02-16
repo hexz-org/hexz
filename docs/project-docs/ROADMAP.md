@@ -1,7 +1,7 @@
 # Hexz Development Roadmap
 
 > **Last Updated:** 2026-02-15
-> **Current Release:** v0.1.4
+> **Current Release:** v0.4.0
 > **Status:** Core engine stable. Python wheels and CLI binaries shipping for Linux, macOS, and Windows.
 
 ---
@@ -42,17 +42,35 @@ Focus: Fix the known bottlenecks in the read path.
 
 ---
 
-## v0.3.0 — Krapivin Hash Table (Cutting Edge!)
+## v0.3.0 — Write Pipeline Performance
 
-Focus: First production implementation of the 2025 hash table breakthrough.
+Focus: Buffer reuse, zero-copy APIs, and allocation elimination in the write path.
 
 | Issue | Description |
 |---|---|
-| **Krapivin Hash Table** | Implement [Optimal Bounds for Open Addressing Without Reordering](https://arxiv.org/abs/2501.02305) for deduplication map — 15-20% memory savings, O(log² n) worst-case lookups, disproves Yao's 40-year conjecture |
+| **compress_into / encrypt_into** | Zero-copy compression and encryption APIs that write into caller-owned buffers |
+| **Chunker buffer reuse** | FixedChunker and StreamChunker reuse internal buffers instead of allocating per chunk |
+| **Monomorphized chunker dispatch** | Enum dispatch replacing `Box<dyn Chunker>` for inlining and branch prediction |
+| **Pre-sized dedup map** | File size hint used to pre-allocate the deduplication hash table |
+| **Page serialization buffer reuse** | Reusable buffer for bincode page serialization |
+| **Zstd encoder pooling** | Reusable bulk compressor/decompressor to avoid per-call setup overhead |
 
 ---
 
-## v0.4.0 — Reliability & Testing
+## v0.4.0 — Hash Table & Algorithmic Optimizations
+
+Focus: Identity hashing, CDC improvements, DCAM memoization.
+
+| Issue | Description |
+|---|---|
+| **Identity hasher** | BLAKE3 keys are already uniformly distributed — bypass SipHash for 3-6x lookup speedup |
+| **CDC refill threshold** | Only shift buffer when cursor passes midpoint, reducing memmove frequency by ~50% |
+| **DCAM memoization** | Iterative power accumulation replacing `powf()` in expected_chunk_length/expected_duplicate_bytes |
+| **Prefetch race condition fix** | Atomic spawn counter for deterministic prefetch testing |
+
+---
+
+## v0.5.0 — Reliability & Testing
 
 Focus: Error handling, hardening, and confidence in correctness.
 
@@ -68,7 +86,7 @@ Focus: Error handling, hardening, and confidence in correctness.
 
 ---
 
-## v0.5.0 — Hugging Face & Cloud Backends
+## v0.6.0 — Hugging Face & Cloud Backends
 
 Focus: Integrate with the ML ecosystem and expand cloud storage.
 
@@ -82,7 +100,7 @@ Focus: Integrate with the ML ecosystem and expand cloud storage.
 
 ---
 
-## v0.6.0 — Snapshot Management
+## v0.7.0 — Snapshot Management
 
 Focus: Tools for working with multiple snapshots.
 
@@ -97,7 +115,7 @@ Focus: Tools for working with multiple snapshots.
 
 ---
 
-## v0.7.0 — More Frameworks & Optimization
+## v0.8.0 — More Frameworks & Optimization
 
 Focus: Broader ML framework support and second-pass performance work.
 
@@ -194,6 +212,7 @@ Not assigned to a version. Will be pulled in as priorities shift.
 - Learned compression and index structures
 - Distributed multi-writer coordination and global deduplication
 - Content-addressable storage / P2P dataset sharing
+- **Krapivin et al. (2025)** — [Optimal Bounds for Open Addressing Without Reordering](https://arxiv.org/abs/2501.02305): Evaluated for the deduplication hash table. The paper disproves Yao's 40-year conjecture and achieves O(log² n) worst-case probe complexity with multi-level open addressing. However, benchmarking showed that a standard `HashMap` with an identity hasher (leveraging BLAKE3's uniform distribution) outperformed the elastic hash table by 3-6x on lookup-heavy workloads due to cache locality and lower constant factors. The identity hasher approach was adopted in v0.4.0 instead.
 
 ---
 
