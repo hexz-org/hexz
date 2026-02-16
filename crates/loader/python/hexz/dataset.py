@@ -333,6 +333,26 @@ class Dataset(TorchDataset):
         if item_size is None and index_file is None:
             raise ValidationError("Either item_size or index_file must be provided")
 
+        # Store all constructor arguments for pickle/fork support.
+        # When DataLoader uses num_workers > 0, each worker process receives
+        # a pickled copy of the Dataset and must re-open its own Reader.
+        self._init_kwargs = {
+            "path": path,
+            "item_size": item_size,
+            "index_file": index_file,
+            "output_format": output_format,
+            "transform": transform,
+            "target_transform": target_transform,
+            "cache_size_mb": cache_size_mb,
+            "prefetch_factor": prefetch_factor,
+            "num_workers": num_workers,
+            "zero_copy": zero_copy,
+            "shuffle": shuffle,
+            "seed": seed,
+            "s3_region": s3_region,
+            "endpoint_url": endpoint_url,
+        }
+
         self._prefetcher: Optional[Prefetcher] = None
 
         # Open reader
@@ -536,6 +556,27 @@ class Dataset(TorchDataset):
         if self._cache:
             return self._cache.stats()
         return {"enabled": False}
+
+    def __getstate__(self) -> Dict[str, Any]:
+        """Pickle support for DataLoader multi-worker fork safety.
+
+        Returns only the constructor arguments and current epoch so that
+        each DataLoader worker can reconstruct its own Reader, cache,
+        and prefetcher from scratch (file handles cannot be shared across
+        forked processes).
+        """
+        return {
+            "init_kwargs": self._init_kwargs,
+            "epoch": self._epoch,
+        }
+
+    def __setstate__(self, state: Dict[str, Any]) -> None:
+        """Reconstruct the Dataset in a forked worker process."""
+        kwargs = state["init_kwargs"]
+        self.__init__(**kwargs)  # type: ignore[misc]
+        self._epoch = state["epoch"]
+        if self._shuffle:
+            self._indices = self._create_indices()
 
     def __repr__(self) -> str:
         cache_mb = self._cache.current_size / (1024 * 1024) if self._cache else 0

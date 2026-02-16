@@ -997,6 +997,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_compress_decompress_basic() {
         let compressor = ZstdCompressor::new(3, None);
         let data = b"Hello, world! This is test data for compression.";
@@ -1015,6 +1016,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_compress_empty_data() {
         let compressor = ZstdCompressor::new(3, None);
         let data = b"";
@@ -1028,6 +1030,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_compress_small_data() {
         let compressor = ZstdCompressor::new(3, None);
         let data = b"x";
@@ -1041,6 +1044,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_compress_large_data() {
         let compressor = ZstdCompressor::new(3, None);
         let data = vec![42u8; 1_000_000]; // 1 MB
@@ -1055,6 +1059,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_compress_repeating_pattern() {
         let compressor = ZstdCompressor::new(3, None);
         let data = vec![0xAB; 10_000];
@@ -1072,6 +1077,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_different_compression_levels() {
         let data = vec![42u8; 10_000];
 
@@ -1088,6 +1094,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_compression_levels_ratio() {
         let data = b"The quick brown fox jumps over the lazy dog. ".repeat(100);
 
@@ -1102,6 +1109,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_dictionary_training() {
         let samples: Vec<Vec<u8>> = (0..20)
             .map(|i| vec![((i * 13) % 256) as u8; 1024])
@@ -1113,6 +1121,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_compression_with_dictionary() {
         let samples: Vec<Vec<u8>> = (0..20)
             .map(|_| b"Sample data with repeated patterns and structures".to_vec())
@@ -1133,6 +1142,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_dictionary_improves_compression() {
         let samples: Vec<Vec<u8>> = (0..20)
             .map(|_| {
@@ -1166,6 +1176,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_decompress_into_buffer() {
         let compressor = ZstdCompressor::new(3, None);
         let data = vec![99u8; 1024];
@@ -1182,6 +1193,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_decompress_into_larger_buffer() {
         let compressor = ZstdCompressor::new(3, None);
         let data = vec![88u8; 512];
@@ -1198,6 +1210,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_decompress_into_with_dictionary() {
         let samples: Vec<Vec<u8>> = (0..15).map(|_| vec![77u8; 512]).collect();
 
@@ -1217,6 +1230,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_dictionary_mismatch() {
         // Create samples that will actually benefit from dictionaries
         let samples1: Vec<Vec<u8>> = (0..20)
@@ -1247,6 +1261,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_no_dict_vs_dict_compatibility() {
         // Use trained dictionary for better testing
         let samples: Vec<Vec<u8>> = (0..20)
@@ -1279,6 +1294,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_compressor_debug_format() {
         let compressor_no_dict = ZstdCompressor::new(5, None);
         let debug_str = format!("{:?}", compressor_no_dict);
@@ -1291,6 +1307,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_compressor_debug_format_with_dict() {
         let dict = vec![1u8; 512];
         let compressor_with_dict = ZstdCompressor::new(3, Some(dict));
@@ -1304,6 +1321,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_train_with_empty_samples() {
         let samples: Vec<Vec<u8>> = vec![];
         let result = ZstdCompressor::train(&samples, 1024);
@@ -1313,6 +1331,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_train_with_small_samples() {
         let samples: Vec<Vec<u8>> = vec![vec![1u8; 10]];
         let result = ZstdCompressor::train(&samples, 1024);
@@ -1323,6 +1342,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_multiple_compressions_same_compressor() {
         let compressor = ZstdCompressor::new(3, None);
 
@@ -1335,6 +1355,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_buffer_reuse_pattern() {
         let compressor = ZstdCompressor::new(3, None);
         let data = vec![55u8; 4096];
@@ -1353,6 +1374,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_various_data_patterns() {
         let compressor = ZstdCompressor::new(3, None);
 
@@ -1376,6 +1398,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_compression_preserves_data_integrity() {
         let compressor = ZstdCompressor::new(3, None);
 
@@ -1389,6 +1412,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_high_compression_level() {
         let compressor = ZstdCompressor::new(19, None);
         let data = b"High compression level test data with some patterns ".repeat(50);
@@ -1400,6 +1424,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_max_compression_level() {
         let compressor = ZstdCompressor::new(22, None);
         let data = vec![123u8; 5000];

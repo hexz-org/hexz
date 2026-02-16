@@ -86,11 +86,6 @@ tools/perf/results/
 fuzz/artifacts/
 fuzz/corpus/*
 
-# Mutation testing
-mutants.out/
-mutants.out.old/
-mutants.out*.json
-
 # Documentation builds
 docs/_build/
 site/
