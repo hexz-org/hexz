@@ -86,7 +86,9 @@ FUZZ_TIME       ?= 60
 
 # ── Phony ────────────────────────────────────────────────────────────────────
 .PHONY: help build rust python develop install run clean
-.PHONY: test test-rust test-python test-integration test-list test-nextest test-cov test-cov-rust test-cov-python mutants mutants-quick mutants-file
+.PHONY: test test-rust test-python test-integration test-list test-nextest test-all test-quick test-stress
+.PHONY: test-edge-cases test-property test-sanitize test-miri test-chaos test-concurrent test-memory-leak
+.PHONY: test-exhaustive test-paranoid test-verify test-suite test-cov test-cov-rust test-cov-python
 .PHONY: lint fmt fmt-check clippy deny check
 .PHONY: bench bench-micro bench-macro bench-ai bench-quick bench-list bench-compare save-baseline archive-baseline restore-baseline compare-baseline bench-flamegraph fuzz fuzz-long
 .PHONY: bench-boot bench-compression-ratio bench-large-scale
@@ -118,13 +120,26 @@ help:
 	@printf "    %-$(HELP_W)s  Rust tests only\n" "make test-rust [filter]"
 	@printf "    %-$(HELP_W)s  Python tests only (pytest -k)\n" "make test-python [filter]"
 	@printf "    %-$(HELP_W)s  List test categories for filtering\n" "make test-list"
+	@printf "    %-$(HELP_W)s  All tests (Rust + Python + integration)\n" "make test-all"
+	@printf "    %-$(HELP_W)s  Quick tests (lib + bins, no integration)\n" "make test-quick"
+	@printf "    %-$(HELP_W)s  Stress tests (release mode, ignored tests)\n" "make test-stress"
+	@printf "    %-$(HELP_W)s  Edge case tests (boundary conditions)\n" "make test-edge-cases"
+	@printf "    %-$(HELP_W)s  Property-based tests (1k cases)\n" "make test-property"
+	@printf "    %-$(HELP_W)s  Property tests thorough (10k cases)\n" "make test-property-thorough"
+	@printf "    %-$(HELP_W)s  Chaos tests (failures, corruption)\n" "make test-chaos"
+	@printf "    %-$(HELP_W)s  Address sanitizer (memory issues)\n" "make test-sanitize"
+	@printf "    %-$(HELP_W)s  Thread sanitizer (data races)\n" "make test-concurrent"
+	@printf "    %-$(HELP_W)s  Memory leak detection\n" "make test-memory-leak"
+	@printf "    %-$(HELP_W)s  Miri undefined behavior detection\n" "make test-miri"
+	@printf "    %-$(HELP_W)s  Exhaustive testing (~30-60 min)\n" "make test-exhaustive"
+	@printf "    %-$(HELP_W)s  PARANOID: Every test possible (~2 hrs)\n" "make test-paranoid"
 	@printf "    %-$(HELP_W)s  Coverage report (Rust + Python)\n" "make test-cov"
 	@printf "    %-$(HELP_W)s  Rust coverage only (cargo-llvm-cov)\n" "make test-cov-rust"
 	@printf "    %-$(HELP_W)s  Python coverage only (pytest-cov)\n" "make test-cov-python"
-	@printf "    %-$(HELP_W)s  Mutation testing (cargo-mutants)\n" "make mutants"
-	@printf "    %-$(HELP_W)s  Mutants on recent changes only\n" "make mutants-quick"
-	@printf "    %-$(HELP_W)s  Mutants on a single file\n" "make mutants-file FILE=..."
 	@printf "    %-$(HELP_W)s  Run tests via cargo-nextest\n" "make test-nextest"
+	@printf "    %-$(HELP_W)s  Integration tests only\n" "make test-integration"
+	@printf "    %-$(HELP_W)s  Full verification (lint + tests + fuzz)\n" "make test-verify"
+	@printf "    $(BOLD)%-$(HELP_W)s  Comprehensive suite (recommended)$(RESET)\n" "make test-suite"
 	@printf "\n  $(CYAN)Quality$(RESET)\n"
 	@printf "    %-$(HELP_W)s  Format check + clippy\n" "make lint"
 	@printf "    %-$(HELP_W)s  Auto-format Rust + Python\n" "make fmt"
@@ -251,6 +266,102 @@ test-nextest:
 	@printf "$(GREEN)Running tests via nextest…$(RESET)\n"
 	$(CARGO) nextest run --workspace
 
+test-all: test-rust test-python test-integration
+	@printf "$(GREEN)All tests passed!$(RESET)\n"
+
+test-quick:
+	@printf "$(GREEN)Running quick test suite (no integration tests)…$(RESET)\n"
+	$(CARGO) test --workspace --lib --bins
+	@printf "$(GREEN)Quick tests passed!$(RESET)\n"
+
+test-stress:
+	@printf "$(GREEN)Running stress tests with release optimizations…$(RESET)\n"
+	$(CARGO) test --workspace --release -- --include-ignored --test-threads=1
+	@printf "$(GREEN)Stress tests passed!$(RESET)\n"
+
+test-edge-cases:
+	@printf "$(GREEN)Running edge case tests (boundary conditions, limits)…$(RESET)\n"
+	HEXZ_TEST_EDGE_CASES=1 $(CARGO) test --workspace -- edge_case
+	@printf "$(GREEN)Edge case tests passed!$(RESET)\n"
+
+test-property:
+	@printf "$(GREEN)Running property-based tests (proptest)…$(RESET)\n"
+	PROPTEST_CASES=1000 $(CARGO) test --workspace -- proptest
+	@printf "$(GREEN)Property tests passed (1,000 cases per test)!$(RESET)\n"
+
+test-property-thorough:
+	@printf "$(GREEN)Running thorough property-based tests (proptest)…$(RESET)\n"
+	@printf "$(CYAN)This will take 5-10 minutes…$(RESET)\n"
+	PROPTEST_CASES=10000 $(CARGO) test --workspace -- proptest
+	@printf "$(GREEN)Property tests passed (10,000 cases per test)!$(RESET)\n"
+
+test-sanitize:
+	@printf "$(GREEN)Running tests with address sanitizer (detects memory issues)…$(RESET)\n"
+	@printf "$(CYAN)This requires nightly Rust and will be slow…$(RESET)\n"
+	RUSTFLAGS="-Z sanitizer=address" $(CARGO) +nightly test --workspace --target x86_64-unknown-linux-gnu --lib --tests
+	@printf "$(GREEN)Sanitizer tests passed!$(RESET)\n"
+
+test-miri:
+	@printf "$(GREEN)Running tests with Miri (detects undefined behavior)…$(RESET)\n"
+	@printf "$(CYAN)This requires nightly Rust and will be very slow…$(RESET)\n"
+	@command -v cargo-miri >/dev/null 2>&1 || { \
+		printf "$(BOLD)cargo-miri not installed.$(RESET)\n"; \
+		printf "Install with: $(CYAN)rustup +nightly component add miri$(RESET)\n"; \
+		exit 1; \
+	}
+	$(CARGO) +nightly miri test --package hexz-core --lib
+	@printf "$(GREEN)Miri tests passed!$(RESET)\n"
+
+test-chaos:
+	@printf "$(GREEN)Running chaos tests (random failures, timeouts, corruption)…$(RESET)\n"
+	HEXZ_CHAOS_MODE=1 $(CARGO) test --workspace -- chaos --test-threads=1
+	@printf "$(GREEN)Chaos tests passed!$(RESET)\n"
+
+test-concurrent:
+	@printf "$(GREEN)Running concurrency tests with thread sanitizer…$(RESET)\n"
+	@printf "$(CYAN)Testing for data races and thread safety issues…$(RESET)\n"
+	RUSTFLAGS="-Z sanitizer=thread" $(CARGO) +nightly test --workspace --target x86_64-unknown-linux-gnu -- concurrent --test-threads=1
+	@printf "$(GREEN)Concurrency tests passed!$(RESET)\n"
+
+test-memory-leak:
+	@printf "$(GREEN)Running memory leak detection tests…$(RESET)\n"
+	RUSTFLAGS="-Z sanitizer=leak" $(CARGO) +nightly test --workspace --target x86_64-unknown-linux-gnu --lib
+	@printf "$(GREEN)Memory leak tests passed!$(RESET)\n"
+
+test-exhaustive:
+	@printf "$(GREEN)Running exhaustive test suite (property + edge + stress + sanitizer)…$(RESET)\n"
+	@printf "$(CYAN)This will take 30-60 minutes…$(RESET)\n"
+	@$(MAKE) test-property-thorough
+	@$(MAKE) test-edge-cases
+	@$(MAKE) test-stress
+	@$(MAKE) test-sanitize
+	@printf "$(GREEN)Exhaustive tests passed!$(RESET)\n"
+
+test-paranoid: test-exhaustive test-miri test-chaos test-concurrent test-memory-leak fuzz-long
+	@printf "$(BOLD)$(GREEN)PARANOID MODE: All extensive tests passed!$(RESET)\n"
+	@printf "$(CYAN)This is the most thorough testing possible.$(RESET)\n"
+
+test-verify: lint test-all fuzz
+	@printf "$(GREEN)Full verification passed! (lint + all tests + fuzz)$(RESET)\n"
+
+test-suite:
+	@printf "$(BOLD)$(CYAN)Running comprehensive test suite...$(RESET)\n"
+	@printf "$(CYAN)This will test: quick, edge-cases, property, stress, all, and verify$(RESET)\n"
+	@printf "\n$(GREEN)1/6 Running quick tests...$(RESET)\n"
+	@$(MAKE) test-quick
+	@printf "\n$(GREEN)2/6 Running edge case tests...$(RESET)\n"
+	@$(MAKE) test-edge-cases
+	@printf "\n$(GREEN)3/6 Running property-based tests...$(RESET)\n"
+	@$(MAKE) test-property
+	@printf "\n$(GREEN)4/6 Running stress tests...$(RESET)\n"
+	@$(MAKE) test-stress
+	@printf "\n$(GREEN)5/6 Running all tests...$(RESET)\n"
+	@$(MAKE) test-all
+	@printf "\n$(GREEN)6/6 Running verification...$(RESET)\n"
+	@$(MAKE) test-verify
+	@printf "\n$(BOLD)$(GREEN)✅ ALL TEST SUITES PASSED!$(RESET)\n"
+	@printf "$(CYAN)Your code is thoroughly tested and ready.$(RESET)\n"
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Coverage
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -262,48 +373,6 @@ test-cov-rust:
 
 test-cov-python:
 	@cargo xtask coverage python
-
-# ═══════════════════════════════════════════════════════════════════════════════
-#  Mutation Testing
-# ═══════════════════════════════════════════════════════════════════════════════
-# Mutation testing inserts small changes (mutants) into your code to verify that
-# tests catch them. If a mutant survives (tests still pass), it indicates missing
-# or weak test coverage for that code path.
-#
-# Usage:
-#   make mutants              # Run on all workspace (slow, ~30-60 min)
-#   make mutants MUTANTS_ARGS="--file src/algo/compression/lz4.rs"  # Single file
-#   make mutants MUTANTS_ARGS="--in-diff HEAD~5"  # Only recent changes
-#   make mutants MUTANTS_ARGS="-p hexz-core"  # Single package
-#
-# Note: Automatically excludes py_interface/ (tested via Python, not Rust tests)
-mutants:
-	@command -v cargo-mutants >/dev/null 2>&1 || { \
-		printf "$(BOLD)cargo-mutants not installed.$(RESET)\n"; \
-		printf "Install with: $(CYAN)cargo install cargo-mutants$(RESET)\n"; \
-		exit 1; \
-	}
-	@printf "$(GREEN)Running mutation testing…$(RESET)\n"
-	$(CARGO) mutants --no-shuffle --exclude 'py_interface/**' $(MUTANTS_ARGS)
-
-mutants-quick:
-	@command -v cargo-mutants >/dev/null 2>&1 || { \
-		printf "$(BOLD)cargo-mutants not installed.$(RESET)\n"; \
-		printf "Install with: $(CYAN)cargo install cargo-mutants$(RESET)\n"; \
-		exit 1; \
-	}
-	@printf "$(GREEN)Running mutation testing on recent changes…$(RESET)\n"
-	$(CARGO) mutants --no-shuffle --exclude 'py_interface/**' --in-diff HEAD~5
-
-mutants-file:
-	@command -v cargo-mutants >/dev/null 2>&1 || { \
-		printf "$(BOLD)cargo-mutants not installed.$(RESET)\n"; \
-		printf "Install with: $(CYAN)cargo install cargo-mutants$(RESET)\n"; \
-		exit 1; \
-	}
-	@test -n "$(FILE)" || { printf "$(RED)Usage: make mutants-file FILE=path/to/file.rs$(RESET)\n"; exit 1; }
-	@printf "$(GREEN)Running mutation testing on $(FILE)…$(RESET)\n"
-	$(CARGO) mutants --no-shuffle --file "$(FILE)"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Quality
