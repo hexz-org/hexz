@@ -14,18 +14,12 @@ use hexz_core::File;
 use hexz_core::ops::pack::{PackConfig, pack_snapshot};
 use hexz_core::store::local::FileBackend;
 use std::fs;
-use std::net::TcpListener as StdTcpListener;
 use std::sync::Arc;
 use tempfile::TempDir;
+use tokio::net::TcpListener;
 
 /// Maximum chunk size the server will return per request (32 MiB).
 const MAX_CHUNK_SIZE: u64 = 32 * 1024 * 1024;
-
-/// Find a free TCP port by binding to port 0 and reading the assigned port.
-fn free_port() -> u16 {
-    let listener = StdTcpListener::bind("127.0.0.1:0").unwrap();
-    listener.local_addr().unwrap().port()
-}
 
 /// Test fixture that creates a snapshot with disk data only.
 struct DiskOnlyFixture {
@@ -117,11 +111,19 @@ impl DualStreamFixture {
     }
 }
 
-/// Start the HTTP server in a background Tokio task and return its base URL.
-/// Returns the port the server is listening on.
-async fn start_server(snap: Arc<File>, port: u16) {
+/// Start the HTTP server in a background Tokio task.
+///
+/// Binds to port 0 (OS-assigned) and passes the listener directly to
+/// `serve_http_with_listener`, avoiding the TOCTOU race of discovering a
+/// free port and re-binding by number. Returns the assigned port.
+async fn start_server(snap: Arc<File>) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+
     tokio::spawn(async move {
-        hexz_server::serve_http(snap, port).await.unwrap();
+        hexz_server::serve_http_with_listener(snap, listener)
+            .await
+            .unwrap();
     });
 
     // Wait for the server to be ready by polling the port.
@@ -130,7 +132,7 @@ async fn start_server(snap: Arc<File>, port: u16) {
             .await
             .is_ok()
         {
-            return;
+            return port;
         }
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
@@ -148,8 +150,7 @@ fn base_url(port: u16) -> String {
 #[tokio::test]
 async fn test_get_disk_no_range_header() {
     let fixture = DiskOnlyFixture::new(256 * 1024, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -180,8 +181,7 @@ async fn test_get_disk_no_range_header() {
 #[tokio::test]
 async fn test_get_memory_no_range_header() {
     let fixture = DualStreamFixture::new(128 * 1024, 64 * 1024);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -201,8 +201,7 @@ async fn test_get_memory_no_range_header() {
 #[tokio::test]
 async fn test_nonexistent_endpoint_returns_404() {
     let fixture = DiskOnlyFixture::new(64 * 1024, |_| 0x42);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -221,8 +220,7 @@ async fn test_nonexistent_endpoint_returns_404() {
 #[tokio::test]
 async fn test_bounded_range_request() {
     let fixture = DiskOnlyFixture::new(256 * 1024, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -268,8 +266,7 @@ async fn test_bounded_range_request() {
 #[tokio::test]
 async fn test_bounded_range_mid_stream() {
     let fixture = DiskOnlyFixture::new(256 * 1024, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let start = 100_000usize;
@@ -292,8 +289,7 @@ async fn test_bounded_range_mid_stream() {
 #[tokio::test]
 async fn test_unbounded_range_request() {
     let fixture = DiskOnlyFixture::new(256 * 1024, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let start = 1024usize;
@@ -317,8 +313,7 @@ async fn test_unbounded_range_request() {
 #[tokio::test]
 async fn test_single_byte_range() {
     let fixture = DiskOnlyFixture::new(64 * 1024, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -339,8 +334,7 @@ async fn test_single_byte_range() {
 async fn test_range_at_exact_eof() {
     let size = 64 * 1024usize;
     let fixture = DiskOnlyFixture::new(size, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     // Request the last byte
@@ -363,8 +357,7 @@ async fn test_range_at_exact_eof() {
 async fn test_range_last_block() {
     let size = 256 * 1024usize;
     let fixture = DiskOnlyFixture::new(size, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let start = size - 4096;
@@ -390,8 +383,7 @@ async fn test_range_last_block() {
 #[tokio::test]
 async fn test_invalid_range_missing_prefix() {
     let fixture = DiskOnlyFixture::new(64 * 1024, |_| 0x42);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -408,8 +400,7 @@ async fn test_invalid_range_missing_prefix() {
 async fn test_invalid_range_out_of_bounds() {
     let size = 64 * 1024usize;
     let fixture = DiskOnlyFixture::new(size, |_| 0x42);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     // Request beyond stream size
@@ -426,8 +417,7 @@ async fn test_invalid_range_out_of_bounds() {
 #[tokio::test]
 async fn test_invalid_range_inverted() {
     let fixture = DiskOnlyFixture::new(64 * 1024, |_| 0x42);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -443,8 +433,7 @@ async fn test_invalid_range_inverted() {
 #[tokio::test]
 async fn test_invalid_range_suffix_not_supported() {
     let fixture = DiskOnlyFixture::new(64 * 1024, |_| 0x42);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -460,8 +449,7 @@ async fn test_invalid_range_suffix_not_supported() {
 #[tokio::test]
 async fn test_invalid_range_non_numeric() {
     let fixture = DiskOnlyFixture::new(64 * 1024, |_| 0x42);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -477,8 +465,7 @@ async fn test_invalid_range_non_numeric() {
 #[tokio::test]
 async fn test_invalid_range_empty_value() {
     let fixture = DiskOnlyFixture::new(64 * 1024, |_| 0x42);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -495,8 +482,7 @@ async fn test_invalid_range_empty_value() {
 async fn test_start_beyond_eof() {
     let size = 64 * 1024usize;
     let fixture = DiskOnlyFixture::new(size, |_| 0x42);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -518,8 +504,7 @@ async fn test_large_range_is_clamped_to_max_chunk_size() {
     // Create a snapshot larger than MAX_CHUNK_SIZE (32 MiB)
     let size = 48 * 1024 * 1024; // 48 MiB
     let fixture = DiskOnlyFixture::new(size, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     // Request the entire 48 MiB — should be clamped to 32 MiB
@@ -551,8 +536,7 @@ async fn test_large_range_is_clamped_to_max_chunk_size() {
 async fn test_no_range_header_large_file_is_clamped() {
     let size = 48 * 1024 * 1024;
     let fixture = DiskOnlyFixture::new(size, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -571,8 +555,7 @@ async fn test_no_range_header_large_file_is_clamped() {
 async fn test_clamping_with_nonzero_start() {
     let size = 48 * 1024 * 1024;
     let fixture = DiskOnlyFixture::new(size, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let start = 1024u64;
@@ -615,8 +598,7 @@ async fn test_clamping_with_nonzero_start() {
 async fn test_content_range_format_bounded() {
     let size = 128 * 1024usize;
     let fixture = DiskOnlyFixture::new(size, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -641,8 +623,7 @@ async fn test_content_range_format_bounded() {
 #[tokio::test]
 async fn test_response_headers_present() {
     let fixture = DiskOnlyFixture::new(64 * 1024, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -681,8 +662,7 @@ async fn test_response_headers_present() {
 #[tokio::test]
 async fn test_disk_and_memory_return_different_data() {
     let fixture = DualStreamFixture::new(128 * 1024, 64 * 1024);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
 
@@ -712,8 +692,7 @@ async fn test_disk_and_memory_return_different_data() {
 async fn test_memory_stream_full_read() {
     let mem_size = 64 * 1024;
     let fixture = DualStreamFixture::new(128 * 1024, mem_size);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -738,8 +717,7 @@ async fn test_read_spanning_block_boundary() {
     // Block size is 65536 bytes. Read across the boundary.
     let size = 256 * 1024usize;
     let fixture = DiskOnlyFixture::new(size, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     // Read 8KB straddling the 64KB block boundary
@@ -762,8 +740,7 @@ async fn test_read_spanning_block_boundary() {
 async fn test_read_spanning_multiple_blocks() {
     let size = 512 * 1024usize;
     let fixture = DiskOnlyFixture::new(size, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     // Read 192KB starting at 32KB — spans blocks 0, 1, 2, 3
@@ -791,8 +768,7 @@ async fn test_read_spanning_multiple_blocks() {
 async fn test_concurrent_reads_same_endpoint() {
     let size = 256 * 1024usize;
     let fixture = DiskOnlyFixture::new(size, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let disk_data = fixture.disk_data.clone();
@@ -832,8 +808,7 @@ async fn test_concurrent_reads_same_endpoint() {
 #[tokio::test]
 async fn test_concurrent_reads_different_endpoints() {
     let fixture = DualStreamFixture::new(128 * 1024, 64 * 1024);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let disk_data = fixture.disk_data.clone();
@@ -890,8 +865,7 @@ async fn test_concurrent_reads_different_endpoints() {
 async fn test_sequential_chunked_read_covers_full_stream() {
     let size = 256 * 1024usize;
     let fixture = DiskOnlyFixture::new(size, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let chunk_size = 16 * 1024usize;
@@ -925,8 +899,7 @@ async fn test_sequential_chunked_read_covers_full_stream() {
 async fn test_data_integrity_entire_disk_stream() {
     let size = 128 * 1024usize;
     let fixture = DiskOnlyFixture::new(size, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -958,8 +931,7 @@ async fn test_data_integrity_random_offsets() {
 
     let size = 512 * 1024usize;
     let fixture = DiskOnlyFixture::new(size, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let mut rng = StdRng::seed_from_u64(42);
@@ -995,8 +967,7 @@ async fn test_data_integrity_random_offsets() {
 #[tokio::test]
 async fn test_post_method_not_allowed() {
     let fixture = DiskOnlyFixture::new(64 * 1024, |_| 0x42);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -1012,8 +983,7 @@ async fn test_post_method_not_allowed() {
 #[tokio::test]
 async fn test_put_method_not_allowed() {
     let fixture = DiskOnlyFixture::new(64 * 1024, |_| 0x42);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -1028,8 +998,7 @@ async fn test_put_method_not_allowed() {
 #[tokio::test]
 async fn test_delete_method_not_allowed() {
     let fixture = DiskOnlyFixture::new(64 * 1024, |_| 0x42);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -1048,8 +1017,7 @@ async fn test_delete_method_not_allowed() {
 #[tokio::test]
 async fn test_repeated_reads_return_same_data() {
     let fixture = DiskOnlyFixture::new(128 * 1024, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
 
@@ -1083,8 +1051,7 @@ async fn test_exact_block_size_read() {
     // Read exactly one block (65536 bytes)
     let size = 256 * 1024usize;
     let fixture = DiskOnlyFixture::new(size, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -1104,8 +1071,7 @@ async fn test_exact_block_size_read() {
 async fn test_block_aligned_start() {
     let size = 256 * 1024usize;
     let fixture = DiskOnlyFixture::new(size, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     // Start at block boundary, read less than one block
@@ -1127,8 +1093,7 @@ async fn test_small_snapshot() {
     // Snapshot smaller than one block
     let size = 1024usize;
     let fixture = DiskOnlyFixture::new(size, |i| (i % 256) as u8);
-    let port = free_port();
-    start_server(fixture.snap.clone(), port).await;
+    let port = start_server(fixture.snap.clone()).await;
 
     let client = reqwest::Client::new();
     let resp = client

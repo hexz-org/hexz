@@ -872,6 +872,21 @@ pub async fn serve_s3_gateway(_snap: Arc<File>, port: u16) -> anyhow::Result<()>
 /// This function does not panic under normal operation. Request handling errors
 /// are converted to HTTP error responses.
 pub async fn serve_http(snap: Arc<File>, port: u16) -> anyhow::Result<()> {
+    let addr = SocketAddr::from((BIND_ADDR, port));
+    let listener = TcpListener::bind(addr).await?;
+    tracing::info!("HTTP server listening on {}", addr);
+    serve_http_with_listener(snap, listener).await
+}
+
+/// Like [`serve_http`], but accepts a pre-bound [`TcpListener`].
+///
+/// This avoids a TOCTOU race when the caller needs to discover a free port
+/// (bind to port 0) and then pass the listener directly instead of
+/// re-binding by port number.
+pub async fn serve_http_with_listener(
+    snap: Arc<File>,
+    listener: TcpListener,
+) -> anyhow::Result<()> {
     let state = Arc::new(AppState { snap });
 
     let app = Router::new()
@@ -879,9 +894,6 @@ pub async fn serve_http(snap: Arc<File>, port: u16) -> anyhow::Result<()> {
         .route("/memory", get(get_memory))
         .with_state(state);
 
-    let addr = SocketAddr::from((BIND_ADDR, port));
-    let listener = TcpListener::bind(addr).await?;
-    tracing::info!("HTTP server listening on {}", addr);
     axum::serve(listener, app).await?;
     Ok(())
 }
