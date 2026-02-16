@@ -79,6 +79,7 @@ flamegraph.svg
 perf.data*
 criterion/
 .criterion/
+perf/results/
 
 # Documentation builds
 docs/_build/

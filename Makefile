@@ -94,6 +94,7 @@ endif
 .PHONY: test test-rust test-python test-integration test-list test-cov test-cov-rust test-cov-python mutants
 .PHONY: lint fmt fmt-check clippy deny check
 .PHONY: bench bench-list bench-compare save-baseline archive-baseline restore-baseline compare-baseline bench-flamegraph fuzz
+.PHONY: perf-python perf-rust perf-clean
 .PHONY: bench-competitors bench-competitors-small
 .PHONY: docker-dev docker-bench docs docs-python setup setup-check setup-cross ci
 .PHONY: pre-release _cross-aarch64 _cross-windows _wheel-check
@@ -143,6 +144,10 @@ help:
 	@printf "    %-$(HELP_W)s  Compare two archived baselines (critcmp)\n" "make compare-baseline <a> <b>"
 	@printf "    %-$(HELP_W)s  Generate flamegraph SVG from benchmarks\n" "make bench-flamegraph [filter]"
 	@printf "    %-$(HELP_W)s  Fuzz targets (cargo-fuzz)\n" "make fuzz"
+	@printf "\n  $(CYAN)Profiling$(RESET)  (samply → Firefox Profiler flamegraphs)\n"
+	@printf "    %-$(HELP_W)s  Flamegraph: Python ML workload\n" "make perf-python"
+	@printf "    %-$(HELP_W)s  Flamegraph: Rust CLI data pack\n" "make perf-rust"
+	@printf "    %-$(HELP_W)s  Remove profiling artifacts\n" "make perf-clean"
 	@printf "\n  $(CYAN)Infrastructure$(RESET)\n"
 	@printf "    %-$(HELP_W)s  Build dev Docker image\n" "make docker-dev"
 	@printf "    %-$(HELP_W)s  Build benchmark Docker image\n" "make docker-bench"
@@ -483,6 +488,51 @@ fuzz:
 	@printf "$(GREEN)Running fuzz targets (60 s each)…$(RESET)\n"
 	cd fuzz && $(CARGO) +nightly fuzz run decompress -- -max_total_time=60
 	cd fuzz && $(CARGO) +nightly fuzz run index_parser -- -max_total_time=60
+
+# ── Profiling ────────────────────────────────────────────────────────────────
+#  Flame-graph profiling of real workloads via samply (Rust-based profiler).
+#  Opens Firefox Profiler in the browser — no perf script, no hanging.
+#
+#  Tool: samply (cargo install samply)
+#  Requires: sudo sysctl kernel.perf_event_paranoid=1  (one-time)
+#
+#  Tune workload size:
+#    make perf PERF_SIZE_MB=512
+#    make perf-python HEXZ_PERF_SAMPLES=50000 HEXZ_PERF_EPOCHS=5
+PERF_SIZE_MB    ?= 256
+
+define _samply_check
+	@command -v samply >/dev/null 2>&1 || { \
+		printf "$(BOLD)samply not found.$(RESET)\n"; \
+		printf "Install with: $(CYAN)cargo install samply$(RESET)\n"; \
+		exit 1; \
+	}
+endef
+
+perf-python: develop
+	$(call _samply_check)
+	@printf "$(GREEN)Profiling Python ML workload (samply)…$(RESET)\n"
+	samply record -- $(PYTHON) perf/ml_workload.py
+	@printf "\n$(CYAN)Tip: type $(BOLD)hexz$(RESET)$(CYAN) in the search box to highlight only hexz frames$(RESET)\n"
+
+perf-rust:
+	$(call _samply_check)
+	@printf "$(GREEN)Building Rust CLI (release + frame pointers)…$(RESET)\n"
+	RUSTFLAGS="-C force-frame-pointers=yes" $(CARGO) build --release --package hexz-cli
+	@printf "$(GREEN)Generating $(PERF_SIZE_MB)MB of test data…$(RESET)\n"
+	@mkdir -p /tmp/hexz_perf
+	@dd if=/dev/urandom of=/tmp/hexz_perf/test.bin bs=1M count=$(PERF_SIZE_MB) 2>/dev/null
+	@printf "$(GREEN)Profiling hexz data pack (samply, $(PERF_SIZE_MB)MB)…$(RESET)\n"
+	samply record -- ./target/release/hexz data pack \
+		--disk /tmp/hexz_perf/test.bin \
+		--output /tmp/hexz_perf/output.hxz \
+		--silent
+	@rm -rf /tmp/hexz_perf
+	@printf "\n$(CYAN)Tip: type $(BOLD)hexz$(RESET)$(CYAN) in the search box to highlight only hexz frames$(RESET)\n"
+
+perf-clean:
+	@printf "$(GREEN)Cleaning profiling artifacts…$(RESET)\n"
+	rm -rf perf/results /tmp/hexz_perf
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Infrastructure
