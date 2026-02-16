@@ -154,6 +154,11 @@ harness = false
 path = "benches/micro/encryption.rs"
 
 [[bench]]
+name = "hash_table"
+harness = false
+path = "benches/micro/hash_table.rs"
+
+[[bench]]
 name = "dedup_efficiency"
 harness = false
 path = "benches/macro/dedup_efficiency.rs"

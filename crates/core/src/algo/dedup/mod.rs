@@ -49,6 +49,7 @@
 
 pub mod cdc;
 pub mod dcam;
+pub mod hash_table;
 
 pub use cdc::{CdcStats, StreamChunker};
 pub use dcam::DedupeParams;

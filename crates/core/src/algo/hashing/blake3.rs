@@ -267,6 +267,8 @@ impl ContentHasher for Blake3Hasher {
     /// Computes the BLAKE3 hash and writes it into the provided buffer.
     ///
     /// **Performance:** Zero allocations - reuses the caller's buffer.
+    /// Uses `blake3::hash().as_bytes()` to borrow the internal digest directly,
+    /// avoiding an intermediate `[u8; 32]` stack copy.
     /// Prefer this over `hash()` in hot paths.
     ///
     /// **Panics:** If `out.len() < 32` (caller must ensure buffer is large enough).
@@ -277,9 +279,15 @@ impl ContentHasher for Blake3Hasher {
                 out.len()
             )));
         }
-        let hash = self.hash_array(data);
-        out[..32].copy_from_slice(&hash);
+        out[..32].copy_from_slice(blake3::hash(data).as_bytes());
         Ok(32)
+    }
+
+    /// Computes the BLAKE3 hash and returns a fixed-size 32-byte array.
+    ///
+    /// **Performance:** Single copy from blake3's internal digest. No heap allocation.
+    fn hash_fixed(&self, data: &[u8]) -> [u8; 32] {
+        self.hash_array(data)
     }
 
     /// Returns the output length in bytes (always 32 for BLAKE3).
@@ -351,6 +359,29 @@ impl IncrementalHasher {
     #[must_use]
     pub fn finalize(self) -> [u8; 32] {
         self.inner.finalize().into()
+    }
+
+    /// Finalizes the hash and writes directly into the provided buffer.
+    ///
+    /// **Performance:** Borrows the internal digest via `as_bytes()` and copies
+    /// once into `out`, avoiding an intermediate owned `[u8; 32]`.
+    /// Consistent with the `hash_into` zero-alloc pattern.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hexz_core::algo::hashing::blake3::Blake3Hasher;
+    ///
+    /// let hasher = Blake3Hasher::new();
+    /// let mut inc = hasher.new_incremental();
+    /// inc.update(b"data");
+    /// let mut buf = [0u8; 32];
+    /// inc.finalize_into(&mut buf);
+    ///
+    /// assert_eq!(buf, Blake3Hasher::new().hash_array(b"data"));
+    /// ```
+    pub fn finalize_into(self, out: &mut [u8; 32]) {
+        out.copy_from_slice(self.inner.finalize().as_bytes());
     }
 }
 

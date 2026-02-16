@@ -42,7 +42,17 @@ Focus: Fix the known bottlenecks in the read path.
 
 ---
 
-## v0.3.0 — Reliability & Testing
+## v0.3.0 — Krapivin Hash Table (Cutting Edge!)
+
+Focus: First production implementation of the 2025 hash table breakthrough.
+
+| Issue | Description |
+|---|---|
+| **Krapivin Hash Table** | Implement [Optimal Bounds for Open Addressing Without Reordering](https://arxiv.org/abs/2501.02305) for deduplication map — 15-20% memory savings, O(log² n) worst-case lookups, disproves Yao's 40-year conjecture |
+
+---
+
+## v0.4.0 — Reliability & Testing
 
 Focus: Error handling, hardening, and confidence in correctness.
 
@@ -58,7 +68,7 @@ Focus: Error handling, hardening, and confidence in correctness.
 
 ---
 
-## v0.4.0 — Hugging Face & Cloud Backends
+## v0.5.0 — Hugging Face & Cloud Backends
 
 Focus: Integrate with the ML ecosystem and expand cloud storage.
 
@@ -72,7 +82,7 @@ Focus: Integrate with the ML ecosystem and expand cloud storage.
 
 ---
 
-## v0.5.0 — Snapshot Management
+## v0.6.0 — Snapshot Management
 
 Focus: Tools for working with multiple snapshots.
 
@@ -87,7 +97,7 @@ Focus: Tools for working with multiple snapshots.
 
 ---
 
-## v0.6.0 — More Frameworks & Optimization
+## v0.7.0 — More Frameworks & Optimization
 
 Focus: Broader ML framework support and second-pass performance work.
 

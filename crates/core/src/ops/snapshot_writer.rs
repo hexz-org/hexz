@@ -8,7 +8,6 @@
 use hexz_common::Result;
 use hexz_common::constants::BLOCK_OFFSET_PARENT;
 use hexz_common::crypto::KeyDerivationParams;
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
@@ -23,6 +22,11 @@ use crate::format::{
 };
 use crate::ops::write::{create_zero_block, is_zero_chunk, write_block};
 
+#[cfg(feature = "elastic-hash")]
+use crate::algo::dedup::hash_table::ElasticHashTable;
+#[cfg(not(feature = "elastic-hash"))]
+use std::collections::HashMap;
+
 /// Unified writer for Hexz snapshot files.
 ///
 /// Owns the output file, compressor, optional encryptor, dedup map, and all
@@ -33,6 +37,9 @@ pub struct SnapshotWriter {
     current_offset: u64,
     master: MasterIndex,
     global_block_idx: u64,
+    #[cfg(feature = "elastic-hash")]
+    dedup_map: ElasticHashTable,
+    #[cfg(not(feature = "elastic-hash"))]
     dedup_map: HashMap<[u8; 32], u64>,
     compressor: Box<dyn Compressor>,
     encryptor: Option<Box<dyn Encryptor>>,
@@ -189,6 +196,9 @@ impl SnapshotWriter {
             current_offset: HEADER_SIZE as u64,
             master: MasterIndex::default(),
             global_block_idx: 0,
+            #[cfg(feature = "elastic-hash")]
+            dedup_map: ElasticHashTable::with_capacity(4096),
+            #[cfg(not(feature = "elastic-hash"))]
             dedup_map: HashMap::new(),
             compressor,
             encryptor,

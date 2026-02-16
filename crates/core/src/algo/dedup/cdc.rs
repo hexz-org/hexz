@@ -297,14 +297,13 @@
 //!
 //! ## Hash Collision Handling
 //!
-//! The `analyze_stream()` function uses CRC32 for performance, which provides
-//! only 32 bits of entropy. For large datasets (>1M unique chunks), collision
-//! probability becomes non-negligible:
+//! The `analyze_stream()` function uses the first 8 bytes of BLAKE3 as a 64-bit
+//! hash. This provides a birthday bound at ~2^32 ≈ 4 billion unique chunks,
+//! which is more than sufficient for analysis workloads:
 //!
-//! - **Acceptable for analysis**: CRC32 collisions cause slight overestimation
-//!   of deduplication effectiveness (conservative)
-//! - **Not acceptable for storage**: Actual packing should use cryptographic
-//!   hashes (SHA-256, BLAKE3) to avoid data corruption
+//! - **Negligible collision risk**: Even at 100M unique chunks, P(collision) < 0.1%
+//! - **Not acceptable for storage**: Actual packing uses the full 256-bit BLAKE3
+//!   hash via the dedup hash table to avoid data corruption
 //!
 //! ## Small File Overhead
 //!
@@ -513,9 +512,8 @@ pub struct CdcStats {
     ///
     /// # Hash Collision Note
     ///
-    /// Uses CRC32 for hashing, which has a negligible collision probability
-    /// (~2^-32) for typical dataset sizes. For critical applications requiring
-    /// cryptographic guarantees, this could be upgraded to SHA-256.
+    /// Uses the first 8 bytes of BLAKE3 as a 64-bit hash, providing negligible
+    /// collision probability (birthday bound at ~2^32 ≈ 4 billion unique chunks).
     pub unique_chunk_count: u64,
 }
 
@@ -1136,20 +1134,17 @@ impl<R: Read> Iterator for StreamChunker<R> {
 ///
 /// # Hash Collision Probability
 ///
-/// This function uses CRC32 for chunk hashing, which provides a 32-bit hash space.
+/// This function uses the first 8 bytes of BLAKE3 as a 64-bit hash.
 /// The probability of collision is governed by the birthday paradox:
 ///
 /// ```text
-/// P(collision) ≈ n² / (2 × 2^32) where n = unique_chunk_count
+/// P(collision) ≈ n² / (2 × 2^64) where n = unique_chunk_count
 /// ```
 ///
 /// For typical workloads:
-/// - **1M unique chunks**: P(collision) ≈ 0.00012 (0.012%) - negligible
-/// - **10M unique chunks**: P(collision) ≈ 0.012 (1.2%) - acceptable for estimation
-/// - **100M unique chunks**: P(collision) ≈ 0.54 (54%) - consider SHA-256
-///
-/// For DCAM analysis (capacity planning), CRC32 collisions cause slight
-/// overestimation of deduplication effectiveness, which is conservative.
+/// - **1M unique chunks**: P(collision) ≈ 2.7e-8 — negligible
+/// - **100M unique chunks**: P(collision) ≈ 2.7e-4 (0.027%) — negligible
+/// - **4 billion unique chunks**: P(collision) ≈ 50% (birthday bound)
 ///
 /// # Examples
 ///
@@ -1252,7 +1247,14 @@ pub fn analyze_stream<R: Read>(reader: R, params: &DedupeParams) -> io::Result<C
     for chunk_res in chunker {
         let chunk = chunk_res?;
         let len = chunk.len() as u64;
-        let hash = crc32fast::hash(&chunk) as u64;
+        // Use first 8 bytes of BLAKE3 digest as a 64-bit hash.
+        // BLAKE3 at 16KB chunks is >3 GB/s — only ~2-3x slower than CRC32 —
+        // but provides 2^64 hash space (birthday bound at ~4 billion chunks)
+        // vs CRC32's 2^32 (birthday bound at ~65K chunks).
+        let digest = *blake3::hash(&chunk).as_bytes();
+        let hash = u64::from_le_bytes([
+            digest[0], digest[1], digest[2], digest[3], digest[4], digest[5], digest[6], digest[7],
+        ]);
 
         chunk_count += 1;
         if seen_chunks.insert(hash) {

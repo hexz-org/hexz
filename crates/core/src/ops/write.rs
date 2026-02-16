@@ -267,10 +267,10 @@
 //! - **Write-ahead logging**: Enable atomic commits for crash safety
 
 use hexz_common::Result;
-use std::collections::HashMap;
 use std::io::Write;
 
 use crate::algo::compression::Compressor;
+use crate::algo::dedup::hash_table::DedupHashTable;
 use crate::algo::encryption::Encryptor;
 use crate::algo::hashing::ContentHasher;
 use crate::format::index::BlockInfo;
@@ -364,6 +364,7 @@ use crate::format::index::BlockInfo;
 /// use hexz_core::ops::write::write_block;
 /// use hexz_core::algo::compression::Lz4Compressor;
 /// use hexz_core::algo::hashing::blake3::Blake3Hasher;
+/// use std::collections::HashMap;
 /// use std::fs::File;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -379,7 +380,7 @@ use crate::format::index::BlockInfo;
 ///     &chunk,
 ///     0,              // block_idx
 ///     &mut offset,
-///     None,           // No dedup
+///     None::<&mut HashMap<[u8; 32], u64>>, // No dedup
 ///     &compressor,
 ///     None,           // No encryption
 ///     &hasher,
@@ -450,6 +451,7 @@ use crate::format::index::BlockInfo;
 /// use hexz_core::algo::encryption::AesGcmEncryptor;
 /// use hexz_core::algo::hashing::blake3::Blake3Hasher;
 /// use hexz_common::crypto::KeyDerivationParams;
+/// use std::collections::HashMap;
 /// use std::fs::File;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -473,7 +475,7 @@ use crate::format::index::BlockInfo;
 ///     &chunk,
 ///     0,
 ///     &mut offset,
-///     None,           // Dedup disabled (encryption prevents it)
+///     None::<&mut HashMap<[u8; 32], u64>>, // Dedup disabled (encryption prevents it)
 ///     &compressor,
 ///     Some(&encryptor),
 ///     &hasher,
@@ -530,16 +532,16 @@ use crate::format::index::BlockInfo;
 ///
 /// The dedup_map must also be externally synchronized for concurrent access.
 #[allow(clippy::too_many_arguments)]
-pub fn write_block<W: Write>(
+pub fn write_block<W: Write, D: DedupHashTable>(
     out: &mut W,
     chunk: &[u8],
     block_idx: u64,
     current_offset: &mut u64,
-    dedup_map: Option<&mut HashMap<[u8; 32], u64>>,
+    dedup_map: Option<&mut D>,
     compressor: &dyn Compressor,
     encryptor: Option<&dyn Encryptor>,
     hasher: &dyn ContentHasher,
-    hash_buf: &mut [u8],
+    hash_buf: &mut [u8; 32],
 ) -> Result<BlockInfo> {
     // Compress the chunk
     let compressed = compressor.compress(chunk)?;
@@ -562,18 +564,16 @@ pub fn write_block<W: Write>(
         *current_offset += final_data.len() as u64;
         off
     } else if let Some(map) = dedup_map {
-        // Use hash_into for zero-allocation hashing
-        hasher.hash_into(&final_data, hash_buf)?;
-        let mut hash_key = [0u8; 32];
-        hash_key.copy_from_slice(&hash_buf[..32]);
+        // Hash directly into the fixed-size buffer (no runtime bounds check).
+        *hash_buf = hasher.hash_fixed(&final_data);
 
-        if let Some(&existing_offset) = map.get(&hash_key) {
-            // Block already exists, reuse it
+        if let Some(existing_offset) = map.get(hash_buf) {
+            // Block already exists, reuse it — no copy needed on hit
             existing_offset
         } else {
-            // New block, write it and record in map
+            // New block: copy hash_buf only on miss (insert needs owned key)
             let off = *current_offset;
-            map.insert(hash_key, off);
+            map.insert(*hash_buf, off);
             out.write_all(&final_data)?;
             *current_offset += final_data.len() as u64;
             off
@@ -664,6 +664,7 @@ pub fn write_block<W: Write>(
 /// # use hexz_core::ops::write::{is_zero_chunk, create_zero_block, write_block};
 /// # use hexz_core::algo::compression::Lz4Compressor;
 /// # use hexz_core::algo::hashing::blake3::Blake3Hasher;
+/// # use std::collections::HashMap;
 /// # use std::fs::File;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// # let mut out = File::create("output.hxz")?;
@@ -678,7 +679,7 @@ pub fn write_block<W: Write>(
 ///         create_zero_block(chunk.len() as u32)
 ///     } else {
 ///         // Normal path: Compress and write
-///         write_block(&mut out, chunk, idx as u64, &mut offset, None, &compressor, None, &hasher, &mut hash_buf)?
+///         write_block(&mut out, chunk, idx as u64, &mut offset, None::<&mut HashMap<[u8; 32], u64>>, &compressor, None, &hasher, &mut hash_buf)?
 ///     };
 ///     // Add info to index page...
 /// }
@@ -739,12 +740,12 @@ pub fn create_zero_block(logical_len: u32) -> BlockInfo {
 /// This is a simpler API for tests and one-off writes. For hot paths (like snapshot
 /// packing loops), use `write_block` directly with a reused hasher and buffer.
 #[allow(dead_code)]
-fn write_block_simple<W: Write>(
+fn write_block_simple<W: Write, D: DedupHashTable>(
     out: &mut W,
     chunk: &[u8],
     block_idx: u64,
     current_offset: &mut u64,
-    dedup_map: Option<&mut HashMap<[u8; 32], u64>>,
+    dedup_map: Option<&mut D>,
     compressor: &dyn Compressor,
     encryptor: Option<&dyn Encryptor>,
 ) -> Result<BlockInfo> {
@@ -822,6 +823,7 @@ fn write_block_simple<W: Write>(
 /// # use hexz_core::algo::compression::Lz4Compressor;
 /// # use hexz_core::algo::hashing::blake3::Blake3Hasher;
 /// # use hexz_core::format::index::BlockInfo;
+/// # use std::collections::HashMap;
 /// # use std::fs::File;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// # let mut out = File::create("output.hxz")?;
@@ -837,7 +839,7 @@ fn write_block_simple<W: Write>(
 ///         create_zero_block(chunk.len() as u32)
 ///     } else {
 ///         // Slow path: Compress, write, create metadata
-///         write_block(&mut out, chunk, idx as u64, &mut offset, None, &compressor, None, &hasher, &mut hash_buf)?
+///         write_block(&mut out, chunk, idx as u64, &mut offset, None::<&mut HashMap<[u8; 32], u64>>, &compressor, None, &hasher, &mut hash_buf)?
 ///     };
 ///     index_blocks.push(info);
 /// }
@@ -916,6 +918,26 @@ mod tests {
     use std::collections::HashMap;
     use std::io::Cursor;
 
+    /// Convenience wrapper that calls write_block_simple with no dedup map.
+    fn write_block_no_dedup<W: Write>(
+        out: &mut W,
+        chunk: &[u8],
+        block_idx: u64,
+        current_offset: &mut u64,
+        compressor: &dyn Compressor,
+        encryptor: Option<&dyn Encryptor>,
+    ) -> Result<BlockInfo> {
+        write_block_simple(
+            out,
+            chunk,
+            block_idx,
+            current_offset,
+            None::<&mut HashMap<[u8; 32], u64>>,
+            compressor,
+            encryptor,
+        )
+    }
+
     #[test]
     fn test_is_zero_chunk_all_zeros() {
         let chunk = vec![0u8; 1024];
@@ -982,8 +1004,7 @@ mod tests {
         let chunk = vec![0xAAu8; 4096];
         let compressor = Lz4Compressor::new();
 
-        let result =
-            write_block_simple(&mut output, &chunk, 0, &mut offset, None, &compressor, None);
+        let result = write_block_no_dedup(&mut output, &chunk, 0, &mut offset, &compressor, None);
 
         assert!(result.is_ok());
         let info = result.unwrap();
@@ -1009,8 +1030,7 @@ mod tests {
         let chunk = vec![0xAAu8; 4096];
         let compressor = ZstdCompressor::new(3, None);
 
-        let result =
-            write_block_simple(&mut output, &chunk, 0, &mut offset, None, &compressor, None);
+        let result = write_block_no_dedup(&mut output, &chunk, 0, &mut offset, &compressor, None);
 
         assert!(result.is_ok());
         let info = result.unwrap();
@@ -1029,8 +1049,7 @@ mod tests {
         let chunk: Vec<u8> = (0..4096).map(|i| ((i * 7 + 13) % 256) as u8).collect();
         let compressor = Lz4Compressor::new();
 
-        let result =
-            write_block_simple(&mut output, &chunk, 0, &mut offset, None, &compressor, None);
+        let result = write_block_no_dedup(&mut output, &chunk, 0, &mut offset, &compressor, None);
 
         assert!(result.is_ok());
         let info = result.unwrap();
@@ -1143,12 +1162,11 @@ mod tests {
         let salt = [0u8; 32];
         let encryptor = AesGcmEncryptor::new(b"test_password", &salt, 100000).unwrap();
 
-        let result = write_block_simple(
+        let result = write_block_no_dedup(
             &mut output,
             &chunk,
             0,
             &mut offset,
-            None,
             &compressor,
             Some(&encryptor),
         );
@@ -1218,9 +1236,8 @@ mod tests {
         // Write 10 blocks sequentially
         for i in 0..10 {
             let chunk = vec![i as u8; 4096];
-            let info =
-                write_block_simple(&mut output, &chunk, i, &mut offset, None, &compressor, None)
-                    .unwrap();
+            let info = write_block_no_dedup(&mut output, &chunk, i, &mut offset, &compressor, None)
+                .unwrap();
 
             assert_eq!(info.offset, expected_offset);
             expected_offset += info.length as u64;
@@ -1237,9 +1254,8 @@ mod tests {
 
         for size in [128, 1024, 4096, 65536] {
             let chunk = vec![0xAAu8; size];
-            let info =
-                write_block_simple(&mut output, &chunk, 0, &mut offset, None, &compressor, None)
-                    .unwrap();
+            let info = write_block_no_dedup(&mut output, &chunk, 0, &mut offset, &compressor, None)
+                .unwrap();
 
             assert_eq!(info.logical_len, size as u32);
         }
@@ -1256,27 +1272,11 @@ mod tests {
         let chunk1 = vec![0xAAu8; 4096];
         let chunk2 = vec![0xBBu8; 4096];
 
-        let info1 = write_block_simple(
-            &mut output1,
-            &chunk1,
-            0,
-            &mut offset1,
-            None,
-            &compressor,
-            None,
-        )
-        .unwrap();
+        let info1 = write_block_no_dedup(&mut output1, &chunk1, 0, &mut offset1, &compressor, None)
+            .unwrap();
 
-        let info2 = write_block_simple(
-            &mut output2,
-            &chunk2,
-            0,
-            &mut offset2,
-            None,
-            &compressor,
-            None,
-        )
-        .unwrap();
+        let info2 = write_block_no_dedup(&mut output2, &chunk2, 0, &mut offset2, &compressor, None)
+            .unwrap();
 
         // Different input data should produce different checksums
         assert_ne!(info1.checksum, info2.checksum);
@@ -1289,8 +1289,7 @@ mod tests {
         let chunk: Vec<u8> = vec![];
         let compressor = Lz4Compressor::new();
 
-        let result =
-            write_block_simple(&mut output, &chunk, 0, &mut offset, None, &compressor, None);
+        let result = write_block_no_dedup(&mut output, &chunk, 0, &mut offset, &compressor, None);
 
         // Should handle empty chunk
         assert!(result.is_ok());
@@ -1305,8 +1304,7 @@ mod tests {
         let chunk = vec![0xAAu8; 1024 * 1024]; // 1 MB
         let compressor = Lz4Compressor::new();
 
-        let result =
-            write_block_simple(&mut output, &chunk, 0, &mut offset, None, &compressor, None);
+        let result = write_block_no_dedup(&mut output, &chunk, 0, &mut offset, &compressor, None);
 
         assert!(result.is_ok());
         let info = result.unwrap();
@@ -1328,32 +1326,16 @@ mod tests {
         let zero_info = if is_zero_chunk(&zero_chunk) {
             create_zero_block(zero_chunk.len() as u32)
         } else {
-            write_block_simple(
-                &mut output,
-                &zero_chunk,
-                0,
-                &mut offset,
-                None,
-                &compressor,
-                None,
-            )
-            .unwrap()
+            write_block_no_dedup(&mut output, &zero_chunk, 0, &mut offset, &compressor, None)
+                .unwrap()
         };
 
         // Process data chunk
         let data_info = if is_zero_chunk(&data_chunk) {
             create_zero_block(data_chunk.len() as u32)
         } else {
-            write_block_simple(
-                &mut output,
-                &data_chunk,
-                1,
-                &mut offset,
-                None,
-                &compressor,
-                None,
-            )
-            .unwrap()
+            write_block_no_dedup(&mut output, &data_chunk, 1, &mut offset, &compressor, None)
+                .unwrap()
         };
 
         // Zero block should not be written

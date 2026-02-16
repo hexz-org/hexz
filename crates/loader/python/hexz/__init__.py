@@ -164,7 +164,7 @@ def open(path: PathLike, *, mode: str = "r", **options: Any) -> Union[Reader, Wr
         raise ValueError(f"Invalid mode: {mode}")
 
 
-__version__ = "0.1.1"
+__version__ = "0.3.0"
 
 
 def version() -> str:

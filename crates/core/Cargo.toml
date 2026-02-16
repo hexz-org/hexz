@@ -41,8 +41,9 @@ url = "2.5"
 fastcdc = "3.1"
 
 [features]
-default = ["compression-zstd", "encryption", "s3", "signing"]
+default = ["compression-zstd", "encryption", "s3", "signing", "elastic-hash"]
 
+elastic-hash = []  # Use ElasticHashTable for dedup (default: on)
 s3 = ["dep:rust-s3"]
 compression-zstd = ["dep:zstd"]
 encryption = ["dep:aes-gcm", "dep:pbkdf2", "dep:hmac", "dep:zeroize"]
