@@ -45,24 +45,22 @@ cargo install hexz-cli
 
 Pre-built binaries are also available on the [GitHub releases](https://github.com/hexz-org/hexz/releases) page.
 
-### 2. Stream data directly to GPU
+### 2. Train from a hexz snapshot
 
 ```python
+import hexz
 import torch
-from hexz import Loader
 
-# Connect to your compressed dataset on S3
-# The index downloads in seconds; data streams on-demand.
-dataset = Loader("s3://my-bucket/imagenet-21k.hxz")
+# One compressed file — no extraction, no temp dirs
+dataset = hexz.Dataset("train.hxz", item_size=3073, shuffle=True)
 
-# Create a standard PyTorch loader
-# Hexz handles the pre-fetching and caching in Rust background threads
-loader = torch.utils.data.DataLoader(dataset, batch_size=64, num_workers=4)
+loader = torch.utils.data.DataLoader(dataset, batch_size=128)
 
 for batch in loader:
-    # GPU is fed instantly with zero-copy overhead
-    train_step(batch)
-
+    raw = batch.numpy()
+    labels = raw[:, 0].astype("int64")
+    pixels = raw[:, 1:].reshape(-1, 3, 32, 32).astype("float32") / 255.0
+    # ... train your model
 ```
 
 ### 3. Pack Your Data
@@ -74,6 +72,39 @@ Use the CLI to convert your raw folder into a high-performance Hexz archive.
 hexz pack --input ./raw_images --output dataset.hxz --dedup
 
 ```
+
+---
+
+## Hosted Datasets
+
+Pre-packed datasets are available as [GitHub Release assets](https://github.com/hexz-org/hexz-examples/releases/tag/datasets-v1). Download a single `.hxz` file and start training — no extraction needed.
+
+| Dataset | Samples | Size |
+|---------|---------|------|
+| [CIFAR-10](https://github.com/hexz-org/hexz-examples/releases/tag/datasets-v1) | 60,000 | ~95 MB |
+| [CIFAR-100](https://github.com/hexz-org/hexz-examples/releases/tag/datasets-v1) | 60,000 | ~140 MB |
+
+```python
+import hexz
+
+dataset = hexz.Dataset("cifar100-train.hxz", item_size=3073, shuffle=True)
+```
+
+The `.hxz` files are smaller than torchvision's raw archives — already compressed with LZ4 and deduplicated with CDC.
+
+To host your own datasets, see [hexz-examples/dataset-upload](https://github.com/hexz-org/hexz-examples/tree/main/dataset-upload).
+
+---
+
+## Examples
+
+See [hexz-examples](https://github.com/hexz-org/hexz-examples) for complete, runnable demos:
+
+| Example | What it shows |
+|---------|---------------|
+| [cifar100-training](https://github.com/hexz-org/hexz-examples/tree/main/cifar100-training) | Train CIFAR-100 from hexz vs torchvision — speed, storage, and accuracy compared |
+| [checkpoint-dedup](https://github.com/hexz-org/hexz-examples/tree/main/checkpoint-dedup) | Deduplicate fine-tuning checkpoints with CDC — 80% storage savings |
+| [dataset-upload](https://github.com/hexz-org/hexz-examples/tree/main/dataset-upload) | Pack and upload datasets to Hugging Face for zero-download streaming |
 
 ---
 

@@ -481,6 +481,7 @@ Congratulations! You have:
 
 Now that you understand ML workflows with Hexz:
 
+- **Hosted datasets**: [Use Hosted Datasets](../how-to/ml-workflows/stream-from-huggingface.md) — download pre-packed `.hxz` files and train
 - **Stream from S3**: [Setup S3 Streaming](../how-to/ml-workflows/setup-s3-streaming.md) to train without downloading datasets
 - **Optimize Performance**: [Optimize PyTorch DataLoader](../how-to/ml-workflows/optimize-pytorch-dataloader.md) for production training
 - **Migrate Existing Datasets**: [Migrate from WebDataset](../how-to/ml-workflows/migrate-from-webdataset.md) to Hexz

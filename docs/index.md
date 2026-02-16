@@ -14,9 +14,10 @@ Built in Rust with Python bindings (PyO3), Hexz provides random access to compre
 
 1. Start: [Getting Started Tutorial](tutorials/getting-started.md) (10 min)
 2. Build: [Your First ML Pipeline](tutorials/first-ml-pipeline.md) (20 min)
-3. Deploy: [Setup S3 Streaming](how-to/ml-workflows/setup-s3-streaming.md)
-4. Optimize: [Optimize PyTorch DataLoader](how-to/ml-workflows/optimize-pytorch-dataloader.md)
-5. Reference: [Python API](reference/python-api.md)
+3. Datasets: [Use Hosted Datasets](how-to/ml-workflows/stream-from-huggingface.md) — download pre-packed `.hxz` files
+4. Deploy: [Setup S3 Streaming](how-to/ml-workflows/setup-s3-streaming.md)
+5. Optimize: [Optimize PyTorch DataLoader](how-to/ml-workflows/optimize-pytorch-dataloader.md)
+6. Reference: [Python API](reference/python-api.md)
 
 **Why Hexz?** [Understand the problem we solve](explanation/why-hexz-for-ml.md)
 
@@ -65,6 +66,7 @@ This documentation follows the [Diátaxis framework](https://diataxis.fr/), orga
 *Solve specific problems — practical recipes for common tasks*
 
 **ML Workflows**:
+- [Use Hosted Datasets](how-to/ml-workflows/stream-from-huggingface.md) — download pre-packed `.hxz` files and train
 - [Setup S3 Streaming](how-to/ml-workflows/setup-s3-streaming.md)
 - [Optimize PyTorch DataLoader](how-to/ml-workflows/optimize-pytorch-dataloader.md)
 - [Migrate from WebDataset](how-to/ml-workflows/migrate-from-webdataset.md)
@@ -224,6 +226,17 @@ hexz data pack \\
   --output imagenet.hxz \\
   --compression zstd \\
   --cdc
+```
+
+### Train from a hexz file
+
+```python
+import hexz
+import torch
+
+# One compressed file — no extraction, no temp dirs
+dataset = hexz.Dataset("cifar100-train.hxz", item_size=3073, shuffle=True)
+loader = torch.utils.data.DataLoader(dataset, batch_size=128)
 ```
 
 ### Stream from S3

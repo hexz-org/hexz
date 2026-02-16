@@ -14,6 +14,13 @@
 //! - Provides async benefits (low memory overhead per connection) without requiring
 //!   callers to use async/await
 //!
+//! # Redirect Handling
+//!
+//! reqwest's built-in redirect policy drops certain headers (including `Range`)
+//! on cross-origin redirects. Since CDNs like GitHub Releases → Azure Blob
+//! require cross-origin redirects with range headers, this backend disables
+//! auto-redirects and follows them manually, re-sending all headers on each hop.
+//!
 //! # Thread Safety
 //!
 //! The backend is fully thread-safe (`Send + Sync`):
@@ -54,8 +61,71 @@ use crate::store::utils::validate_url;
 use bytes::Bytes;
 use hexz_common::{Error, Result};
 use reqwest::Client;
+use reqwest::header::HeaderMap;
+use reqwest::redirect::Policy;
 use std::io::{Error as IoError, ErrorKind};
 use tokio::runtime::Handle;
+
+/// Maximum number of redirects to follow before giving up.
+const MAX_REDIRECTS: usize = 10;
+
+/// Send an HTTP request, manually following redirects while preserving headers.
+///
+/// reqwest's built-in redirect policy strips headers like `Range` on cross-origin
+/// redirects. This function follows redirects manually and re-sends the provided
+/// extra headers on every hop, ensuring range requests work through CDNs.
+async fn send_with_redirects(
+    client: &Client,
+    method: reqwest::Method,
+    url: &str,
+    extra_headers: HeaderMap,
+) -> Result<reqwest::Response> {
+    let mut current_url = url.to_string();
+    let mut current_method = method;
+
+    for _ in 0..=MAX_REDIRECTS {
+        let resp = client
+            .request(current_method.clone(), &current_url)
+            .headers(extra_headers.clone())
+            .send()
+            .await
+            .map_err(|e| Error::Io(IoError::other(e)))?;
+
+        if !resp.status().is_redirection() {
+            if !resp.status().is_success() {
+                return Err(Error::Io(IoError::other(format!(
+                    "HTTP {} for {}",
+                    resp.status(),
+                    current_url
+                ))));
+            }
+            return Ok(resp);
+        }
+
+        let location = resp
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| {
+                Error::Io(IoError::new(
+                    ErrorKind::InvalidData,
+                    "Redirect without Location header",
+                ))
+            })?
+            .to_string();
+
+        // 303 See Other: switch to GET; all others preserve method
+        if resp.status().as_u16() == 303 {
+            current_method = reqwest::Method::GET;
+        }
+
+        current_url = location;
+    }
+
+    Err(Error::Io(IoError::other(format!(
+        "Too many redirects (>{MAX_REDIRECTS})"
+    ))))
+}
 
 /// HTTP storage backend with embedded Tokio runtime.
 ///
@@ -107,23 +177,17 @@ impl HttpBackend {
 
         let handle = global_handle();
 
+        // Disable auto-redirects so we can manually follow them while
+        // preserving headers (e.g. Range) across cross-origin redirects.
         let client = Client::builder()
+            .redirect(Policy::none())
             .build()
             .map_err(|e| Error::Io(IoError::other(e)))?;
 
         let len = handle.block_on(async {
-            let resp = client
-                .head(&safe_url)
-                .send()
-                .await
-                .map_err(|e| Error::Io(IoError::other(e)))?;
-
-            if !resp.status().is_success() {
-                return Err(Error::Io(IoError::other(format!(
-                    "HTTP error: {}",
-                    resp.status()
-                ))));
-            }
+            let resp =
+                send_with_redirects(&client, reqwest::Method::HEAD, &safe_url, HeaderMap::new())
+                    .await?;
 
             resp.headers()
                 .get(reqwest::header::CONTENT_LENGTH)
@@ -152,23 +216,16 @@ impl StorageBackend for HttpBackend {
             return Ok(Bytes::new());
         }
         let end = offset + len as u64 - 1;
-        let range_header = format!("bytes={}-{}", offset, end);
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            reqwest::header::RANGE,
+            format!("bytes={offset}-{end}").parse().unwrap(),
+        );
 
         self.handle.block_on(async {
-            let resp = self
-                .client
-                .get(&self.url)
-                .header("Range", range_header)
-                .send()
-                .await
-                .map_err(|e| Error::Io(IoError::other(e)))?;
-
-            if !resp.status().is_success() {
-                return Err(Error::Io(IoError::other(format!(
-                    "HTTP error: {}",
-                    resp.status()
-                ))));
-            }
+            let resp =
+                send_with_redirects(&self.client, reqwest::Method::GET, &self.url, headers).await?;
 
             let bytes = resp
                 .bytes()
