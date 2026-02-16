@@ -202,6 +202,27 @@ Deduplication reduces I/O:
 
 **Net benefit**: Less data written, same read performance
 
+## Memory Expectations
+
+The dedup hash table consumes approximately **48 bytes per unique block** (32-byte BLAKE3 hash + 16-byte `ChunkInfo`). The formula:
+
+```
+dedup_map_bytes ≈ (input_size / avg_block_size) × 48
+```
+
+### Expected memory for common dataset sizes
+
+| Dataset size | Avg block size | Unique blocks | Dedup map memory |
+|-------------|---------------|--------------|-----------------|
+| 1 GB        | 64 KB         | 16,384       | ~0.75 MB        |
+| 10 GB       | 64 KB         | 163,840      | ~7.5 MB         |
+| 100 GB      | 64 KB         | 1,638,400    | ~75 MB          |
+| 1 TB        | 64 KB         | 16,384,000   | ~750 MB         |
+
+These are worst-case estimates (zero duplication). With typical dedup ratios of 2-4x, actual memory will be proportionally lower since only unique blocks occupy table entries.
+
+> **Note**: Issue #116 tracks capping the dedup hash table memory for very large packs to prevent unbounded growth at TB+ scale. The `pack_memory` benchmark measures RSS to validate any future capping strategy.
+
 ## Limitations
 
 ### No Cross-File Dedup (Currently)
