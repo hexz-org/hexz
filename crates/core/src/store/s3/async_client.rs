@@ -67,6 +67,8 @@
 #[cfg(feature = "s3")]
 use crate::store::StorageBackend;
 #[cfg(feature = "s3")]
+use crate::store::runtime::global_handle;
+#[cfg(feature = "s3")]
 use bytes::Bytes;
 #[cfg(feature = "s3")]
 use hexz_common::{Error, Result};
@@ -81,9 +83,7 @@ use std::io::{Error as IoError, ErrorKind};
 #[cfg(feature = "s3")]
 use std::str::FromStr;
 #[cfg(feature = "s3")]
-use std::sync::Arc;
-#[cfg(feature = "s3")]
-use tokio::runtime::Runtime;
+use tokio::runtime::Handle;
 
 /// S3 storage backend with embedded Tokio runtime.
 ///
@@ -121,7 +121,7 @@ pub struct S3Backend {
     bucket: Box<Bucket>,
     key: String,
     len: u64,
-    runtime: Arc<Runtime>,
+    handle: Handle,
 }
 
 #[cfg(feature = "s3")]
@@ -148,7 +148,7 @@ impl S3Backend {
         region_name: String,
         endpoint: Option<String>,
     ) -> Result<Self> {
-        let runtime = Runtime::new().map_err(Error::Io)?;
+        let handle = global_handle();
 
         let region = if let Some(ep) = endpoint {
             Region::Custom {
@@ -176,7 +176,7 @@ impl S3Backend {
             .with_path_style();
 
         // Perform HEAD request to get size and validate access (with 30s timeout)
-        let (head, code) = runtime.block_on(async {
+        let (head, code) = handle.block_on(async {
             tokio::time::timeout(std::time::Duration::from_secs(30), bucket.head_object(&key))
                 .await
                 .map_err(|_| {
@@ -213,7 +213,7 @@ impl S3Backend {
             bucket: Box::new(bucket),
             key,
             len: len as u64,
-            runtime: Arc::new(runtime),
+            handle,
         })
     }
 }
@@ -226,7 +226,7 @@ impl StorageBackend for S3Backend {
         }
         let end = offset + len as u64 - 1;
 
-        self.runtime.block_on(async {
+        self.handle.block_on(async {
             let response_data = tokio::time::timeout(
                 std::time::Duration::from_secs(60),
                 self.bucket.get_object_range(&self.key, offset, Some(end)),

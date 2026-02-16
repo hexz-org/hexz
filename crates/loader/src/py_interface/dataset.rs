@@ -527,26 +527,30 @@ impl Reader {
     /// bytes_read = reader.readinto(ba)
     /// ```
     fn readinto(&self, py: Python<'_>, buffer: Bound<'_, PyAny>) -> PyResult<usize> {
-        let mut cursor = self
-            .cursor
-            .lock()
-            .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?;
         let total_size = self.inner.size(SnapshotStream::Disk);
 
-        if *cursor >= total_size {
+        // Capture cursor value and release lock before I/O (matches read() pattern).
+        let start = {
+            let cursor = self
+                .cursor
+                .lock()
+                .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?;
+            *cursor
+        };
+
+        if start >= total_size {
             return Ok(0);
         }
 
         let buf_info = tensor::numpy::acquire_writable_buffer(&buffer)?;
-        let read_len = std::cmp::min(buf_info.len, (total_size - *cursor) as usize);
+        let read_len = std::cmp::min(buf_info.len, (total_size - start) as usize);
 
         let inner = self.inner.clone();
-        let start = *cursor;
 
         // Cast pointer to usize to allow sending to allow_threads closure (usize is Send)
         let ptr_addr = buf_info.ptr as usize;
 
-        // Release GIL for reading
+        // Release GIL for reading (lock is NOT held during I/O)
         let result = py.allow_threads(move || {
             // SAFETY: buf_info.ptr is valid for buf_info.len bytes and writable.
             // We clamped read_len to buf_info.len.
@@ -560,7 +564,15 @@ impl Reader {
                 .map_err(|e| PyIOError::new_err(e.to_string()))
         })?;
 
-        *cursor += result as u64;
+        // Re-acquire lock only for the cursor update
+        {
+            let mut cursor = self
+                .cursor
+                .lock()
+                .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?;
+            *cursor = start + result as u64;
+        }
+
         Ok(result)
     }
 

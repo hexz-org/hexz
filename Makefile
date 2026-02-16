@@ -93,7 +93,7 @@ endif
 .PHONY: help build rust python develop install run clean
 .PHONY: test test-rust test-python test-integration test-list test-cov test-cov-rust test-cov-python mutants
 .PHONY: lint fmt fmt-check clippy deny check
-.PHONY: bench bench-list bench-compare save-baseline archive-baseline restore-baseline compare-baseline fuzz
+.PHONY: bench bench-list bench-compare save-baseline archive-baseline restore-baseline compare-baseline bench-flamegraph fuzz
 .PHONY: bench-competitors bench-competitors-small
 .PHONY: docker-dev docker-bench docs docs-python setup setup-check setup-cross ci
 .PHONY: pre-release _cross-aarch64 _cross-windows _wheel-check
@@ -141,6 +141,7 @@ help:
 	@printf "    %-$(HELP_W)s  Archive baseline to $(BENCH_STORE_DIR)/\n" "make archive-baseline <name>"
 	@printf "    %-$(HELP_W)s  Restore baseline from archive\n" "make restore-baseline <name>"
 	@printf "    %-$(HELP_W)s  Compare two archived baselines (critcmp)\n" "make compare-baseline <a> <b>"
+	@printf "    %-$(HELP_W)s  Generate flamegraph SVG from benchmarks\n" "make bench-flamegraph [filter]"
 	@printf "    %-$(HELP_W)s  Fuzz targets (cargo-fuzz)\n" "make fuzz"
 	@printf "\n  $(CYAN)Infrastructure$(RESET)\n"
 	@printf "    %-$(HELP_W)s  Build dev Docker image\n" "make docker-dev"
@@ -462,6 +463,21 @@ bench-competitors-small:
 	@printf "$(CYAN)Using 1000 images (~130MB) for quick testing$(RESET)\n"
 	@bash benchmarks/run_all_benchmarks.sh --small
 	@printf "$(GREEN)Benchmark results: benchmarks/results/COMPARISON.md$(RESET)\n"
+
+bench-flamegraph:
+	@printf "$(GREEN)Generating flamegraph from benchmarks…$(RESET)\n"
+	@command -v cargo-flamegraph >/dev/null 2>&1 || { \
+		printf "$(BOLD)cargo-flamegraph not installed.$(RESET)\n"; \
+		printf "Install with: $(CYAN)cargo install flamegraph$(RESET)\n"; \
+		exit 1; \
+	}
+	@printf "$(CYAN)Running benchmarks under perf for flamegraph…$(RESET)\n"
+	@if [ -n "$(BENCH_BIN)" ]; then \
+		$(CARGO) flamegraph --package $(BENCH_PACKAGE) --bench $(BENCH_BIN) -o flamegraph.svg -- --bench; \
+	else \
+		$(CARGO) flamegraph --package $(BENCH_PACKAGE) --bench read_throughput -o flamegraph.svg -- --bench; \
+	fi
+	@printf "$(GREEN)Flamegraph written to flamegraph.svg$(RESET)\n"
 
 fuzz:
 	@printf "$(GREEN)Running fuzz targets (60 s each)…$(RESET)\n"

@@ -49,13 +49,13 @@
 //! ```
 
 use crate::store::StorageBackend;
+use crate::store::runtime::global_handle;
 use crate::store::utils::validate_url;
 use bytes::Bytes;
 use hexz_common::{Error, Result};
 use reqwest::Client;
 use std::io::{Error as IoError, ErrorKind};
-use std::sync::Arc;
-use tokio::runtime::Runtime;
+use tokio::runtime::Handle;
 
 /// HTTP storage backend with embedded Tokio runtime.
 ///
@@ -86,7 +86,7 @@ pub struct HttpBackend {
     url: String,
     client: Client,
     len: u64,
-    runtime: Arc<Runtime>,
+    handle: Handle,
 }
 
 impl HttpBackend {
@@ -105,13 +105,13 @@ impl HttpBackend {
     pub fn new(url: String, allow_restricted: bool) -> Result<Self> {
         let safe_url = validate_url(&url, allow_restricted)?;
 
-        let runtime = Runtime::new().map_err(|e| Error::Io(IoError::other(e)))?;
+        let handle = global_handle();
 
         let client = Client::builder()
             .build()
             .map_err(|e| Error::Io(IoError::other(e)))?;
 
-        let len = runtime.block_on(async {
+        let len = handle.block_on(async {
             let resp = client
                 .head(&safe_url)
                 .send()
@@ -141,7 +141,7 @@ impl HttpBackend {
             url: safe_url,
             client,
             len,
-            runtime: Arc::new(runtime),
+            handle,
         })
     }
 }
@@ -154,7 +154,7 @@ impl StorageBackend for HttpBackend {
         let end = offset + len as u64 - 1;
         let range_header = format!("bytes={}-{}", offset, end);
 
-        self.runtime.block_on(async {
+        self.handle.block_on(async {
             let resp = self
                 .client
                 .get(&self.url)

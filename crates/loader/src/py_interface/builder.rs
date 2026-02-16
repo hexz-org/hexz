@@ -189,6 +189,16 @@ impl Builder {
         self.process_stream(py, path, false)
     }
 
+    /// Add raw bytes as a disk stream without writing to a temporary file.
+    pub fn add_disk_bytes<'py>(&mut self, py: Python<'py>, data: Vec<u8>) -> PyResult<()> {
+        self.process_bytes_stream(py, data, true)
+    }
+
+    /// Add raw bytes as a memory stream without writing to a temporary file.
+    pub fn add_memory_bytes<'py>(&mut self, py: Python<'py>, data: Vec<u8>) -> PyResult<()> {
+        self.process_bytes_stream(py, data, false)
+    }
+
     /// Merge an overlay file with a base snapshot to create a new snapshot.
     #[pyo3(signature = (base_path, overlay_path, thin=false))]
     pub fn merge_overlay<'py>(
@@ -344,6 +354,62 @@ impl Builder {
 }
 
 impl Builder {
+    fn process_bytes_stream(&mut self, py: Python, data: Vec<u8>, is_disk: bool) -> PyResult<()> {
+        let block_size = self.block_size as usize;
+        let total_len = data.len() as u64;
+
+        let cdc_enabled = self.cdc_enabled;
+        let cdc_params = if cdc_enabled {
+            Some(DedupeParams {
+                f: (self.avg_chunk as f64).log2() as u32,
+                m: self.min_chunk,
+                z: self.max_chunk,
+                w: 48,
+                v: 8,
+            })
+        } else {
+            None
+        };
+
+        let mut writer = self
+            .writer
+            .take()
+            .ok_or_else(|| PyValueError::new_err("Writer closed"))?;
+
+        let writer = py.allow_threads(move || -> PyResult<SnapshotWriter> {
+            writer.begin_stream(is_disk, total_len);
+
+            if let Some(params) = cdc_params {
+                // Use CDC chunking for in-memory bytes
+                use std::io::Cursor;
+                let cursor = Cursor::new(data);
+                let chunker = StreamChunker::new(cursor, params);
+                for chunk_res in chunker {
+                    let chunk = chunk_res.map_err(|e| PyIOError::new_err(e.to_string()))?;
+                    writer
+                        .write_data_block(&chunk)
+                        .map_err(|e| PyIOError::new_err(e.to_string()))?;
+                }
+            } else {
+                // Use fixed-size chunking
+                for chunk in data.chunks(block_size) {
+                    writer
+                        .write_data_block(chunk)
+                        .map_err(|e| PyIOError::new_err(e.to_string()))?;
+                }
+            }
+
+            writer
+                .end_stream()
+                .map_err(|e| PyIOError::new_err(e.to_string()))?;
+
+            Ok(writer)
+        })?;
+
+        self.writer = Some(writer);
+        Ok(())
+    }
+
     fn process_stream(&mut self, py: Python, path: String, is_disk: bool) -> PyResult<()> {
         let block_size = self.block_size as usize;
 

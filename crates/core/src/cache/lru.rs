@@ -278,10 +278,11 @@
 //! ```
 
 use crate::api::file::SnapshotStream;
+use crate::format::index::IndexPage;
 use bytes::Bytes;
 use lru::LruCache;
 use std::num::NonZeroUsize;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 /// Default capacity for the L1 block cache in number of entries (not bytes).
 ///
@@ -978,10 +979,77 @@ pub fn default_page_cache_size() -> NonZeroUsize {
     NonZeroUsize::new(DEFAULT_PAGE_CACHE_CAPACITY).unwrap_or(NonZeroUsize::MIN)
 }
 
+/// Sharded LRU cache for deserialized index pages.
+///
+/// Uses the same shard-by-hash pattern as [`BlockCache`] to reduce lock
+/// contention when multiple threads look up index pages concurrently.
+#[derive(Debug)]
+pub struct ShardedPageCache {
+    shards: Vec<Mutex<LruCache<u64, Arc<IndexPage>>>>,
+}
+
+impl ShardedPageCache {
+    /// Creates a new page cache with the given total capacity.
+    pub fn with_capacity(capacity: usize) -> Self {
+        if capacity == 0 {
+            return Self {
+                shards: vec![Mutex::new(LruCache::new(NonZeroUsize::MIN))],
+            };
+        }
+        let (num_shards, cap_per_shard) = if capacity <= SINGLE_SHARD_CAPACITY_LIMIT {
+            (1, NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::MIN))
+        } else {
+            let cap_per = capacity.div_ceil(SHARD_COUNT);
+            (
+                SHARD_COUNT,
+                NonZeroUsize::new(cap_per.max(1)).unwrap_or(NonZeroUsize::MIN),
+            )
+        };
+        let mut shards = Vec::with_capacity(num_shards);
+        for _ in 0..num_shards {
+            shards.push(Mutex::new(LruCache::new(cap_per_shard)));
+        }
+        Self { shards }
+    }
+
+    fn get_shard(&self, key: u64) -> &Mutex<LruCache<u64, Arc<IndexPage>>> {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        key.hash(&mut hasher);
+        let idx = (hasher.finish() as usize) & (self.shards.len() - 1);
+        &self.shards[idx]
+    }
+
+    /// Look up a page by its offset key. Returns `None` on miss or poisoned lock.
+    pub fn get(&self, key: u64) -> Option<Arc<IndexPage>> {
+        let shard = self.get_shard(key);
+        match shard.lock() {
+            Ok(mut guard) => guard.get(&key).cloned(),
+            Err(_) => None,
+        }
+    }
+
+    /// Insert a page into the cache.
+    pub fn insert(&self, key: u64, page: Arc<IndexPage>) {
+        let shard = self.get_shard(key);
+        if let Ok(mut guard) = shard.lock() {
+            guard.put(key, page);
+        }
+    }
+}
+
+impl Default for ShardedPageCache {
+    fn default() -> Self {
+        Self::with_capacity(DEFAULT_PAGE_CACHE_CAPACITY)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::api::file::SnapshotStream;
+    use crate::format::index::BlockInfo;
 
     #[test]
     fn test_cache_with_zero_capacity() {
@@ -1241,5 +1309,73 @@ mod tests {
         let debug_str = format!("{:?}", cache);
 
         assert!(debug_str.contains("BlockCache"));
+    }
+
+    // ── ShardedPageCache tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_page_cache_basic_insert_and_get() {
+        let cache = ShardedPageCache::with_capacity(10);
+        let page = Arc::new(IndexPage {
+            blocks: vec![BlockInfo {
+                offset: 0,
+                length: 100,
+                logical_len: 65536,
+                checksum: 0,
+            }],
+        });
+        cache.insert(42, page.clone());
+        let retrieved = cache.get(42);
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().blocks.len(), 1);
+    }
+
+    #[test]
+    fn test_page_cache_miss() {
+        let cache = ShardedPageCache::with_capacity(10);
+        assert!(cache.get(99).is_none());
+    }
+
+    #[test]
+    fn test_page_cache_concurrent_access() {
+        use std::sync::Arc as StdArc;
+        use std::thread;
+
+        let cache = StdArc::new(ShardedPageCache::with_capacity(100));
+        let mut handles = Vec::new();
+
+        for thread_id in 0..4u64 {
+            let cache_clone = StdArc::clone(&cache);
+            let handle = thread::spawn(move || {
+                for i in 0..25u64 {
+                    let key = thread_id * 25 + i;
+                    let page = Arc::new(IndexPage {
+                        blocks: vec![BlockInfo {
+                            offset: key,
+                            length: 100,
+                            logical_len: 65536,
+                            checksum: 0,
+                        }],
+                    });
+                    cache_clone.insert(key, page.clone());
+                    let retrieved = cache_clone.get(key);
+                    assert!(retrieved.is_some());
+                    assert_eq!(retrieved.unwrap().blocks[0].offset, key);
+                }
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn test_page_cache_default() {
+        let cache = ShardedPageCache::default();
+        let page = Arc::new(IndexPage { blocks: vec![] });
+        cache.insert(0, page.clone());
+        assert!(cache.get(0).is_some());
     }
 }

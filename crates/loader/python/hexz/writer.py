@@ -5,7 +5,6 @@ Builder with a more pythonic interface.
 """
 
 import json
-import tempfile
 import warnings
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional
@@ -178,30 +177,8 @@ class Writer:
 
         Returns:
             Self for method chaining
-
-        .. warning::
-            **Performance Note:** This method currently writes the bytes to a
-            temporary file on disk before adding them to the snapshot. This
-            incurs significant I/O overhead. For large datasets, prefer using
-            `add_file()` with existing files.
         """
-        # Write to temporary file and add it
-        # This is not ideal but works with current Rust API
-        with tempfile.NamedTemporaryFile(delete=False) as f:
-            temp_path = f.name
-            f.write(data)
-
-        try:
-            self.add_file(temp_path)
-        finally:
-            # Clean up temp file
-            try:
-                import os
-
-                os.unlink(temp_path)
-            except Exception:
-                pass
-
+        self._builder.add_disk_bytes(data)
         return self
 
     def add_array(
