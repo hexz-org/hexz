@@ -168,6 +168,11 @@ name = "block_size_tradeoffs"
 harness = false
 path = "benches/macro/block_size_tradeoffs.rs"
 
+[[bench]]
+name = "pack_memory"
+harness = false
+path = "benches/macro/pack_memory.rs"
+
 [features]
 default = ["fuse", "server", "compression-zstd", "encryption", "diagnostics", "signing", "s3"]
 
