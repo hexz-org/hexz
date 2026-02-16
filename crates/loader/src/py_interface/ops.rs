@@ -345,7 +345,7 @@ pub fn get_max_supported_version() -> u32 {
 ///     print(f"VM Name: {meta['vm_name']}")
 /// ```
 #[pyfunction]
-pub fn inspect(py: Python<'_>, path: String) -> PyResult<HashMap<String, PyObject>> {
+pub fn inspect(py: Python<'_>, path: String) -> PyResult<PyObject> {
     let info = inspect_snapshot(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
 
     // Check version compatibility
@@ -357,7 +357,7 @@ pub fn inspect(py: Python<'_>, path: String) -> PyResult<HashMap<String, PyObjec
         hexz_core::format::version::VersionCompatibility::Incompatible => "incompatible",
     };
 
-    let mut dict: HashMap<String, PyObject> = HashMap::new();
+    let dict = pyo3::types::PyDict::new(py);
 
     // Read user metadata if present (Python-specific JSON parsing)
     if let (Some(offset), Some(length)) = (info.metadata_offset, info.metadata_length) {
@@ -375,7 +375,7 @@ pub fn inspect(py: Python<'_>, path: String) -> PyResult<HashMap<String, PyObjec
                     if let Ok(user_dict) = user_meta.downcast::<pyo3::types::PyDict>() {
                         for (k, v) in user_dict {
                             if let Ok(key) = k.extract::<String>() {
-                                dict.insert(key, v.into_pyobject(py)?.unbind());
+                                dict.set_item(key, v)?;
                             }
                         }
                     }
@@ -386,83 +386,23 @@ pub fn inspect(py: Python<'_>, path: String) -> PyResult<HashMap<String, PyObjec
 
     let ratio = info.compression_ratio();
 
-    dict.insert(
-        "version".to_string(),
-        info.version.into_pyobject(py)?.unbind().into(),
-    );
-    dict.insert(
-        "current_version".to_string(),
-        CURRENT_VERSION.into_pyobject(py)?.unbind().into(),
-    );
-    dict.insert(
-        "min_supported_version".to_string(),
-        MIN_SUPPORTED_VERSION.into_pyobject(py)?.unbind().into(),
-    );
-    dict.insert(
-        "max_supported_version".to_string(),
-        MAX_SUPPORTED_VERSION.into_pyobject(py)?.unbind().into(),
-    );
-    dict.insert(
-        "is_compatible".to_string(),
-        <pyo3::Bound<'_, pyo3::types::PyBool> as Clone>::clone(&pyo3::types::PyBool::new(
-            py,
-            is_compatible,
-        ))
-        .unbind()
-        .into(),
-    );
-    dict.insert(
-        "compatibility_status".to_string(),
-        compatibility_status.into_pyobject(py)?.unbind().into(),
-    );
-    dict.insert(
-        "compatibility_message".to_string(),
-        compatibility_message(info.version)
-            .into_pyobject(py)?
-            .unbind()
-            .into(),
-    );
-    dict.insert(
-        "block_size".to_string(),
-        info.block_size.into_pyobject(py)?.unbind().into(),
-    );
-    dict.insert(
-        "compression".to_string(),
-        format!("{:?}", info.compression)
-            .into_pyobject(py)?
-            .unbind()
-            .into(),
-    );
-    dict.insert(
-        "encrypted".to_string(),
-        <pyo3::Bound<'_, pyo3::types::PyBool> as Clone>::clone(&pyo3::types::PyBool::new(
-            py,
-            info.encrypted,
-        ))
-        .unbind()
-        .into(),
-    );
-    dict.insert(
-        "parent_path".to_string(),
-        info.parent_path.into_pyobject(py)?.unbind(),
-    );
-    dict.insert(
-        "disk_size".to_string(),
-        info.disk_size.into_pyobject(py)?.unbind().into(),
-    );
-    dict.insert(
-        "memory_size".to_string(),
-        info.memory_size.into_pyobject(py)?.unbind().into(),
-    );
-    dict.insert(
-        "file_size".to_string(),
-        info.file_size.into_pyobject(py)?.unbind().into(),
-    );
-    dict.insert(
-        "ratio".to_string(),
-        ratio.into_pyobject(py)?.unbind().into(),
-    );
-    Ok(dict)
+    dict.set_item("version", info.version)?;
+    dict.set_item("current_version", CURRENT_VERSION)?;
+    dict.set_item("min_supported_version", MIN_SUPPORTED_VERSION)?;
+    dict.set_item("max_supported_version", MAX_SUPPORTED_VERSION)?;
+    dict.set_item("is_compatible", is_compatible)?;
+    dict.set_item("compatibility_status", compatibility_status)?;
+    dict.set_item("compatibility_message", compatibility_message(info.version))?;
+    dict.set_item("block_size", info.block_size)?;
+    dict.set_item("compression", format!("{:?}", info.compression))?;
+    dict.set_item("encrypted", info.encrypted)?;
+    dict.set_item("parent_path", info.parent_path)?;
+    dict.set_item("disk_size", info.disk_size)?;
+    dict.set_item("memory_size", info.memory_size)?;
+    dict.set_item("file_size", info.file_size)?;
+    dict.set_item("ratio", ratio)?;
+
+    Ok(dict.into())
 }
 
 /// Analyze a file for deduplication potential using content-defined chunking.
@@ -514,7 +454,7 @@ pub fn analyze(py: Python<'_>, path: String) -> PyResult<HashMap<String, f64>> {
     let path_buf = std::path::PathBuf::from(path);
 
     let stats = py.allow_threads(move || -> PyResult<(u64, f64, f64)> {
-        let file = File::open(&path_buf).map_err(|e| PyIOError::new_err(e.to_string()))?;
+        let mut file = File::open(&path_buf).map_err(|e| PyIOError::new_err(e.to_string()))?;
         let len = file
             .metadata()
             .map_err(|e| PyIOError::new_err(e.to_string()))?
@@ -524,8 +464,7 @@ pub fn analyze(py: Python<'_>, path: String) -> PyResult<HashMap<String, f64>> {
         let read_len = std::cmp::min(len, sample_size);
         let mut buffer = vec![0u8; read_len as usize];
 
-        let mut f = File::open(&path_buf).map_err(|e| PyIOError::new_err(e.to_string()))?;
-        f.read_exact(&mut buffer)
+        file.read_exact(&mut buffer)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
         let baseline = dcam::DedupeParams::lbfs_baseline();

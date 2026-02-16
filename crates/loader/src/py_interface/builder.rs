@@ -279,16 +279,19 @@ impl Builder {
                     continue;
                 }
 
-                // Build block data from base + overlay
+                // Build block data from base + overlay.
+                // Use read_at_into_uninit_bytes to write directly into the
+                // destination buffer, avoiding an intermediate Vec per block.
                 let mut data = vec![0u8; len];
 
                 if is_modified {
                     if block_start < base_size {
-                        if let Ok(base_data) =
-                            base_snap.read_at(SnapshotStream::Disk, block_start, len)
-                        {
-                            data[..base_data.len()].copy_from_slice(&base_data);
-                        }
+                        let base_read_len = std::cmp::min(len, (base_size - block_start) as usize);
+                        let _ = base_snap.read_at_into_uninit_bytes(
+                            SnapshotStream::Disk,
+                            block_start,
+                            &mut data[..base_read_len],
+                        );
                     }
                     for ob in start_ov_blk..=end_ov_blk {
                         if modified_blocks.contains(&ob) {
@@ -310,10 +313,12 @@ impl Builder {
                         }
                     }
                 } else if block_start < base_size {
-                    if let Ok(base_data) = base_snap.read_at(SnapshotStream::Disk, block_start, len)
-                    {
-                        data[..base_data.len()].copy_from_slice(&base_data);
-                    }
+                    let base_read_len = std::cmp::min(len, (base_size - block_start) as usize);
+                    let _ = base_snap.read_at_into_uninit_bytes(
+                        SnapshotStream::Disk,
+                        block_start,
+                        &mut data[..base_read_len],
+                    );
                 }
 
                 writer

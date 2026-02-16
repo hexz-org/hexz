@@ -725,16 +725,79 @@ impl Reader {
     /// print(f"Encrypted: {meta.get('encrypted', False)}")
     /// ```
     fn metadata(&self, py: Python<'_>) -> PyResult<PyObject> {
-        // Delegate to the inspect function to get metadata
+        use hexz_core::format::version::{
+            CURRENT_VERSION, MAX_SUPPORTED_VERSION, MIN_SUPPORTED_VERSION, check_version,
+            compatibility_message,
+        };
         use pyo3::types::PyDict;
 
-        // Call the inspect function from ops module
-        let meta = super::ops::inspect(py, self.path.clone())?;
-
-        // Convert HashMap to PyDict
+        let header = &self.inner.header;
         let dict = PyDict::new(py);
-        for (key, value) in meta {
-            dict.set_item(key, value)?;
+
+        // Version and compatibility — derived from the cached header.
+        let version = header.version;
+        let compatibility = check_version(version);
+        let is_compatible = compatibility.is_compatible();
+        let compatibility_status = match compatibility {
+            hexz_core::format::version::VersionCompatibility::Full => "full",
+            hexz_core::format::version::VersionCompatibility::Degraded => "degraded",
+            hexz_core::format::version::VersionCompatibility::Incompatible => "incompatible",
+        };
+
+        dict.set_item("version", version)?;
+        dict.set_item("current_version", CURRENT_VERSION)?;
+        dict.set_item("min_supported_version", MIN_SUPPORTED_VERSION)?;
+        dict.set_item("max_supported_version", MAX_SUPPORTED_VERSION)?;
+        dict.set_item("is_compatible", is_compatible)?;
+        dict.set_item("compatibility_status", compatibility_status)?;
+        dict.set_item("compatibility_message", compatibility_message(version))?;
+        dict.set_item("block_size", header.block_size)?;
+        dict.set_item("compression", format!("{:?}", header.compression))?;
+        dict.set_item("encrypted", header.encryption.is_some())?;
+        dict.set_item("parent_path", header.parent_path.as_deref())?;
+
+        // Stream sizes from the cached master index.
+        let disk_size = self.inner.size(SnapshotStream::Disk);
+        let memory_size = self.inner.size(SnapshotStream::Memory);
+        dict.set_item("disk_size", disk_size)?;
+        dict.set_item("memory_size", memory_size)?;
+
+        // File size — cheap stat for local paths, 0 for remote.
+        let file_size = std::fs::metadata(&self.path).map(|m| m.len()).unwrap_or(0);
+        dict.set_item("file_size", file_size)?;
+
+        let total_uncompressed = disk_size + memory_size;
+        let ratio = if file_size > 0 {
+            total_uncompressed as f64 / file_size as f64
+        } else {
+            0.0
+        };
+        dict.set_item("ratio", ratio)?;
+
+        // User metadata — read only the small metadata region if present.
+        if let (Some(offset), Some(length)) = (header.metadata_offset, header.metadata_length) {
+            if length > 0 {
+                if let Ok(mut f) = std::fs::File::open(&self.path) {
+                    use std::io::{Read, Seek, SeekFrom};
+                    if f.seek(SeekFrom::Start(offset)).is_ok() {
+                        let mut meta_bytes = vec![0u8; length as usize];
+                        if f.read_exact(&mut meta_bytes).is_ok() {
+                            if let Ok(json) = py.import("json") {
+                                let bytes_obj = pyo3::types::PyBytes::new(py, &meta_bytes);
+                                if let Ok(user_meta) = json.call_method1("loads", (bytes_obj,)) {
+                                    if let Ok(user_dict) = user_meta.downcast::<PyDict>() {
+                                        for (k, v) in user_dict {
+                                            if let Ok(key) = k.extract::<String>() {
+                                                dict.set_item(key, v)?;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         Ok(dict.into())

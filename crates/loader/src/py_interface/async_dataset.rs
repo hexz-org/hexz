@@ -390,25 +390,10 @@ impl AsyncReader {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let data = tokio::task::spawn_blocking(move || -> PyResult<Vec<u8>> {
                 let total_size = inner.size(SnapshotStream::Disk);
-                match offset {
-                    None => {
-                        let mut pos = cursor
-                            .lock()
-                            .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?;
-                        if *pos >= total_size {
-                            return Ok(Vec::new());
-                        }
-                        let start = *pos;
-                        let len = match size {
-                            Some(s) => std::cmp::min(s as u64, total_size - *pos) as usize,
-                            None => (total_size - *pos) as usize,
-                        };
-                        let bytes = inner
-                            .read_at(SnapshotStream::Disk, start, len)
-                            .map_err(|e| PyIOError::new_err(e.to_string()))?;
-                        *pos += bytes.len() as u64;
-                        Ok(bytes)
-                    }
+
+                // Compute (start, len, update_cursor) without holding the lock
+                // during I/O. The sync Reader already follows this pattern.
+                let (start, len, update_cursor) = match offset {
                     Some(at) => {
                         if at >= total_size {
                             return Ok(Vec::new());
@@ -417,11 +402,39 @@ impl AsyncReader {
                             Some(s) => std::cmp::min(s as u64, total_size - at) as usize,
                             None => (total_size - at) as usize,
                         };
-                        inner
-                            .read_at(SnapshotStream::Disk, at, len)
-                            .map_err(|e| PyIOError::new_err(e.to_string()))
+                        (at, len, false)
                     }
+                    None => {
+                        let cursor_val = *cursor
+                            .lock()
+                            .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?;
+                        if cursor_val >= total_size {
+                            return Ok(Vec::new());
+                        }
+                        let len = match size {
+                            Some(s) => std::cmp::min(s as u64, total_size - cursor_val) as usize,
+                            None => (total_size - cursor_val) as usize,
+                        };
+                        (cursor_val, len, true)
+                    }
+                };
+                // Lock released here — I/O proceeds without holding it.
+
+                // Write directly into a pre-allocated buffer to avoid the
+                // intermediate Vec allocation inside read_at.
+                let mut buf = vec![0u8; len];
+                inner
+                    .read_at_into_uninit_bytes(SnapshotStream::Disk, start, &mut buf)
+                    .map_err(|e| PyIOError::new_err(e.to_string()))?;
+
+                if update_cursor {
+                    let mut pos = cursor
+                        .lock()
+                        .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?;
+                    *pos = start + len as u64;
                 }
+
+                Ok(buf)
             })
             .await
             .map_err(|e: tokio::task::JoinError| PyRuntimeError::new_err(e.to_string()))??;
