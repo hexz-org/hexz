@@ -242,7 +242,9 @@ def main():
         elif p.suffix == ".perf":
             stacks = parse_perf_script(path)
         else:
-            print(f"  {DIM}skipping {path} (unknown format, use .stacks or .perf){RESET}")
+            print(
+                f"  {DIM}skipping {path} (unknown format, use .stacks or .perf){RESET}"
+            )
             continue
 
         title = p.stem.replace("_", " ").title()

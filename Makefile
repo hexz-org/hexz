@@ -79,11 +79,13 @@ endif
 # ── Colors (only when stdout is a terminal) ───────────────────────────────────
 ifneq ($(TERM),)
   GREEN  := \033[32m
+  RED    := \033[31m
   CYAN   := \033[36m
   BOLD   := \033[1m
   RESET  := \033[0m
 else
   GREEN  :=
+  RED    :=
   CYAN   :=
   BOLD   :=
   RESET  :=
@@ -97,7 +99,7 @@ endif
 .PHONY: perf-python perf-rust perf-clean
 .PHONY: bench-competitors bench-competitors-small
 .PHONY: docker-dev docker-bench docs docs-python setup setup-check setup-cross ci
-.PHONY: pre-release _cross-aarch64 _cross-windows _wheel-check
+.PHONY: pre-release _version-check _cross-aarch64 _cross-windows _wheel-check
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Help
@@ -625,8 +627,73 @@ ci: lint test build
 #    - x86_64-pc-windows-gnu     (binary + wheel, stands in for MSVC)
 #    - native x86_64 Linux       (full test suite + clippy + fmt)
 # ═══════════════════════════════════════════════════════════════════════════════
-pre-release: lint test _cross-aarch64 _cross-windows _wheel-check
+pre-release: _version-check lint test _cross-aarch64 _cross-windows _wheel-check
 	@printf "\n$(BOLD)$(GREEN)Pre-release validation passed — ready to tag and release$(RESET)\n"
+
+_version-check:
+	@printf "$(GREEN)Checking versions…$(RESET)\n"
+	@FAIL=0; \
+	semver_gt() { \
+		IFS=. read _a1 _a2 _a3 <<< "$$1"; \
+		IFS=. read _b1 _b2 _b3 <<< "$$2"; \
+		if [ "$$_a1" -gt "$$_b1" ] 2>/dev/null; then return 0; fi; \
+		if [ "$$_a1" -lt "$$_b1" ] 2>/dev/null; then return 1; fi; \
+		if [ "$$_a2" -gt "$$_b2" ] 2>/dev/null; then return 0; fi; \
+		if [ "$$_a2" -lt "$$_b2" ] 2>/dev/null; then return 1; fi; \
+		if [ "$$_a3" -gt "$$_b3" ] 2>/dev/null; then return 0; fi; \
+		return 1; \
+	}; \
+	WS_VER=$$(sed -n '/\[workspace\.package\]/,/^\[/{s/^version *= *"\([^"]*\)"/\1/p;}' Cargo.toml); \
+	if [ -z "$$WS_VER" ]; then \
+		printf "  $(RED)✗ Could not extract workspace version from Cargo.toml$(RESET)\n"; \
+		exit 1; \
+	fi; \
+	printf "  Workspace version: %s\n\n" "$$WS_VER"; \
+	printf "  $(BOLD)Consistency$(RESET)\n"; \
+	PY_VER=$$(sed -n 's/^version *= *"\([^"]*\)"/\1/p' $(LOADER_CRATE)/pyproject.toml); \
+	if [ "$$PY_VER" = "$$WS_VER" ]; then \
+		printf "  $(GREEN)!$(RESET) pyproject.toml    %s\n" "$$PY_VER"; \
+	else \
+		printf "  $(RED)! pyproject.toml    %s (expected %s)$(RESET)\n" "$$PY_VER" "$$WS_VER"; \
+		FAIL=1; \
+	fi; \
+	INIT_VER=$$(sed -n 's/^__version__ *= *"\([^"]*\)"/\1/p' $(LOADER_CRATE)/python/hexz/__init__.py); \
+	if [ "$$INIT_VER" = "$$WS_VER" ]; then \
+		printf "  $(GREEN)!$(RESET) __init__.py       %s\n" "$$INIT_VER"; \
+	else \
+		printf "  $(RED)! __init__.py       %s (expected %s)$(RESET)\n" "$$INIT_VER" "$$WS_VER"; \
+		FAIL=1; \
+	fi; \
+	printf "\n  $(BOLD)crates.io$(RESET)\n"; \
+	for CRATE in hexz-common hexz-core hexz-fuse hexz-server hexz-cli hexz-loader; do \
+		RESP=$$(curl -s -H "User-Agent: hexz-version-check" "https://crates.io/api/v1/crates/$$CRATE"); \
+		PUB=$$(echo "$$RESP" | grep -o '"max_version" *: *"[^"]*"' | head -1 | sed 's/"max_version" *: *"//;s/"//'); \
+		if [ -z "$$PUB" ] || echo "$$RESP" | grep -q '"errors"'; then \
+			printf "  $(GREEN)!$(RESET) %-16s not yet published\n" "$$CRATE"; \
+		elif semver_gt "$$WS_VER" "$$PUB"; then \
+			printf "  $(GREEN)!$(RESET) %-16s %s > %s (published)\n" "$$CRATE" "$$WS_VER" "$$PUB"; \
+		else \
+			printf "  $(RED)! %-16s %s <= %s (published)$(RESET)\n" "$$CRATE" "$$WS_VER" "$$PUB"; \
+			FAIL=1; \
+		fi; \
+	done; \
+	printf "\n  $(BOLD)PyPI$(RESET)\n"; \
+	RESP=$$(curl -s "https://pypi.org/pypi/hexz/json"); \
+	PUB=$$(echo "$$RESP" | grep -o '"version" *: *"[^"]*"' | head -1 | sed 's/"version" *: *"//;s/"//'); \
+	if [ -z "$$PUB" ] || echo "$$RESP" | grep -q '"Not Found"'; then \
+		printf "  $(GREEN)!$(RESET) %-16s not yet published\n" "hexz"; \
+	elif semver_gt "$$WS_VER" "$$PUB"; then \
+		printf "  $(GREEN)!$(RESET) %-16s %s > %s (published)\n" "hexz" "$$WS_VER" "$$PUB"; \
+	else \
+		printf "  $(RED)! %-16s %s <= %s (published)$(RESET)\n" "hexz" "$$WS_VER" "$$PUB"; \
+		FAIL=1; \
+	fi; \
+	printf "\n"; \
+	if [ "$$FAIL" -ne 0 ]; then \
+		printf "  $(RED)$(BOLD)Version check failed — fix versions before releasing$(RESET)\n\n"; \
+		exit 1; \
+	fi; \
+	printf "  $(GREEN)$(BOLD)All version checks passed$(RESET)\n\n"
 
 _cross-aarch64:
 	@printf "\n$(GREEN)[cross] Checking $(CROSS_AARCH64) (binary)…$(RESET)\n"

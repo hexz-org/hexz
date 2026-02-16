@@ -27,6 +27,18 @@ static ZEROS_64K: [u8; DEFAULT_BLOCK_SIZE as usize] = [0u8; DEFAULT_BLOCK_SIZE a
 /// Work item for block decompression: (block_idx, info, buf_offset, offset_in_block, to_copy)
 type WorkItem = (u64, BlockInfo, usize, usize, usize);
 
+/// Result of fetching a block from cache or storage.
+///
+/// Eliminates TOCTOU races by tracking data state at fetch time rather than
+/// re-checking the cache later (which can give a different answer if a
+/// background prefetch thread modifies the cache between check and use).
+enum FetchResult {
+    /// Data is already decompressed (came from L1 cache or is a zero block).
+    Decompressed(Bytes),
+    /// Data is raw compressed bytes from storage (needs decompression).
+    Compressed(Bytes),
+}
+
 /// Logical stream identifier for dual-stream snapshots.
 ///
 /// Hexz snapshots can store two independent data streams:
@@ -620,8 +632,11 @@ impl File {
         let snap = Arc::clone(self);
         let target_addr = target.as_mut_ptr() as usize;
 
-        // Phase 1: Parallel fetch all raw blocks
-        let raw_blocks: Vec<Result<Bytes>> = work_items
+        // Phase 1: Parallel fetch all raw blocks. Each result tracks whether
+        // the data is already decompressed (cache hit / zero block) or still
+        // compressed (storage read), eliminating a TOCTOU race where a background
+        // prefetch thread could modify the cache between fetch and decompression.
+        let raw_blocks: Vec<Result<FetchResult>> = work_items
             .par_iter()
             .map(|(block_idx, info, _, _, _)| snap.fetch_raw_block(stream, *block_idx, info))
             .collect();
@@ -631,7 +646,7 @@ impl File {
         work_items
             .par_iter()
             .zip(raw_blocks)
-            .for_each(|(work_item, raw_result)| {
+            .for_each(|(work_item, fetch_result)| {
                 if err.lock().map_or(true, |e| e.is_some()) {
                     return;
                 }
@@ -639,7 +654,7 @@ impl File {
                 let (block_idx, info, buf_offset, offset_in_block, to_copy) = work_item;
 
                 // Handle fetch errors
-                let raw = match raw_result {
+                let fetched = match fetch_result {
                     Ok(r) => r,
                     Err(e) => {
                         if let Ok(mut guard) = err.lock() {
@@ -649,22 +664,23 @@ impl File {
                     }
                 };
 
-                // If cache hit or zero block, raw is already decompressed
-                let data = if info.length == 0 || snap.cache_l1.get(stream, *block_idx).is_some() {
-                    raw
-                } else {
-                    // Decompress and verify
-                    match snap.decompress_and_verify(raw, *block_idx, info) {
-                        Ok(d) => {
-                            // Cache the result
-                            snap.cache_l1.insert(stream, *block_idx, d.clone());
-                            d
-                        }
-                        Err(e) => {
-                            if let Ok(mut guard) = err.lock() {
-                                let _ = guard.replace(e);
+                // Use the FetchResult to determine if decompression is needed,
+                // rather than re-checking the cache (which could give a stale answer).
+                let data = match fetched {
+                    FetchResult::Decompressed(data) => data,
+                    FetchResult::Compressed(raw) => {
+                        match snap.decompress_and_verify(raw, *block_idx, info) {
+                            Ok(d) => {
+                                // Cache the result
+                                snap.cache_l1.insert(stream, *block_idx, d.clone());
+                                d
                             }
-                            return;
+                            Err(e) => {
+                                if let Ok(mut guard) = err.lock() {
+                                    let _ = guard.replace(e);
+                                }
+                                return;
+                            }
                         }
                     }
                 };
@@ -946,26 +962,28 @@ impl File {
         stream: SnapshotStream,
         block_idx: u64,
         info: &BlockInfo,
-    ) -> Result<Bytes> {
+    ) -> Result<FetchResult> {
         // Check cache first - return decompressed data if available
         if let Some(data) = self.cache_l1.get(stream, block_idx) {
-            return Ok(data);
+            return Ok(FetchResult::Decompressed(data));
         }
 
         // Handle zero blocks
         if info.length == 0 {
             let len = info.logical_len as usize;
             if len == 0 {
-                return Ok(Bytes::new());
+                return Ok(FetchResult::Decompressed(Bytes::new()));
             }
             if len == ZEROS_64K.len() {
-                return Ok(Bytes::from_static(&ZEROS_64K));
+                return Ok(FetchResult::Decompressed(Bytes::from_static(&ZEROS_64K)));
             }
-            return Ok(Bytes::from(vec![0u8; len]));
+            return Ok(FetchResult::Decompressed(Bytes::from(vec![0u8; len])));
         }
 
         // Fetch raw compressed data (THIS IS THE PARALLEL PART)
-        self.backend.read_exact(info.offset, info.length as usize)
+        self.backend
+            .read_exact(info.offset, info.length as usize)
+            .map(FetchResult::Compressed)
     }
 
     /// Decompresses and verifies a raw block.
@@ -1082,19 +1100,17 @@ impl File {
         block_idx: u64,
         info: &BlockInfo,
     ) -> Result<Bytes> {
-        // Fetch raw block (from cache or I/O)
-        let raw = self.fetch_raw_block(stream, block_idx, info)?;
-
-        // If cache hit or zero block, raw is already decompressed
-        if info.length == 0 || self.cache_l1.get(stream, block_idx).is_some() {
-            return Ok(raw);
+        // Fetch block (from cache or I/O). The FetchResult tracks whether
+        // data is already decompressed, avoiding a TOCTOU race where a
+        // background prefetch thread could modify the cache between fetch
+        // and the decompression decision.
+        match self.fetch_raw_block(stream, block_idx, info)? {
+            FetchResult::Decompressed(data) => Ok(data),
+            FetchResult::Compressed(raw) => {
+                let data = self.decompress_and_verify(raw, block_idx, info)?;
+                self.cache_l1.insert(stream, block_idx, data.clone());
+                Ok(data)
+            }
         }
-
-        // Decompress and verify
-        let data = self.decompress_and_verify(raw, block_idx, info)?;
-
-        // Cache the result
-        self.cache_l1.insert(stream, block_idx, data.clone());
-        Ok(data)
     }
 }

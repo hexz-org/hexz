@@ -64,9 +64,7 @@ def train(snap_path: str) -> None:
         seed=42,
     )
 
-    loader = torch.utils.data.DataLoader(
-        dataset, batch_size=BATCH_SIZE, num_workers=0
-    )
+    loader = torch.utils.data.DataLoader(dataset, batch_size=BATCH_SIZE, num_workers=0)
 
     model = nn.Sequential(
         nn.Unflatten(1, (CHANNELS, HEIGHT, WIDTH)),
@@ -107,10 +105,7 @@ def train(snap_path: str) -> None:
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 def main():
-    print(
-        f"hexz perf: {NUM_SAMPLES} samples, "
-        f"{NUM_EPOCHS} epochs, batch={BATCH_SIZE}"
-    )
+    print(f"hexz perf: {NUM_SAMPLES} samples, {NUM_EPOCHS} epochs, batch={BATCH_SIZE}")
 
     with tempfile.TemporaryDirectory(prefix="hexz_perf_") as workdir:
         t0 = time.monotonic()
