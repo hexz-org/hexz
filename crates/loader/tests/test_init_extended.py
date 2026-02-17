@@ -55,9 +55,6 @@ class TestAllExports:
     def test_async_reader_available(self):
         assert hasattr(hexz, "AsyncReader")
 
-    def test_dataset_available(self):
-        assert hasattr(hexz, "Dataset")
-
     def test_crypto_submodule(self):
         assert hasattr(hexz, "crypto")
         assert hasattr(hexz.crypto, "keygen")

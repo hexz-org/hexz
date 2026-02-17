@@ -125,7 +125,7 @@ pub struct Builder {
 impl Builder {
     /// Create a new snapshot builder.
     #[new]
-    #[pyo3(signature = (output_path, block_size=65536, compression="lz4", compression_level=None, dedup=true, cdc=false, min_chunk=DEFAULT_CDC_MIN_CHUNK, avg_chunk=DEFAULT_CDC_AVG_CHUNK, max_chunk=DEFAULT_CDC_MAX_CHUNK))]
+    #[pyo3(signature = (output_path, block_size=65536, compression="lz4", compression_level=None, dedup=true, cdc=false, min_chunk=DEFAULT_CDC_MIN_CHUNK, avg_chunk=DEFAULT_CDC_AVG_CHUNK, max_chunk=DEFAULT_CDC_MAX_CHUNK, parent=None))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         output_path: String,
@@ -137,6 +137,7 @@ impl Builder {
         min_chunk: u32,
         avg_chunk: u32,
         max_chunk: u32,
+        parent: Option<Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         let path = PathBuf::from(output_path);
 
@@ -151,15 +152,50 @@ impl Builder {
         // overhead and using SHA-256 was the old bug we are fixing.
         let _ = dedup;
 
-        let writer = SnapshotWriter::builder(&path, compressor, comp_type)
+        // Parse parent(s) - can be a single path string or a list of paths
+        let mut parent_paths = Vec::new();
+        if let Some(p) = parent {
+            if let Ok(path_str) = p.extract::<String>() {
+                parent_paths.push(path_str);
+            } else if let Ok(path_list) = p.extract::<Vec<String>>() {
+                parent_paths.extend(path_list);
+            } else {
+                return Err(PyValueError::new_err(
+                    "parent must be a string or a list of strings",
+                ));
+            }
+        }
+
+        // Load all parent snapshots to seed the dedup map
+        let mut parent_snapshots = Vec::new();
+        for p_path in &parent_paths {
+            let backend = Arc::new(
+                FileBackend::new(std::path::Path::new(p_path))
+                    .map_err(|e| PyIOError::new_err(e.to_string()))?,
+            );
+            let snap =
+                HexzFile::open(backend, None).map_err(|e| PyIOError::new_err(e.to_string()))?;
+            parent_snapshots.push(snap);
+        }
+
+        let mut writer_builder = SnapshotWriter::builder(&path, compressor, comp_type)
             .block_size(block_size)
-            .variable_blocks(cdc)
+            .variable_blocks(cdc);
+
+        if !parent_snapshots.is_empty() {
+            writer_builder = writer_builder.parents(parent_snapshots);
+        }
+
+        let writer = writer_builder
             .build()
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
+        // Primary parent path for the header is the first one provided
+        let primary_parent = parent_paths.first().cloned();
+
         Ok(Builder {
             writer: Some(writer),
-            parent_path: None,
+            parent_path: primary_parent,
             cdc_enabled: cdc,
             min_chunk,
             avg_chunk,
@@ -189,12 +225,12 @@ impl Builder {
         self.process_stream(py, path, false)
     }
 
-    /// Add raw bytes as a disk stream without writing to a temporary file.
+    /// Add raw bytes as a primary stream without writing to a temporary file.
     pub fn add_disk_bytes<'py>(&mut self, py: Python<'py>, data: Vec<u8>) -> PyResult<()> {
         self.process_bytes_stream(py, data, true)
     }
 
-    /// Add raw bytes as a memory stream without writing to a temporary file.
+    /// Add raw bytes as a secondary stream without writing to a temporary file.
     pub fn add_memory_bytes<'py>(&mut self, py: Python<'py>, data: Vec<u8>) -> PyResult<()> {
         self.process_bytes_stream(py, data, false)
     }
@@ -237,7 +273,7 @@ impl Builder {
         let base_snap =
             HexzFile::open(backend, None).map_err(|e| PyIOError::new_err(e.to_string()))?;
 
-        let base_size = base_snap.size(SnapshotStream::Disk);
+        let base_size = base_snap.size(SnapshotStream::Primary);
 
         let mut ov_file =
             File::open(&abs_overlay_path).map_err(|e| PyIOError::new_err(e.to_string()))?;
@@ -273,8 +309,14 @@ impl Builder {
 
                 // Thin: unmodified block in base → parent ref
                 if thin && !is_modified && block_start < base_size {
+                    let hash = base_snap
+                        .get_block_info(SnapshotStream::Primary, block_start)
+                        .map_err(|e| PyIOError::new_err(e.to_string()))?
+                        .map(|(_, info)| info.hash)
+                        .unwrap_or([0u8; 32]);
+
                     writer
-                        .write_parent_ref(len as u32)
+                        .write_parent_ref(&hash, len as u32)
                         .map_err(|e| PyIOError::new_err(e.to_string()))?;
                     continue;
                 }
@@ -288,7 +330,7 @@ impl Builder {
                     if block_start < base_size {
                         let base_read_len = std::cmp::min(len, (base_size - block_start) as usize);
                         let _ = base_snap.read_at_into_uninit_bytes(
-                            SnapshotStream::Disk,
+                            SnapshotStream::Primary,
                             block_start,
                             &mut data[..base_read_len],
                         );
@@ -315,7 +357,7 @@ impl Builder {
                 } else if block_start < base_size {
                     let base_read_len = std::cmp::min(len, (base_size - block_start) as usize);
                     let _ = base_snap.read_at_into_uninit_bytes(
-                        SnapshotStream::Disk,
+                        SnapshotStream::Primary,
                         block_start,
                         &mut data[..base_read_len],
                     );

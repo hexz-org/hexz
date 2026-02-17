@@ -372,7 +372,7 @@ class AsyncReader:
             )
 
     def size(self) -> int:
-        """Size of the disk stream in bytes."""
+        """Size of the primary stream in bytes."""
         self._ensure_open()
         return self._reader.size()
 

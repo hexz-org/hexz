@@ -65,22 +65,22 @@ fn test_pack_and_read_lz4() {
     let snapshot = File::new(backend, compressor, None).unwrap();
 
     // Verify size
-    assert_eq!(snapshot.size(SnapshotStream::Disk), 1024 * 1024);
+    assert_eq!(snapshot.size(SnapshotStream::Primary), 1024 * 1024);
 
     // Read and verify data
-    let data = snapshot.read_at(SnapshotStream::Disk, 0, 4096).unwrap();
+    let data = snapshot.read_at(SnapshotStream::Primary, 0, 4096).unwrap();
     assert_eq!(data.len(), 4096);
     assert!(data.iter().all(|&b| b == 0x42));
 
     // Read from middle
     let middle_data = snapshot
-        .read_at(SnapshotStream::Disk, 512 * 1024, 4096)
+        .read_at(SnapshotStream::Primary, 512 * 1024, 4096)
         .unwrap();
     assert_eq!(middle_data.len(), 4096);
     assert!(middle_data.iter().all(|&b| b == 0x42));
 }
 
-/// Test snapshot with both disk and memory streams.
+/// Test snapshot with both disk and secondary streams.
 #[test]
 fn test_pack_disk_and_memory() {
     let temp_dir = TempDir::new().unwrap();
@@ -112,15 +112,17 @@ fn test_pack_disk_and_memory() {
     let snapshot = File::new(backend, compressor, None).unwrap();
 
     // Verify both stream sizes
-    assert_eq!(snapshot.size(SnapshotStream::Disk), 512 * 1024);
-    assert_eq!(snapshot.size(SnapshotStream::Memory), 256 * 1024);
+    assert_eq!(snapshot.size(SnapshotStream::Primary), 512 * 1024);
+    assert_eq!(snapshot.size(SnapshotStream::Secondary), 256 * 1024);
 
-    // Verify disk stream data
-    let disk_data = snapshot.read_at(SnapshotStream::Disk, 0, 1024).unwrap();
+    // Verify primary stream data
+    let disk_data = snapshot.read_at(SnapshotStream::Primary, 0, 1024).unwrap();
     assert!(disk_data.iter().all(|&b| b == 0xAA));
 
-    // Verify memory stream data
-    let mem_data = snapshot.read_at(SnapshotStream::Memory, 0, 1024).unwrap();
+    // Verify secondary stream data
+    let mem_data = snapshot
+        .read_at(SnapshotStream::Secondary, 0, 1024)
+        .unwrap();
     assert!(mem_data.iter().all(|&b| b == 0xBB));
 }
 
@@ -168,7 +170,7 @@ fn test_pack_varied_data() {
         let expected_pattern = (i * 17) as u8;
         let offset = i * 65536;
         let data = snapshot
-            .read_at(SnapshotStream::Disk, offset, 1024)
+            .read_at(SnapshotStream::Primary, offset, 1024)
             .unwrap();
         assert!(
             data.iter().all(|&b| b == expected_pattern),
@@ -216,7 +218,7 @@ fn test_random_access_patterns() {
 
     for (offset, length) in test_cases {
         let data = snapshot
-            .read_at(SnapshotStream::Disk, offset, length)
+            .read_at(SnapshotStream::Primary, offset, length)
             .unwrap();
         assert_eq!(
             data.len(),
@@ -256,11 +258,15 @@ fn test_read_beyond_end() {
     let snapshot = File::new(backend, compressor, None).unwrap();
 
     // Read starting beyond end should return empty
-    let data = snapshot.read_at(SnapshotStream::Disk, 10000, 1000).unwrap();
+    let data = snapshot
+        .read_at(SnapshotStream::Primary, 10000, 1000)
+        .unwrap();
     assert_eq!(data.len(), 0);
 
     // Read overlapping end should return partial data
-    let data = snapshot.read_at(SnapshotStream::Disk, 4000, 1000).unwrap();
+    let data = snapshot
+        .read_at(SnapshotStream::Primary, 4000, 1000)
+        .unwrap();
     assert_eq!(data.len(), 96); // Only 96 bytes available
 }
 
@@ -290,9 +296,9 @@ fn test_empty_snapshot() {
     let compressor = Box::new(Lz4Compressor::new());
     let snapshot = File::new(backend, compressor, None).unwrap();
 
-    assert_eq!(snapshot.size(SnapshotStream::Disk), 0);
+    assert_eq!(snapshot.size(SnapshotStream::Primary), 0);
 
-    let data = snapshot.read_at(SnapshotStream::Disk, 0, 1000).unwrap();
+    let data = snapshot.read_at(SnapshotStream::Primary, 0, 1000).unwrap();
     assert_eq!(data.len(), 0);
 }
 
@@ -322,9 +328,9 @@ fn test_small_snapshot() {
     let compressor = Box::new(Lz4Compressor::new());
     let snapshot = File::new(backend, compressor, None).unwrap();
 
-    assert_eq!(snapshot.size(SnapshotStream::Disk), 512);
+    assert_eq!(snapshot.size(SnapshotStream::Primary), 512);
 
-    let data = snapshot.read_at(SnapshotStream::Disk, 0, 512).unwrap();
+    let data = snapshot.read_at(SnapshotStream::Primary, 0, 512).unwrap();
     assert_eq!(data.len(), 512);
     assert!(data.iter().all(|&b| b == 0x88));
 }
@@ -356,8 +362,8 @@ fn test_pack_with_zstd_level1() {
     let compressor = Box::new(ZstdCompressor::new(1, None));
     let snapshot = File::new(backend, compressor, None).unwrap();
 
-    assert_eq!(snapshot.size(SnapshotStream::Disk), 1024 * 1024);
-    let data = snapshot.read_at(SnapshotStream::Disk, 0, 4096).unwrap();
+    assert_eq!(snapshot.size(SnapshotStream::Primary), 1024 * 1024);
+    let data = snapshot.read_at(SnapshotStream::Primary, 0, 4096).unwrap();
     assert!(data.iter().all(|&b| b == 0x42));
 }
 
@@ -386,7 +392,7 @@ fn test_pack_with_zstd_level9() {
     let compressor = Box::new(ZstdCompressor::new(9, None));
     let snapshot = File::new(backend, compressor, None).unwrap();
 
-    let data = snapshot.read_at(SnapshotStream::Disk, 0, 512).unwrap();
+    let data = snapshot.read_at(SnapshotStream::Primary, 0, 512).unwrap();
     assert_eq!(data.len(), 512);
 }
 
@@ -455,7 +461,7 @@ fn test_pack_with_4kb_blocks() {
     let snapshot = File::new(backend, compressor, None).unwrap();
 
     let data = snapshot
-        .read_at(SnapshotStream::Disk, 0, 256 * 1024)
+        .read_at(SnapshotStream::Primary, 0, 256 * 1024)
         .unwrap();
     assert_eq!(data.len(), 256 * 1024);
 }
@@ -485,7 +491,7 @@ fn test_pack_with_256kb_blocks() {
     let compressor = Box::new(Lz4Compressor::new());
     let snapshot = File::new(backend, compressor, None).unwrap();
 
-    assert_eq!(snapshot.size(SnapshotStream::Disk), 2 * 1024 * 1024);
+    assert_eq!(snapshot.size(SnapshotStream::Primary), 2 * 1024 * 1024);
 }
 
 #[test]
@@ -514,7 +520,7 @@ fn test_pack_with_1mb_blocks() {
     let snapshot = File::new(backend, compressor, None).unwrap();
 
     let data = snapshot
-        .read_at(SnapshotStream::Disk, 2 * 1024 * 1024, 1024)
+        .read_at(SnapshotStream::Primary, 2 * 1024 * 1024, 1024)
         .unwrap();
     assert_eq!(data.len(), 1024);
 }
@@ -551,7 +557,7 @@ fn test_pack_random_data() {
     let snapshot = File::new(backend, compressor, None).unwrap();
 
     let data = snapshot
-        .read_at(SnapshotStream::Disk, 0, 512 * 1024)
+        .read_at(SnapshotStream::Primary, 0, 512 * 1024)
         .unwrap();
     assert_bytes_equal(&data, &random_data, "random data round-trip");
 }
@@ -586,7 +592,7 @@ fn test_pack_sparse_data() {
     let snapshot = File::new(backend, compressor, None).unwrap();
 
     let data = snapshot
-        .read_at(SnapshotStream::Disk, 0, 1024 * 1024)
+        .read_at(SnapshotStream::Primary, 0, 1024 * 1024)
         .unwrap();
     assert_bytes_equal(&data, &sparse_data, "sparse data round-trip");
 }
@@ -621,7 +627,7 @@ fn test_pack_structured_data() {
     let snapshot = File::new(backend, compressor, None).unwrap();
 
     let data = snapshot
-        .read_at(SnapshotStream::Disk, 100000, 10000)
+        .read_at(SnapshotStream::Primary, 100000, 10000)
         .unwrap();
     assert_bytes_equal(&data, &structured_data[100000..110000], "structured data");
 }
@@ -653,15 +659,15 @@ fn test_pack_10mb_file() {
     let compressor = Box::new(Lz4Compressor::new());
     let snapshot = File::new(backend, compressor, None).unwrap();
 
-    assert_eq!(snapshot.size(SnapshotStream::Disk), 10 * 1024 * 1024);
+    assert_eq!(snapshot.size(SnapshotStream::Primary), 10 * 1024 * 1024);
 
     // Read from start
-    let data = snapshot.read_at(SnapshotStream::Disk, 0, 4096).unwrap();
+    let data = snapshot.read_at(SnapshotStream::Primary, 0, 4096).unwrap();
     assert!(data.iter().all(|&b| b == 0x99));
 
     // Read from middle
     let data = snapshot
-        .read_at(SnapshotStream::Disk, 5 * 1024 * 1024, 4096)
+        .read_at(SnapshotStream::Primary, 5 * 1024 * 1024, 4096)
         .unwrap();
     assert!(data.iter().all(|&b| b == 0x99));
 }
@@ -692,7 +698,7 @@ fn test_pack_100mb_file() {
     let compressor = Box::new(Lz4Compressor::new());
     let snapshot = File::new(backend, compressor, None).unwrap();
 
-    assert_eq!(snapshot.size(SnapshotStream::Disk), 100 * 1024 * 1024);
+    assert_eq!(snapshot.size(SnapshotStream::Primary), 100 * 1024 * 1024);
 }
 
 // Sequential read tests
@@ -736,7 +742,7 @@ fn test_sequential_reads_full_file() {
         let to_read = std::cmp::min(chunk_size, remaining as usize);
 
         let chunk = snapshot
-            .read_at(SnapshotStream::Disk, offset, to_read)
+            .read_at(SnapshotStream::Primary, offset, to_read)
             .unwrap();
         reconstructed.extend_from_slice(&chunk);
         offset += chunk.len() as u64;
@@ -773,8 +779,8 @@ fn test_pack_large_disk_small_memory() {
     let compressor = Box::new(Lz4Compressor::new());
     let snapshot = File::new(backend, compressor, None).unwrap();
 
-    assert_eq!(snapshot.size(SnapshotStream::Disk), 2 * 1024 * 1024);
-    assert_eq!(snapshot.size(SnapshotStream::Memory), 64 * 1024);
+    assert_eq!(snapshot.size(SnapshotStream::Primary), 2 * 1024 * 1024);
+    assert_eq!(snapshot.size(SnapshotStream::Secondary), 64 * 1024);
 }
 
 #[test]
@@ -803,8 +809,10 @@ fn test_pack_equal_disk_and_memory() {
     let compressor = Box::new(Lz4Compressor::new());
     let snapshot = File::new(backend, compressor, None).unwrap();
 
-    let disk_data = snapshot.read_at(SnapshotStream::Disk, 0, 1024).unwrap();
-    let mem_data = snapshot.read_at(SnapshotStream::Memory, 0, 1024).unwrap();
+    let disk_data = snapshot.read_at(SnapshotStream::Primary, 0, 1024).unwrap();
+    let mem_data = snapshot
+        .read_at(SnapshotStream::Secondary, 0, 1024)
+        .unwrap();
 
     assert!(disk_data.iter().all(|&b| b == 0xEE));
     assert!(mem_data.iter().all(|&b| b == 0xFF));
@@ -871,8 +879,10 @@ fn test_pack_file_not_multiple_of_block_size() {
     let compressor = Box::new(Lz4Compressor::new());
     let snapshot = File::new(backend, compressor, None).unwrap();
 
-    assert_eq!(snapshot.size(SnapshotStream::Disk), 100000);
-    let data = snapshot.read_at(SnapshotStream::Disk, 0, 100000).unwrap();
+    assert_eq!(snapshot.size(SnapshotStream::Primary), 100000);
+    let data = snapshot
+        .read_at(SnapshotStream::Primary, 0, 100000)
+        .unwrap();
     assert_eq!(data.len(), 100000);
 }
 
@@ -901,7 +911,7 @@ fn test_pack_single_block_file() {
     let compressor = Box::new(Lz4Compressor::new());
     let snapshot = File::new(backend, compressor, None).unwrap();
 
-    let data = snapshot.read_at(SnapshotStream::Disk, 0, 32768).unwrap();
+    let data = snapshot.read_at(SnapshotStream::Primary, 0, 32768).unwrap();
     assert!(data.iter().all(|&b| b == 0xCC));
 }
 
@@ -944,7 +954,7 @@ fn test_pack_verify_all_patterns() {
         let expected_pattern = (i * 31) as u8;
         let offset = i * 65536;
         let data = snapshot
-            .read_at(SnapshotStream::Disk, offset, 65536)
+            .read_at(SnapshotStream::Primary, offset, 65536)
             .unwrap();
         verify_pattern(&data, expected_pattern);
     }
@@ -982,14 +992,16 @@ fn test_read_at_into_uninit_matches_read_at() {
         if len == 0 {
             let mut uninit_buf = [MaybeUninit::uninit(); 1];
             snapshot
-                .read_at_into_uninit(SnapshotStream::Disk, offset, &mut uninit_buf[..0])
+                .read_at_into_uninit(SnapshotStream::Primary, offset, &mut uninit_buf[..0])
                 .unwrap();
             continue;
         }
-        let expected = snapshot.read_at(SnapshotStream::Disk, offset, len).unwrap();
+        let expected = snapshot
+            .read_at(SnapshotStream::Primary, offset, len)
+            .unwrap();
         let mut uninit_buf = vec![MaybeUninit::uninit(); len];
         snapshot
-            .read_at_into_uninit(SnapshotStream::Disk, offset, &mut uninit_buf)
+            .read_at_into_uninit(SnapshotStream::Primary, offset, &mut uninit_buf)
             .unwrap();
         let actual: &[u8] = unsafe {
             std::slice::from_raw_parts(uninit_buf.as_ptr() as *const u8, uninit_buf.len())
@@ -1026,13 +1038,13 @@ fn test_read_at_into_uninit_edge_cases() {
     // Empty buffer: must not crash
     let mut uninit_empty: [std::mem::MaybeUninit<u8>; 0] = [];
     snapshot
-        .read_at_into_uninit(SnapshotStream::Disk, 0, &mut uninit_empty)
+        .read_at_into_uninit(SnapshotStream::Primary, 0, &mut uninit_empty)
         .unwrap();
 
     // Offset past end: buffer must be zero-filled
     let mut buf_past_end = [MaybeUninit::uninit(); 8];
     snapshot
-        .read_at_into_uninit(SnapshotStream::Disk, 10000, &mut buf_past_end)
+        .read_at_into_uninit(SnapshotStream::Primary, 10000, &mut buf_past_end)
         .unwrap();
     let read_back: &[u8] = unsafe {
         std::slice::from_raw_parts(buf_past_end.as_ptr() as *const u8, buf_past_end.len())
@@ -1042,7 +1054,7 @@ fn test_read_at_into_uninit_edge_cases() {
     // Read past end of stream: partial fill + zero rest
     let mut buf_over = [MaybeUninit::uninit(); 16];
     snapshot
-        .read_at_into_uninit(SnapshotStream::Disk, 4080, &mut buf_over)
+        .read_at_into_uninit(SnapshotStream::Primary, 4080, &mut buf_over)
         .unwrap();
     let read_back: &[u8] =
         unsafe { std::slice::from_raw_parts(buf_over.as_ptr() as *const u8, buf_over.len()) };
@@ -1075,10 +1087,10 @@ fn test_read_at_into_uninit_bytes_matches_read_at() {
     let compressor = Box::new(Lz4Compressor::new());
     let snapshot = File::new(backend, compressor, None).unwrap();
 
-    let expected = snapshot.read_at(SnapshotStream::Disk, 100, 200).unwrap();
+    let expected = snapshot.read_at(SnapshotStream::Primary, 100, 200).unwrap();
     let mut buf = vec![0xFFu8; 200]; // dirty buffer
     snapshot
-        .read_at_into_uninit_bytes(SnapshotStream::Disk, 100, &mut buf)
+        .read_at_into_uninit_bytes(SnapshotStream::Primary, 100, &mut buf)
         .unwrap();
     assert_eq!(&buf[..expected.len()], expected.as_slice());
 }
@@ -1117,10 +1129,12 @@ fn test_parallel_read_consistency() {
         (100, 256 * 1024),
     ];
     for (offset, len) in cases {
-        let expected = snapshot.read_at(SnapshotStream::Disk, offset, len).unwrap();
+        let expected = snapshot
+            .read_at(SnapshotStream::Primary, offset, len)
+            .unwrap();
         let mut buf = vec![0u8; len];
         snapshot
-            .read_at_into_uninit_bytes(SnapshotStream::Disk, offset, &mut buf)
+            .read_at_into_uninit_bytes(SnapshotStream::Primary, offset, &mut buf)
             .unwrap();
         assert_eq!(
             &buf[..expected.len()],

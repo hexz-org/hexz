@@ -8,7 +8,7 @@
 //!
 //! The benchmark suite currently includes:
 //!
-//! - **Sequential read test**: Reads the entire disk stream sequentially in 1 MiB chunks
+//! - **Sequential read test**: Reads the entire primary stream sequentially in 1 MiB chunks
 //!   and measures total throughput (MB/s). This tests decompression speed and storage
 //!   backend bandwidth.
 //!
@@ -47,14 +47,14 @@ use std::time::Instant;
 ///
 /// This function runs a sequential read benchmark to measure snapshot read performance.
 /// It opens the snapshot, configures the appropriate decompressor, and reads the entire
-/// disk stream in 1 MiB chunks while measuring throughput.
+/// primary stream in 1 MiB chunks while measuring throughput.
 ///
 /// # Benchmark Methodology
 ///
-/// The test performs a single sequential pass over the entire disk stream:
+/// The test performs a single sequential pass over the entire primary stream:
 /// 1. Opens the snapshot and loads the header
 /// 2. Configures the decompressor (LZ4 or Zstd) with any embedded dictionary
-/// 3. Reads the disk stream sequentially in 1 MiB chunks
+/// 3. Reads the primary stream sequentially in 1 MiB chunks
 /// 4. Measures total time and calculates throughput
 ///
 /// # Arguments
@@ -98,9 +98,9 @@ pub fn run(
     println!("Benchmarking snapshot: {:?}", snap_path);
     let backend = Arc::new(FileBackend::new(&snap_path)?);
     let snap = File::open(backend, None)?;
-    let disk_size = snap.size(SnapshotStream::Disk);
+    let primary_size = snap.size(SnapshotStream::Primary);
 
-    println!("Image Size: {}", HumanBytes(disk_size));
+    println!("Image Size: {}", HumanBytes(primary_size));
 
     // Sequential Read Test
     println!("\nRunning Sequential Read Test (1 pass)...");
@@ -108,14 +108,14 @@ pub fn run(
     let mut offset = 0;
     let chunk_size = 1024 * 1024; // 1 MiB chunks
     let mut total_read = 0;
-    let pb = ProgressBar::new(disk_size);
+    let pb = ProgressBar::new(primary_size);
     pb.set_style(ProgressStyle::default_bar()
         .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec})")
         .unwrap_or_else(|_| ProgressStyle::default_bar()));
 
-    while offset < disk_size {
-        let len = std::cmp::min(chunk_size, (disk_size - offset) as usize);
-        let _data = snap.read_at(SnapshotStream::Disk, offset, len)?;
+    while offset < primary_size {
+        let len = std::cmp::min(chunk_size, (primary_size - offset) as usize);
+        let _data = snap.read_at(SnapshotStream::Primary, offset, len)?;
         offset += len as u64;
         total_read += len as u64;
         pb.inc(len as u64);

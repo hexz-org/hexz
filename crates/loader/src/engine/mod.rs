@@ -88,7 +88,7 @@
 //! let iter_config = IterConfig {
 //!     block_size: 65536,
 //!     prefetch_count: 4,
-//!     stream: SnapshotStream::Disk,
+//!     stream: SnapshotStream::Primary,
 //! };
 //!
 //! let mut iter = SnapshotIterator::new(snap, iter_config);
@@ -114,7 +114,7 @@
 //! };
 //!
 //! let snap = open_snapshot(config).expect("Failed to open S3 snapshot");
-//! let size = stream_size(&snap, SnapshotStream::Disk);
+//! let size = stream_size(&snap, SnapshotStream::Primary);
 //!
 //! // Generate shuffled block indices for randomized training
 //! let sample_size = 4096;
@@ -123,7 +123,7 @@
 //!
 //! for idx in indices.iter().take(100) {
 //!     let offset = (*idx as u64) * sample_size;
-//!     let data = hexz_loader::engine::read_stream(&snap, SnapshotStream::Disk, offset, sample_size as usize)
+//!     let data = hexz_loader::engine::read_stream(&snap, SnapshotStream::Primary, offset, sample_size as usize)
 //!         .expect("Read failed");
 //!     // Process shuffled sample...
 //! }
@@ -543,7 +543,7 @@ pub fn open_snapshot(config: OpenConfig) -> Result<Arc<File>, OpenError> {
 /// # Parameters
 ///
 /// - `snap`: Reference to an opened snapshot (from [`open_snapshot`]).
-/// - `stream`: Which stream to query (typically `SnapshotStream::Disk` for ML datasets).
+/// - `stream`: Which stream to query (typically `SnapshotStream::Primary` for ML datasets).
 ///
 /// # Returns
 ///
@@ -565,10 +565,10 @@ pub fn open_snapshot(config: OpenConfig) -> Result<Arc<File>, OpenError> {
 /// };
 ///
 /// let snap = open_snapshot(config).expect("Failed to open");
-/// let disk_size = stream_size(&snap, SnapshotStream::Disk);
-/// let mem_size = stream_size(&snap, SnapshotStream::Memory);
+/// let primary_size = stream_size(&snap, SnapshotStream::Primary);
+/// let mem_size = stream_size(&snap, SnapshotStream::Secondary);
 ///
-/// println!("Disk: {} bytes, Memory: {} bytes", disk_size, mem_size);
+/// println!("Disk: {} bytes, Memory: {} bytes", primary_size, mem_size);
 /// ```
 ///
 /// # Performance
@@ -643,7 +643,7 @@ pub fn stream_size(snap: &File, stream: SnapshotStream) -> u64 {
 /// };
 ///
 /// let snap = open_snapshot(config).expect("Failed to open");
-/// let data = read_stream(&snap, SnapshotStream::Disk, 0, 1024)
+/// let data = read_stream(&snap, SnapshotStream::Primary, 0, 1024)
 ///     .expect("Failed to read");
 ///
 /// assert_eq!(data.len(), 1024);
@@ -667,7 +667,7 @@ pub fn stream_size(snap: &File, stream: SnapshotStream) -> u64 {
 /// let snap = open_snapshot(config).expect("Failed to open");
 ///
 /// // Read 4KB sample at offset 1MB
-/// let sample = read_stream(&snap, SnapshotStream::Disk, 1024 * 1024, 4096)
+/// let sample = read_stream(&snap, SnapshotStream::Primary, 1024 * 1024, 4096)
 ///     .expect("Read failed");
 /// ```
 ///
@@ -715,11 +715,11 @@ mod tests {
     /// Helper to create a test snapshot file
     fn create_test_snapshot(
         dir: &TempDir,
-        disk_size: usize,
+        primary_size: usize,
         pattern: u8,
         compression: &str,
     ) -> PathBuf {
-        let disk_path = create_test_disk(dir, "disk.img", disk_size, pattern);
+        let disk_path = create_test_disk(dir, "disk.img", primary_size, pattern);
         let output_path = dir.path().join("test.hxz");
 
         let config = PackConfig {
@@ -757,7 +757,7 @@ mod tests {
         };
 
         let snap = open_snapshot(config).expect("Failed to open snapshot");
-        assert_eq!(stream_size(&snap, SnapshotStream::Disk), 8192);
+        assert_eq!(stream_size(&snap, SnapshotStream::Primary), 8192);
     }
 
     #[test]
@@ -775,7 +775,7 @@ mod tests {
         };
 
         let snap = open_snapshot(config).expect("Failed to open snapshot");
-        assert_eq!(stream_size(&snap, SnapshotStream::Disk), 16384);
+        assert_eq!(stream_size(&snap, SnapshotStream::Primary), 16384);
     }
 
     #[test]
@@ -793,7 +793,7 @@ mod tests {
         };
 
         let snap = open_snapshot(config).expect("Failed to open snapshot");
-        assert_eq!(stream_size(&snap, SnapshotStream::Disk), 8192);
+        assert_eq!(stream_size(&snap, SnapshotStream::Primary), 8192);
     }
 
     #[test]
@@ -850,11 +850,11 @@ mod tests {
         };
 
         let snap = open_snapshot(config).unwrap();
-        let size = stream_size(&snap, SnapshotStream::Disk);
+        let size = stream_size(&snap, SnapshotStream::Primary);
         assert_eq!(size, 12345);
 
-        // Memory stream should be 0 (not present)
-        let mem_size = stream_size(&snap, SnapshotStream::Memory);
+        // Secondary stream should be 0 (not present)
+        let mem_size = stream_size(&snap, SnapshotStream::Secondary);
         assert_eq!(mem_size, 0);
     }
 
@@ -875,7 +875,7 @@ mod tests {
         let snap = open_snapshot(config).unwrap();
 
         // Read first 1024 bytes
-        let data = read_stream(&snap, SnapshotStream::Disk, 0, 1024).unwrap();
+        let data = read_stream(&snap, SnapshotStream::Primary, 0, 1024).unwrap();
         assert_eq!(data.len(), 1024);
         assert!(data.iter().all(|&b| b == 0xDD));
     }
@@ -897,7 +897,7 @@ mod tests {
         let snap = open_snapshot(config).unwrap();
 
         // Read from middle
-        let data = read_stream(&snap, SnapshotStream::Disk, 8192, 2048).unwrap();
+        let data = read_stream(&snap, SnapshotStream::Primary, 8192, 2048).unwrap();
         assert_eq!(data.len(), 2048);
         assert!(data.iter().all(|&b| b == 0xEE));
     }
@@ -919,7 +919,7 @@ mod tests {
         let snap = open_snapshot(config).unwrap();
 
         // Read spanning multiple blocks (block_size is 4096)
-        let data = read_stream(&snap, SnapshotStream::Disk, 2000, 10000).unwrap();
+        let data = read_stream(&snap, SnapshotStream::Primary, 2000, 10000).unwrap();
         assert_eq!(data.len(), 10000);
         assert!(data.iter().all(|&b| b == 0xFF));
     }
@@ -941,7 +941,7 @@ mod tests {
         let snap = open_snapshot(config).unwrap();
 
         // Read last 100 bytes
-        let data = read_stream(&snap, SnapshotStream::Disk, 8092, 100).unwrap();
+        let data = read_stream(&snap, SnapshotStream::Primary, 8092, 100).unwrap();
         assert_eq!(data.len(), 100);
         assert!(data.iter().all(|&b| b == 0x11));
     }
@@ -965,7 +965,7 @@ mod tests {
         // Sequential reads should benefit from prefetching
         for i in 0..8 {
             let offset = i * 4096;
-            let data = read_stream(&snap, SnapshotStream::Disk, offset, 4096).unwrap();
+            let data = read_stream(&snap, SnapshotStream::Primary, offset, 4096).unwrap();
             assert_eq!(data.len(), 4096);
             assert!(data.iter().all(|&b| b == 0x22));
         }
@@ -1011,7 +1011,7 @@ mod tests {
                 thread::spawn(move || {
                     let offset = i * 16384;
                     let data =
-                        read_stream(&snap_clone, SnapshotStream::Disk, offset, 4096).unwrap();
+                        read_stream(&snap_clone, SnapshotStream::Primary, offset, 4096).unwrap();
                     assert_eq!(data.len(), 4096);
                     assert!(data.iter().all(|&b| b == 0x33));
                 })
@@ -1040,7 +1040,7 @@ mod tests {
         let snap = open_snapshot(config).unwrap();
 
         // Read 0 bytes
-        let data = read_stream(&snap, SnapshotStream::Disk, 0, 0).unwrap();
+        let data = read_stream(&snap, SnapshotStream::Primary, 0, 0).unwrap();
         assert_eq!(data.len(), 0);
     }
 
@@ -1083,14 +1083,14 @@ mod tests {
 
         let snap = open_snapshot(open_config).unwrap();
 
-        // Verify disk stream
-        assert_eq!(stream_size(&snap, SnapshotStream::Disk), 8192);
-        let disk_data = read_stream(&snap, SnapshotStream::Disk, 0, 1024).unwrap();
+        // Verify primary stream
+        assert_eq!(stream_size(&snap, SnapshotStream::Primary), 8192);
+        let disk_data = read_stream(&snap, SnapshotStream::Primary, 0, 1024).unwrap();
         assert!(disk_data.iter().all(|&b| b == 0x55));
 
-        // Verify memory stream
-        assert_eq!(stream_size(&snap, SnapshotStream::Memory), 4096);
-        let mem_data = read_stream(&snap, SnapshotStream::Memory, 0, 1024).unwrap();
+        // Verify secondary stream
+        assert_eq!(stream_size(&snap, SnapshotStream::Secondary), 4096);
+        let mem_data = read_stream(&snap, SnapshotStream::Secondary, 0, 1024).unwrap();
         assert!(mem_data.iter().all(|&b| b == 0x66));
     }
 }

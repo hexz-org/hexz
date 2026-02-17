@@ -66,22 +66,22 @@ pub fn run(
         .variable_blocks(false)
         .build()?;
 
-    let base_disk_size = base_snap.size(SnapshotStream::Disk);
+    let base_primary_size = base_snap.size(SnapshotStream::Primary);
     let overlay_len = overlay_file.metadata()?.len();
-    let final_disk_size = std::cmp::max(base_disk_size, overlay_len);
+    let final_primary_size = std::cmp::max(base_primary_size, overlay_len);
 
-    // --- Disk stream ---
-    writer.begin_stream(true, final_disk_size);
+    // --- Primary stream ---
+    writer.begin_stream(true, final_primary_size);
 
-    let pb = ProgressBar::new(final_disk_size);
+    let pb = ProgressBar::new(final_primary_size);
     let bs = block_size as u64;
-    let total_blocks = final_disk_size.div_ceil(bs);
+    let total_blocks = final_primary_size.div_ceil(bs);
 
     for i in 0..total_blocks {
         let block_start = i * bs;
         let mut block_len = bs;
-        if block_start + block_len > final_disk_size {
-            block_len = final_disk_size - block_start;
+        if block_start + block_len > final_primary_size {
+            block_len = final_primary_size - block_start;
         }
 
         let start_ov_blk = block_start / OVERLAY_BLOCK_SIZE;
@@ -90,8 +90,13 @@ pub fn run(
             (start_ov_blk..=end_ov_blk).any(|ov_blk| modified_blocks.contains(&ov_blk));
 
         // Thin: unmodified block in base → parent ref
-        if thin && !is_modified && block_start < base_disk_size {
-            writer.write_parent_ref(block_len as u32)?;
+        if thin && !is_modified && block_start < base_primary_size {
+            let hash = base_snap
+                .get_block_info(SnapshotStream::Primary, block_start)?
+                .map(|(_, info)| info.hash)
+                .unwrap_or([0u8; 32]);
+
+            writer.write_parent_ref(&hash, block_len as u32)?;
             pb.inc(block_len);
             continue;
         }
@@ -100,9 +105,9 @@ pub fn run(
         let mut data = vec![0u8; block_len as usize];
 
         if is_modified {
-            if block_start < base_disk_size {
+            if block_start < base_primary_size {
                 let base_data =
-                    base_snap.read_at(SnapshotStream::Disk, block_start, block_len as usize)?;
+                    base_snap.read_at(SnapshotStream::Primary, block_start, block_len as usize)?;
                 data[..base_data.len()].copy_from_slice(&base_data);
             }
 
@@ -110,7 +115,7 @@ pub fn run(
                 if modified_blocks.contains(&ov_blk) {
                     let chunk_start = ov_blk * OVERLAY_BLOCK_SIZE;
                     let chunk_end =
-                        std::cmp::min(chunk_start + OVERLAY_BLOCK_SIZE, final_disk_size);
+                        std::cmp::min(chunk_start + OVERLAY_BLOCK_SIZE, final_primary_size);
                     let chunk_len = (chunk_end - chunk_start) as usize;
                     let rel_start = (chunk_start - block_start) as usize;
 
@@ -118,9 +123,9 @@ pub fn run(
                     overlay_file.read_exact(&mut data[rel_start..rel_start + chunk_len])?;
                 }
             }
-        } else if block_start < base_disk_size {
+        } else if block_start < base_primary_size {
             let base_data =
-                base_snap.read_at(SnapshotStream::Disk, block_start, block_len as usize)?;
+                base_snap.read_at(SnapshotStream::Primary, block_start, block_len as usize)?;
             data[..base_data.len()].copy_from_slice(&base_data);
         }
 
@@ -130,7 +135,7 @@ pub fn run(
 
     writer.end_stream()?;
 
-    // --- Memory stream ---
+    // --- Secondary stream ---
     if let Some(mem_path) = memory_path {
         println!("\nProcessing new memory state...");
         let mut mem_file = File::open(&mem_path)?;

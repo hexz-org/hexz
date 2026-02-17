@@ -197,7 +197,7 @@ proptest! {
         checksum in any::<u32>(),
         logical_len in any::<u32>(),
     ) {
-        let info = BlockInfo { offset, length, checksum, logical_len };
+        let info = BlockInfo { hash: [0u8; 32], offset, length, checksum, logical_len };
         let bytes = bincode::serialize(&info).unwrap();
         let deserialized: BlockInfo = bincode::deserialize(&bytes).unwrap();
         prop_assert_eq!(info.offset, deserialized.offset);
@@ -209,34 +209,34 @@ proptest! {
     /// MasterIndex: deserialize(serialize(index)) == index.
     #[test]
     fn master_index_roundtrip(
-        disk_size in any::<u64>(),
-        memory_size in any::<u64>(),
-        n_disk_pages in 0usize..8,
-        n_memory_pages in 0usize..4,
+        primary_size in any::<u64>(),
+        secondary_size in any::<u64>(),
+        n_primary_pages in 0usize..8,
+        n_secondary_pages in 0usize..4,
     ) {
         let master = MasterIndex {
-            disk_pages: (0..n_disk_pages).map(|i| PageEntry {
+            primary_pages: (0..n_primary_pages).map(|i| PageEntry {
                 start_block: i as u64 * 4096,
                 start_logical: i as u64 * 4096 * 65536,
                 offset: 4096 + i as u64 * 65536,
                 length: 65536,
             }).collect(),
-            memory_pages: (0..n_memory_pages).map(|i| PageEntry {
+            secondary_pages: (0..n_secondary_pages).map(|i| PageEntry {
                 start_block: i as u64 * 4096,
                 start_logical: i as u64 * 4096 * 65536,
                 offset: 4096 + i as u64 * 65536,
                 length: 65536,
             }).collect(),
-            disk_size,
-            memory_size,
+            primary_size,
+            secondary_size,
         };
 
         let bytes = bincode::serialize(&master).unwrap();
         let deserialized: MasterIndex = bincode::deserialize(&bytes).unwrap();
-        prop_assert_eq!(master.disk_size, deserialized.disk_size);
-        prop_assert_eq!(master.memory_size, deserialized.memory_size);
-        prop_assert_eq!(master.disk_pages.len(), deserialized.disk_pages.len());
-        prop_assert_eq!(master.memory_pages.len(), deserialized.memory_pages.len());
+        prop_assert_eq!(master.primary_size, deserialized.primary_size);
+        prop_assert_eq!(master.secondary_size, deserialized.secondary_size);
+        prop_assert_eq!(master.primary_pages.len(), deserialized.primary_pages.len());
+        prop_assert_eq!(master.secondary_pages.len(), deserialized.secondary_pages.len());
     }
 }
 

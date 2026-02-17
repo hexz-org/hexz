@@ -585,7 +585,8 @@ pub fn write_block<W: Write>(
         off
     } else if let Some(map) = dedup_map {
         // Hash directly into the fixed-size buffer (no runtime bounds check).
-        *hash_buf = hasher.hash_fixed(final_data);
+        // Hash the UNCOMPRESSED data for consistent deduplication across compression algorithms.
+        *hash_buf = hasher.hash_fixed(chunk);
 
         if let Some(existing_offset) = map.get(hash_buf) {
             // Block already exists, reuse it — no copy needed on hit
@@ -611,6 +612,7 @@ pub fn write_block<W: Write>(
         length: final_len,
         logical_len: chunk_len,
         checksum,
+        hash: *hash_buf,
     })
 }
 
@@ -754,6 +756,7 @@ pub fn create_zero_block(logical_len: u32) -> BlockInfo {
         length: 0,
         logical_len,
         checksum: 0,
+        hash: [0u8; 32],
     }
 }
 

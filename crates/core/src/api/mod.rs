@@ -25,8 +25,8 @@
 //! let compressor = Box::new(Lz4Compressor::new());
 //! let snap = File::new(backend, compressor, None)?;
 //!
-//! // Read from disk stream
-//! let data = snap.read_at(SnapshotStream::Disk, 0, 512)?;
+//! // Read from primary stream
+//! let data = snap.read_at(SnapshotStream::Primary, 0, 512)?;
 //! println!("First sector: {:?}", &data[..64]);
 //! # Ok(())
 //! # }

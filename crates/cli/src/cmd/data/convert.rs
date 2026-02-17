@@ -83,7 +83,7 @@ fn convert_tar(
     let mut total_bytes: u64 = 0;
     let mut bytes_from_archive: u64 = 0;
 
-    // Begin a disk stream for the tar data
+    // Begin a primary stream for the tar data
     // We'll set total_size after reading all entries by using a two-pass approach,
     // but for streaming we start with the tar file size as an estimate.
     writer.begin_stream(true, total_size);

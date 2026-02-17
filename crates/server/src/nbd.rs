@@ -124,7 +124,7 @@ const NBD_MAX_BUFFER_SIZE: u32 = 32 * 1024 * 1024;
 /// 3. Handles disconnect when the client sends NBD_CMD_DISC
 ///
 /// The connection is read-only and blocks are served directly from the snapshot's
-/// disk stream. Write, flush, and trim commands return error responses.
+/// primary stream. Write, flush, and trim commands return error responses.
 ///
 /// # Connection Lifecycle
 ///
@@ -187,7 +187,7 @@ pub async fn handle_client(mut socket: TcpStream, snap: Arc<File>) -> Result<()>
             NBD_OPT_ABORT => return Ok(()),
             NBD_OPT_EXPORT_NAME => {
                 // Old-style negotiation finish.
-                let size = snap.size(SnapshotStream::Disk);
+                let size = snap.size(SnapshotStream::Primary);
                 let export_flags = NBD_FLAG_HAS_FLAGS | NBD_FLAG_READ_ONLY;
 
                 socket.write_u64(size).await?;
@@ -199,7 +199,7 @@ pub async fn handle_client(mut socket: TcpStream, snap: Arc<File>) -> Result<()>
                 break;
             }
             NBD_OPT_INFO | NBD_OPT_GO => {
-                let size = snap.size(SnapshotStream::Disk);
+                let size = snap.size(SnapshotStream::Primary);
                 let export_flags = NBD_FLAG_HAS_FLAGS | NBD_FLAG_READ_ONLY;
 
                 // Reply NBD_INFO_EXPORT
@@ -252,7 +252,7 @@ pub async fn handle_client(mut socket: TcpStream, snap: Arc<File>) -> Result<()>
         match type_ {
             NBD_CMD_READ => {
                 let mut error = 0u32;
-                let data = match snap.read_at(SnapshotStream::Disk, offset, length as usize) {
+                let data = match snap.read_at(SnapshotStream::Primary, offset, length as usize) {
                     Ok(d) => d,
                     Err(e) => {
                         tracing::error!("Read error: {}", e);

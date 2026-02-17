@@ -42,8 +42,8 @@ enum FetchResult {
 /// Logical stream identifier for dual-stream snapshots.
 ///
 /// Hexz snapshots can store two independent data streams:
-/// - **Disk**: Persistent storage (disk image, filesystem data)
-/// - **Memory**: Volatile state (RAM contents, process memory)
+/// - **Primary**: Persistent storage (disk image, filesystem data, or main tensor weights)
+/// - **Secondary**: Volatile state (RAM contents, process memory, or auxiliary data)
 ///
 /// # Example
 ///
@@ -51,21 +51,21 @@ enum FetchResult {
 /// use hexz_core::{File, SnapshotStream};
 /// # use std::sync::Arc;
 /// # fn example(snapshot: Arc<File>) -> Result<(), Box<dyn std::error::Error>> {
-/// // Read 4KB from disk stream
-/// let disk_data = snapshot.read_at(SnapshotStream::Disk, 0, 4096)?;
+/// // Read 4KB from primary stream
+/// let data = snapshot.read_at(SnapshotStream::Primary, 0, 4096)?;
 ///
-/// // Read 4KB from memory stream (if present)
-/// let mem_data = snapshot.read_at(SnapshotStream::Memory, 0, 4096)?;
+/// // Read 4KB from secondary stream (if present)
+/// let aux = snapshot.read_at(SnapshotStream::Secondary, 0, 4096)?;
 /// # Ok(())
 /// # }
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SnapshotStream {
-    /// Persistent disk/storage stream
-    Disk = 0,
-    /// Volatile memory stream
-    Memory = 1,
+    /// Persistent primary stream (formerly Disk)
+    Primary = 0,
+    /// Volatile secondary stream (formerly Memory)
+    Secondary = 1,
 }
 
 /// Read-only interface for accessing Hexz snapshot data.
@@ -106,7 +106,7 @@ pub enum SnapshotStream {
 /// let snapshot = File::new(backend, compressor, None)?;
 ///
 /// // Read 4KB at offset 1MB
-/// let data = snapshot.read_at(SnapshotStream::Disk, 1024 * 1024, 4096)?;
+/// let data = snapshot.read_at(SnapshotStream::Primary, 1024 * 1024, 4096)?;
 /// assert_eq!(data.len(), 4096);
 /// # Ok(())
 /// # }
@@ -139,7 +139,7 @@ pub enum SnapshotStream {
 /// )?;
 ///
 /// // Reads automatically fall back to base for unchanged blocks
-/// let data = thin.read_at(hexz_core::SnapshotStream::Disk, 0, 4096)?;
+/// let data = thin.read_at(hexz_core::SnapshotStream::Primary, 0, 4096)?;
 /// # Ok(())
 /// # }
 /// ```
@@ -148,7 +148,7 @@ pub struct File {
     pub header: Header,
 
     /// Master index containing top-level page entries
-    master: MasterIndex,
+    pub(crate) master: MasterIndex,
 
     /// Storage backend for reading raw snapshot data
     backend: Arc<dyn StorageBackend>,
@@ -207,7 +207,7 @@ impl File {
     /// let compressor = Box::new(Lz4Compressor::new());
     /// let snapshot = File::new(backend, compressor, None)?;
     ///
-    /// println!("Disk size: {} bytes", snapshot.size(SnapshotStream::Disk));
+    /// println!("Primary size: {} bytes", snapshot.size(SnapshotStream::Primary));
     /// # Ok(())
     /// # }
     /// ```
@@ -392,11 +392,11 @@ impl File {
     /// use hexz_core::{File, SnapshotStream};
     /// # use std::sync::Arc;
     /// # fn example(snapshot: Arc<File>) {
-    /// let disk_bytes = snapshot.size(SnapshotStream::Disk);
-    /// let mem_bytes = snapshot.size(SnapshotStream::Memory);
+    /// let disk_bytes = snapshot.size(SnapshotStream::Primary);
+    /// let mem_bytes = snapshot.size(SnapshotStream::Secondary);
     ///
-    /// println!("Disk: {} GB", disk_bytes / (1024 * 1024 * 1024));
-    /// println!("Memory: {} MB", mem_bytes / (1024 * 1024));
+    /// println!("Primary: {} GB", disk_bytes / (1024 * 1024 * 1024));
+    /// println!("Secondary: {} MB", mem_bytes / (1024 * 1024));
     /// # }
     /// ```
     /// Returns the total number of prefetch operations spawned since this file was opened.
@@ -407,9 +407,45 @@ impl File {
 
     pub fn size(&self, stream: SnapshotStream) -> u64 {
         match stream {
-            SnapshotStream::Disk => self.master.disk_size,
-            SnapshotStream::Memory => self.master.memory_size,
+            SnapshotStream::Primary => self.master.primary_size,
+            SnapshotStream::Secondary => self.master.secondary_size,
         }
+    }
+
+    /// Returns the block metadata for a given logical offset.
+    pub fn get_block_info(
+        &self,
+        stream: SnapshotStream,
+        offset: u64,
+    ) -> Result<Option<(u64, BlockInfo)>> {
+        let pages = match stream {
+            SnapshotStream::Primary => &self.master.primary_pages,
+            SnapshotStream::Secondary => &self.master.secondary_pages,
+        };
+
+        if pages.is_empty() {
+            return Ok(None);
+        }
+
+        let page_idx = match pages.binary_search_by(|p| p.start_logical.cmp(&offset)) {
+            Ok(idx) => idx,
+            Err(idx) => idx.saturating_sub(1),
+        };
+
+        let page_entry = &pages[page_idx];
+        let page = self.get_page(page_entry)?;
+        let mut block_logical_start = page_entry.start_logical;
+
+        for (i, block) in page.blocks.iter().enumerate() {
+            let block_end = block_logical_start + block.logical_len as u64;
+            if offset >= block_logical_start && offset < block_end {
+                let global_idx = page_entry.start_block + i as u64;
+                return Ok(Some((global_idx, *block)));
+            }
+            block_logical_start = block_end;
+        }
+
+        Ok(None)
     }
 
     /// Reads data from a snapshot stream at a given offset.
@@ -456,14 +492,14 @@ impl File {
     /// use hexz_core::{File, SnapshotStream};
     /// # use std::sync::Arc;
     /// # fn example(snapshot: Arc<File>) -> Result<(), Box<dyn std::error::Error>> {
-    /// // Read first 512 bytes of disk stream
-    /// let boot_sector = snapshot.read_at(SnapshotStream::Disk, 0, 512)?;
+    /// // Read first 512 bytes of primary stream
+    /// let boot_sector = snapshot.read_at(SnapshotStream::Primary, 0, 512)?;
     ///
     /// // Read from arbitrary offset
-    /// let chunk = snapshot.read_at(SnapshotStream::Disk, 1024 * 1024, 4096)?;
+    /// let chunk = snapshot.read_at(SnapshotStream::Primary, 1024 * 1024, 4096)?;
     ///
     /// // Reading beyond stream size returns empty vector
-    /// let empty = snapshot.read_at(SnapshotStream::Disk, u64::MAX, 100)?;
+    /// let empty = snapshot.read_at(SnapshotStream::Primary, u64::MAX, 100)?;
     /// assert!(empty.is_empty());
     /// # Ok(())
     /// # }
@@ -485,8 +521,8 @@ impl File {
         }
 
         let pages = match stream {
-            SnapshotStream::Disk => &self.master.disk_pages,
-            SnapshotStream::Memory => &self.master.memory_pages,
+            SnapshotStream::Primary => &self.master.primary_pages,
+            SnapshotStream::Secondary => &self.master.secondary_pages,
         };
 
         if pages.is_empty() {
@@ -823,8 +859,8 @@ impl File {
 
         // Get page list for stream
         let pages = match stream {
-            SnapshotStream::Disk => &self.master.disk_pages,
-            SnapshotStream::Memory => &self.master.memory_pages,
+            SnapshotStream::Primary => &self.master.primary_pages,
+            SnapshotStream::Secondary => &self.master.secondary_pages,
         };
 
         // Delegate to parent if no index pages
@@ -925,7 +961,7 @@ impl File {
     /// This method acquires a lock on the page cache only for cache lookup and insertion.
     /// I/O and deserialization are performed without holding the lock to avoid blocking
     /// other threads during cache misses.
-    fn get_page(&self, entry: &PageEntry) -> Result<Arc<IndexPage>> {
+    pub(crate) fn get_page(&self, entry: &PageEntry) -> Result<Arc<IndexPage>> {
         // Fast path: check sharded cache
         if let Some(p) = self.page_cache.get(entry.offset) {
             return Ok(p);
@@ -1101,7 +1137,7 @@ impl File {
     /// This method is hot path for cache misses. Decompression throughput:
     /// - LZ4: ~2 GB/s per core
     /// - Zstd: ~500 MB/s per core
-    fn resolve_block_data(
+    pub(crate) fn resolve_block_data(
         &self,
         stream: SnapshotStream,
         block_idx: u64,

@@ -43,7 +43,7 @@ def advanced_build_demo(source_dir: str):
         print("\nBuild complete!")
         print(f"File: {output_file}")
         print(f"Size: {meta.size_compressed / 1024 / 1024:.2f} MB")
-        print(f"Original size: {meta.disk_size / 1024 / 1024:.2f} MB")
+        print(f"Original size: {meta.primary_size / 1024 / 1024:.2f} MB")
         print(f"Ratio: {meta.compression_ratio:.2f}")
         print(f"Block size: {meta.block_size}")
 

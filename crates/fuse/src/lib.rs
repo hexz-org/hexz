@@ -11,7 +11,7 @@
 //! ```text
 //! /mountpoint/
 //! ├── disk       (block device file, size = snapshot disk size)
-//! └── memory     (optional, if memory stream present)
+//! └── memory     (optional, if secondary stream present)
 //! ```
 //!
 //! # Features

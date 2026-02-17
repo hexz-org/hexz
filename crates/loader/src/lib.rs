@@ -44,9 +44,9 @@ fn hexz_loader(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = m.py();
     py_interface::exceptions::register_exceptions(py, m)?;
 
-    // Dataset classes
-    m.add_class::<py_interface::dataset::Reader>()?;
-    m.add_class::<py_interface::async_dataset::AsyncReader>()?;
+    // Reader classes
+    m.add_class::<py_interface::reader::Reader>()?;
+    m.add_class::<py_interface::async_reader::AsyncReader>()?;
     m.add_class::<py_interface::builder::Builder>()?;
 
     // Pack function
@@ -111,7 +111,7 @@ mod tests {
         // Verify the py_interface module is accessible
         use crate::py_interface;
         // This will fail to compile if the module doesn't exist
-        let _ = std::mem::size_of::<py_interface::dataset::Reader>();
+        let _ = std::mem::size_of::<py_interface::reader::Reader>();
     }
 
     #[test]

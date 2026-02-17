@@ -84,7 +84,7 @@ fn bench_concurrent_reads(c: &mut Criterion) {
                 let fs = snap.clone();
                 handles.push(thread::spawn(move || {
                     let _ = fs
-                        .read_at(SnapshotStream::Disk, 0, read_size as usize)
+                        .read_at(SnapshotStream::Primary, 0, read_size as usize)
                         .unwrap();
                 }));
             }

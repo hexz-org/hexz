@@ -73,9 +73,9 @@ struct DualStreamFixture {
 }
 
 impl DualStreamFixture {
-    fn new(disk_size: usize, mem_size: usize) -> Self {
+    fn new(primary_size: usize, mem_size: usize) -> Self {
         let temp_dir = TempDir::new().unwrap();
-        let disk_data: Vec<u8> = (0..disk_size).map(|i| (i % 256) as u8).collect();
+        let disk_data: Vec<u8> = (0..primary_size).map(|i| (i % 256) as u8).collect();
         let mem_data: Vec<u8> = vec![0xBB; mem_size];
 
         let disk_path = temp_dir.path().join("disk.img");

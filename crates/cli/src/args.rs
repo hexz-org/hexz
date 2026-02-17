@@ -225,7 +225,7 @@ pub enum VmCommands {
 
         /// Virtual disk size (e.g., "10G")
         #[arg(long, default_value = "10G")]
-        disk_size: String,
+        primary_size: String,
 
         /// RAM size (e.g., "4G")
         #[arg(long, default_value = "4G")]

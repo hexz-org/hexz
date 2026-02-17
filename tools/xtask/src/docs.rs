@@ -16,7 +16,9 @@ pub fn run() -> Result<()> {
         .run()?;
 
     let mkdocs_bin = mkdocs(&root);
-    require_cmd(mkdocs_bin.rsplit('/').next().unwrap_or(&mkdocs_bin))?;
+    if !std::path::Path::new(&mkdocs_bin).is_absolute() {
+        require_cmd(&mkdocs_bin)?;
+    }
 
     println!("{GREEN}Building MkDocs (Guides & Python API)\u{2026}{RESET}");
     cmd(mkdocs_bin.as_str())

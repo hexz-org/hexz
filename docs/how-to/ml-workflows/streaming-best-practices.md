@@ -259,6 +259,5 @@ for epoch in range(num_epochs):
 ## See Also
 
 - [How-To: Setup S3 Streaming](setup-s3-streaming.md)
-- [How-To: Optimize PyTorch DataLoader](optimize-pytorch-dataloader.md)
 - [How-To: Performance Tuning](../performance-tuning.md)
 - [Reference: Configuration](../../reference/configuration.md)

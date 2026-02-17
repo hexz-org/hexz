@@ -8,15 +8,15 @@
 //!
 //! The Python interface is organized into several specialized modules:
 //!
-//! - **[`dataset`]**: Synchronous snapshot reader (`Reader`) implementing Python's
+//! - **[`reader`]**: Synchronous snapshot reader (`Reader`) implementing Python's
 //!   file-like protocol with efficient cursor management and zero-copy buffer operations.
 //!
-//! - **[`async_dataset`]**: Asynchronous snapshot reader (`AsyncReader`) with native
+//! - **[`async_reader`]**: Asynchronous snapshot reader (`AsyncReader`) with native
 //!   Python `asyncio` integration via `pyo3-async-runtimes`. All I/O operations are executed
 //!   on Tokio's blocking thread pool to avoid blocking the event loop.
 //!
-//! - **[`builder`]**: Low-level snapshot creation API (`Builder`) supporting disk/memory
-//!   image packing, overlay merging, compression, deduplication, and content-defined chunking.
+//! - **[`builder`]**: Low-level snapshot creation API (`Builder`) supporting model weight
+//!   packing, overlay merging, compression, deduplication, and content-defined chunking.
 //!
 //! - **[`pack`]**: High-level packing function wrapping `core::ops::pack` for creating
 //!   snapshots from Python without instantiating a builder manually.
@@ -37,8 +37,8 @@
 //!   threads call into Hexz.
 //!
 //! - **Buffer Protocol**: Direct integration with Python's buffer protocol allows zero-copy
-//!   reads into NumPy arrays and other buffer-supporting types via `read(buffer=...)` and
-//!   `readinto()` methods.
+//!   reads into NumPy arrays and other buffer-supporting types (like PyTorch tensors)
+//!   via `read(buffer=...)` and `readinto()` methods.
 //!
 //! - **Context Managers**: All reader classes implement `__enter__`/`__exit__` (and async
 //!   variants) for idiomatic Python resource management with `with` statements.
@@ -48,23 +48,20 @@
 //!
 //! # Usage Patterns
 //!
-//! ## Synchronous Reading
+//! ## Synchronous Reading (Checkpoint Access)
 //!
 //! ```python
 //! from hexz import Reader
-//! import numpy as np
+//! import torch
 //!
-//! # Open snapshot and read sequentially
-//! reader = Reader("dataset.hxz")
-//! chunk1 = reader.read(4096)  # reads from cursor
-//! chunk2 = reader.read(4096)  # advances cursor
+//! # Open a model checkpoint and read specific weights
+//! with Reader("llama-7b.hxz") as reader:
+//!     # Read 1GB weight at known offset directly into a tensor buffer
+//!     weights = torch.zeros(1024*1024*1024, dtype=torch.uint8)
+//!     reader.read(buffer=weights.numpy(), offset=4096)
 //!
 //! # Random access without moving cursor
 //! data = reader.read(1024, offset=8192)
-//!
-//! # Zero-copy into NumPy array
-//! buffer = np.zeros(1024, dtype=np.uint8)
-//! bytes_read = reader.read(buffer=buffer, offset=0)
 //! ```
 //!
 //! ## Asynchronous Reading
@@ -73,13 +70,12 @@
 //! from hexz import AsyncReader
 //! import asyncio
 //!
-//! async def process_snapshot():
-//!     reader = await AsyncReader.create("dataset.hxz")
-//!     data = await reader.read(4096)
-//!     await reader.seek(0)
+//! async def load_weights():
+//!     reader = await AsyncReader.create("model.hxz")
+//!     data = await reader.read(4096, offset=0)
 //!     return data
 //!
-//! asyncio.run(process_snapshot())
+//! asyncio.run(load_weights())
 //! ```
 //!
 //! ## Snapshot Creation
@@ -89,18 +85,18 @@
 //!
 //! # Create snapshot with compression and deduplication
 //! builder = Builder("output.hxz", compression="zstd", dedup=True)
-//! builder.add_disk_file("disk.img")
+//! builder.add_disk_file("weights.bin")
 //! builder.finalize()
 //! ```
 //!
-//! ## Overlay Merging
+//! ## Overlay Merging (Fine-tuning)
 //!
 //! ```python
-//! # Merge overlay changes into thin snapshot (references parent)
-//! builder = Builder("merged.hxz")
+//! # Merge fine-tuned changes into thin snapshot (references base weights)
+//! builder = Builder("finetuned-v1.hxz")
 //! builder.merge_overlay(
-//!     base_path="base.hxz",
-//!     overlay_path="overlay.img",
+//!     base_path="base_model.hxz",
+//!     overlay_path="delta.bin",
 //!     thin=True  # creates thin snapshot referencing base
 //! )
 //! builder.finalize()
@@ -109,13 +105,13 @@
 //! # Performance Considerations
 //!
 //! - **Prefetching**: Configure `prefetch_count` when opening readers to enable background
-//!   block prefetching for sequential access patterns (ML training).
+//!   block prefetching for sequential access patterns.
 //!
 //! - **Cache Sizing**: Set `cache_capacity_bytes` based on working set size. Default is
 //!   conservative; increase for better hit rates on random access.
 //!
 //! - **Buffer Reuse**: Use `read(buffer=...)` and `readinto()` to avoid allocations when
-//!   reading into pre-allocated buffers (NumPy arrays, ByteArrays).
+//!   reading into pre-allocated buffers (NumPy arrays, PyTorch tensors).
 //!
 //! - **Async Concurrency**: `AsyncReader` operations run on the Tokio blocking pool,
 //!   allowing safe concurrent access from multiple coroutines without blocking the event loop.
@@ -143,9 +139,9 @@
 //!
 //! See [`exceptions`] for the complete hierarchy and usage examples.
 
-pub mod async_dataset;
+pub mod async_reader;
 pub mod builder;
-pub mod dataset;
 pub mod exceptions;
 pub mod ops;
 pub mod pack;
+pub mod reader;

@@ -16,7 +16,7 @@ def test_inspect(base_snap_path):
     meta = hexz.inspect(base_snap_path)
     assert meta.version == 1
     assert meta.compression is not None
-    assert meta.disk_size == 1024 * 1024
+    assert meta.primary_size == 1024 * 1024
 
 
 def test_read_random_access(base_snap_path, raw_data_path):

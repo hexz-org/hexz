@@ -75,13 +75,13 @@ hexz sys serve --nbd --port 10809 snapshot.st
 
 ### Endpoints
 
-- **GET /disk** - Serves the disk stream (persistent storage)
-- **GET /memory** - Serves the memory stream (RAM snapshot)
+- **GET /disk** - Serves the primary stream (persistent storage)
+- **GET /memory** - Serves the secondary stream (RAM snapshot)
 
 ### Range Request Support
 
 ```bash
-# Fetch first 4KB of disk stream
+# Fetch first 4KB of primary stream
 curl -H "Range: bytes=0-4095" http://localhost:8080/disk -o chunk.bin
 
 # Fetch 1MB starting at offset 1MB

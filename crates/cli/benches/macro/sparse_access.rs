@@ -84,7 +84,7 @@ fn bench_sparse_access(c: &mut Criterion) {
             for i in 0..10 {
                 let offset = (i * 10 * 1024 * 1024) as u64;
                 let _ = snap
-                    .read_at(SnapshotStream::Disk, offset, 64 * 1024)
+                    .read_at(SnapshotStream::Primary, offset, 64 * 1024)
                     .unwrap();
             }
         });
@@ -119,7 +119,7 @@ fn bench_cache_performance(c: &mut Criterion) {
             let compressor = Box::new(Lz4Compressor::new());
             let snap = File::new(backend, compressor, None).unwrap();
             let _ = snap
-                .read_at(SnapshotStream::Disk, 5 * 1024 * 1024, 4096)
+                .read_at(SnapshotStream::Primary, 5 * 1024 * 1024, 4096)
                 .unwrap();
         });
     });
@@ -130,12 +130,12 @@ fn bench_cache_performance(c: &mut Criterion) {
         let snap = File::new(backend, compressor, None).unwrap();
 
         let _ = snap
-            .read_at(SnapshotStream::Disk, 5 * 1024 * 1024, 4096)
+            .read_at(SnapshotStream::Primary, 5 * 1024 * 1024, 4096)
             .unwrap();
 
         b.iter(|| {
             let _ = snap
-                .read_at(SnapshotStream::Disk, 5 * 1024 * 1024, 4096)
+                .read_at(SnapshotStream::Primary, 5 * 1024 * 1024, 4096)
                 .unwrap();
         });
     });

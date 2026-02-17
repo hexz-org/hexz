@@ -203,11 +203,11 @@ pub fn handle_write(
             for blk in start_block..=end_block {
                 if !overlay.is_block_modified(blk) {
                     let blk_start = blk * BLOCK_SIZE;
-                    if blk_start < fs.snap.size(SnapshotStream::Disk) {
+                    if blk_start < fs.snap.size(SnapshotStream::Primary) {
                         let mut seed_buf = vec![0u8; BLOCK_SIZE as usize];
                         let original = fs
                             .snap
-                            .read_at(SnapshotStream::Disk, blk_start, BLOCK_SIZE as usize)
+                            .read_at(SnapshotStream::Primary, blk_start, BLOCK_SIZE as usize)
                             .unwrap_or_default();
                         // Copy what we got, rest stays zero-filled
                         seed_buf[..original.len()].copy_from_slice(&original);

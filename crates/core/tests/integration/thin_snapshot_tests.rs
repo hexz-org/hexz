@@ -43,7 +43,7 @@ fn test_thin_snapshot_basic() {
     let compressor = Box::new(Lz4Compressor::new());
     let snapshot = File::new(backend, compressor, None).unwrap();
 
-    let data = snapshot.read_at(SnapshotStream::Disk, 0, 1024).unwrap();
+    let data = snapshot.read_at(SnapshotStream::Primary, 0, 1024).unwrap();
     assert!(data.iter().all(|&b| b == 0xAA));
 }
 
@@ -103,7 +103,7 @@ fn test_zstd_dict_snapshot_read() {
 
     // Verify data integrity
     let read_data = snapshot
-        .read_at(SnapshotStream::Disk, 0, data.len())
+        .read_at(SnapshotStream::Primary, 0, data.len())
         .unwrap();
     assert_bytes_equal(&read_data, &data, "zstd dict round-trip");
 }

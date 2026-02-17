@@ -1,1 +1,0 @@
-"""Benchmark source code."""

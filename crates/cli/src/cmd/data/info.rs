@@ -44,8 +44,8 @@
 //!
 //! **Index Details:**
 //! - Index offset in file (byte position)
-//! - Disk pages (number of index pages for disk stream)
-//! - Memory pages (number of index pages for memory stream)
+//! - Disk pages (number of index pages for primary stream)
+//! - Memory pages (number of index pages for secondary stream)
 //!
 //! # Common Usage Patterns
 //!
@@ -90,15 +90,15 @@ use std::path::PathBuf;
 /// - `compression`: Compression algorithm ("Lz4" or "Zstd")
 /// - `block_size`: Block size in bytes (integer)
 /// - `encrypted`: Encryption status (boolean)
-/// - `has_disk`: Disk stream present (boolean)
-/// - `has_memory`: Memory stream present (boolean)
+/// - `has_disk`: Primary stream present (boolean)
+/// - `has_memory`: Secondary stream present (boolean)
 /// - `variable_blocks`: CDC chunking enabled (boolean)
 /// - `original_size`: Uncompressed size in bytes (integer)
 /// - `compressed_size`: File size in bytes (integer)
 /// - `compression_ratio`: Compression multiplier (float)
 /// - `index_offset`: Master index byte offset (integer)
-/// - `disk_pages`: Number of disk index pages (integer)
-/// - `memory_pages`: Number of memory index pages (integer)
+/// - `primary_pages`: Number of disk index pages (integer)
+/// - `secondary_pages`: Number of memory index pages (integer)
 ///
 /// # Errors
 ///
@@ -142,8 +142,8 @@ pub fn run(snap: PathBuf, json: bool) -> Result<()> {
         println!("  \"compressed_size\": {},", info.file_size);
         println!("  \"compression_ratio\": {:.2},", ratio);
         println!("  \"index_offset\": {},", info.index_offset);
-        println!("  \"disk_pages\": {},", info.disk_pages);
-        println!("  \"memory_pages\": {}", info.memory_pages);
+        println!("  \"primary_pages\": {},", info.primary_pages);
+        println!("  \"secondary_pages\": {}", info.secondary_pages);
         println!("}}");
     } else {
         println!("Snapshot:       {:?}", snap);
@@ -180,8 +180,8 @@ pub fn run(snap: PathBuf, json: bool) -> Result<()> {
 
         println!("\n--- Index Details ---");
         println!("Index Offset:   {}", info.index_offset);
-        println!("Disk Pages:     {}", info.disk_pages);
-        println!("Memory Pages:   {}", info.memory_pages);
+        println!("Disk Pages:     {}", info.primary_pages);
+        println!("Memory Pages:   {}", info.secondary_pages);
     }
 
     Ok(())

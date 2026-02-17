@@ -16,12 +16,12 @@ pub struct SnapshotInfo {
     pub has_disk: bool,
     pub has_memory: bool,
     pub variable_blocks: bool,
-    pub disk_size: u64,
-    pub memory_size: u64,
+    pub primary_size: u64,
+    pub secondary_size: u64,
     pub file_size: u64,
     pub index_offset: u64,
-    pub disk_pages: usize,
-    pub memory_pages: usize,
+    pub primary_pages: usize,
+    pub secondary_pages: usize,
     pub signature_present: bool,
     pub dictionary_present: bool,
     pub metadata_offset: Option<u64>,
@@ -31,7 +31,7 @@ pub struct SnapshotInfo {
 impl SnapshotInfo {
     /// Total uncompressed size (disk + memory).
     pub fn total_uncompressed(&self) -> u64 {
-        self.disk_size + self.memory_size
+        self.primary_size + self.secondary_size
     }
 
     /// Compression ratio (uncompressed / file size).
@@ -61,12 +61,12 @@ pub fn inspect_snapshot(path: impl AsRef<Path>) -> Result<SnapshotInfo> {
         has_disk: header.features.has_disk,
         has_memory: header.features.has_memory,
         variable_blocks: header.features.variable_blocks,
-        disk_size: master.disk_size,
-        memory_size: master.memory_size,
+        primary_size: master.primary_size,
+        secondary_size: master.secondary_size,
         file_size,
         index_offset: header.index_offset,
-        disk_pages: master.disk_pages.len(),
-        memory_pages: master.memory_pages.len(),
+        primary_pages: master.primary_pages.len(),
+        secondary_pages: master.secondary_pages.len(),
         signature_present: header.signature_offset.is_some(),
         dictionary_present: header.dictionary_offset.is_some(),
         metadata_offset: header.metadata_offset,

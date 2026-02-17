@@ -310,7 +310,7 @@ impl AsyncReader {
 
     /// Get the total uncompressed size of the snapshot in bytes (synchronous).
     ///
-    /// Returns the logical size of the disk stream. This is the size of the original
+    /// Returns the logical size of the primary stream. This is the size of the original
     /// uncompressed data, not the size of the compressed snapshot file on disk.
     ///
     /// This method is synchronous (no `await` needed) because it reads from cached header data.
@@ -327,7 +327,7 @@ impl AsyncReader {
     /// print(f"Uncompressed size: {size / (1024**3):.2f} GB")
     /// ```
     fn size(&self) -> u64 {
-        self.inner.size(SnapshotStream::Disk)
+        self.inner.size(SnapshotStream::Primary)
     }
 
     /// Read bytes asynchronously from the snapshot.
@@ -389,7 +389,7 @@ impl AsyncReader {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let data = tokio::task::spawn_blocking(move || -> PyResult<Vec<u8>> {
-                let total_size = inner.size(SnapshotStream::Disk);
+                let total_size = inner.size(SnapshotStream::Primary);
 
                 // Compute (start, len, update_cursor) without holding the lock
                 // during I/O. The sync Reader already follows this pattern.
@@ -424,7 +424,7 @@ impl AsyncReader {
                 // intermediate Vec allocation inside read_at.
                 let mut buf = vec![0u8; len];
                 inner
-                    .read_at_into_uninit_bytes(SnapshotStream::Disk, start, &mut buf)
+                    .read_at_into_uninit_bytes(SnapshotStream::Primary, start, &mut buf)
                     .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
                 if update_cursor {
@@ -506,7 +506,7 @@ impl AsyncReader {
                 let mut pos = cursor
                     .lock()
                     .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?;
-                let total_size = inner.size(SnapshotStream::Disk);
+                let total_size = inner.size(SnapshotStream::Primary);
 
                 let new_pos = match whence.unwrap_or(0) {
                     0 => offset,

@@ -61,7 +61,7 @@
 //! ┌─────────────────────────────────────────────────────────────────────┐
 //! │ Stage 3: Index Finalization                                          │
 //! │                                                                      │
-//! │  MasterIndex (disk_pages[], memory_pages[], sizes) → Serialize      │
+//! │  MasterIndex (primary_pages[], secondary_pages[], sizes) → Serialize      │
 //! │                                                                      │
 //! │  - Collect all PageEntry records from both streams                  │
 //! │  - Write master index at end of file                                │
@@ -521,7 +521,7 @@ impl<R: Read> Iterator for FixedChunker<R> {
 /// 4. **Dictionary Writing**: If trained, write dictionary immediately after header
 /// 5. **Compressor Initialization**: Create LZ4 or Zstd compressor (with optional dictionary)
 /// 6. **Encryptor Initialization**: If requested, derive key from password using PBKDF2
-/// 7. **Stream Processing**: Process disk stream (if provided), then memory stream (if provided)
+/// 7. **Stream Processing**: Process primary stream (if provided), then secondary stream (if provided)
 ///    - Each stream independently chunks, compresses, encrypts, deduplicates, and indexes
 /// 8. **Master Index Writing**: Serialize master index (all PageEntry records) to end of file
 /// 9. **Header Writing**: Seek to start, write complete header with metadata and offsets
@@ -763,19 +763,19 @@ where
     }
 
     // Set up progress bar if show_progress is enabled and no user callback given
-    let disk_size = config
+    let primary_size = config
         .disk
         .as_ref()
         .and_then(|p| std::fs::metadata(p).ok())
         .map(|m| m.len())
         .unwrap_or(0);
-    let memory_size = config
+    let secondary_size = config
         .memory
         .as_ref()
         .and_then(|p| std::fs::metadata(p).ok())
         .map(|m| m.len())
         .unwrap_or(0);
-    let total_size = disk_size + memory_size;
+    let total_size = primary_size + secondary_size;
 
     let progress_bar = if config.show_progress && progress_callback.is_none() && total_size > 0 {
         Some(crate::ops::progress::PackProgress::new(
@@ -785,7 +785,7 @@ where
         None
     };
 
-    // Process disk stream
+    // Process primary stream
     if let Some(ref path) = config.disk {
         let cb = |pos: u64, total: u64| {
             if let Some(ref pb) = progress_bar {
@@ -798,11 +798,11 @@ where
         process_stream(path.clone(), true, &mut writer, &config, Some(&cb))?;
     }
 
-    // Process memory stream
+    // Process secondary stream
     if let Some(ref path) = config.memory {
         let cb = |pos: u64, total: u64| {
             if let Some(ref pb) = progress_bar {
-                pb.set_position(disk_size + pos);
+                pb.set_position(primary_size + pos);
             }
             if let Some(ref cb) = progress_callback {
                 cb(pos, total);

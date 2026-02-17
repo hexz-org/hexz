@@ -7,7 +7,7 @@ Builder with a more pythonic interface.
 import json
 import warnings
 from pathlib import Path
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from . import hexz_loader
 from .exceptions import ValidationError
@@ -46,6 +46,7 @@ class Writer:
         cdc: bool = False,
         encrypt: bool = False,
         password: Optional[str] = None,
+        parent: Optional[Union[PathLike, List[PathLike]]] = None,
     ):
         """Create a new snapshot writer.
 
@@ -57,18 +58,19 @@ class Writer:
                   Controls compression level and speed tradeoff
             block_size: Block size in bytes
             dedup: Enable deduplication
-            cdc: Enable content-defined chunking (requires dedup=True)
+            cdc: Enable content-defined chunking (for better dedup on shifted data)
             encrypt: Enable encryption (Note: Use hexz.pack() for encryption support)
             password: Encryption password (required if encrypt=True)
+            parent: Path or list of paths to parent .hxz files to enable cross-file deduplication.
+                    Blocks from this new snapshot that are identical to any block
+                    in ANY of the parents will be stored as a lightweight reference.
+                    If multiple parents are provided, the first one is used as the primary
+                    parent in the file header for thin-snapshot resolution.
 
         Example:
-            >>> # Fast compression (good for temporary files)
-            >>> with hexz.Writer("temp.hxz", packing="fast") as w:
-            ...     w.add("data.img")
-            >>>
-            >>> # Tight compression (good for archival)
-            >>> with hexz.Writer("archive.hxz", packing="tight", compression="zstd") as w:
-            ...     w.add("data.img")
+            >>> # Create a derivative snapshot that dedups against multiple bases
+            >>> with hexz.Writer("new.hxz", parent=["base1.hxz", "base2.hxz"], cdc=True) as w:
+            ...     w.add("v2.bin")
         """
         self._path = str(path)
         self._compression = compression
@@ -81,6 +83,14 @@ class Writer:
         self._encrypt = encrypt
         self._password = password
         self._metadata = {}
+
+        # Normalize parents to list of strings
+        if parent is None:
+            self._parent = None
+        elif isinstance(parent, (str, Path)):
+            self._parent = str(parent)
+        else:
+            self._parent = [str(p) for p in parent]
 
         # Map packing mode to compression level
         if resolved_mode not in COMPRESSION_LEVELS:
@@ -99,6 +109,7 @@ class Writer:
             compression_level=compression_level,
             dedup=dedup,
             cdc=cdc,
+            parent=self._parent,
         )
 
         # Note: Writer currently supports basic linear writing.

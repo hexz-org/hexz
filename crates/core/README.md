@@ -49,8 +49,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let compressor = Box::new(Lz4Compressor::new());
     let snapshot = File::new(backend, compressor, None)?;
 
-    // Read 4KB from disk stream at offset 1MB
-    let data = snapshot.read_at(SnapshotStream::Disk, 1024 * 1024, 4096)?;
+    // Read 4KB from primary stream at offset 1MB
+    let data = snapshot.read_at(SnapshotStream::Primary, 1024 * 1024, 4096)?;
     assert_eq!(data.len(), 4096);
 
     Ok(())
@@ -74,7 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let snapshot = File::new(backend, compressor, None)?;
 
     // Stream data without downloading entire file
-    let data = snapshot.read_at(hexz_core::SnapshotStream::Disk, 0, 1024)?;
+    let data = snapshot.read_at(hexz_core::SnapshotStream::Primary, 0, 1024)?;
 
     Ok(())
 }
@@ -225,7 +225,7 @@ let handles: Vec<_> = (0..4)
         let snapshot = Arc::clone(&snapshot);
         thread::spawn(move || {
             // Each thread can read independently with its own cache hits
-            snapshot.read_at(SnapshotStream::Disk, i * 4096, 4096)
+            snapshot.read_at(SnapshotStream::Primary, i * 4096, 4096)
         })
     })
     .collect();

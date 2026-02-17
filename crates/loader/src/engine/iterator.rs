@@ -74,7 +74,7 @@
 //! let config = IterConfig {
 //!     block_size: 65536,  // 64KB blocks
 //!     prefetch_count: 8,
-//!     stream: SnapshotStream::Disk,
+//!     stream: SnapshotStream::Primary,
 //! };
 //!
 //! let mut iter = SnapshotIterator::new(snap, config);
@@ -217,7 +217,7 @@ use std::sync::Arc;
 ///   more memory. Set to 0 to disable prefetching.
 ///
 /// - **`stream`**: Which snapshot stream to iterate over. Most ML datasets use
-///   `SnapshotStream::Disk`; `SnapshotStream::Memory` is for RAM snapshot analysis.
+///   `SnapshotStream::Primary`; `SnapshotStream::Secondary` is for RAM snapshot analysis.
 ///
 /// # Default Configuration
 ///
@@ -230,7 +230,7 @@ use std::sync::Arc;
 /// let config = IterConfig::default();
 /// assert_eq!(config.block_size, 65536);         // 64KB blocks
 /// assert_eq!(config.prefetch_count, 4);         // Moderate prefetch
-/// assert_eq!(config.stream, SnapshotStream::Disk);
+/// assert_eq!(config.stream, SnapshotStream::Primary);
 /// ```
 ///
 /// # Recommended Configurations
@@ -244,7 +244,7 @@ use std::sync::Arc;
 /// let config = IterConfig {
 ///     block_size: 1024 * 1024,  // 1MB blocks for fewer syscalls
 ///     prefetch_count: 4,
-///     stream: SnapshotStream::Disk,
+///     stream: SnapshotStream::Primary,
 /// };
 /// ```
 ///
@@ -257,7 +257,7 @@ use std::sync::Arc;
 /// let config = IterConfig {
 ///     block_size: 65536,      // 64KB blocks (balance latency/throughput)
 ///     prefetch_count: 16,     // Aggressive prefetch to hide latency
-///     stream: SnapshotStream::Disk,
+///     stream: SnapshotStream::Primary,
 /// };
 /// ```
 ///
@@ -270,7 +270,7 @@ use std::sync::Arc;
 /// let config = IterConfig {
 ///     block_size: 4096,   // 4KB blocks (minimal memory)
 ///     prefetch_count: 0,  // No prefetch to save memory
-///     stream: SnapshotStream::Disk,
+///     stream: SnapshotStream::Primary,
 /// };
 /// ```
 ///
@@ -304,8 +304,8 @@ pub struct IterConfig {
 
     /// Which snapshot stream to iterate over.
     ///
-    /// - `SnapshotStream::Disk`: The persistent storage snapshot (most common)
-    /// - `SnapshotStream::Memory`: The RAM snapshot (if present)
+    /// - `SnapshotStream::Primary`: The persistent storage snapshot (most common)
+    /// - `SnapshotStream::Secondary`: The RAM snapshot (if present)
     pub stream: SnapshotStream,
 }
 
@@ -314,7 +314,7 @@ impl Default for IterConfig {
         Self {
             block_size: 65536,
             prefetch_count: 4,
-            stream: SnapshotStream::Disk,
+            stream: SnapshotStream::Primary,
         }
     }
 }
@@ -370,7 +370,7 @@ impl Default for IterConfig {
 /// let config = IterConfig {
 ///     block_size: 4096,
 ///     prefetch_count: 4,
-///     stream: SnapshotStream::Disk,
+///     stream: SnapshotStream::Primary,
 /// };
 ///
 /// let iter = SnapshotIterator::new(snap, config);
@@ -452,7 +452,7 @@ impl SnapshotIterator {
     /// let config = IterConfig {
     ///     block_size: 8192,
     ///     prefetch_count: 2,
-    ///     stream: SnapshotStream::Disk,
+    ///     stream: SnapshotStream::Primary,
     /// };
     ///
     /// let iter = SnapshotIterator::new(snap, config);
@@ -554,11 +554,11 @@ mod tests {
     /// Helper to create a test snapshot
     fn create_test_snapshot(
         dir: &TempDir,
-        disk_size: usize,
+        primary_size: usize,
         pattern: u8,
         block_size: u32,
     ) -> Arc<File> {
-        let disk_path = create_test_disk(dir, disk_size, pattern);
+        let disk_path = create_test_disk(dir, primary_size, pattern);
         let output_path = dir.path().join("test.hxz");
 
         let config = PackConfig {
@@ -599,7 +599,7 @@ mod tests {
         let config = IterConfig {
             block_size: 1024,
             prefetch_count: 0,
-            stream: SnapshotStream::Disk,
+            stream: SnapshotStream::Primary,
         };
 
         let iter = SnapshotIterator::new(snap, config);
@@ -624,7 +624,7 @@ mod tests {
         let config = IterConfig::default();
         assert_eq!(config.block_size, 65536);
         assert_eq!(config.prefetch_count, 4);
-        assert!(matches!(config.stream, SnapshotStream::Disk));
+        assert!(matches!(config.stream, SnapshotStream::Primary));
 
         let iter = SnapshotIterator::new(snap, config);
         let blocks: Vec<_> = iter.collect();
@@ -641,7 +641,7 @@ mod tests {
         let config = IterConfig {
             block_size: 1024,
             prefetch_count: 0,
-            stream: SnapshotStream::Disk,
+            stream: SnapshotStream::Primary,
         };
 
         let iter = SnapshotIterator::new(snap, config);
@@ -659,7 +659,7 @@ mod tests {
         let config = IterConfig {
             block_size: 1024,
             prefetch_count: 0,
-            stream: SnapshotStream::Disk,
+            stream: SnapshotStream::Primary,
         };
 
         let iter = SnapshotIterator::new(snap, config);
@@ -680,7 +680,7 @@ mod tests {
         let config = IterConfig {
             block_size: 1024,
             prefetch_count: 0,
-            stream: SnapshotStream::Disk,
+            stream: SnapshotStream::Primary,
         };
 
         let iter = SnapshotIterator::new(snap, config);
@@ -706,7 +706,7 @@ mod tests {
         let config = IterConfig {
             block_size: 1024,
             prefetch_count: 0,
-            stream: SnapshotStream::Disk,
+            stream: SnapshotStream::Primary,
         };
 
         let mut iter = SnapshotIterator::new(snap, config);
@@ -737,7 +737,7 @@ mod tests {
         let config = IterConfig {
             block_size: 512,
             prefetch_count: 0,
-            stream: SnapshotStream::Disk,
+            stream: SnapshotStream::Primary,
         };
 
         let mut iter = SnapshotIterator::new(snap, config);
@@ -757,7 +757,7 @@ mod tests {
         let config = IterConfig {
             block_size: 4096,
             prefetch_count: 8,
-            stream: SnapshotStream::Disk,
+            stream: SnapshotStream::Primary,
         };
 
         let iter = SnapshotIterator::new(snap, config);
@@ -781,7 +781,7 @@ mod tests {
         let config = IterConfig {
             block_size: 1024 * 1024, // 1MB blocks
             prefetch_count: 0,
-            stream: SnapshotStream::Disk,
+            stream: SnapshotStream::Primary,
         };
 
         let iter = SnapshotIterator::new(snap, config);
@@ -802,7 +802,7 @@ mod tests {
         let config = IterConfig {
             block_size: 128,
             prefetch_count: 0,
-            stream: SnapshotStream::Disk,
+            stream: SnapshotStream::Primary,
         };
 
         let iter = SnapshotIterator::new(snap, config);
@@ -826,7 +826,7 @@ mod tests {
         let config = IterConfig {
             block_size: 1024,
             prefetch_count: 0,
-            stream: SnapshotStream::Disk,
+            stream: SnapshotStream::Primary,
         };
 
         let iter = SnapshotIterator::new(snap, config);
@@ -850,7 +850,7 @@ mod tests {
         let config = IterConfig {
             block_size: 1024,
             prefetch_count: 0,
-            stream: SnapshotStream::Disk,
+            stream: SnapshotStream::Primary,
         };
 
         let iter = SnapshotIterator::new(snap, config);
@@ -874,7 +874,7 @@ mod tests {
         let config = IterConfig {
             block_size: 1024,
             prefetch_count: 0,
-            stream: SnapshotStream::Disk,
+            stream: SnapshotStream::Primary,
         };
 
         let iter = SnapshotIterator::new(snap, config);
@@ -922,7 +922,7 @@ mod tests {
         let iter_config = IterConfig {
             block_size: 2048,
             prefetch_count: 4,
-            stream: SnapshotStream::Disk,
+            stream: SnapshotStream::Primary,
         };
 
         let iter = SnapshotIterator::new(snap, iter_config);
@@ -977,11 +977,11 @@ mod tests {
 
         let snap = open_snapshot(open_config).unwrap();
 
-        // Test memory stream iteration
+        // Test secondary stream iteration
         let mem_config = IterConfig {
             block_size: 512,
             prefetch_count: 0,
-            stream: SnapshotStream::Memory,
+            stream: SnapshotStream::Secondary,
         };
 
         let iter = SnapshotIterator::new(snap, mem_config);
@@ -1005,7 +1005,7 @@ mod tests {
         let config = IterConfig {
             block_size: 1000,
             prefetch_count: 0,
-            stream: SnapshotStream::Disk,
+            stream: SnapshotStream::Primary,
         };
 
         let iter = SnapshotIterator::new(snap, config);
@@ -1067,7 +1067,7 @@ mod tests {
         let iter_config = IterConfig {
             block_size: 1024,
             prefetch_count: 0,
-            stream: SnapshotStream::Disk,
+            stream: SnapshotStream::Primary,
         };
 
         let mut iter = SnapshotIterator::new(snap, iter_config);

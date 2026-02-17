@@ -43,7 +43,9 @@ fn bench_tensor_sizes(c: &mut Criterion) {
             b.iter(|| {
                 let mut offset = 0u64;
                 for _ in 0..num_tensors {
-                    let data = dataset.read_at(SnapshotStream::Disk, offset, size).unwrap();
+                    let data = dataset
+                        .read_at(SnapshotStream::Primary, offset, size)
+                        .unwrap();
                     black_box(data);
                     offset += size as u64;
                 }
@@ -76,7 +78,7 @@ fn bench_zero_copy_vs_copy(c: &mut Criterion) {
             let mut offset = 0u64;
             for _ in 0..num_tensors {
                 let data = dataset
-                    .read_at(SnapshotStream::Disk, offset, tensor_size)
+                    .read_at(SnapshotStream::Primary, offset, tensor_size)
                     .unwrap();
                 black_box(data);
                 offset += tensor_size as u64;
@@ -90,7 +92,7 @@ fn bench_zero_copy_vs_copy(c: &mut Criterion) {
             let mut offset = 0u64;
             for _ in 0..num_tensors {
                 let data = dataset
-                    .read_at(SnapshotStream::Disk, offset, tensor_size)
+                    .read_at(SnapshotStream::Primary, offset, tensor_size)
                     .unwrap();
                 let copied = data.clone();
                 black_box(copied);
@@ -132,7 +134,7 @@ fn bench_batch_tensor_loading(c: &mut Criterion) {
                             let tensor_idx = batch_idx * bs + i;
                             let offset = (tensor_idx * tensor_size) as u64;
                             let data = dataset
-                                .read_at(SnapshotStream::Disk, offset, tensor_size)
+                                .read_at(SnapshotStream::Primary, offset, tensor_size)
                                 .unwrap();
                             batch_data.push(data);
                         }
@@ -169,7 +171,7 @@ fn bench_tensor_preprocessing(c: &mut Criterion) {
             let mut offset = 0u64;
             for _ in 0..num_tensors {
                 let data = dataset
-                    .read_at(SnapshotStream::Disk, offset, tensor_size)
+                    .read_at(SnapshotStream::Primary, offset, tensor_size)
                     .unwrap();
                 black_box(data);
                 offset += tensor_size as u64;
@@ -183,7 +185,7 @@ fn bench_tensor_preprocessing(c: &mut Criterion) {
             let mut offset = 0u64;
             for _ in 0..num_tensors {
                 let data = dataset
-                    .read_at(SnapshotStream::Disk, offset, tensor_size)
+                    .read_at(SnapshotStream::Primary, offset, tensor_size)
                     .unwrap();
 
                 // Simulate HWC to CHW transpose
@@ -210,7 +212,7 @@ fn bench_tensor_preprocessing(c: &mut Criterion) {
             let mut offset = 0u64;
             for _ in 0..num_tensors {
                 let data = dataset
-                    .read_at(SnapshotStream::Disk, offset, tensor_size)
+                    .read_at(SnapshotStream::Primary, offset, tensor_size)
                     .unwrap();
 
                 // Simulate normalization (u8 -> f32 / 255.0)
@@ -250,7 +252,9 @@ fn bench_tensor_alignment(c: &mut Criterion) {
             b.iter(|| {
                 let mut offset = 0u64;
                 for _ in 0..num_tensors {
-                    let data = dataset.read_at(SnapshotStream::Disk, offset, size).unwrap();
+                    let data = dataset
+                        .read_at(SnapshotStream::Primary, offset, size)
+                        .unwrap();
 
                     // Simulate ensuring 64-byte alignment
                     let aligned = if data.as_ptr() as usize % 64 == 0 {
@@ -299,7 +303,7 @@ fn bench_tensor_concat(c: &mut Criterion) {
                     for i in 0..n {
                         let offset = (i * tensor_size) as u64;
                         let data = dataset
-                            .read_at(SnapshotStream::Disk, offset, tensor_size)
+                            .read_at(SnapshotStream::Primary, offset, tensor_size)
                             .unwrap();
                         tensors.push(data);
                     }

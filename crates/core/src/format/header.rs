@@ -97,8 +97,8 @@ pub enum CompressionType {
 ///
 /// # Fields
 ///
-/// - `has_disk`: Snapshot contains disk state (disk stream present in index)
-/// - `has_memory`: Snapshot contains memory state (memory stream present in index)
+/// - `has_disk`: Snapshot contains disk state (primary stream present in index)
+/// - `has_memory`: Snapshot contains memory state (secondary stream present in index)
 /// - `variable_blocks`: Content-defined chunking (CDC) was used instead of fixed-size blocks
 ///
 /// # Usage

@@ -133,7 +133,7 @@ fn bench_page_fault(c: &mut Criterion) {
             let snap = File::new(backend, compressor, None).unwrap();
 
             let _ = snap
-                .read_at(SnapshotStream::Disk, offset, page_size)
+                .read_at(SnapshotStream::Primary, offset, page_size)
                 .unwrap();
         })
     });

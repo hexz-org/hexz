@@ -81,12 +81,13 @@
 //! to include new fields or change existing structures. Use serde attributes to
 //! maintain compatibility:
 //!
-//! ```rust,ignore
+//! ```rust,no_run
+//! # use serde::{Serialize, Deserialize};
 //! #[derive(Serialize, Deserialize)]
 //! pub struct Header {
 //!     // Existing fields...
 //!     #[serde(skip_serializing_if = "Option::is_none")]
-//!     pub new_feature: Option<NewFeatureData>,  // Version 2+ only
+//!     pub new_feature: Option<String>,  // Version 2+ only
 //! }
 //! ```
 //!
@@ -94,7 +95,10 @@
 //!
 //! Add version-aware deserialization in reader code:
 //!
-//! ```rust,ignore
+//! ```rust,no_run
+//! # fn read_index_v1<R>(_: R) -> Result<(), Box<dyn std::error::Error>> { Ok(()) }
+//! # fn read_index_v2<R>(_: R) -> Result<(), Box<dyn std::error::Error>> { Ok(()) }
+//! # fn example<R>(header: hexz_core::format::header::Header, reader: R) -> Result<(), Box<dyn std::error::Error>> {
 //! match header.version {
 //!     1 => {
 //!         // Legacy path for version 1
@@ -106,13 +110,16 @@
 //!     }
 //!     _ => unreachable!("check_version already validated"),
 //! }
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! ## Step 4: Update Tests
 //!
 //! Add test fixtures for the new format version:
 //!
-//! ```rust,ignore
+//! ```rust,no_run
+//! # fn load_fixture(_: &str) -> hexz_core::File { todo!() }
 //! #[test]
 //! fn test_read_v2_snapshot() {
 //!     let snapshot = load_fixture("testdata/v2_snapshot.hxz");
@@ -198,23 +205,25 @@
 //!
 //! ## Reader Implementation
 //!
-//! ```rust,ignore
-//! use hexz_core::format::version::check_version;
-//! use hexz_core::error::Error;
-//!
+//! ```rust,no_run
+//! # use hexz_core::format::version::{check_version, MIN_SUPPORTED_VERSION, MAX_SUPPORTED_VERSION};
+//! # use hexz_common::Error;
+//! # use hexz_core::format::header::Header;
+//! # use std::path::Path;
+//! # struct Snapshot { header: Header }
+//! # fn read_header(_: &Path) -> Result<Header, Error> { todo!() }
 //! fn open_snapshot(path: &Path) -> Result<Snapshot, Error> {
 //!     let header = read_header(path)?;
 //!
 //!     if !check_version(header.version).is_compatible() {
-//!         return Err(Error::IncompatibleVersion {
-//!             found: header.version,
-//!             min_supported: MIN_SUPPORTED_VERSION,
-//!             max_supported: MAX_SUPPORTED_VERSION,
-//!         });
+//!         return Err(Error::Format(format!(
+//!             "Incompatible version {}. Supported range: [{}, {}]",
+//!             header.version, MIN_SUPPORTED_VERSION, MAX_SUPPORTED_VERSION
+//!         )));
 //!     }
 //!
 //!     // Proceed with version-aware deserialization
-//!     Ok(Snapshot { header, /* ... */ })
+//!     Ok(Snapshot { header })
 //! }
 //! ```
 
@@ -396,11 +405,17 @@ impl VersionCompatibility {
 /// In future versions, this function may return `Degraded` for snapshots with
 /// minor version mismatches, enabling partial reads with warnings. For example:
 ///
-/// ```rust,ignore
+/// ```rust,no_run
+/// # use hexz_core::format::version::{VersionCompatibility, CURRENT_VERSION};
+/// # struct V { major: u32, minor: u32 }
+/// # let version = V { major: 1, minor: 1 };
+/// # let current_version = V { major: 1, minor: 0 };
 /// // Hypothetical future behavior with major.minor versioning
-/// if version.major == CURRENT_VERSION.major && version.minor > CURRENT_VERSION.minor {
+/// let _compat = if version.major == current_version.major && version.minor > current_version.minor {
 ///     VersionCompatibility::Degraded  // Newer minor version, try best-effort read
-/// }
+/// } else {
+///     VersionCompatibility::Full
+/// };
 /// ```
 ///
 /// # Performance
@@ -432,16 +447,19 @@ impl VersionCompatibility {
 ///
 /// ## Error Handling
 ///
-/// ```rust,ignore
-/// use hexz_core::format::version::check_version;
-///
-/// fn open_snapshot(header: &Header) -> Result<Snapshot, Error> {
+/// ```rust,no_run
+/// # use hexz_core::format::version::{check_version, MIN_SUPPORTED_VERSION, MAX_SUPPORTED_VERSION};
+/// # use hexz_common::{Error, Result};
+/// # use hexz_core::format::header::Header;
+/// # struct Snapshot;
+/// # impl Snapshot { fn new(_: &Header) -> Self { Snapshot } }
+/// fn open_snapshot(header: &Header) -> Result<Snapshot> {
 ///     let compat = check_version(header.version);
 ///     if !compat.is_compatible() {
-///         return Err(Error::IncompatibleVersion {
-///             found: header.version,
-///             supported_range: (MIN_SUPPORTED_VERSION, MAX_SUPPORTED_VERSION),
-///         });
+///         return Err(Error::Format(format!(
+///             "Incompatible version {}. Supported range: [{}, {}]",
+///             header.version, MIN_SUPPORTED_VERSION, MAX_SUPPORTED_VERSION
+///         )));
 ///     }
 ///     // Proceed with read operations
 ///     Ok(Snapshot::new(header))
@@ -511,9 +529,9 @@ pub fn check_version(version: u32) -> VersionCompatibility {
 ///
 /// This function is typically called when displaying compatibility errors to users:
 ///
-/// ```rust,ignore
-/// use hexz_core::format::version::{check_version, compatibility_message};
-///
+/// ```rust,no_run
+/// # use hexz_core::format::version::{check_version, compatibility_message};
+/// # use hexz_core::format::header::Header;
 /// fn validate_snapshot(header: &Header) -> Result<(), String> {
 ///     let compat = check_version(header.version);
 ///     if !compat.is_compatible() {

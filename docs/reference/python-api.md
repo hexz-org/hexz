@@ -73,26 +73,6 @@ The `Writer` class is returned by `hexz.open(path, mode='w')`:
 
 ---
 
-## ML Integration
-
-For PyTorch and TensorFlow DataLoader integration:
-
-::: hexz.Dataset
-    options:
-      show_root_heading: true
-      show_source: false
-      heading_level: 3
-      show_if_no_docstring: false
-
-::: hexz.TFDataset
-    options:
-      show_root_heading: true
-      show_source: false
-      heading_level: 3
-      show_if_no_docstring: false
-
----
-
 ## Building Snapshots
 
 ::: hexz.build

@@ -71,7 +71,7 @@ fn bench_read_api_comparison(c: &mut Criterion) {
     // Warm cache over first 4 MiB
     for offset in (0..TOTAL_BYTES_PER_ITERATION).step_by(BLOCK_SIZE) {
         let _ = snap
-            .read_at(SnapshotStream::Disk, offset, BLOCK_SIZE)
+            .read_at(SnapshotStream::Primary, offset, BLOCK_SIZE)
             .unwrap();
     }
 
@@ -89,7 +89,7 @@ fn bench_read_api_comparison(c: &mut Criterion) {
             for i in 0..NUM_SINGLE_BLOCK_READS {
                 let offset = ((i * 31) % num_blocks) as u64 * BLOCK_SIZE as u64;
                 let data = snap
-                    .read_at(SnapshotStream::Disk, offset, BLOCK_SIZE)
+                    .read_at(SnapshotStream::Primary, offset, BLOCK_SIZE)
                     .unwrap();
                 black_box(data);
             }
@@ -103,7 +103,7 @@ fn bench_read_api_comparison(c: &mut Criterion) {
             let mut buf = [0u8; BLOCK_SIZE];
             for i in 0..NUM_SINGLE_BLOCK_READS {
                 let offset = ((i * 31) % num_blocks) as u64 * BLOCK_SIZE as u64;
-                snap.read_at_into(SnapshotStream::Disk, offset, &mut buf)
+                snap.read_at_into(SnapshotStream::Primary, offset, &mut buf)
                     .unwrap();
             }
             black_box(&buf);
@@ -117,7 +117,7 @@ fn bench_read_api_comparison(c: &mut Criterion) {
             let mut buf = [MaybeUninit::uninit(); BLOCK_SIZE];
             for i in 0..NUM_SINGLE_BLOCK_READS {
                 let offset = ((i * 31) % num_blocks) as u64 * BLOCK_SIZE as u64;
-                snap.read_at_into_uninit(SnapshotStream::Disk, offset, &mut buf)
+                snap.read_at_into_uninit(SnapshotStream::Primary, offset, &mut buf)
                     .unwrap();
             }
             black_box(&buf);
@@ -138,7 +138,7 @@ fn bench_read_api_comparison(c: &mut Criterion) {
         b.iter(|| {
             for offset in (0..TOTAL_BYTES_PER_ITERATION).step_by(BLOCK_SIZE) {
                 let data = snap
-                    .read_at(SnapshotStream::Disk, offset, BLOCK_SIZE)
+                    .read_at(SnapshotStream::Primary, offset, BLOCK_SIZE)
                     .unwrap();
                 black_box(data);
             }
@@ -151,7 +151,7 @@ fn bench_read_api_comparison(c: &mut Criterion) {
         b.iter(|| {
             for offset in (0..TOTAL_BYTES_PER_ITERATION).step_by(BLOCK_SIZE) {
                 let mut buf = vec![0u8; BLOCK_SIZE];
-                snap.read_at_into(SnapshotStream::Disk, offset, &mut buf)
+                snap.read_at_into(SnapshotStream::Primary, offset, &mut buf)
                     .unwrap();
                 black_box(buf);
             }
@@ -175,7 +175,7 @@ fn bench_read_api_comparison(c: &mut Criterion) {
         let snap = snap.clone();
         let len = TOTAL_BYTES_PER_ITERATION as usize;
         b.iter(|| {
-            let data = snap.read_at(SnapshotStream::Disk, 0, len).unwrap();
+            let data = snap.read_at(SnapshotStream::Primary, 0, len).unwrap();
             black_box(data);
         });
     });

@@ -52,11 +52,11 @@ fn test_cdc_pack_lz4() {
     let compressor = Box::new(Lz4Compressor::new());
     let snapshot = File::new(backend, compressor, None).unwrap();
 
-    assert_eq!(snapshot.size(SnapshotStream::Disk) as usize, data.len());
+    assert_eq!(snapshot.size(SnapshotStream::Primary) as usize, data.len());
 
     // Verify data integrity
     let read_data = snapshot
-        .read_at(SnapshotStream::Disk, 0, data.len())
+        .read_at(SnapshotStream::Primary, 0, data.len())
         .unwrap();
     assert_bytes_equal(&read_data, &data, "CDC LZ4 round-trip");
 }
@@ -95,7 +95,7 @@ fn test_cdc_pack_zstd() {
     let snapshot = File::new(backend, compressor, None).unwrap();
 
     let read_data = snapshot
-        .read_at(SnapshotStream::Disk, 0, data.len())
+        .read_at(SnapshotStream::Primary, 0, data.len())
         .unwrap();
     assert_bytes_equal(&read_data, &data, "CDC Zstd round-trip");
 }
@@ -149,7 +149,7 @@ fn test_cdc_encrypted() {
     let compressor = Box::new(Lz4Compressor::new());
     let snapshot = File::new(backend, compressor, encryptor).unwrap();
 
-    let read_data = snapshot.read_at(SnapshotStream::Disk, 0, 4096).unwrap();
+    let read_data = snapshot.read_at(SnapshotStream::Primary, 0, 4096).unwrap();
     assert!(read_data.iter().all(|&b| b == 0xAA));
 }
 
@@ -187,7 +187,7 @@ fn test_cdc_small_chunks() {
     let snapshot = File::new(backend, compressor, None).unwrap();
 
     let read_data = snapshot
-        .read_at(SnapshotStream::Disk, 0, data.len())
+        .read_at(SnapshotStream::Primary, 0, data.len())
         .unwrap();
     assert_bytes_equal(&read_data, &data, "CDC small chunks round-trip");
 }
@@ -242,7 +242,7 @@ fn test_cdc_deduplication() {
     let snapshot = File::new(backend, compressor, None).unwrap();
 
     let read_data = snapshot
-        .read_at(SnapshotStream::Disk, 0, data.len())
+        .read_at(SnapshotStream::Primary, 0, data.len())
         .unwrap();
     assert_bytes_equal(&read_data, &data, "CDC dedup round-trip");
 }
@@ -283,13 +283,15 @@ fn test_cdc_dual_stream() {
     let compressor = Box::new(Lz4Compressor::new());
     let snapshot = File::new(backend, compressor, None).unwrap();
 
-    assert_eq!(snapshot.size(SnapshotStream::Disk), 256 * 1024);
-    assert_eq!(snapshot.size(SnapshotStream::Memory), 128 * 1024);
+    assert_eq!(snapshot.size(SnapshotStream::Primary), 256 * 1024);
+    assert_eq!(snapshot.size(SnapshotStream::Secondary), 128 * 1024);
 
-    let disk_read = snapshot.read_at(SnapshotStream::Disk, 0, 1024).unwrap();
+    let disk_read = snapshot.read_at(SnapshotStream::Primary, 0, 1024).unwrap();
     assert!(disk_read.iter().all(|&b| b == 0xDD));
 
-    let mem_read = snapshot.read_at(SnapshotStream::Memory, 0, 1024).unwrap();
+    let mem_read = snapshot
+        .read_at(SnapshotStream::Secondary, 0, 1024)
+        .unwrap();
     assert!(mem_read.iter().all(|&b| b == 0xCC));
 }
 

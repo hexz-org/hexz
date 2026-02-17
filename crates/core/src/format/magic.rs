@@ -37,12 +37,18 @@
 //! Readers can detect non-Hexz files with a single 4-byte read before
 //! attempting any deserialization, preventing crashes or misinterpretation:
 //!
-//! ```rust,ignore
+//! ```rust,no_run
+//! # use hexz_core::format::magic::MAGIC_BYTES;
+//! # use hexz_common::Error;
+//! # use std::io::Read;
+//! # fn validate_magic<R: Read>(mut file: R) -> Result<(), Box<dyn std::error::Error>> {
 //! let mut magic = [0u8; 4];
 //! file.read_exact(&mut magic)?;
 //! if &magic != MAGIC_BYTES {
-//!     return Err(Error::InvalidMagic { found: magic });
+//!     return Err(Error::Format("Invalid magic bytes".into()).into());
 //! }
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! ## Corruption Detection
@@ -85,11 +91,17 @@
 //!
 //! Fixed-size headers enable predictable I/O patterns:
 //!
-//! ```rust,ignore
+//! ```rust,no_run
+//! # use hexz_core::format::magic::HEADER_SIZE;
+//! # use hexz_core::format::header::Header;
+//! # use std::io::Read;
+//! # fn read_header<R: Read>(mut file: R) -> Result<(), Box<dyn std::error::Error>> {
 //! // Single aligned read for header
 //! let mut header_buf = vec![0u8; HEADER_SIZE];
 //! file.read_exact(&mut header_buf)?;
 //! let header: Header = bincode::deserialize(&header_buf[4..])?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! # Backward Compatibility Guarantee
@@ -118,9 +130,13 @@
 //! The bincode deserializer must handle truncated, oversized, or malformed headers
 //! gracefully. Always deserialize with size limits:
 //!
-//! ```rust,ignore
-//! let config = bincode::config::standard().with_limit(HEADER_SIZE as u64);
-//! let header: Header = bincode::decode_from_slice(&header_buf, config)?;
+//! ```rust,no_run
+//! # use hexz_core::format::magic::HEADER_SIZE;
+//! # use hexz_core::format::header::Header;
+//! # fn decode_header(header_buf: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+//! let header: Header = bincode::deserialize(header_buf)?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! # File Type Registration
@@ -167,11 +183,11 @@
 //!
 //! ## File Format Detection
 //!
-//! ```rust,ignore
-//! use std::fs::File;
-//! use std::io::Read;
-//! use hexz_core::format::magic::MAGIC_BYTES;
-//!
+//! ```rust,no_run
+//! # use std::path::Path;
+//! # use std::fs::File;
+//! # use std::io::Read;
+//! # use hexz_core::format::magic::MAGIC_BYTES;
 //! fn is_hexz_file(path: &Path) -> std::io::Result<bool> {
 //!     let mut file = File::open(path)?;
 //!     let mut magic = [0u8; 4];
@@ -182,21 +198,20 @@
 //!
 //! ## Reader Implementation
 //!
-//! ```rust,ignore
-//! use hexz_core::format::magic::{MAGIC_BYTES, HEADER_SIZE, FORMAT_VERSION};
-//! use hexz_core::format::header::Header;
-//! use hexz_core::error::Error;
-//!
-//! fn read_header(file: &mut File) -> Result<Header, Error> {
+//! ```rust,no_run
+//! # use std::fs::File;
+//! # use std::io::Read;
+//! # use hexz_core::format::magic::{MAGIC_BYTES, HEADER_SIZE, FORMAT_VERSION};
+//! # use hexz_core::format::header::Header;
+//! # use hexz_common::Error;
+//! fn read_header(mut file: &File) -> Result<Header, Error> {
 //!     // Read full header region (magic + serialized header)
 //!     let mut buf = vec![0u8; HEADER_SIZE];
 //!     file.read_exact(&mut buf)?;
 //!
 //!     // Validate magic bytes
 //!     if &buf[0..4] != MAGIC_BYTES {
-//!         return Err(Error::InvalidMagic {
-//!             found: buf[0..4].try_into().unwrap(),
-//!         });
+//!         return Err(Error::Format("Invalid magic bytes".into()));
 //!     }
 //!
 //!     // Deserialize header (bytes 4..4096)
@@ -204,10 +219,7 @@
 //!
 //!     // Validate version
 //!     if header.version != FORMAT_VERSION {
-//!         return Err(Error::UnsupportedVersion {
-//!             found: header.version,
-//!             supported: FORMAT_VERSION,
-//!         });
+//!         return Err(Error::Format(format!("Unsupported version: {}", header.version)));
 //!     }
 //!
 //!     Ok(header)
@@ -352,16 +364,16 @@ pub const FORMAT_VERSION: u32 = 1;
 ///
 /// ## Reading the Header
 ///
-/// ```rust,ignore
-/// use std::fs::File;
-/// use std::io::Read;
-/// use hexz_core::format::magic::HEADER_SIZE;
-///
+/// ```rust,no_run
+/// # use std::fs::File;
+/// # use std::io::Read;
+/// # use hexz_core::format::magic::HEADER_SIZE;
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let mut file = File::open("snapshot.hxz")?;
 /// let mut header_buf = vec![0u8; HEADER_SIZE];
 /// file.read_exact(&mut header_buf)?;
-///
-/// // header_buf now contains magic bytes + serialized header + padding
+/// # Ok(())
+/// # }
 /// ```
 ///
 /// ## Calculating Block Offsets

@@ -171,8 +171,8 @@ pub fn handle_read(
         }
     };
 
-    // Fast path: no overlay or reading memory stream
-    if fs.overlay.is_none() || stream != SnapshotStream::Disk {
+    // Fast path: no overlay or reading secondary stream
+    if fs.overlay.is_none() || stream != SnapshotStream::Primary {
         match fs.snap.read_at(stream, offset as u64, size as usize) {
             Ok(data) => reply.data(&data),
             Err(_) => reply.error(EIO),

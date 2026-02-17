@@ -50,6 +50,7 @@
 pub mod cdc;
 pub mod dcam;
 pub mod hash_table;
+pub mod parent_index;
 
 pub use cdc::{CdcStats, StreamChunker};
 pub use dcam::DedupeParams;

@@ -107,6 +107,7 @@ fn test_header_serialization_full() {
 #[test]
 fn test_block_info_structure() {
     let block = BlockInfo {
+        hash: [0u8; 32],
         offset: 4096,
         length: 2048,
         logical_len: 65536,
@@ -126,6 +127,7 @@ fn test_block_info_structure() {
 #[test]
 fn test_block_info_zero_block() {
     let zero_block = BlockInfo {
+        hash: [0u8; 32],
         offset: 0,
         length: 0,
         logical_len: 65536,
@@ -143,6 +145,7 @@ fn test_block_info_parent_reference() {
     const BLOCK_OFFSET_PARENT: u64 = u64::MAX;
 
     let parent_block = BlockInfo {
+        hash: [0u8; 32],
         offset: BLOCK_OFFSET_PARENT,
         length: 0,
         logical_len: 65536,
@@ -159,6 +162,7 @@ fn test_index_page_max_entries() {
 
     for i in 0..ENTRIES_PER_PAGE {
         page.blocks.push(BlockInfo {
+            hash: [0u8; 32],
             offset: i as u64 * 1000,
             length: 500,
             logical_len: 65536,
@@ -202,15 +206,15 @@ fn test_page_entry() {
 #[test]
 fn test_master_index_multi_page() {
     let mut master = MasterIndex {
-        disk_size: 10737418240,  // 10 GB
-        memory_size: 4294967296, // 4 GB
-        disk_pages: vec![],
-        memory_pages: vec![],
+        primary_size: 10737418240,  // 10 GB
+        secondary_size: 4294967296, // 4 GB
+        primary_pages: vec![],
+        secondary_pages: vec![],
     };
 
     // Add 10 disk pages
     for i in 0..10 {
-        master.disk_pages.push(PageEntry {
+        master.primary_pages.push(PageEntry {
             offset: i * 100000,
             length: 24576,
             start_block: i * 1024,
@@ -220,7 +224,7 @@ fn test_master_index_multi_page() {
 
     // Add 5 memory pages
     for i in 0..5 {
-        master.memory_pages.push(PageEntry {
+        master.secondary_pages.push(PageEntry {
             offset: 2000000 + i * 50000,
             length: 20480,
             start_block: i * 1024,
@@ -231,28 +235,28 @@ fn test_master_index_multi_page() {
     let serialized = bincode::serialize(&master).unwrap();
     let deserialized: MasterIndex = bincode::deserialize(&serialized).unwrap();
 
-    assert_eq!(deserialized.disk_size, 10737418240);
-    assert_eq!(deserialized.memory_size, 4294967296);
-    assert_eq!(deserialized.disk_pages.len(), 10);
-    assert_eq!(deserialized.memory_pages.len(), 5);
+    assert_eq!(deserialized.primary_size, 10737418240);
+    assert_eq!(deserialized.secondary_size, 4294967296);
+    assert_eq!(deserialized.primary_pages.len(), 10);
+    assert_eq!(deserialized.secondary_pages.len(), 5);
 }
 
 /// Test MasterIndex with empty pages (edge case).
 #[test]
 fn test_master_index_empty() {
     let master = MasterIndex {
-        disk_size: 0,
-        memory_size: 0,
-        disk_pages: vec![],
-        memory_pages: vec![],
+        primary_size: 0,
+        secondary_size: 0,
+        primary_pages: vec![],
+        secondary_pages: vec![],
     };
 
     let serialized = bincode::serialize(&master).unwrap();
     let deserialized: MasterIndex = bincode::deserialize(&serialized).unwrap();
 
-    assert_eq!(deserialized.disk_size, 0);
-    assert!(deserialized.disk_pages.is_empty());
-    assert!(deserialized.memory_pages.is_empty());
+    assert_eq!(deserialized.primary_size, 0);
+    assert!(deserialized.primary_pages.is_empty());
+    assert!(deserialized.secondary_pages.is_empty());
 }
 
 /// Test compression type enum.
@@ -385,15 +389,15 @@ fn test_large_block_sizes() {
 #[test]
 fn test_master_index_large_scale() {
     let mut master = MasterIndex {
-        disk_size: 1099511627776, // 1 TB
-        memory_size: 0,
-        disk_pages: vec![],
-        memory_pages: vec![],
+        primary_size: 1099511627776, // 1 TB
+        secondary_size: 0,
+        primary_pages: vec![],
+        secondary_pages: vec![],
     };
 
     // Add 10,000 pages (simulating 1TB snapshot)
     for i in 0..10000 {
-        master.disk_pages.push(PageEntry {
+        master.primary_pages.push(PageEntry {
             offset: i * 1000000,
             length: 24576,
             start_block: i * 1024,
@@ -404,6 +408,6 @@ fn test_master_index_large_scale() {
     let serialized = bincode::serialize(&master).unwrap();
     let deserialized: MasterIndex = bincode::deserialize(&serialized).unwrap();
 
-    assert_eq!(deserialized.disk_pages.len(), 10000);
-    assert_eq!(deserialized.disk_pages[9999].start_block, 9999 * 1024);
+    assert_eq!(deserialized.primary_pages.len(), 10000);
+    assert_eq!(deserialized.primary_pages[9999].start_block, 9999 * 1024);
 }

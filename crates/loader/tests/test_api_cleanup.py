@@ -18,10 +18,6 @@ def test_imports():
     assert hasattr(hexz, "AsyncReader")
     assert hasattr(hexz, "Writer")
 
-    # ML
-    assert hasattr(hexz, "Dataset")
-    assert hasattr(hexz, "TFDataset")
-
     # Arrays
     assert hasattr(hexz, "read_array")
     assert hasattr(hexz, "write_array")
@@ -223,8 +219,6 @@ def test_api_count():
         "Reader",
         "AsyncReader",
         "Writer",
-        "Dataset",
-        "TFDataset",
         "read_array",
         "write_array",
         "ArrayView",

@@ -15,7 +15,7 @@ When mounted, a Hexz snapshot appears as a minimal filesystem:
 ```
 /mnt/snapshot/
 ├── disk       # Block device file (size = snapshot disk size)
-└── memory     # Optional memory stream (if present in snapshot)
+└── memory     # Optional secondary stream (if present in snapshot)
 ```
 
 Reads from these files transparently decompress blocks on-the-fly. Optional overlay support enables copy-on-write semantics.

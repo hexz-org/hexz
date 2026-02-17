@@ -194,7 +194,7 @@ def test_build_creates_valid_snapshot():
 
         # Verify the snapshot can be read
         reader = hexz.Reader(output_file)
-        assert reader.metadata.disk_size == len(test_data)
+        assert reader.metadata.primary_size == len(test_data)
 
         # Read and verify data
         data = reader.read(len(test_data))

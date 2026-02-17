@@ -104,15 +104,21 @@ fn main() -> anyhow::Result<()> {
             #[cfg(feature = "fuse")]
             VmCommands::Install {
                 iso,
-                disk_size,
+                primary_size,
                 ram,
                 output,
                 no_graphics,
                 vnc,
                 cdc,
-            } => {
-                hexz_cli::cmd::vm::install::run(iso, disk_size, ram, output, no_graphics, vnc, cdc)
-            }
+            } => hexz_cli::cmd::vm::install::run(
+                iso,
+                primary_size,
+                ram,
+                output,
+                no_graphics,
+                vnc,
+                cdc,
+            ),
 
             #[cfg(unix)]
             VmCommands::Snap {

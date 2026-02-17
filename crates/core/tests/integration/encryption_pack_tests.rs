@@ -81,9 +81,9 @@ fn test_encrypted_pack_read_lz4() {
     let snap_path = create_encrypted_snapshot(&temp_dir, &data, password, "lz4");
     let snapshot = open_encrypted_snapshot(&snap_path, password);
 
-    assert_eq!(snapshot.size(SnapshotStream::Disk), 256 * 1024);
+    assert_eq!(snapshot.size(SnapshotStream::Primary), 256 * 1024);
 
-    let read_data = snapshot.read_at(SnapshotStream::Disk, 0, 4096).unwrap();
+    let read_data = snapshot.read_at(SnapshotStream::Primary, 0, 4096).unwrap();
     assert_eq!(read_data.len(), 4096);
     assert!(read_data.iter().all(|&b| b == 0x42));
 }
@@ -98,9 +98,9 @@ fn test_encrypted_pack_read_zstd() {
     let snap_path = create_encrypted_snapshot(&temp_dir, &data, password, "zstd");
     let snapshot = open_encrypted_snapshot(&snap_path, password);
 
-    assert_eq!(snapshot.size(SnapshotStream::Disk), 128 * 1024);
+    assert_eq!(snapshot.size(SnapshotStream::Primary), 128 * 1024);
 
-    let read_data = snapshot.read_at(SnapshotStream::Disk, 0, 1024).unwrap();
+    let read_data = snapshot.read_at(SnapshotStream::Primary, 0, 1024).unwrap();
     assert!(read_data.iter().all(|&b| b == 0xAB));
 }
 
@@ -130,7 +130,7 @@ fn test_encrypted_wrong_password_fails() {
     let snapshot = File::new(backend, compressor, encryptor).unwrap();
 
     // Reading should fail because decryption with wrong key produces garbage
-    let result = snapshot.read_at(SnapshotStream::Disk, 0, 4096);
+    let result = snapshot.read_at(SnapshotStream::Primary, 0, 4096);
     assert!(result.is_err(), "Wrong password should cause read failure");
 }
 
@@ -170,7 +170,7 @@ fn test_encrypted_varied_data() {
     for i in 0..8u64 {
         let expected = (i * 37) as u8;
         let read = snapshot
-            .read_at(SnapshotStream::Disk, i * 65536, 1024)
+            .read_at(SnapshotStream::Primary, i * 65536, 1024)
             .unwrap();
         assert!(
             read.iter().all(|&b| b == expected),
@@ -211,13 +211,15 @@ fn test_encrypted_dual_stream() {
 
     let snapshot = open_encrypted_snapshot(&output_path, password);
 
-    assert_eq!(snapshot.size(SnapshotStream::Disk), 256 * 1024);
-    assert_eq!(snapshot.size(SnapshotStream::Memory), 128 * 1024);
+    assert_eq!(snapshot.size(SnapshotStream::Primary), 256 * 1024);
+    assert_eq!(snapshot.size(SnapshotStream::Secondary), 128 * 1024);
 
-    let disk_read = snapshot.read_at(SnapshotStream::Disk, 0, 1024).unwrap();
+    let disk_read = snapshot.read_at(SnapshotStream::Primary, 0, 1024).unwrap();
     assert!(disk_read.iter().all(|&b| b == 0xDD));
 
-    let mem_read = snapshot.read_at(SnapshotStream::Memory, 0, 1024).unwrap();
+    let mem_read = snapshot
+        .read_at(SnapshotStream::Secondary, 0, 1024)
+        .unwrap();
     assert!(mem_read.iter().all(|&b| b == 0xCC));
 }
 
@@ -264,7 +266,7 @@ fn test_encrypted_sequential_read() {
         let remaining = data.len() as u64 - offset;
         let to_read = std::cmp::min(chunk_size, remaining as usize);
         let chunk = snapshot
-            .read_at(SnapshotStream::Disk, offset, to_read)
+            .read_at(SnapshotStream::Primary, offset, to_read)
             .unwrap();
         assert_eq!(
             &chunk[..],
@@ -287,7 +289,7 @@ fn test_encrypted_random_data() {
     let snapshot = open_encrypted_snapshot(&snap_path, password);
 
     let read_data = snapshot
-        .read_at(SnapshotStream::Disk, 0, data.len())
+        .read_at(SnapshotStream::Primary, 0, data.len())
         .unwrap();
     assert_bytes_equal(&read_data, &data, "encrypted random data round-trip");
 }

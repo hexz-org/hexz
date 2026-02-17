@@ -17,8 +17,8 @@
 //! | Inode | Type      | Name     | Backing         | Purpose                    |
 //! |-------|-----------|----------|-----------------|----------------------------|
 //! | 1     | Directory | (root)   | None            | Mount point root directory |
-//! | 2     | File      | `disk`   | Disk stream     | Guest disk image           |
-//! | 3     | File      | `memory` | Memory stream   | Guest RAM snapshot         |
+//! | 2     | File      | `disk`   | Primary stream     | Guest disk image           |
+//! | 3     | File      | `memory` | Secondary stream   | Guest RAM snapshot         |
 //!
 //! This minimal namespace is sufficient for unikernel snapshots, which consist
 //! of a disk image and optional memory state. The root directory is always
@@ -29,7 +29,7 @@
 //!
 //! The `InodeMap` struct caches snapshot metadata at mount time:
 //! - Which streams are present (`has_disk`, `has_mem`)
-//! - Stream sizes (`disk_size`, `mem_size`)
+//! - Stream sizes (`primary_size`, `mem_size`)
 //! - Mount user/group IDs (`uid`, `gid`)
 //!
 //! This avoids repeated snapshot header queries and ensures attribute
@@ -41,7 +41,7 @@
 //!
 //! The `lookup` method implements a simple name-to-inode mapping:
 //! - Parent must be inode 1 (root)
-//! - Name must be "disk" (if disk stream present) or "memory" (if memory present)
+//! - Name must be "disk" (if primary stream present) or "memory" (if memory present)
 //! - All other names return `None`, causing FUSE to report `ENOENT`
 //!
 //! This flat namespace prevents nesting directories or creating new files,
@@ -76,7 +76,7 @@
 //!
 //! // Query available streams
 //! if inode_map.lookup(1, "disk".as_ref()).is_some() {
-//!     println!("Disk stream available");
+//!     println!("Primary stream available");
 //! }
 //! # Ok(())
 //! # }
@@ -282,7 +282,7 @@ pub struct DirEntry {
 pub struct InodeMap {
     has_disk: bool,
     has_mem: bool,
-    disk_size: u64,
+    primary_size: u64,
     mem_size: u64,
     uid: u32,
     gid: u32,
@@ -300,8 +300,8 @@ impl InodeMap {
     /// The following fields are extracted from `snap`:
     /// - `snap.header.features.has_disk`: Whether inode 2 (disk) should exist
     /// - `snap.header.features.has_memory`: Whether inode 3 (memory) should exist
-    /// - `snap.size(SnapshotStream::Disk)`: Logical size of disk stream in bytes
-    /// - `snap.size(SnapshotStream::Memory)`: Logical size of memory stream in bytes
+    /// - `snap.size(SnapshotStream::Primary)`: Logical size of primary stream in bytes
+    /// - `snap.size(SnapshotStream::Secondary)`: Logical size of secondary stream in bytes
     ///
     /// # Parameters
     ///
@@ -337,8 +337,8 @@ impl InodeMap {
         Self {
             has_disk: snap.header.features.has_disk,
             has_mem: snap.header.features.has_memory,
-            disk_size: snap.size(SnapshotStream::Disk),
-            mem_size: snap.size(SnapshotStream::Memory),
+            primary_size: snap.size(SnapshotStream::Primary),
+            mem_size: snap.size(SnapshotStream::Secondary),
             uid,
             gid,
         }
@@ -363,8 +363,8 @@ impl InodeMap {
     ///
     /// # Returns
     ///
-    /// - `Some(2)`: If parent=1, name="disk", and disk stream present
-    /// - `Some(3)`: If parent=1, name="memory", and memory stream present
+    /// - `Some(2)`: If parent=1, name="disk", and primary stream present
+    /// - `Some(3)`: If parent=1, name="memory", and secondary stream present
     /// - `None`: Otherwise (invalid parent, unknown name, or stream not present)
     ///
     /// # Examples
@@ -416,7 +416,7 @@ impl InodeMap {
     ///
     /// # Attribute Sources
     ///
-    /// - **Size**: Derived from `disk_size` or `mem_size` (cached at mount time)
+    /// - **Size**: Derived from `primary_size` or `mem_size` (cached at mount time)
     /// - **Permissions, timestamps, type**: Delegated to `attr::make_attr()`
     /// - **UID/GID**: From `uid` and `gid` (set at mount time)
     ///
@@ -457,7 +457,7 @@ impl InodeMap {
     /// ```
     pub fn getattr(&self, ino: u64) -> fuser::FileAttr {
         let size = match InodeType::from_u64(ino) {
-            Some(InodeType::Disk) => self.disk_size,
+            Some(InodeType::Disk) => self.primary_size,
             Some(InodeType::Memory) => self.mem_size,
             _ => 0,
         };
@@ -476,8 +476,8 @@ impl InodeMap {
     /// The returned vector always follows this order:
     /// 1. `.` (current directory, inode 1)
     /// 2. `..` (parent directory, also inode 1 since root has no parent)
-    /// 3. `disk` (inode 2, if disk stream present)
-    /// 4. `memory` (inode 3, if memory stream present)
+    /// 3. `disk` (inode 2, if primary stream present)
+    /// 4. `memory` (inode 3, if secondary stream present)
     ///
     /// This ordering is **stable** and can be relied upon for testing, but the
     /// FUSE protocol does not require any specific order.
@@ -564,8 +564,8 @@ impl InodeMap {
     /// # Mapping Rules
     ///
     /// - Inode 1 (root): Returns `None` (directories have no stream)
-    /// - Inode 2 (disk): Returns `Some(SnapshotStream::Disk)` if `has_disk`
-    /// - Inode 3 (memory): Returns `Some(SnapshotStream::Memory)` if `has_mem`
+    /// - Inode 2 (disk): Returns `Some(SnapshotStream::Primary)` if `has_disk`
+    /// - Inode 3 (memory): Returns `Some(SnapshotStream::Secondary)` if `has_mem`
     /// - Other inodes: Returns `None` (invalid)
     ///
     /// # Parameters
@@ -592,7 +592,7 @@ impl InodeMap {
     /// # let snap = File::new(backend, compressor, None)?;
     /// # let map = InodeMap::new(&snap, 1000, 1000);
     /// // Valid stream mapping
-    /// assert_eq!(map.inode_to_stream(2), Some(SnapshotStream::Disk));
+    /// assert_eq!(map.inode_to_stream(2), Some(SnapshotStream::Primary));
     ///
     /// // Root directory has no stream
     /// assert_eq!(map.inode_to_stream(1), None);
@@ -617,8 +617,8 @@ impl InodeMap {
 
     pub fn inode_to_stream(&self, ino: u64) -> Option<SnapshotStream> {
         match InodeType::from_u64(ino) {
-            Some(InodeType::Disk) if self.has_disk => Some(SnapshotStream::Disk),
-            Some(InodeType::Memory) if self.has_mem => Some(SnapshotStream::Memory),
+            Some(InodeType::Disk) if self.has_disk => Some(SnapshotStream::Primary),
+            Some(InodeType::Memory) if self.has_mem => Some(SnapshotStream::Secondary),
             _ => None,
         }
     }

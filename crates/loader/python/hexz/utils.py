@@ -27,7 +27,7 @@ class Metadata:
         1
         >>> meta.compression
         'lz4'
-        >>> meta.disk_size
+        >>> meta.primary_size
         1048576
         >>> meta.compression_ratio
         2.5
@@ -50,14 +50,14 @@ class Metadata:
         return self._data.get("compression", "unknown")
 
     @property
-    def disk_size(self) -> int:
+    def primary_size(self) -> int:
         """Size of disk data in bytes."""
-        return self._data.get("disk_size", 0)
+        return self._data.get("primary_size", 0)
 
     @property
-    def memory_size(self) -> int:
+    def secondary_size(self) -> int:
         """Size of memory data in bytes."""
-        return self._data.get("memory_size", 0)
+        return self._data.get("secondary_size", 0)
 
     @property
     def size_compressed(self) -> int:
@@ -87,12 +87,12 @@ class Metadata:
     @property
     def has_disk(self) -> bool:
         """Whether snapshot contains disk data."""
-        return self.disk_size > 0
+        return self.primary_size > 0
 
     @property
     def has_memory(self) -> bool:
         """Whether snapshot contains memory data."""
-        return self.memory_size > 0
+        return self.secondary_size > 0
 
     @property
     def is_compatible(self) -> bool:
@@ -131,9 +131,9 @@ class Metadata:
         lines.append(f"  Version: {self.version}")
         lines.append(f"  Compression: {self.compression}")
         if self.has_disk:
-            lines.append(f"  Disk size: {self.disk_size:,} bytes")
+            lines.append(f"  Primary size: {self.primary_size:,} bytes")
         if self.has_memory:
-            lines.append(f"  Memory size: {self.memory_size:,} bytes")
+            lines.append(f"  Secondary size: {self.secondary_size:,} bytes")
         if self.size_compressed > 0:
             lines.append(f"  Compressed: {self.size_compressed:,} bytes")
             if self.compression_ratio > 0:
@@ -186,7 +186,7 @@ class Metadata:
             meta1 = inspect(path1)
             meta2 = inspect(path2)
             return {
-                "size_diff": meta2.disk_size - meta1.disk_size,
+                "size_diff": meta2.primary_size - meta1.primary_size,
                 "compression_same": meta1.compression == meta2.compression,
                 "version_same": meta1.version == meta2.version,
             }
@@ -227,7 +227,7 @@ def inspect(path: PathLike) -> Metadata:
         >>> meta = hexz.inspect("snapshot.hxz")
         >>> print(f"Version: {meta.version}")
         >>> print(f"Compression: {meta.compression}")
-        >>> print(f"Size: {meta.disk_size:,} bytes")
+        >>> print(f"Size: {meta.primary_size:,} bytes")
         >>> print(meta)  # Human-readable output
         >>> meta.print()  # Same as above
     """

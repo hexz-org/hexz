@@ -49,7 +49,7 @@ fn create_valid_snapshot() -> (std::path::PathBuf, TempDir) {
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
     let snapshot = File::new(backend, compressor, None).unwrap();
-    assert_eq!(snapshot.size(SnapshotStream::Disk), 256 * 1024);
+    assert_eq!(snapshot.size(SnapshotStream::Primary), 256 * 1024);
 
     (output_path, temp_dir)
 }
@@ -222,7 +222,7 @@ fn test_corruption_single_bitflip_in_block_data() {
     let compressor = Box::new(Lz4Compressor::new());
     // File should open (header is fine), but reading the corrupted block should fail
     let snapshot = File::new(backend, compressor, None).unwrap();
-    let result = snapshot.read_at(SnapshotStream::Disk, 0, 4096);
+    let result = snapshot.read_at(SnapshotStream::Primary, 0, 4096);
     assert!(
         result.is_err(),
         "bitflip in block data should be detected by CRC32"
@@ -247,7 +247,7 @@ fn test_corruption_zeroed_block_data() {
     let backend = Arc::new(FileBackend::new(&corrupted_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
     let snapshot = File::new(backend, compressor, None).unwrap();
-    let result = snapshot.read_at(SnapshotStream::Disk, 0, 4096);
+    let result = snapshot.read_at(SnapshotStream::Primary, 0, 4096);
     assert!(
         result.is_err(),
         "zeroed block data should be detected by CRC32"
@@ -276,7 +276,7 @@ fn test_corruption_bitflip_in_master_index() {
             Err(_) => {} // Good: corruption detected at index deserialization
             Ok(snapshot) => {
                 // If it opened, block reads should fail due to wrong offsets/checksums
-                let result = snapshot.read_at(SnapshotStream::Disk, 0, 65536);
+                let result = snapshot.read_at(SnapshotStream::Primary, 0, 65536);
                 // Either error (CRC32 mismatch) or wrong data — both acceptable
                 // as long as it doesn't silently return the original correct data
                 // while the index was corrupted
@@ -297,7 +297,7 @@ fn test_valid_snapshot_reads_correctly() {
     let snapshot = File::new(backend, compressor, None).unwrap();
 
     // Read first block and verify expected pattern
-    let data = snapshot.read_at(SnapshotStream::Disk, 0, 4096).unwrap();
+    let data = snapshot.read_at(SnapshotStream::Primary, 0, 4096).unwrap();
     assert_eq!(data.len(), 4096);
     for (i, &byte) in data.iter().enumerate() {
         assert_eq!(byte, (i % 251) as u8, "mismatch at offset {i}");
@@ -306,7 +306,7 @@ fn test_valid_snapshot_reads_correctly() {
     // Read last block
     let last_offset = 256 * 1024 - 4096;
     let last_data = snapshot
-        .read_at(SnapshotStream::Disk, last_offset as u64, 4096)
+        .read_at(SnapshotStream::Primary, last_offset as u64, 4096)
         .unwrap();
     assert_eq!(last_data.len(), 4096);
 }

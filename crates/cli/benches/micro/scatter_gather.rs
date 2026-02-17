@@ -75,7 +75,7 @@ fn bench_scatter_gather_latency(c: &mut Criterion) {
     let compressor = Box::new(Lz4Compressor::new());
     let snap = File::new(backend, compressor, None).unwrap();
 
-    let stream_size = snap.size(SnapshotStream::Disk);
+    let stream_size = snap.size(SnapshotStream::Primary);
     let num_blocks = stream_size / BLOCK_SIZE;
 
     let mut group = c.benchmark_group("ScatterGather_Latency");
@@ -97,7 +97,7 @@ fn bench_scatter_gather_latency(c: &mut Criterion) {
                 let mut buf = [MaybeUninit::uninit(); BLOCK_SIZE as usize];
                 for &offset in offsets {
                     snap_clone
-                        .read_at_into_uninit(SnapshotStream::Disk, offset, &mut buf)
+                        .read_at_into_uninit(SnapshotStream::Primary, offset, &mut buf)
                         .unwrap();
                 }
             });

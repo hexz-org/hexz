@@ -1,7 +1,7 @@
 //! Sequential read throughput benchmarks for Hexz snapshots.
 //!
 //! Measures read throughput when reading a snapshot sequentially (disk or
-//! memory stream) with varying block sizes and file sizes. Uses shared
+//! secondary stream) with varying block sizes and file sizes. Uses shared
 //! helpers to build large input and snapshot files.
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
@@ -30,7 +30,7 @@ mod common;
 /// Constructs an input file and corresponding Hexz snapshot for a given size.
 ///
 /// **Architectural intent:** Provides a reusable fixture for throughput benchmarks by
-/// invoking the CLI snapshot creation path with only a disk stream, no memory image,
+/// invoking the CLI snapshot creation path with only a primary stream, no memory image,
 /// and encryption disabled, mirroring a common production configuration.
 ///
 /// **Constraints:** The `create` command is called with `"lz4"` compression, a single
@@ -68,7 +68,7 @@ fn setup_benchmark(size: usize) -> (NamedTempFile, NamedTempFile) {
 ///
 /// **Architectural intent:** Measures how read performance scales with total snapshot
 /// size by constructing multiple `.hxz` files and timing sequential reads over the
-/// disk stream using the standard `File` interface.
+/// primary stream using the standard `File` interface.
 ///
 /// **Constraints:** The benchmark currently exercises only two sizes (100 MiB and
 /// 500 MiB) and uses LZ4 compression with a single-threaded reader; it does not model
@@ -94,7 +94,7 @@ fn bench_throughput(c: &mut Criterion) {
                 let backend = Arc::new(FileBackend::new(&output_path).unwrap());
                 let compressor = Box::new(Lz4Compressor::new());
                 let snap = File::new(backend, compressor, None).unwrap();
-                let _ = snap.read_at(SnapshotStream::Disk, 0, s).unwrap();
+                let _ = snap.read_at(SnapshotStream::Primary, 0, s).unwrap();
             })
         });
     }

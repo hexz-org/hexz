@@ -49,7 +49,7 @@ def test_writer_add_numpy_array():
 def test_writer_add_file_memory_kind():
     """Test add_file() with kind='memory'."""
     with tempfile.NamedTemporaryFile(suffix=".img", delete=False) as input_file:
-        input_file.write(b"test data for memory stream")
+        input_file.write(b"test data for secondary stream")
         input_file.flush()
         input_path = input_file.name
 
@@ -60,8 +60,8 @@ def test_writer_add_file_memory_kind():
 
             # Verify file was written
             reader = hexz.Reader(tmp.name)
-            # Memory stream should have data
-            assert reader.metadata.memory_size > 0
+            # Secondary stream should have data
+            assert reader.metadata.secondary_size > 0
     finally:
         import os
 
@@ -123,7 +123,7 @@ def test_writer_add_array_non_contiguous():
 
         reader = hexz.Reader(tmp.name)
         # Should have written the contiguous version
-        assert reader.metadata.disk_size > 0
+        assert reader.metadata.primary_size > 0
 
 
 def test_writer_add_metadata():
@@ -136,7 +136,7 @@ def test_writer_add_metadata():
 
         # Metadata should be stored
         reader = hexz.Reader(tmp.name)
-        assert reader.metadata.disk_size > 0
+        assert reader.metadata.primary_size > 0
 
 
 def test_writer_finalize_multiple_times():

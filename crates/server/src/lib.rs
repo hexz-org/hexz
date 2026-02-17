@@ -3,7 +3,7 @@
 //! This module provides network-facing interfaces for accessing compressed Hexz
 //! snapshot data over standard protocols. It supports three distinct serving modes:
 //!
-//! 1. **HTTP Range Server** (`serve_http`): Exposes disk and memory streams via
+//! 1. **HTTP Range Server** (`serve_http`): Exposes disk and secondary streams via
 //!    HTTP 1.1 range requests with DoS protection and partial content support.
 //! 2. **NBD (Network Block Device) Server** (`serve_nbd`): Allows mounting snapshots
 //!    as Linux block devices using the standard NBD protocol.
@@ -153,7 +153,7 @@
 //! ### HTTP Client (curl)
 //!
 //! ```bash
-//! # Fetch the first 4KB of the disk stream
+//! # Fetch the first 4KB of the primary stream
 //! curl -H "Range: bytes=0-4095" http://localhost:8080/disk -o chunk.bin
 //!
 //! # Fetch 1MB starting at offset 1MB
@@ -500,8 +500,8 @@ pub async fn serve_nbd(snap: Arc<File>, port: u16) -> anyhow::Result<()> {
 /// | Hexz Concept | S3 Equivalent | Mapping Strategy |
 /// |----------------|---------------|------------------|
 /// | Snapshot file | Bucket | One bucket per snapshot |
-/// | Disk stream | Object `disk.img` | Virtual object, synthesized from snapshot |
-/// | Memory stream | Object `memory.img` | Virtual object, synthesized from snapshot |
+/// | Primary stream | Object `disk.img` | Virtual object, synthesized from snapshot |
+/// | Secondary stream | Object `memory.img` | Virtual object, synthesized from snapshot |
 /// | Block index | N/A | Transparent to S3 clients |
 ///
 /// ## Example S3 API Usage (Planned)
@@ -518,7 +518,7 @@ pub async fn serve_nbd(snap: Arc<File>, port: u16) -> anyhow::Result<()> {
 /// # List objects in a snapshot
 /// aws s3 ls s3://my-snapshot/
 ///
-/// # Download the disk stream
+/// # Download the primary stream
 /// aws s3 cp s3://my-snapshot/disk.img disk_copy.img
 ///
 /// # Download a range (100 MB starting at offset 1 GB)
@@ -638,8 +638,8 @@ pub async fn serve_s3_gateway(_snap: Arc<File>, port: u16) -> anyhow::Result<()>
 /// Starts an HTTP 1.1 server on `127.0.0.1:<port>` that exposes snapshot data via
 /// two endpoints:
 ///
-/// - `GET /disk`: Serves the disk stream (persistent storage snapshot)
-/// - `GET /memory`: Serves the memory stream (RAM snapshot)
+/// - `GET /disk`: Serves the primary stream (persistent storage snapshot)
+/// - `GET /memory`: Serves the secondary stream (RAM snapshot)
 ///
 /// Both endpoints support HTTP range requests (RFC 7233) for partial content retrieval.
 ///
@@ -789,7 +789,7 @@ pub async fn serve_s3_gateway(_snap: Arc<File>, port: u16) -> anyhow::Result<()>
 /// ## Client Usage (curl)
 ///
 /// ```bash
-/// # Fetch first 4KB of disk stream
+/// # Fetch first 4KB of primary stream
 /// curl -H "Range: bytes=0-4095" http://localhost:8080/disk -o chunk.bin
 ///
 /// # Fetch 1MB starting at 1MB offset
@@ -900,8 +900,8 @@ pub async fn serve_http_with_listener(
 
 /// HTTP handler for the `/disk` endpoint.
 ///
-/// Serves the disk stream (persistent storage snapshot) from the Hexz file.
-/// Delegates to `handle_request` with `SnapshotStream::Disk`.
+/// Serves the primary stream (persistent storage snapshot) from the Hexz file.
+/// Delegates to `handle_request` with `SnapshotStream::Primary`.
 ///
 /// # Route
 ///
@@ -927,13 +927,13 @@ pub async fn serve_http_with_listener(
 ///
 /// See `serve_http` for client usage examples.
 async fn get_disk(headers: HeaderMap, State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    handle_request(headers, &state.snap, SnapshotStream::Disk)
+    handle_request(headers, &state.snap, SnapshotStream::Primary)
 }
 
 /// HTTP handler for the `/memory` endpoint.
 ///
-/// Serves the memory stream (RAM snapshot) from the Hexz file.
-/// Delegates to `handle_request` with `SnapshotStream::Memory`.
+/// Serves the secondary stream (RAM snapshot) from the Hexz file.
+/// Delegates to `handle_request` with `SnapshotStream::Secondary`.
 ///
 /// # Route
 ///
@@ -959,7 +959,7 @@ async fn get_disk(headers: HeaderMap, State(state): State<Arc<AppState>>) -> imp
 ///
 /// See `serve_http` for client usage examples.
 async fn get_memory(headers: HeaderMap, State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    handle_request(headers, &state.snap, SnapshotStream::Memory)
+    handle_request(headers, &state.snap, SnapshotStream::Secondary)
 }
 
 /// Core HTTP request handler that translates `Range` headers into snapshot reads.

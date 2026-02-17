@@ -112,7 +112,7 @@ def test_metadata_str_with_memory(temp_dir):
     str_output = str(meta)
 
     if meta.has_memory:
-        assert "Memory size:" in str_output
+        assert "Secondary size:" in str_output
 
 
 def test_metadata_getitem_access(sample_snapshot):
@@ -324,8 +324,8 @@ def test_metadata_all_properties(sample_snapshot):
     meta = hexz.inspect(sample_snapshot)
     _ = meta.version
     _ = meta.compression
-    _ = meta.disk_size
-    _ = meta.memory_size
+    _ = meta.primary_size
+    _ = meta.secondary_size
     _ = meta.size_compressed
     _ = meta.block_size
     _ = meta.num_blocks

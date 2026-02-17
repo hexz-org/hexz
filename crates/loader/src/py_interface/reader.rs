@@ -324,7 +324,7 @@ impl Reader {
 
     /// Get the total uncompressed size of the snapshot in bytes.
     ///
-    /// Returns the logical size of the disk stream. This is the size of the original
+    /// Returns the logical size of the primary stream. This is the size of the original
     /// uncompressed data, not the size of the compressed snapshot file on disk.
     ///
     /// # Returns
@@ -343,7 +343,7 @@ impl Reader {
     /// print(f"Uncompressed size: {size / (1024**3):.2f} GB")
     /// ```
     fn size(&self) -> u64 {
-        self.inner.size(SnapshotStream::Disk)
+        self.inner.size(SnapshotStream::Primary)
     }
 
     /// Read bytes from the snapshot.
@@ -378,7 +378,7 @@ impl Reader {
         offset: Option<u64>,
     ) -> PyResult<Bound<'py, PyBytes>> {
         let inner = self.inner.clone();
-        let total_size = self.inner.size(SnapshotStream::Disk);
+        let total_size = self.inner.size(SnapshotStream::Primary);
 
         // Compute (start, len, update_cursor) from either the explicit offset
         // or the internal cursor position.
@@ -419,7 +419,7 @@ impl Reader {
             py.allow_threads(move || {
                 let slice = unsafe { std::slice::from_raw_parts_mut(ptr_addr as *mut u8, buf_len) };
                 inner
-                    .read_at_into_uninit_bytes(SnapshotStream::Disk, start, slice)
+                    .read_at_into_uninit_bytes(SnapshotStream::Primary, start, slice)
                     .map_err(|e| PyIOError::new_err(e.to_string()))
             })
         })?;
@@ -468,7 +468,7 @@ impl Reader {
         buffer: Bound<'_, PyAny>,
     ) -> PyResult<usize> {
         let buf_info = tensor::numpy::acquire_writable_buffer(&buffer)?;
-        let stream_size = self.inner.size(SnapshotStream::Disk);
+        let stream_size = self.inner.size(SnapshotStream::Primary);
         if offset >= stream_size {
             return Ok(0);
         }
@@ -478,7 +478,7 @@ impl Reader {
         let result = py.allow_threads(move || {
             let slice = unsafe { std::slice::from_raw_parts_mut(ptr_addr as *mut u8, read_len) };
             inner
-                .read_at_into_uninit_bytes(SnapshotStream::Disk, offset, slice)
+                .read_at_into_uninit_bytes(SnapshotStream::Primary, offset, slice)
                 .map(|_| read_len)
                 .map_err(|e| PyIOError::new_err(e.to_string()))
         })?;
@@ -527,7 +527,7 @@ impl Reader {
     /// bytes_read = reader.readinto(ba)
     /// ```
     fn readinto(&self, py: Python<'_>, buffer: Bound<'_, PyAny>) -> PyResult<usize> {
-        let total_size = self.inner.size(SnapshotStream::Disk);
+        let total_size = self.inner.size(SnapshotStream::Primary);
 
         // Capture cursor value and release lock before I/O (matches read() pattern).
         let start = {
@@ -559,7 +559,7 @@ impl Reader {
             let slice = unsafe { std::slice::from_raw_parts_mut(ptr, read_len) };
 
             inner
-                .read_at_into_uninit_bytes(SnapshotStream::Disk, start, slice)
+                .read_at_into_uninit_bytes(SnapshotStream::Primary, start, slice)
                 .map(|_| read_len)
                 .map_err(|e| PyIOError::new_err(e.to_string()))
         })?;
@@ -617,7 +617,7 @@ impl Reader {
             .cursor
             .lock()
             .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?;
-        let total_size = self.inner.size(SnapshotStream::Disk);
+        let total_size = self.inner.size(SnapshotStream::Primary);
 
         let new_pos = match whence.unwrap_or(0) {
             0 => offset,
@@ -721,7 +721,7 @@ impl Reader {
     /// print(f"Format version: {meta['version']}")
     /// print(f"Compression: {meta['compression']}")
     /// print(f"Block size: {meta['block_size']}")
-    /// print(f"Disk size: {meta['disk_size']} bytes")
+    /// print(f"Primary size: {meta['primary_size']} bytes")
     /// print(f"Encrypted: {meta.get('encrypted', False)}")
     /// ```
     fn metadata(&self, py: Python<'_>) -> PyResult<PyObject> {
@@ -757,16 +757,16 @@ impl Reader {
         dict.set_item("parent_path", header.parent_path.as_deref())?;
 
         // Stream sizes from the cached master index.
-        let disk_size = self.inner.size(SnapshotStream::Disk);
-        let memory_size = self.inner.size(SnapshotStream::Memory);
-        dict.set_item("disk_size", disk_size)?;
-        dict.set_item("memory_size", memory_size)?;
+        let primary_size = self.inner.size(SnapshotStream::Primary);
+        let secondary_size = self.inner.size(SnapshotStream::Secondary);
+        dict.set_item("primary_size", primary_size)?;
+        dict.set_item("secondary_size", secondary_size)?;
 
         // File size — cheap stat for local paths, 0 for remote.
         let file_size = std::fs::metadata(&self.path).map(|m| m.len()).unwrap_or(0);
         dict.set_item("file_size", file_size)?;
 
-        let total_uncompressed = disk_size + memory_size;
+        let total_uncompressed = primary_size + secondary_size;
         let ratio = if file_size > 0 {
             total_uncompressed as f64 / file_size as f64
         } else {

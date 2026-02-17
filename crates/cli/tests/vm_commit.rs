@@ -46,7 +46,7 @@ fn create_base_snapshot(env: &TestEnv, disk_data: &[u8], compression: &str) -> s
 /// The overlay file will have data at those offsets.
 fn create_overlay_files(
     dir: &std::path::Path,
-    disk_size: u64,
+    primary_size: u64,
     modified_4k_blocks: &[u64],
     overlay_data_byte: u8,
 ) -> (std::path::PathBuf, std::path::PathBuf) {
@@ -55,7 +55,7 @@ fn create_overlay_files(
 
     // Create overlay file — sparse file with modified chunks
     // We'll create a file of the right size, then write our modified blocks
-    let mut overlay = vec![0u8; disk_size as usize];
+    let mut overlay = vec![0u8; primary_size as usize];
     for &blk in modified_4k_blocks {
         let offset = (blk * 4096) as usize;
         let end = std::cmp::min(offset + 4096, overlay.len());

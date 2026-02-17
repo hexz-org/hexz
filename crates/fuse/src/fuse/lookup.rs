@@ -28,8 +28,8 @@
 //! # Name Resolution
 //!
 //! Only two names are resolvable under the root directory:
-//! - `disk`: Maps to inode 2, backed by `SnapshotStream::Disk`
-//! - `memory`: Maps to inode 3, backed by `SnapshotStream::Memory` (if present)
+//! - `disk`: Maps to inode 2, backed by `SnapshotStream::Primary`
+//! - `memory`: Maps to inode 3, backed by `SnapshotStream::Secondary` (if present)
 //!
 //! All other names, or lookups with `parent != 1`, return `ENOENT`.
 //!
@@ -94,7 +94,7 @@ use std::ffi::OsStr;
 /// Returns `ENOENT` if:
 /// - `parent` is not the root inode (1)
 /// - `name` does not match "disk" or "memory"
-/// - The requested stream is not present in the snapshot (e.g., no memory stream)
+/// - The requested stream is not present in the snapshot (e.g., no secondary stream)
 ///
 /// # Examples
 ///
@@ -294,8 +294,8 @@ pub fn handle_setattr(
 /// The returned entries are always in this order:
 /// 1. `.` (inode 1, type Directory)
 /// 2. `..` (inode 1, type Directory, same as `.` since root has no parent)
-/// 3. `disk` (inode 2, type RegularFile, if disk stream present)
-/// 4. `memory` (inode 3, type RegularFile, if memory stream present)
+/// 3. `disk` (inode 2, type RegularFile, if primary stream present)
+/// 4. `memory` (inode 3, type RegularFile, if secondary stream present)
 ///
 /// # Parameters
 ///

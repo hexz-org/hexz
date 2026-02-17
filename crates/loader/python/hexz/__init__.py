@@ -3,39 +3,32 @@
 Hexz is a Python library for reading and creating compressed snapshots
 with random access support. It's optimized for:
 
-- Machine learning dataset streaming (PyTorch/TensorFlow integration)
+- ML model checkpointing and weight deduplication
+- Large binary file storage with random access
 - Virtual machine disk and memory snapshots
-- Large binary file storage with deduplication
 
 Key Features:
 
-- Random access: Read any byte range without decompressing entire file
-- Compression: LZ4 (fast) or Zstandard (high ratio)
+- Random access: Read any byte range (e.g. specific tensors) without decompressing entire file
+- Deduplication: CDC-based dedup across versions (perfect for model fine-tuning)
 - Streaming: Read from local files, HTTP, or S3
-- Zero-copy: NumPy arrays without data copies
+- Zero-copy: Direct loading into NumPy/PyTorch via buffer protocol
 - Async support: Asynchronous I/O for high-throughput workloads
 
 Quick Start:
     >>> import hexz
     >>>
-    >>> # Build a snapshot with smart defaults
-    >>> meta = hexz.build("data/", "dataset.hxz", profile="ml")
+    >>> # Read a specific tensor from a checkpoint
+    >>> with hexz.open("model.hxz") as reader:
+    ...     # Read 1GB weight at offset 4096 directly into a buffer
+    ...     weights = reader.read(1024*1024*1024, offset=4096)
+    ...     meta = reader.metadata
+    ...     print(f"Primary size: {meta.primary_size}")
     >>>
-    >>> # Read with modern API
-    >>> with hexz.open("dataset.hxz") as reader:
-    ...     data = reader[0:4096]  # Slice notation!
-    ...     meta = reader.metadata  # Property access!
-    ...     print(meta)  # Human-readable info
-    >>>
-    >>> # ML integration
-    >>> dataset = hexz.Dataset("dataset.hxz", item_size=1024)
-    >>> loader = torch.utils.data.DataLoader(dataset, batch_size=32)
-    >>>
-    >>> # Cryptographic signing
-    >>> from hexz import crypto
-    >>> crypto.keygen("key.priv", "key.pub")
-    >>> crypto.sign("dataset.hxz", "key.priv")
-    >>> crypto.verify("dataset.hxz", "key.pub")
+    >>> # Build a new snapshot (checkpoint)
+    >>> with hexz.Writer("new_ckpt.hxz", compression="zstd") as writer:
+    ...     writer.add("weights.bin")
+    ...     writer.add_metadata({"framework": "pytorch", "epoch": 10})
 
 See documentation for advanced usage: https://github.com/hexz-storage/hexz
 """
@@ -82,23 +75,6 @@ from .utils import (
     verify,
 )
 from .writer import Writer
-
-# Optional: ML Integration (requires torch/tensorflow)
-try:
-    from .dataset import Dataset
-
-    _HAS_DATASET = True
-except ImportError:
-    _HAS_DATASET = False
-    Dataset = None  # type: ignore
-
-try:
-    from .dataset import TFDataset
-
-    _HAS_TFDATASET = True
-except ImportError:
-    _HAS_TFDATASET = False
-    TFDataset = None  # type: ignore
 
 # Optional: Cryptographic signing (requires signing feature)
 try:
@@ -215,12 +191,6 @@ __all__ = [
 ]
 
 # Add optional features if available
-if _HAS_DATASET:
-    __all__.append("Dataset")
-
-if _HAS_TFDATASET:
-    __all__.append("TFDataset")
-
 if _HAS_CRYPTO:
     __all__.append("crypto")
 

@@ -368,7 +368,7 @@ fn open_snapshot(hexz_path: &str, cache_size: Option<String>) -> Result<Arc<File
 /// **NBD Server:**
 /// - Binds to `127.0.0.1` (localhost only, not exposed to network)
 /// - Automatically selects free ephemeral port
-/// - Serves disk stream only (memory not exposed via NBD)
+/// - Serves primary stream only (memory not exposed via NBD)
 ///
 /// # Overlay File Paths
 ///

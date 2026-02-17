@@ -18,8 +18,8 @@
 //! | Inode | Type      | Name     | Description                |
 //! |-------|-----------|----------|----------------------------|
 //! | 1     | Directory | `.`      | Root directory             |
-//! | 2     | File      | `disk`   | Disk stream (main data)    |
-//! | 3     | File      | `memory` | Memory stream (if present) |
+//! | 2     | File      | `disk`   | Primary stream (main data)    |
+//! | 3     | File      | `memory` | Secondary stream (if present) |
 //!
 //! # Operation Routing
 //!

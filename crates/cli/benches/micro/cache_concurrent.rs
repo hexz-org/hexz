@@ -91,7 +91,7 @@ fn bench_concurrent_read_hit(c: &mut Criterion) {
     // Warm cache: read working set so all subsequent reads hit L1 and page cache.
     for offset in (0..WORKING_SET_BYTES).step_by(READ_SIZE) {
         let _ = snap
-            .read_at(SnapshotStream::Disk, offset, READ_SIZE)
+            .read_at(SnapshotStream::Primary, offset, READ_SIZE)
             .unwrap();
     }
 
@@ -119,7 +119,7 @@ fn bench_concurrent_read_hit(c: &mut Criterion) {
                                 let offset = ((i * 31) % (WORKING_SET_BYTES as usize / READ_SIZE))
                                     * READ_SIZE;
                                 fs.read_at_into_uninit(
-                                    SnapshotStream::Disk,
+                                    SnapshotStream::Primary,
                                     offset as u64,
                                     &mut buf,
                                 )
@@ -158,7 +158,7 @@ fn bench_concurrent_read_miss(c: &mut Criterion) {
     let compressor = Box::new(Lz4Compressor::new());
     let snap = File::new(backend, compressor, None).unwrap();
 
-    let stream_size = snap.size(SnapshotStream::Disk);
+    let stream_size = snap.size(SnapshotStream::Primary);
     // Stride so each thread hits different blocks and ideally different index pages.
     let stride = (stream_size / 32).max(2 * 1024 * 1024);
 
@@ -185,7 +185,7 @@ fn bench_concurrent_read_miss(c: &mut Criterion) {
                             .min(stream_size.saturating_sub(READ_SIZE as u64));
                         handles.push(thread::spawn(move || {
                             let mut buf = [MaybeUninit::uninit(); READ_SIZE];
-                            fs.read_at_into_uninit(SnapshotStream::Disk, offset, &mut buf)
+                            fs.read_at_into_uninit(SnapshotStream::Primary, offset, &mut buf)
                                 .unwrap();
                             black_box(&buf);
                         }));

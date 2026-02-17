@@ -115,7 +115,7 @@ class TestConvertTar:
         meta = convert(tar_path, out_path)
 
         assert os.path.isfile(out_path)
-        assert meta.disk_size > 0
+        assert meta.primary_size > 0
         assert meta["source"]["format"] == "tar"
         assert meta["source"]["total_files"] == 2
 
@@ -347,7 +347,7 @@ class TestConvertGeneral:
         meta = convert(tar_path, out, profile="ml")
 
         assert os.path.isfile(out)
-        assert meta.disk_size > 0
+        assert meta.primary_size > 0
 
     def test_with_zstd_compression(self, test_dir):
         tar_path = os.path.join(test_dir, "zstd_conv.tar")

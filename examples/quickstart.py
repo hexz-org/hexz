@@ -58,11 +58,13 @@ def main():
         # 4. Optional: inspect metadata
         meta = hexz.inspect(snap_path)
         print(
-            f"  Metadata: {meta.num_blocks} block(s), logical size {meta.disk_size} bytes"
+            f"  Metadata: {meta.num_blocks} block(s), logical size {meta.primary_size} bytes"
         )
 
     print("\nDone! You built a snapshot and read from it with hexz.open().")
-    print("Next: try hexz.build() for folders, or hexz.Dataset() for ML training.")
+    print(
+        "Next: try hexz.build() for folders, or check examples/checkpoint_pivot.py for ML."
+    )
 
 
 if __name__ == "__main__":

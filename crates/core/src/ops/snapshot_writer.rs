@@ -11,9 +11,11 @@ use hexz_common::crypto::KeyDerivationParams;
 use std::fs::File;
 use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::algo::compression::Compressor;
 use crate::algo::encryption::Encryptor;
+use crate::algo::hashing::ContentHasher;
 use crate::algo::hashing::blake3::Blake3Hasher;
 use crate::format::{
     header::{CompressionType, FeatureFlags, Header},
@@ -23,6 +25,8 @@ use crate::format::{
 use crate::ops::write::{create_zero_block, is_zero_chunk, write_block};
 
 use crate::algo::dedup::hash_table::StandardHashTable;
+use crate::algo::dedup::parent_index::ParentIndex;
+use crate::api::file::File as HexzFile;
 
 /// Unified writer for Hexz snapshot files.
 ///
@@ -35,6 +39,7 @@ pub struct SnapshotWriter {
     master: MasterIndex,
     global_block_idx: u64,
     dedup_map: StandardHashTable,
+    parent_index: Option<ParentIndex>,
     compressor: Box<dyn Compressor>,
     encryptor: Option<Box<dyn Encryptor>>,
     hasher: Blake3Hasher,
@@ -94,6 +99,7 @@ pub struct SnapshotWriterBuilder {
     block_size: u32,
     variable_blocks: bool,
     encryption_params: Option<KeyDerivationParams>,
+    parents: Vec<Arc<HexzFile>>,
 }
 
 impl SnapshotWriterBuilder {
@@ -121,6 +127,7 @@ impl SnapshotWriterBuilder {
             block_size: 65536,
             variable_blocks: false,
             encryption_params: None,
+            parents: Vec::new(),
         }
     }
 
@@ -153,8 +160,25 @@ impl SnapshotWriterBuilder {
         self
     }
 
+    /// Sets a parent snapshot to enable cross-file deduplication.
+    pub fn parent(mut self, parent: Arc<HexzFile>) -> Self {
+        self.parents.push(parent);
+        self
+    }
+
+    /// Sets multiple parent snapshots to enable cross-file deduplication.
+    pub fn parents(mut self, parents: Vec<Arc<HexzFile>>) -> Self {
+        self.parents.extend(parents);
+        self
+    }
+
     /// Builds the `SnapshotWriter` and creates the output file.
     pub fn build(self) -> Result<SnapshotWriter> {
+        let parent_index = if !self.parents.is_empty() {
+            Some(ParentIndex::new(&self.parents)?)
+        } else {
+            None
+        };
         SnapshotWriter::new(
             &self.output,
             self.compressor,
@@ -163,6 +187,7 @@ impl SnapshotWriterBuilder {
             self.compression_type,
             self.variable_blocks,
             self.encryption_params,
+            parent_index,
         )
     }
 }
@@ -186,6 +211,7 @@ impl SnapshotWriter {
         compression_type: CompressionType,
         variable_blocks: bool,
         encryption_params: Option<KeyDerivationParams>,
+        parent_index: Option<ParentIndex>,
     ) -> Result<Self> {
         let mut out = File::create(output)?;
         out.write_all(&[0u8; HEADER_SIZE])?;
@@ -196,6 +222,7 @@ impl SnapshotWriter {
             master: MasterIndex::default(),
             global_block_idx: 0,
             dedup_map: StandardHashTable::with_capacity(4096),
+            parent_index,
             compressor,
             encryptor,
             hasher: Blake3Hasher,
@@ -248,34 +275,47 @@ impl SnapshotWriter {
 
         // Continue logical positions from the end of previous streams of the same type.
         let stream_start = if is_disk {
-            self.master.disk_size
+            self.master.primary_size
         } else {
-            self.master.memory_size
+            self.master.secondary_size
         };
         self.page_start_logical = stream_start;
         self.current_logical_pos = stream_start;
 
         if is_disk {
-            self.master.disk_size += total_size;
+            self.master.primary_size += total_size;
         } else {
-            self.master.memory_size += total_size;
+            self.master.secondary_size += total_size;
         }
     }
 
-    /// Writes a data block: zero-detect → compress → encrypt → dedup → index.
+    /// Writes a data block: zero-detect → check parent → compress → encrypt → dedup → index.
     pub fn write_data_block(&mut self, data: &[u8]) -> Result<()> {
         let chunk_len = data.len() as u32;
 
-        let info = if is_zero_chunk(data) {
-            create_zero_block(chunk_len)
+        if is_zero_chunk(data) {
+            self.page.blocks.push(create_zero_block(chunk_len));
         } else {
+            // Check parent index for cross-file CDC deduplication.
+            if let Some(p_index) = &self.parent_index {
+                let hash = self.hasher.hash_fixed(data);
+                if p_index.hashes.contains(&hash) {
+                    // This block's content exists in the parent. Write a parent
+                    // reference instead of new data and return immediately.
+                    // Store the hash so children of this snapshot can also dedup against it.
+                    return self.write_parent_ref(&hash, chunk_len);
+                }
+            }
+
+            // Block not found in parent, so write it to the current file.
+            // `write_block` handles intra-file deduplication.
             let enc_ref = self.encryptor.as_deref();
             let dedup = if enc_ref.is_some() {
                 None
             } else {
                 Some(&mut self.dedup_map)
             };
-            write_block(
+            let info = write_block(
                 &mut self.out,
                 data,
                 self.global_block_idx,
@@ -287,10 +327,10 @@ impl SnapshotWriter {
                 &mut self.hash_buf,
                 &mut self.compress_buf,
                 &mut self.encrypt_buf,
-            )?
-        };
+            )?;
+            self.page.blocks.push(info);
+        }
 
-        self.page.blocks.push(info);
         self.global_block_idx += 1;
         self.current_logical_pos += chunk_len as u64;
 
@@ -312,6 +352,13 @@ impl SnapshotWriter {
         hash: &[u8; 32],
         logical_len: u32,
     ) -> Result<()> {
+        // Check parent index for cross-file deduplication.
+        if let Some(p_index) = &self.parent_index {
+            if p_index.hashes.contains(hash) {
+                return self.write_parent_ref(hash, logical_len);
+            }
+        }
+
         let checksum = crc32fast::hash(compressed);
         let final_len = compressed.len() as u32;
 
@@ -331,6 +378,7 @@ impl SnapshotWriter {
             length: final_len,
             logical_len,
             checksum,
+            hash: *hash,
         };
 
         self.page.blocks.push(info);
@@ -345,12 +393,13 @@ impl SnapshotWriter {
     }
 
     /// Writes a parent-reference marker for thin snapshots.
-    pub fn write_parent_ref(&mut self, logical_len: u32) -> Result<()> {
+    pub fn write_parent_ref(&mut self, hash: &[u8; 32], logical_len: u32) -> Result<()> {
         self.page.blocks.push(BlockInfo {
             offset: BLOCK_OFFSET_PARENT,
             length: 0,
             logical_len,
             checksum: 0,
+            hash: *hash,
         });
 
         self.global_block_idx += 1;
@@ -411,8 +460,8 @@ impl SnapshotWriter {
             encryption: self.encryption_params,
             compression: self.compression_type,
             features: FeatureFlags {
-                has_disk: !self.master.disk_pages.is_empty(),
-                has_memory: !self.master.memory_pages.is_empty(),
+                has_disk: !self.master.primary_pages.is_empty(),
+                has_memory: !self.master.secondary_pages.is_empty(),
                 variable_blocks: self.variable_blocks,
             },
         };
@@ -452,9 +501,9 @@ impl SnapshotWriter {
         };
 
         if self.is_disk {
-            self.master.disk_pages.push(entry);
+            self.master.primary_pages.push(entry);
         } else {
-            self.master.memory_pages.push(entry);
+            self.master.secondary_pages.push(entry);
         }
 
         // Clear blocks but preserve Vec capacity for next page
@@ -521,7 +570,7 @@ mod tests {
             .unwrap();
 
         w.begin_stream(true, 4096);
-        w.write_parent_ref(4096).unwrap();
+        w.write_parent_ref(&[0u8; 32], 4096).unwrap();
         w.end_stream().unwrap();
         w.finalize(Some("/parent.hxz".to_string()), None).unwrap();
 

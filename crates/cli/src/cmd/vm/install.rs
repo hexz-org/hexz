@@ -32,7 +32,7 @@
 //!
 //! - `qemu-img`: For creating virtual disks
 //! - `qemu-system-x86_64`: For running the installer VM
-//! - Sufficient disk space for temporary raw image (= `disk_size`)
+//! - Sufficient disk space for temporary raw image (= `primary_size`)
 //!
 //! # Performance Notes
 //!
@@ -66,7 +66,7 @@ const DEFAULT_BLOCK_SIZE: u32 = 65536;
 /// through the standard snapshot creation pipeline.
 ///
 /// **Constraints:** Requires `qemu-img` and `qemu-system-x86_64` to be
-/// installed and in `$PATH`. The `disk_size` and `ram` parameters are passed
+/// installed and in `$PATH`. The `primary_size` and `ram` parameters are passed
 /// directly to QEMU tooling and must use size suffixes they understand (for
 /// example `10G`, `4G`).
 ///
@@ -75,14 +75,14 @@ const DEFAULT_BLOCK_SIZE: u32 = 65536;
 /// snapshot to `output`.
 pub fn run(
     iso: PathBuf,
-    disk_size: String,
+    primary_size: String,
     ram: String,
     output: PathBuf,
     no_graphics: bool,
     vnc: bool,
     cdc: bool,
 ) -> Result<()> {
-    println!("Creating temporary raw disk ({})...", disk_size);
+    println!("Creating temporary raw disk ({})...", primary_size);
     let temp_dir = tempfile::tempdir()?;
     let raw_path = temp_dir.path().join("temp_install.raw");
 
@@ -91,7 +91,7 @@ pub fn run(
         .arg("-f")
         .arg("raw")
         .arg(&raw_path)
-        .arg(&disk_size)
+        .arg(&primary_size)
         .status()
         .context("Failed to create raw disk. Is qemu-img installed?")?;
 

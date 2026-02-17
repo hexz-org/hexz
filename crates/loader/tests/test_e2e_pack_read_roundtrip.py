@@ -224,6 +224,6 @@ def test_e2e_inspect_after_pack(hexz_binary, e2e_temp_dir):
     _pack_with_cli(hexz_binary, disk_path, snap_path, "lz4")
 
     meta = hexz.inspect(snap_path)
-    assert meta.disk_size == size
+    assert meta.primary_size == size
     assert meta.compression is not None
     assert meta.version >= 1

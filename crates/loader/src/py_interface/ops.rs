@@ -63,7 +63,7 @@
 //! print(f"Format version: {meta['version']}")
 //! print(f"Compression: {meta['compression']}")
 //! print(f"Encrypted: {meta['encrypted']}")
-//! print(f"Disk size: {meta['disk_size']} bytes")
+//! print(f"Primary size: {meta['primary_size']} bytes")
 //! print(f"Compression ratio: {meta['ratio']:.2f}x")
 //!
 //! # Check version compatibility
@@ -308,8 +308,8 @@ pub fn get_max_supported_version() -> u32 {
 /// - `compression` (str): Compression algorithm ("Lz4" or "Zstd")
 /// - `encrypted` (bool): Whether snapshot is encrypted
 /// - `parent_path` (str | None): Path to parent snapshot (for thin snapshots)
-/// - `disk_size` (int): Uncompressed disk stream size in bytes
-/// - `memory_size` (int): Uncompressed memory stream size in bytes
+/// - `primary_size` (int): Uncompressed primary stream size in bytes
+/// - `secondary_size` (int): Uncompressed secondary stream size in bytes
 /// - `file_size` (int): Compressed snapshot file size on disk
 /// - `ratio` (float): Compression ratio (uncompressed / compressed)
 /// - Additional keys from custom metadata (if present)
@@ -332,7 +332,7 @@ pub fn get_max_supported_version() -> u32 {
 /// print(f"Block size: {meta['block_size']} bytes")
 ///
 /// # Sizes and compression
-/// print(f"Disk size: {meta['disk_size'] / (1024**3):.2f} GB")
+/// print(f"Primary size: {meta['primary_size'] / (1024**3):.2f} GB")
 /// print(f"File size: {meta['file_size'] / (1024**3):.2f} GB")
 /// print(f"Compression ratio: {meta['ratio']:.2f}x")
 ///
@@ -397,8 +397,8 @@ pub fn inspect(py: Python<'_>, path: String) -> PyResult<PyObject> {
     dict.set_item("compression", format!("{:?}", info.compression))?;
     dict.set_item("encrypted", info.encrypted)?;
     dict.set_item("parent_path", info.parent_path)?;
-    dict.set_item("disk_size", info.disk_size)?;
-    dict.set_item("memory_size", info.memory_size)?;
+    dict.set_item("primary_size", info.primary_size)?;
+    dict.set_item("secondary_size", info.secondary_size)?;
     dict.set_item("file_size", info.file_size)?;
     dict.set_item("ratio", ratio)?;
 
@@ -740,7 +740,7 @@ fn read_qmp(stream: &mut std::os::unix::net::UnixStream) -> PyResult<serde_json:
 /// - VM is paused during memory dump (typically 1-10 seconds depending on RAM size)
 /// - Memory dump uses `exec:cat` which is slower than native QEMU migration formats
 /// - Overlay merge may take several seconds for large disks
-/// - Total downtime: memory_size_gb / 0.5-2 GB/s (rough estimate)
+/// - Total downtime: secondary_size_gb / 0.5-2 GB/s (rough estimate)
 ///
 /// # Safety
 ///
@@ -804,6 +804,7 @@ pub fn snapshot_vm(
             DEFAULT_CDC_MIN_CHUNK,
             DEFAULT_CDC_AVG_CHUNK,
             DEFAULT_CDC_MAX_CHUNK,
+            None,
         )?;
         builder.merge_overlay(py, base_path, overlay_path, false)?;
         builder.add_memory_file(py, mem_path)?;

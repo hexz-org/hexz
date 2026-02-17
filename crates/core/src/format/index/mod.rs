@@ -33,7 +33,7 @@
 //! # Random Access Workflow
 //!
 //! To read data at logical offset `O`:
-//! 1. Binary search `master.disk_pages` for page covering `O`
+//! 1. Binary search `master.primary_pages` for page covering `O`
 //! 2. Read and deserialize the index page
 //! 3. Find block(s) overlapping `O`
 //! 4. Read compressed block from `BlockInfo.offset`
@@ -127,8 +127,8 @@ use serde::{Deserialize, Serialize};
 ///
 /// // Calculate how many pages are needed for a 1 GB disk image
 /// let block_size = 4096;
-/// let disk_size = 1_000_000_000u64;
-/// let block_count = (disk_size + block_size - 1) / block_size;
+/// let primary_size = 1_000_000_000u64;
+/// let block_count = (primary_size + block_size - 1) / block_size;
 /// let page_count = (block_count as usize + ENTRIES_PER_PAGE - 1) / ENTRIES_PER_PAGE;
 ///
 /// println!("Blocks: {}", block_count);
@@ -170,6 +170,7 @@ pub const ENTRIES_PER_PAGE: usize = 4096;
 ///     length: 2048,         // Compressed to 2KB
 ///     logical_len: 4096,    // Original 4KB
 ///     checksum: 0x12345678,
+///     hash: [0u8; 32],
 /// };
 ///
 /// // Sparse (zero) block
@@ -178,21 +179,30 @@ pub const ENTRIES_PER_PAGE: usize = 4096;
 ///     length: 0,           // Not stored
 ///     logical_len: 4096,   // But logically 4KB
 ///     checksum: 0,
+///     hash: [0u8; 32],
 /// };
 /// ```
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 pub struct BlockInfo {
     /// Physical offset in the snapshot file (bytes).
+    #[serde(alias = "offset")]
     pub offset: u64,
 
     /// Compressed size in bytes (0 for sparse blocks).
+    #[serde(alias = "length")]
     pub length: u32,
 
     /// Uncompressed logical size in bytes.
+    #[serde(alias = "logical_len")]
     pub logical_len: u32,
 
     /// CRC32 checksum of compressed data.
+    #[serde(alias = "checksum")]
     pub checksum: u32,
+
+    /// BLAKE3 hash of the uncompressed data chunk.
+    #[serde(default)]
+    pub hash: [u8; 32],
 }
 
 impl BlockInfo {
@@ -209,6 +219,7 @@ impl BlockInfo {
     /// - `length = 0` (no compressed data)
     /// - `logical_len = len` (represents `len` bytes of zeros)
     /// - `checksum = 0` (no data to checksum)
+    /// - `hash = [0; 32]`
     ///
     /// # Parameters
     ///
@@ -234,6 +245,7 @@ impl BlockInfo {
             length: 0,
             logical_len: len,
             checksum: 0,
+            hash: [0u8; 32],
         }
     }
 
@@ -257,6 +269,7 @@ impl BlockInfo {
     ///     length: 2048,
     ///     logical_len: 4096,
     ///     checksum: 0x12345678,
+    ///     hash: [0u8; 32],
     /// };
     /// assert!(!normal.is_sparse());
     /// ```
@@ -284,6 +297,7 @@ impl BlockInfo {
     ///     length: 0,
     ///     logical_len: 4096,
     ///     checksum: 0,
+    ///     hash: [0u8; 32],
     /// };
     /// assert!(parent_block.is_parent_ref());
     /// ```
@@ -309,7 +323,7 @@ impl BlockInfo {
 ///
 /// To find the page covering logical offset `O`:
 /// ```text
-/// binary_search(master.disk_pages, |p| p.start_logical.cmp(&O))
+/// binary_search(master.primary_pages, |p| p.start_logical.cmp(&O))
 /// ```
 ///
 /// # Serialization
@@ -347,15 +361,15 @@ pub struct PageEntry {
 /// Top-level index stored at the end of a snapshot file.
 ///
 /// The master index is the entry point for all random access operations. It
-/// contains separate page directories for disk and memory streams, plus logical
+/// contains separate page directories for disk and secondary streams, plus logical
 /// size metadata for each stream.
 ///
 /// # Structure
 ///
-/// - **disk_pages**: Index entries for the disk stream (persistent storage)
-/// - **memory_pages**: Index entries for the memory stream (volatile state)
-/// - **disk_size**: Total logical size of disk stream (uncompressed bytes)
-/// - **memory_size**: Total logical size of memory stream (uncompressed bytes)
+/// - **primary_pages**: Index entries for the primary stream (persistent storage)
+/// - **secondary_pages**: Index entries for the secondary stream (volatile state)
+/// - **primary_size**: Total logical size of primary stream (uncompressed bytes)
+/// - **secondary_size**: Total logical size of secondary stream (uncompressed bytes)
 ///
 /// # Location
 ///
@@ -369,8 +383,8 @@ pub struct PageEntry {
 /// # Random Access Algorithm
 ///
 /// ```text
-/// To read from disk stream at offset O:
-/// 1. page_idx = binary_search(master.disk_pages, |p| p.start_logical.cmp(&O))
+/// To read from primary stream at offset O:
+/// 1. page_idx = binary_search(master.primary_pages, |p| p.start_logical.cmp(&O))
 /// 2. page = read_and_deserialize(page_entry[page_idx])
 /// 3. block_info = find_block_in_page(page, O)
 /// 4. compressed = backend.read_exact(block_info.offset, block_info.length)
@@ -380,7 +394,7 @@ pub struct PageEntry {
 ///
 /// # Dual Streams
 ///
-/// Disk and memory streams are independently indexed. This enables:
+/// Disk and secondary streams are independently indexed. This enables:
 /// - VM snapshots (disk = disk image, memory = RAM dump)
 /// - Application snapshots (disk = state, memory = heap)
 /// - Separate compression tuning per stream
@@ -391,7 +405,7 @@ pub struct PageEntry {
 /// use hexz_core::format::index::{MasterIndex, PageEntry};
 ///
 /// let master = MasterIndex {
-///     disk_pages: vec![
+///     primary_pages: vec![
 ///         PageEntry {
 ///             offset: 4096,
 ///             length: 65536,
@@ -399,27 +413,31 @@ pub struct PageEntry {
 ///             start_logical: 0,
 ///         }
 ///     ],
-///     memory_pages: vec![],
-///     disk_size: 1_000_000_000,  // 1GB logical
-///     memory_size: 0,
+///     secondary_pages: vec![],
+///     primary_size: 1_000_000_000,  // 1GB logical
+///     secondary_size: 0,
 /// };
 ///
-/// println!("Disk stream: {} GB", master.disk_size / (1024 * 1024 * 1024));
-/// println!("Index pages: {}", master.disk_pages.len());
+/// println!("Primary stream: {} GB", master.primary_size / (1024 * 1024 * 1024));
+/// println!("Index pages: {}", master.primary_pages.len());
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MasterIndex {
-    /// Index pages for the disk stream.
-    pub disk_pages: Vec<PageEntry>,
+    /// Index pages for the primary stream (formerly disk).
+    #[serde(alias = "primary_pages")]
+    pub primary_pages: Vec<PageEntry>,
 
-    /// Index pages for the memory stream.
-    pub memory_pages: Vec<PageEntry>,
+    /// Index pages for the secondary stream (formerly memory).
+    #[serde(alias = "secondary_pages")]
+    pub secondary_pages: Vec<PageEntry>,
 
-    /// Total logical size of the disk stream (uncompressed bytes).
-    pub disk_size: u64,
+    /// Total logical size of the primary stream (formerly disk).
+    #[serde(alias = "primary_size")]
+    pub primary_size: u64,
 
-    /// Total logical size of the memory stream (uncompressed bytes).
-    pub memory_size: u64,
+    /// Total logical size of the secondary stream (formerly memory).
+    #[serde(alias = "secondary_size")]
+    pub secondary_size: u64,
 }
 
 impl MasterIndex {
@@ -499,12 +517,14 @@ impl MasterIndex {
 ///             length: 2048,
 ///             logical_len: 4096,
 ///             checksum: 0x12345678,
+///             hash: [0u8; 32],
 ///         },
 ///         BlockInfo {
 ///             offset: 6144,
 ///             length: 1024,
 ///             logical_len: 4096,
 ///             checksum: 0x9ABCDEF0,
+///             hash: [0u8; 32],
 ///         },
 ///     ],
 /// };
@@ -555,6 +575,7 @@ mod tests {
             length: 0,
             logical_len: 4096,
             checksum: 0,
+            hash: [0u8; 32],
         };
         assert!(manual_sparse.is_sparse());
     }
@@ -566,6 +587,7 @@ mod tests {
             length: 2048,
             logical_len: 4096,
             checksum: 0x12345678,
+            hash: [0u8; 32],
         };
         assert!(!normal.is_sparse());
     }
@@ -577,6 +599,7 @@ mod tests {
             length: 0,
             logical_len: 4096,
             checksum: 0,
+            hash: [0u8; 32],
         };
         assert!(!parent_ref.is_sparse());
     }
@@ -588,6 +611,7 @@ mod tests {
             length: 0,
             logical_len: 4096,
             checksum: 0,
+            hash: [0u8; 32],
         };
         assert!(parent_ref.is_parent_ref());
     }
@@ -599,6 +623,7 @@ mod tests {
             length: 2048,
             logical_len: 4096,
             checksum: 0x12345678,
+            hash: [0u8; 32],
         };
         assert!(!normal.is_parent_ref());
 
@@ -623,6 +648,7 @@ mod tests {
             length: 2048,
             logical_len: 4096,
             checksum: 0x12345678,
+            hash: [0u8; 32],
         };
 
         let bytes = bincode::serialize(&block).unwrap();
@@ -670,16 +696,16 @@ mod tests {
     #[test]
     fn test_master_index_default() {
         let master = MasterIndex::default();
-        assert!(master.disk_pages.is_empty());
-        assert!(master.memory_pages.is_empty());
-        assert_eq!(master.disk_size, 0);
-        assert_eq!(master.memory_size, 0);
+        assert!(master.primary_pages.is_empty());
+        assert!(master.secondary_pages.is_empty());
+        assert_eq!(master.primary_size, 0);
+        assert_eq!(master.secondary_size, 0);
     }
 
     #[test]
     fn test_master_index_with_pages() {
         let master = MasterIndex {
-            disk_pages: vec![
+            primary_pages: vec![
                 PageEntry {
                     offset: 4096,
                     length: 65536,
@@ -693,35 +719,35 @@ mod tests {
                     start_logical: 16777216,
                 },
             ],
-            memory_pages: vec![],
-            disk_size: 1_000_000_000,
-            memory_size: 0,
+            secondary_pages: vec![],
+            primary_size: 1_000_000_000,
+            secondary_size: 0,
         };
 
-        assert_eq!(master.disk_pages.len(), 2);
-        assert_eq!(master.disk_size, 1_000_000_000);
+        assert_eq!(master.primary_pages.len(), 2);
+        assert_eq!(master.primary_size, 1_000_000_000);
     }
 
     #[test]
     fn test_master_index_serialization() {
         let master = MasterIndex {
-            disk_pages: vec![PageEntry {
+            primary_pages: vec![PageEntry {
                 offset: 4096,
                 length: 65536,
                 start_block: 0,
                 start_logical: 0,
             }],
-            memory_pages: vec![],
-            disk_size: 1_000_000_000,
-            memory_size: 0,
+            secondary_pages: vec![],
+            primary_size: 1_000_000_000,
+            secondary_size: 0,
         };
 
         let bytes = bincode::serialize(&master).unwrap();
         let deserialized: MasterIndex = bincode::deserialize(&bytes).unwrap();
 
-        assert_eq!(deserialized.disk_pages.len(), master.disk_pages.len());
-        assert_eq!(deserialized.disk_size, master.disk_size);
-        assert_eq!(deserialized.memory_size, master.memory_size);
+        assert_eq!(deserialized.primary_pages.len(), master.primary_pages.len());
+        assert_eq!(deserialized.primary_size, master.primary_size);
+        assert_eq!(deserialized.secondary_size, master.secondary_size);
     }
 
     #[test]
@@ -739,12 +765,14 @@ mod tests {
                     length: 2048,
                     logical_len: 4096,
                     checksum: 0x12345678,
+                    hash: [0u8; 32],
                 },
                 BlockInfo {
                     offset: 6144,
                     length: 1024,
                     logical_len: 4096,
                     checksum: 0x9ABCDEF0,
+                    hash: [0u8; 32],
                 },
             ],
         };
@@ -763,12 +791,14 @@ mod tests {
                     length: 2048,
                     logical_len: 4096,
                     checksum: 0x12345678,
+                    hash: [0u8; 32],
                 },
                 BlockInfo {
                     offset: 6144,
                     length: 1024,
                     logical_len: 4096,
                     checksum: 0x9ABCDEF0,
+                    hash: [0u8; 32],
                 },
             ],
         };
