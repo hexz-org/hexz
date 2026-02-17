@@ -49,6 +49,7 @@ impl DiskOnlyFixture {
             min_chunk: 16384,
             avg_chunk: 65536,
             max_chunk: 131072,
+            ..Default::default()
         };
         pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
 
@@ -96,6 +97,7 @@ impl DualStreamFixture {
             min_chunk: 16384,
             avg_chunk: 65536,
             max_chunk: 131072,
+            ..Default::default()
         };
         pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
 

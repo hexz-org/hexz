@@ -735,6 +735,7 @@ mod tests {
             min_chunk: 4096,
             avg_chunk: 8192,
             max_chunk: 16384,
+            ..Default::default()
         };
 
         pack_snapshot(config, None::<fn(u64, u64)>).expect("Failed to pack snapshot");
@@ -1065,6 +1066,7 @@ mod tests {
             min_chunk: 4096,
             avg_chunk: 8192,
             max_chunk: 16384,
+            ..Default::default()
         };
 
         pack_snapshot(config, None::<fn(u64, u64)>).expect("Failed to pack snapshot");

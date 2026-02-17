@@ -301,6 +301,49 @@ impl SnapshotWriter {
         Ok(())
     }
 
+    /// Writes a pre-compressed block: dedup → write → index.
+    ///
+    /// Used by the parallel packing pipeline where compression happens
+    /// on worker threads. The caller provides already-compressed data
+    /// and its content hash.
+    pub fn write_precompressed_block(
+        &mut self,
+        compressed: &[u8],
+        hash: &[u8; 32],
+        logical_len: u32,
+    ) -> Result<()> {
+        let checksum = crc32fast::hash(compressed);
+        let final_len = compressed.len() as u32;
+
+        // Dedup check using the provided hash
+        let offset = if let Some(existing_offset) = self.dedup_map.get(hash) {
+            existing_offset
+        } else {
+            let off = self.current_offset;
+            self.dedup_map.insert(*hash, off);
+            self.out.write_all(compressed)?;
+            self.current_offset += final_len as u64;
+            off
+        };
+
+        let info = BlockInfo {
+            offset,
+            length: final_len,
+            logical_len,
+            checksum,
+        };
+
+        self.page.blocks.push(info);
+        self.global_block_idx += 1;
+        self.current_logical_pos += logical_len as u64;
+
+        if self.page.blocks.len() >= ENTRIES_PER_PAGE {
+            self.flush_page()?;
+        }
+
+        Ok(())
+    }
+
     /// Writes a parent-reference marker for thin snapshots.
     pub fn write_parent_ref(&mut self, logical_len: u32) -> Result<()> {
         self.page.blocks.push(BlockInfo {

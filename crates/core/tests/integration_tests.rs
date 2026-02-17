@@ -26,3 +26,6 @@ mod file_coverage_tests;
 
 #[path = "integration/crash_safety_tests.rs"]
 mod crash_safety_tests;
+
+#[path = "integration/parallel_pack_tests.rs"]
+mod parallel_pack_tests;

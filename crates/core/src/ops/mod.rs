@@ -71,6 +71,8 @@
 
 pub mod inspect;
 pub mod pack;
+pub mod parallel_pack;
+pub mod progress;
 #[cfg(feature = "signing")]
 pub mod sign;
 pub mod snapshot_writer;

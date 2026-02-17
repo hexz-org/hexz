@@ -175,6 +175,7 @@ pub fn run(
         min_chunk,
         avg_chunk,
         max_chunk,
+        ..Default::default()
     };
 
     // Run the packing operation with progress callback

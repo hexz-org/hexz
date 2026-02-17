@@ -214,7 +214,10 @@ use std::path::PathBuf;
     cdc=false,
     min_chunk=DEFAULT_CDC_MIN_CHUNK,
     avg_chunk=DEFAULT_CDC_AVG_CHUNK,
-    max_chunk=DEFAULT_CDC_MAX_CHUNK
+    max_chunk=DEFAULT_CDC_MAX_CHUNK,
+    parallel=true,
+    num_workers=0,
+    show_progress=true
 ))]
 pub fn pack(
     py: Python<'_>,
@@ -229,6 +232,9 @@ pub fn pack(
     min_chunk: u32,
     avg_chunk: u32,
     max_chunk: u32,
+    parallel: bool,
+    num_workers: usize,
+    show_progress: bool,
 ) -> PyResult<()> {
     if encrypt && password.is_none() {
         return Err(PyValueError::new_err(
@@ -249,6 +255,9 @@ pub fn pack(
         min_chunk,
         avg_chunk,
         max_chunk,
+        parallel,
+        num_workers,
+        show_progress,
     };
 
     // Release the GIL during the potentially long-running pack operation

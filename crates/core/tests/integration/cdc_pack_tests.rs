@@ -43,6 +43,7 @@ fn test_cdc_pack_lz4() {
         min_chunk: 16384,
         avg_chunk: 65536,
         max_chunk: 131072,
+        ..Default::default()
     };
 
     pack_snapshot(config, None::<fn(u64, u64)>).expect("CDC packing failed");
@@ -84,6 +85,7 @@ fn test_cdc_pack_zstd() {
         min_chunk: 16384,
         avg_chunk: 65536,
         max_chunk: 131072,
+        ..Default::default()
     };
 
     pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
@@ -123,6 +125,7 @@ fn test_cdc_encrypted() {
         min_chunk: 16384,
         avg_chunk: 65536,
         max_chunk: 131072,
+        ..Default::default()
     };
 
     pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
@@ -174,6 +177,7 @@ fn test_cdc_small_chunks() {
         min_chunk: 4096,
         avg_chunk: 16384,
         max_chunk: 65536,
+        ..Default::default()
     };
 
     pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
@@ -217,6 +221,7 @@ fn test_cdc_deduplication() {
         min_chunk: 16384,
         avg_chunk: 65536,
         max_chunk: 131072,
+        ..Default::default()
     };
 
     pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
@@ -269,6 +274,7 @@ fn test_cdc_dual_stream() {
         min_chunk: 16384,
         avg_chunk: 65536,
         max_chunk: 131072,
+        ..Default::default()
     };
 
     pack_snapshot(config, None::<fn(u64, u64)>).unwrap();

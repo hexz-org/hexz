@@ -288,6 +288,7 @@ use crate::algo::compression::{create_compressor_from_str, zstd::ZstdCompressor}
 use crate::algo::dedup::cdc::StreamChunker;
 use crate::algo::dedup::dcam::DedupeParams;
 use crate::algo::encryption::{Encryptor, aes_gcm::AesGcmEncryptor};
+use crate::ops::parallel_pack::{CompressedChunk, RawChunk};
 use crate::ops::snapshot_writer::SnapshotWriter;
 
 /// Configuration parameters for snapshot packing.
@@ -348,6 +349,12 @@ pub struct PackConfig {
     pub avg_chunk: u32,
     /// Maximum chunk size for CDC.
     pub max_chunk: u32,
+    /// Enable parallel compression (use multiple CPU cores).
+    pub parallel: bool,
+    /// Number of worker threads (0 = auto-detect).
+    pub num_workers: usize,
+    /// Show progress bar (if no callback provided).
+    pub show_progress: bool,
 }
 
 impl Default for PackConfig {
@@ -365,6 +372,9 @@ impl Default for PackConfig {
             min_chunk: 16384,
             avg_chunk: 65536,
             max_chunk: 131072,
+            parallel: true,      // Enable by default for performance
+            num_workers: 0,      // Auto-detect CPU cores
+            show_progress: true, // Show progress by default
         }
     }
 }
@@ -752,26 +762,57 @@ where
         writer.write_dictionary(d)?;
     }
 
+    // Set up progress bar if show_progress is enabled and no user callback given
+    let disk_size = config
+        .disk
+        .as_ref()
+        .and_then(|p| std::fs::metadata(p).ok())
+        .map(|m| m.len())
+        .unwrap_or(0);
+    let memory_size = config
+        .memory
+        .as_ref()
+        .and_then(|p| std::fs::metadata(p).ok())
+        .map(|m| m.len())
+        .unwrap_or(0);
+    let total_size = disk_size + memory_size;
+
+    let progress_bar = if config.show_progress && progress_callback.is_none() && total_size > 0 {
+        Some(crate::ops::progress::PackProgress::new(
+            total_size, "Packing",
+        ))
+    } else {
+        None
+    };
+
     // Process disk stream
     if let Some(ref path) = config.disk {
-        process_stream(
-            path.clone(),
-            true,
-            &mut writer,
-            &config,
-            progress_callback.as_ref(),
-        )?;
+        let cb = |pos: u64, total: u64| {
+            if let Some(ref pb) = progress_bar {
+                pb.set_position(pos);
+            }
+            if let Some(ref cb) = progress_callback {
+                cb(pos, total);
+            }
+        };
+        process_stream(path.clone(), true, &mut writer, &config, Some(&cb))?;
     }
 
     // Process memory stream
     if let Some(ref path) = config.memory {
-        process_stream(
-            path.clone(),
-            false,
-            &mut writer,
-            &config,
-            progress_callback.as_ref(),
-        )?;
+        let cb = |pos: u64, total: u64| {
+            if let Some(ref pb) = progress_bar {
+                pb.set_position(disk_size + pos);
+            }
+            if let Some(ref cb) = progress_callback {
+                cb(pos, total);
+            }
+        };
+        process_stream(path.clone(), false, &mut writer, &config, Some(&cb))?;
+    }
+
+    if let Some(ref pb) = progress_bar {
+        pb.finish();
     }
 
     writer.finalize(None, None)?;
@@ -903,6 +944,28 @@ where
 
     writer.begin_stream(is_disk, len);
 
+    // Use parallel path when enabled and not encrypting (encryption needs sequential nonces)
+    if config.parallel && !config.encrypt {
+        process_stream_parallel(f, len, writer, config, progress_callback)?;
+    } else {
+        process_stream_serial(f, len, writer, config, progress_callback)?;
+    }
+
+    writer.end_stream()?;
+    Ok(())
+}
+
+/// Serial (original) stream processing path.
+fn process_stream_serial<F>(
+    f: File,
+    len: u64,
+    writer: &mut SnapshotWriter,
+    config: &PackConfig,
+    progress_callback: Option<&F>,
+) -> Result<()>
+where
+    F: Fn(u64, u64),
+{
     let mut logical_pos = 0u64;
 
     if config.cdc_enabled {
@@ -923,7 +986,6 @@ where
             }
         }
     } else {
-        // Fixed chunker: zero-copy path via next_chunk() buffer reuse
         let mut chunker = FixedChunker::new(f, config.block_size as usize);
         loop {
             match chunker.next_chunk() {
@@ -940,7 +1002,199 @@ where
         }
     }
 
-    writer.end_stream()?;
+    Ok(())
+}
+
+/// Parallel stream processing: single persistent pipeline for the entire stream.
+///
+/// Architecture:
+/// - Reader thread: reads input file, chunks it, sends to workers
+/// - N worker threads: compress + BLAKE3 hash chunks in parallel
+/// - Main thread: receives compressed chunks, reorders via BTreeMap, writes sequentially
+///
+/// This avoids per-batch thread pool creation overhead (the old approach created
+/// ~2800 thread pools for a 180GB file).
+fn process_stream_parallel<F>(
+    f: File,
+    len: u64,
+    writer: &mut SnapshotWriter,
+    config: &PackConfig,
+    progress_callback: Option<&F>,
+) -> Result<()>
+where
+    F: Fn(u64, u64),
+{
+    use crate::algo::compression::Compressor;
+    use crossbeam::channel::bounded;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    let num_workers = if config.num_workers > 0 {
+        config.num_workers
+    } else {
+        num_cpus::get()
+    };
+
+    // Create shared compressor for all workers
+    let (compressor, _) = create_compressor_from_str(&config.compression, None, None)?;
+    let compressor: Arc<Box<dyn Compressor + Send + Sync>> = Arc::new(compressor);
+
+    // Bounded channels for backpressure: enough to keep workers busy without excessive memory.
+    // Each in-flight chunk is ~64KB, so num_workers*4 chunks ≈ num_workers*256KB.
+    let channel_size = num_workers * 4;
+    let (tx_raw, rx_raw) = bounded::<(u64, RawChunk)>(channel_size);
+    let (tx_compressed, rx_compressed) = bounded::<(u64, CompressedChunk)>(channel_size);
+
+    // Spawn persistent compression workers
+    let mut workers = Vec::with_capacity(num_workers);
+    for _ in 0..num_workers {
+        let rx = rx_raw.clone();
+        let tx = tx_compressed.clone();
+        let comp = compressor.clone();
+        workers.push(std::thread::spawn(move || -> Result<()> {
+            for (seq, chunk) in rx {
+                let compressed_data = comp.compress(&chunk.data)?;
+                let hash = blake3::hash(&chunk.data);
+                if tx
+                    .send((
+                        seq,
+                        CompressedChunk {
+                            compressed: compressed_data,
+                            hash: hash.into(),
+                            logical_offset: chunk.logical_offset,
+                            original_size: chunk.data.len(),
+                        },
+                    ))
+                    .is_err()
+                {
+                    break; // Receiver dropped, pipeline shutting down
+                }
+            }
+            Ok(())
+        }));
+    }
+
+    // Drop our copies so channels close when all real holders finish
+    drop(rx_raw);
+    drop(tx_compressed);
+
+    // Spawn reader thread: reads input, chunks it, feeds workers
+    let reader_config = config.clone();
+    let reader = std::thread::spawn(move || -> Result<()> {
+        let mut seq = 0u64;
+        let mut logical_pos = 0u64;
+
+        if reader_config.cdc_enabled {
+            let params = DedupeParams {
+                f: (reader_config.avg_chunk as f64).log2() as u32,
+                m: reader_config.min_chunk,
+                z: reader_config.max_chunk,
+                w: 48,
+                v: 8,
+            };
+            let chunker = StreamChunker::new(f, params);
+            for chunk_res in chunker {
+                let chunk = chunk_res?;
+                let chunk_len = chunk.len();
+                if tx_raw
+                    .send((
+                        seq,
+                        RawChunk {
+                            data: chunk,
+                            logical_offset: logical_pos,
+                        },
+                    ))
+                    .is_err()
+                {
+                    break; // Workers shut down
+                }
+                logical_pos += chunk_len as u64;
+                seq += 1;
+            }
+        } else {
+            let mut chunker = FixedChunker::new(f, reader_config.block_size as usize);
+            loop {
+                match chunker.next_chunk() {
+                    Ok(Some(chunk)) => {
+                        let chunk_len = chunk.len();
+                        if tx_raw
+                            .send((
+                                seq,
+                                RawChunk {
+                                    data: chunk.to_vec(),
+                                    logical_offset: logical_pos,
+                                },
+                            ))
+                            .is_err()
+                        {
+                            break; // Workers shut down
+                        }
+                        logical_pos += chunk_len as u64;
+                        seq += 1;
+                    }
+                    Ok(None) => break,
+                    Err(e) => return Err(Error::Io(e)),
+                }
+            }
+        }
+        Ok(())
+    });
+
+    // Main thread: receive compressed chunks, reorder, write sequentially.
+    // Workers return chunks out-of-order; BTreeMap restores logical order.
+    let mut next_seq = 0u64;
+    let mut reorder_buf: BTreeMap<u64, CompressedChunk> = BTreeMap::new();
+    let mut write_error: Option<Error> = None;
+
+    for (seq, compressed) in rx_compressed.iter() {
+        reorder_buf.insert(seq, compressed);
+
+        // Drain all consecutive chunks ready to write
+        while let Some(chunk) = reorder_buf.remove(&next_seq) {
+            match writer.write_precompressed_block(
+                &chunk.compressed,
+                &chunk.hash,
+                chunk.original_size as u32,
+            ) {
+                Ok(()) => {
+                    if let Some(callback) = progress_callback {
+                        callback(chunk.logical_offset + chunk.original_size as u64, len);
+                    }
+                    next_seq += 1;
+                }
+                Err(e) => {
+                    write_error = Some(e);
+                    break;
+                }
+            }
+        }
+        if write_error.is_some() {
+            break;
+        }
+    }
+
+    // Drop receiver to unblock workers/reader if we exited early due to write error.
+    // This causes workers' send() to fail → workers exit → reader's send() fails → reader exits.
+    drop(rx_compressed);
+
+    // Wait for all threads to finish
+    let reader_result = reader
+        .join()
+        .map_err(|_| Error::Io(std::io::Error::other("Reader thread panicked")))?;
+
+    for worker in workers {
+        worker
+            .join()
+            .map_err(|_| Error::Io(std::io::Error::other("Worker thread panicked")))?
+            .ok(); // Ignore worker errors if we already have a write error
+    }
+
+    // Propagate errors (write errors take priority)
+    if let Some(e) = write_error {
+        return Err(e);
+    }
+    reader_result?;
+
     Ok(())
 }
 

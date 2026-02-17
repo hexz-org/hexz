@@ -193,6 +193,7 @@ pub fn create_simple_snapshot() -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn
         min_chunk: 16384,
         avg_chunk: 65536,
         max_chunk: 131072,
+        ..Default::default()
     };
 
     pack_snapshot(config, None::<fn(u64, u64)>)?;
@@ -237,6 +238,7 @@ pub fn create_snapshot_with_memory()
         min_chunk: 16384,
         avg_chunk: 65536,
         max_chunk: 131072,
+        ..Default::default()
     };
 
     pack_snapshot(config, None::<fn(u64, u64)>)?;
@@ -276,6 +278,7 @@ pub fn create_multi_block_snapshot()
         min_chunk: 16384,
         avg_chunk: 65536,
         max_chunk: 131072,
+        ..Default::default()
     };
 
     pack_snapshot(config, None::<fn(u64, u64)>)?;

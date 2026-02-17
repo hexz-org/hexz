@@ -574,6 +574,7 @@ mod tests {
             min_chunk: block_size / 2,
             avg_chunk: block_size,
             max_chunk: block_size * 2,
+            ..Default::default()
         };
 
         pack_snapshot(config, None::<fn(u64, u64)>).expect("Failed to pack snapshot");
@@ -902,6 +903,7 @@ mod tests {
             min_chunk: 2048,
             avg_chunk: 4096,
             max_chunk: 8192,
+            ..Default::default()
         };
 
         pack_snapshot(config, None::<fn(u64, u64)>).expect("Failed to pack");
@@ -959,6 +961,7 @@ mod tests {
             min_chunk: 2048,
             avg_chunk: 4096,
             max_chunk: 8192,
+            ..Default::default()
         };
 
         pack_snapshot(config, None::<fn(u64, u64)>).expect("Failed to pack");
@@ -1033,6 +1036,7 @@ mod tests {
             min_chunk: 2048,
             avg_chunk: 4096,
             max_chunk: 8192,
+            ..Default::default()
         };
 
         pack_snapshot(config, None::<fn(u64, u64)>).expect("Failed to pack");

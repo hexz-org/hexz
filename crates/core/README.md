@@ -131,6 +131,72 @@ All backends implement the `StorageBackend` trait:
 
 Higher layers (API, cache, decompression) don't know where data comes from—all backends provide the same interface.
 
+### Remote Streaming: When to Use It
+
+Remote streaming (HTTP/S3) allows training without downloading datasets first. However, it's **not always the right choice**.
+
+#### ✅ Remote Streaming Works Well When:
+
+- **Dataset fits in cache** (most important!)
+  - Example: 50 GB dataset, 64 GB cache → 95%+ hit rate after epoch 1
+  - First epoch is slow (cold cache), subsequent epochs are fast
+- **High bandwidth available** (10+ Gbps datacenter links)
+- **Prototyping/experimentation** (one-off runs, convenience matters)
+- **Storage is expensive** (cloud VMs with limited/costly local disk)
+
+**Example performance:**
+```
+Dataset: 50 GB, Cache: 64 GB, Bandwidth: 10 Gbps
+Epoch 1: ~2 hours (streaming from S3, cold cache)
+Epoch 2-100: ~10 min each (95%+ cache hits, rarely hits network)
+Total: ~18.5 hours
+```
+
+#### ❌ Remote Streaming Fails When:
+
+- **Dataset >> cache size** (cache thrashing, slow every epoch)
+  - Example: 2 TB dataset, 64 GB cache → <5% hit rate, constant streaming
+  - Every epoch becomes a full network transfer (hours per epoch)
+- **Limited bandwidth** (< 1 Gbps residential/cloud egress)
+- **Repeated training** (download overhead amortizes over many runs)
+- **Production workloads** (need predictable, fast performance)
+
+**Example performance (BAD):**
+```
+Dataset: 2 TB, Cache: 64 GB (3% fits), Bandwidth: 1 Gbps
+Every epoch: ~4.5 hours of data transfer
+100 epochs: 450 hours = 18.75 days 😱
+vs Download once (4.5h) + train (17h) = 21.5 hours total
+```
+
+#### Rule of Thumb
+
+- **Dataset < cache size**: Remote streaming is viable
+- **Dataset < 2x cache**: Marginal, depends on bandwidth and use case
+- **Dataset > 2x cache**: Download to local NVMe/SSD first
+
+#### Alternatives for Large Datasets
+
+1. **Download to local storage** (fastest for repeated training)
+   ```bash
+   aws s3 cp s3://bucket/dataset.hxz /nvme/data/
+   ```
+
+2. **Subset/curriculum training** (stream only what you need)
+   ```python
+   # Train on 10% subsets, different each phase
+   train(dataset_url, byte_range="0-100GB")
+   ```
+
+3. **Hierarchical caching** (future: RAM + SSD + remote)
+   ```
+   L1: 64 GB RAM (hot)
+   L2: 1 TB SSD (warm)
+   L3: S3 (cold)
+   ```
+
+Remote streaming is a **convenience feature**, not a replacement for local storage at TB scale. hexz's core value is **compression + dedup + fast random access**, with remote streaming as a nice-to-have for datasets that fit in cache.
+
 ## Compression & Encryption
 
 Pluggable algorithms via traits:
