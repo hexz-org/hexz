@@ -1,41 +1,41 @@
 //! Command handlers for the Hexz CLI.
 //!
-//! This module organizes all CLI subcommands into logical groups following a
-//! **Noun-Verb hierarchy** (e.g., `hexz data pack`, `hexz vm boot`). Each
-//! submodule contains the implementation logic for its respective commands.
+//! This module organizes all CLI subcommands into logical groups. While the CLI
+//! itself uses a **flat command structure** (e.g., `hexz pack`, `hexz boot`),
+//! the implementation is internally namespaced to keep the code organized.
 //!
 //! # Architecture
 //!
 //! ```text
-//! hexz <CATEGORY> <ACTION> [OPTIONS]
-//!        ^^^^^^^^^^  ^^^^^^
-//!        module      function
+//! hexz <COMMAND> [OPTIONS]
+//!      ^^^^^^^^^
+//!      flat command (grouped by category in help)
 //! ```
 //!
 //! # Command Categories
 //!
-//! - [`data`]: Data operations for archives
+//! - **Archive Operations** (`cmd::data`)
 //!   - `pack`: Create archives from disk images
 //!   - `build`: Build archives from directories
 //!   - `info`: Inspect archive metadata
-//!   - `diff`: Show overlay differences (diagnostics feature)
-//!   - `analyze`: Optimize CDC parameters with DCAM (diagnostics feature)
+//!   - `diff`: Show overlay differences
+//!   - `analyze`: Optimize CDC parameters
 //!
-//! - [`vm`]: Virtual machine operations
-//!   - `boot`: Launch VMs from snapshots (FUSE feature)
-//!   - `install`: Install OS from ISO (FUSE feature)
+//! - **Virtual Machine Operations** (`cmd::vm`)
+//!   - `boot`: Launch VMs from snapshots
+//!   - `install`: Install OS from ISO
 //!   - `snap`: Create live snapshots via QMP
 //!   - `commit`: Commit overlay changes
-//!   - `mount`: Mount snapshots as filesystems (FUSE feature)
-//!   - `unmount`: Unmount filesystems (FUSE feature)
+//!   - `mount`: Mount snapshots as filesystems
+//!   - `unmount`: Unmount filesystems
 //!
-//! - [`sys`]: System utilities
-//!   - `doctor`: Run diagnostics (diagnostics feature)
-//!   - `bench`: Benchmark performance (diagnostics feature)
-//!   - `serve`: Serve archives over network (server feature)
-//!   - `keygen`: Generate signing keys (signing feature)
-//!   - `sign`: Sign archives (signing feature)
-//!   - `verify`: Verify signatures (signing feature)
+//! - **System & Diagnostics** (`cmd::sys`)
+//!   - `doctor`: Run diagnostics
+//!   - `bench`: Benchmark performance
+//!   - `serve`: Serve archives over network
+//!   - `keygen`: Generate signing keys
+//!   - `sign`: Sign archives
+//!   - `verify`: Verify signatures
 //!
 //! # Error Handling
 //!

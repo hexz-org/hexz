@@ -161,7 +161,7 @@ def test_mount_timeout_error(sample_snapshot, temp_dir, monkeypatch):
 
     def mock_exists(path):
         # Never return True for the "disk" file check
-        if path.endswith("disk"):
+        if str(path).endswith("disk"):
             return False
         return original_exists(path)
 
@@ -188,6 +188,7 @@ def test_mount_timeout_error(sample_snapshot, temp_dir, monkeypatch):
             return b"", b"mock error"
 
     monkeypatch.setattr("subprocess.Popen", lambda *args, **kwargs: MockPopen())
+    monkeypatch.setattr("subprocess.run", lambda *args, **kwargs: None)
 
     with pytest.raises(MountError) as exc_info:
         with hexz.mount(sample_snapshot):
@@ -228,65 +229,108 @@ def test_mount_process_dies_early(sample_snapshot, temp_dir, monkeypatch):
 
 def test_unmount_with_fusermount(sample_snapshot, temp_dir, monkeypatch):
     """Test unmount uses fusermount when available (Linux)."""
-    if not shutil.which("hexz"):
-        pytest.skip("hexz binary not found")
-
     fusermount_called = []
-    original_run = subprocess.run
 
     def mock_run(args, **kwargs):
         fusermount_called.append(args)
-        return original_run(["true"], **kwargs)  # Success
 
     monkeypatch.setattr("subprocess.run", mock_run)
 
-    # Mock which to always return fusermount
+    # Mock which to return the hexz binary for _find_binary and fusermount for unmount
     monkeypatch.setattr(
         "shutil.which",
-        lambda cmd: "/usr/bin/fusermount" if cmd == "fusermount" else None,
+        lambda cmd: (
+            "/usr/bin/hexz"
+            if cmd == "hexz"
+            else ("/usr/bin/fusermount" if cmd == "fusermount" else None)
+        ),
     )
 
-    try:
-        mp = _MountPoint(sample_snapshot)
-        with mp:
+    class MockPopen:
+        def __init__(self, *args, **kwargs):
+            self.returncode = None
+
+        def poll(self):
+            return None
+
+        def terminate(self):
             pass
 
-        # Check that fusermount was called
-        if fusermount_called:
-            assert any("fusermount" in str(call) for call in fusermount_called)
-    except (MountError, TimeoutError, subprocess.CalledProcessError):
-        pytest.skip("Mount operation not supported in test environment")
+        def kill(self):
+            pass
+
+        def wait(self, timeout=None):
+            pass
+
+    original_exists = os.path.exists
+
+    def mock_exists(path):
+        if str(path).endswith("disk"):
+            return True
+        return original_exists(path)
+
+    monkeypatch.setattr("os.path.exists", mock_exists)
+    monkeypatch.setattr("subprocess.Popen", lambda *args, **kwargs: MockPopen())
+
+    mp = _MountPoint(sample_snapshot)
+    with mp:
+        pass
+
+    # Check that fusermount was called during unmount
+    assert any("fusermount" in str(call) for call in fusermount_called)
 
 
 def test_unmount_with_umount_fallback(sample_snapshot, temp_dir, monkeypatch):
     """Test unmount falls back to umount when fusermount not available."""
-    if not shutil.which("hexz"):
-        pytest.skip("hexz binary not found")
-
     umount_called = []
-    original_run = subprocess.run
 
     def mock_run(args, **kwargs):
         umount_called.append(args)
-        return original_run(["true"], **kwargs)
 
     monkeypatch.setattr("subprocess.run", mock_run)
 
-    # Mock which to return None for fusermount
+    # Mock which: hexz binary available, fusermount not available
     monkeypatch.setattr(
-        "shutil.which", lambda cmd: None if cmd == "fusermount" else "/bin/umount"
+        "shutil.which",
+        lambda cmd: (
+            "/usr/bin/hexz"
+            if cmd == "hexz"
+            else (None if cmd == "fusermount" else "/bin/umount")
+        ),
     )
 
-    try:
-        mp = _MountPoint(sample_snapshot)
-        with mp:
+    class MockPopen:
+        def __init__(self, *args, **kwargs):
+            self.returncode = None
+
+        def poll(self):
+            return None
+
+        def terminate(self):
             pass
 
-        # Check that umount was called
-        if umount_called:
-            assert any("umount" in str(call) for call in umount_called)
-    except (MountError, TimeoutError, subprocess.CalledProcessError):
-        pytest.skip("Mount operation not supported in test environment")
+        def kill(self):
+            pass
+
+        def wait(self, timeout=None):
+            pass
+
+    original_exists = os.path.exists
+
+    def mock_exists(path):
+        if str(path).endswith("disk"):
+            return True
+        return original_exists(path)
+
+    monkeypatch.setattr("os.path.exists", mock_exists)
+    monkeypatch.setattr("subprocess.Popen", lambda *args, **kwargs: MockPopen())
+
+    mp = _MountPoint(sample_snapshot)
+    with mp:
+        pass
+
+    # Check that umount was called during unmount
+    assert any("umount" in str(call) for call in umount_called)
 
 
 def test_unmount_terminates_process(sample_snapshot, monkeypatch):
@@ -368,14 +412,9 @@ def test_mount_with_custom_binary_path(sample_snapshot, temp_dir):
 
 def test_mount_exception_cleanup(sample_snapshot, temp_dir, monkeypatch):
     """Test that resources are cleaned up when mount fails."""
-    if not shutil.which("hexz"):
-        pytest.skip("hexz binary not found")
-
     # Force a failure by making the binary not found
-    def mock_which(binary):
-        return None
-
-    monkeypatch.setattr("shutil.which", mock_which)
+    monkeypatch.setattr("shutil.which", lambda binary: None)
+    monkeypatch.setattr("os.path.exists", lambda path: False)
 
     mp = _MountPoint(sample_snapshot, binary="nonexistent")
 

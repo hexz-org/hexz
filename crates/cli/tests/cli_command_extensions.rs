@@ -29,7 +29,6 @@ fn test_data_analyze_small_file() {
     let input_file = env.create_pattern_file("small.bin", &[0xAB; 1024], 1000);
 
     hexz()
-        .arg("data")
         .arg("analyze")
         .arg(&input_file)
         .assert()
@@ -40,7 +39,6 @@ fn test_data_analyze_small_file() {
 #[test]
 fn test_data_analyze_nonexistent_file() {
     hexz()
-        .arg("data")
         .arg("analyze")
         .arg("/nonexistent/file.bin")
         .assert()
@@ -54,7 +52,6 @@ fn test_data_analyze_compressible_data() {
     let input_file = env.create_pattern_file("compressible.bin", b"AAAAAAAAAA", 100000);
 
     hexz()
-        .arg("data")
         .arg("analyze")
         .arg(&input_file)
         .assert()
@@ -72,7 +69,6 @@ fn test_data_build_generic_profile() {
     let input_file = env.create_test_file("build_test.bin", 1024 * 1024);
 
     hexz()
-        .arg("data")
         .arg("build")
         .arg("--source")
         .arg(&input_file)
@@ -92,7 +88,6 @@ fn test_data_build_eda_profile() {
     let input_file = env.create_test_file("eda.bin", 2 * 1024 * 1024);
 
     hexz()
-        .arg("data")
         .arg("build")
         .arg("--source")
         .arg(&input_file)
@@ -112,7 +107,6 @@ fn test_data_build_embedded_profile() {
     let input_file = env.create_test_file("embedded.bin", 512 * 1024);
 
     hexz()
-        .arg("data")
         .arg("build")
         .arg("--source")
         .arg(&input_file)
@@ -132,7 +126,6 @@ fn test_data_build_ml_profile() {
     let input_file = env.create_test_file("ml.bin", 3 * 1024 * 1024);
 
     hexz()
-        .arg("data")
         .arg("build")
         .arg("--source")
         .arg(&input_file)
@@ -153,7 +146,6 @@ fn test_data_build_unknown_profile() {
 
     // Unknown profile should fallback to generic with warning
     hexz()
-        .arg("data")
         .arg("build")
         .arg("--source")
         .arg(&input_file)
@@ -173,7 +165,6 @@ fn test_data_build_with_cdc() {
     let input_file = env.create_pattern_file("cdc_test.bin", &[0xAB; 4096], 100);
 
     hexz()
-        .arg("data")
         .arg("build")
         .arg("--source")
         .arg(&input_file)
@@ -193,7 +184,6 @@ fn test_data_build_missing_source() {
     let env = TestEnv::new();
 
     hexz()
-        .arg("data")
         .arg("build")
         .arg("--source")
         .arg("/nonexistent/source.bin")
@@ -227,7 +217,6 @@ fn test_data_diff_with_metadata() {
     fs::write(&meta_path, metadata).unwrap();
 
     hexz()
-        .arg("data")
         .arg("diff")
         .arg(&overlay_path)
         .assert()
@@ -252,7 +241,6 @@ fn test_data_diff_with_blocks_flag() {
     fs::write(&meta_path, metadata).unwrap();
 
     hexz()
-        .arg("data")
         .arg("diff")
         .arg(&overlay_path)
         .arg("--blocks")
@@ -270,7 +258,6 @@ fn test_data_diff_no_metadata() {
     // No .meta file created
 
     hexz()
-        .arg("data")
         .arg("diff")
         .arg(&overlay_path)
         .assert()
@@ -281,7 +268,6 @@ fn test_data_diff_no_metadata() {
 #[test]
 fn test_data_diff_nonexistent_overlay() {
     hexz()
-        .arg("data")
         .arg("diff")
         .arg("/nonexistent/overlay.overlay")
         .assert()
@@ -306,7 +292,6 @@ fn test_data_diff_with_files_flag() {
     fs::write(&meta_path, metadata).unwrap();
 
     hexz()
-        .arg("data")
         .arg("diff")
         .arg(&overlay_path)
         .arg("--files")
@@ -334,7 +319,6 @@ fn test_data_diff_blocks_and_files_flags() {
     fs::write(&meta_path, metadata).unwrap();
 
     hexz()
-        .arg("data")
         .arg("diff")
         .arg(&overlay_path)
         .arg("--blocks")
@@ -358,7 +342,6 @@ fn test_data_diff_empty_metadata() {
     fs::write(&meta_path, Vec::<u8>::new()).unwrap(); // Empty metadata
 
     hexz()
-        .arg("data")
         .arg("diff")
         .arg(&overlay_path)
         .assert()
@@ -377,7 +360,6 @@ fn test_sys_bench_valid_snapshot() {
 
     // First create a snapshot
     hexz()
-        .arg("data")
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
@@ -388,7 +370,6 @@ fn test_sys_bench_valid_snapshot() {
 
     // Now benchmark it
     hexz()
-        .arg("sys")
         .arg("bench")
         .arg(&env.snapshot_path)
         .assert()
@@ -399,7 +380,6 @@ fn test_sys_bench_valid_snapshot() {
 #[test]
 fn test_sys_bench_nonexistent_snapshot() {
     hexz()
-        .arg("sys")
         .arg("bench")
         .arg("/nonexistent/snapshot.hxz")
         .assert()
@@ -417,7 +397,6 @@ fn test_sys_sign_and_verify_roundtrip() {
 
     // Create a snapshot
     hexz()
-        .arg("data")
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
@@ -431,7 +410,6 @@ fn test_sys_sign_and_verify_roundtrip() {
     fs::create_dir(&key_dir).unwrap();
 
     hexz()
-        .arg("sys")
         .arg("keygen")
         .arg("--output-dir")
         .arg(&key_dir)
@@ -450,7 +428,6 @@ fn test_sys_sign_and_verify_roundtrip() {
 
     // Sign the snapshot
     hexz()
-        .arg("sys")
         .arg("sign")
         .arg("--key")
         .arg(&private_key)
@@ -460,7 +437,6 @@ fn test_sys_sign_and_verify_roundtrip() {
 
     // Verify the signature
     hexz()
-        .arg("sys")
         .arg("verify")
         .arg("--key")
         .arg(&public_key)
@@ -477,7 +453,6 @@ fn test_sys_verify_unsigned_snapshot() {
 
     // Create an unsigned snapshot
     hexz()
-        .arg("data")
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
@@ -490,7 +465,6 @@ fn test_sys_verify_unsigned_snapshot() {
     let key_dir = env.temp_dir.path().join("keys");
     fs::create_dir(&key_dir).unwrap();
     hexz()
-        .arg("sys")
         .arg("keygen")
         .arg("--output-dir")
         .arg(&key_dir)
@@ -501,7 +475,6 @@ fn test_sys_verify_unsigned_snapshot() {
 
     // Try to verify unsigned snapshot - should fail
     hexz()
-        .arg("sys")
         .arg("verify")
         .arg("--key")
         .arg(&public_key)
@@ -517,7 +490,6 @@ fn test_sys_sign_nonexistent_snapshot() {
     fs::write(&key_path, vec![0u8; 32]).unwrap();
 
     hexz()
-        .arg("sys")
         .arg("sign")
         .arg("--key")
         .arg(&key_path)

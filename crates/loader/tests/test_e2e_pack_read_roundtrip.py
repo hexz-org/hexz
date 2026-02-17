@@ -13,7 +13,9 @@ import os
 import shutil
 import subprocess
 import tempfile
+
 import pytest
+
 import hexz
 
 
@@ -78,7 +80,6 @@ def _pack_with_cli(
     """Run: hexz data pack --disk <disk_path> --output <output_path> --compression <compression>."""
     cmd = [
         hexz_bin,
-        "data",
         "pack",
         "--disk",
         disk_path,

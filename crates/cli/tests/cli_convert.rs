@@ -46,7 +46,6 @@ fn test_data_convert_tar() {
     );
 
     hexz()
-        .arg("data")
         .arg("convert")
         .arg("tar")
         .arg(&tar_path)
@@ -72,7 +71,6 @@ fn test_data_convert_tar_with_compression() {
     );
 
     hexz()
-        .arg("data")
         .arg("convert")
         .arg("tar")
         .arg(&tar_path)
@@ -91,7 +89,6 @@ fn test_data_convert_tar_silent() {
     let tar_path = create_test_tar(env.path(), "silent_input.tar", &[("file.txt", b"data")]);
 
     let output = hexz()
-        .arg("data")
         .arg("convert")
         .arg("tar")
         .arg(&tar_path)
@@ -114,7 +111,6 @@ fn test_data_convert_tar_info_roundtrip() {
 
     // Convert
     hexz()
-        .arg("data")
         .arg("convert")
         .arg("tar")
         .arg(&tar_path)
@@ -124,7 +120,6 @@ fn test_data_convert_tar_info_roundtrip() {
 
     // Inspect should work on the resulting snapshot
     hexz()
-        .arg("data")
         .arg("info")
         .arg(&env.snapshot_path)
         .arg("--json")
@@ -138,7 +133,6 @@ fn test_data_convert_nonexistent() {
     let env = TestEnv::new();
 
     hexz()
-        .arg("data")
         .arg("convert")
         .arg("tar")
         .arg("/nonexistent/file.tar")
@@ -153,7 +147,6 @@ fn test_data_convert_unknown_format() {
     let dummy = env.create_test_file("dummy.bin", 100);
 
     hexz()
-        .arg("data")
         .arg("convert")
         .arg("parquet")
         .arg(&dummy)
@@ -166,10 +159,9 @@ fn test_data_convert_unknown_format() {
 #[test]
 fn test_data_convert_help() {
     hexz()
-        .arg("data")
         .arg("convert")
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Convert"));
+        .stdout(predicate::str::contains("convert"));
 }

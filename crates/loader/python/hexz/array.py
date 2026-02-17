@@ -116,7 +116,7 @@ def write_array(
     dest: Union[PathLike, Writer],
     array: "np.ndarray",
     *,
-    offset: int = 0,
+    offset: Optional[int] = None,
     compression: str = "lz4",
 ) -> int:
     """Write NumPy array to hexz file.
@@ -124,7 +124,7 @@ def write_array(
     Args:
         dest: Path to .hxz file or Writer instance
         array: NumPy array to write
-        offset: Byte offset to write at
+        offset: Byte offset to write at (currently ignored)
         compression: Compression algorithm ('lz4' or 'zstd')
 
     Returns:

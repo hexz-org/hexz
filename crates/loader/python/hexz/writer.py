@@ -250,7 +250,7 @@ class Writer:
         return self
 
     def write(self, data: bytes, *, offset: Optional[int] = None) -> int:
-        """Write bytes at a specific offset.
+        """Write bytes.
 
         Args:
             data: Bytes to write
@@ -258,19 +258,12 @@ class Writer:
 
         Returns:
             Number of bytes written
-
-        Note:
-            Current implementation appends data sequentially.
-            Offset parameter is accepted for API compatibility but not yet used.
-            Requires Rust support for random-access writing.
         """
         if offset is not None:
             warnings.warn(
-                "Random-access writing not yet supported. "
-                "Data will be appended sequentially.",
+                "Random-access writing via offset is not supported; offset is ignored.",
                 UserWarning,
             )
-
         self.add_bytes(data)
         return len(data)
 

@@ -1,56 +1,41 @@
 # Hexz Examples
 
-Modular examples demonstrating key features of the Hexz Python API. **All commands assume you are in the repository root** and have run **`make develop`** at least once (see the main [README](../README.md) and **`make help`**).
+This directory contains examples demonstrating the key features and use cases of the Hexz Python API.
 
-**Reading from snapshots:** Use a single `read()` API. Open with `hexz.open(path)` to get a `Reader`, then:
-- `reader.read(n)` — read `n` bytes from current position (advances cursor).
-- `reader.read(n, offset=k)` — read `n` bytes at offset `k` (cursor unchanged).
-- `reader.read(buffer=buf)` — fill a buffer from cursor; `reader.read(buffer=buf, offset=k)` for offset.
-- `reader.iter_chunks(chunk_size=...)` — iterate in fixed-size chunks with one reused buffer.
+## Core API
+- **`quickstart.py`**: A minimal example of creating and reading a snapshot.
+- **`configuration_profiles.py`**: Using build profiles (ML, archival, etc.) to optimize for different workloads.
+- **`zero_copy_performance.py`**: Benchmarking Hexz's zero-copy loading against Python's `pickle`.
 
-## 1. Quick Start (`quickstart.py`)
+## Machine Learning & Data Science
+- **`video_frame_access.py`**: Fast random access to specific frames in a large video dataset.
+- **`llm_weight_dedup.py`**: Saving space when storing multiple versions of large model weights.
+- **`medical_imaging_3d.py`**: Efficient 2D slicing of massive 3D medical volumes (MRI/CT).
+- **`vector_embeddings_lookup.py`**: Using Hexz as a high-performance, read-only vector store.
+- **`cloud_s3_streaming.py`**: Streaming data directly from S3 without downloading the entire file.
 
-**Run first.** Creates a tiny snapshot and reads it back — no CLI or extra data required.
+## Advanced Infrastructure
+- **`distributed_loading.py`**: Sharing a single Reader across multiple CPU worker processes (Pickling).
+- **`secure_signing.py`**: Cryptographically signing and verifying snapshots for secure distribution.
+- **`fuse_mount_explorer.py`**: Mounting snapshots as virtual filesystems (Linux/macOS).
+- **`docker_layer_packing.py`**: Packing Docker-style image layers into Hexz snapshots for efficient storage and distribution.
 
-```bash
-python examples/quickstart.py
-```
+## Advanced Deduplication
+- **`global_deduplication.py`**: Demonstrates how Hexz handles redundant data across different files.
+- **`incremental_checkpoints.py`**: Using thin snapshots to store only the changes between training steps.
+- **`comprehensive_deduplication.py`**: A deep dive into CDC (Content-Defined Chunking) and deduplication ratios.
 
-See [docs/quickstart.md](../docs/quickstart.md) for the full 5-minute guide.
+## Getting Started
 
-## 2. Build Profiles (`build_profiles.py`)
+1. Ensure you have the library installed:
+   ```bash
+   # From the project root
+   pip install -e .
+   ```
 
-Demonstrates `hexz.build()` with custom profile overrides (`archival`, `ml`, `eda`) for fine-tuned block size and compression.
+2. Run any example:
+   ```bash
+   python examples/quickstart.py
+   ```
 
-```bash
-python examples/build_profiles.py
-```
-
-## 3. Dataset Creation (`create_dataset.py`)
-
-Generates a variable-length dataset (`dataset.hxz`) with an index file (`dataset.idx`), ready for use with the training examples.
-
-```bash
-python examples/create_dataset.py
-```
-
-## 4. PyTorch Training (`train_pytorch.py`)
-
-Loads a Hexz dataset using `hexz.Dataset` (with caching and prefetching) via `torch.utils.data.DataLoader`.
-
-**Requires:** PyTorch (`pip install torch`)
-
-```bash
-python examples/create_dataset.py   # generate data first
-python examples/train_pytorch.py
-```
-
-## 5. MNIST Training (`mnist_training.py`)
-
-Complete end-to-end MNIST training pipeline: download, pack into Hexz, train a CNN.
-
-**Requires:** PyTorch, torchvision
-
-```bash
-python examples/mnist_training.py
-```
+Note: Some examples may require additional dependencies like `numpy` or `torch`, and specific features like `fuse` or `signing` must be enabled in the build.

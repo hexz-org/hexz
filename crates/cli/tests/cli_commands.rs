@@ -46,7 +46,6 @@ fn test_data_pack_basic() {
     let input_file = env.create_test_file("test.bin", 1024 * 1024); // 1 MB
 
     hexz()
-        .arg("data")
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
@@ -68,7 +67,6 @@ fn test_data_pack_with_compression_lz4() {
     let input_file = env.create_pattern_file("test.txt", b"Hello World! ", 10000);
 
     hexz()
-        .arg("data")
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
@@ -88,7 +86,6 @@ fn test_data_pack_with_compression_zstd() {
     let input_file = env.create_pattern_file("test.txt", b"Compressible data ", 10000);
 
     hexz()
-        .arg("data")
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
@@ -109,7 +106,6 @@ fn test_data_pack_with_cdc() {
     let input_file = env.create_pattern_file("dedup.bin", &[0xAB; 4096], 100);
 
     hexz()
-        .arg("data")
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
@@ -127,7 +123,6 @@ fn test_data_pack_nonexistent_file() {
     let env = TestEnv::new();
 
     hexz()
-        .arg("data")
         .arg("pack")
         .arg("--disk")
         .arg("/nonexistent/file.bin")
@@ -144,7 +139,6 @@ fn test_data_info() {
 
     // First create a snapshot
     hexz()
-        .arg("data")
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
@@ -155,7 +149,6 @@ fn test_data_info() {
 
     // Then get info about it
     hexz()
-        .arg("data")
         .arg("info")
         .arg(&env.snapshot_path)
         .assert()
@@ -166,7 +159,6 @@ fn test_data_info() {
 #[test]
 fn test_data_info_nonexistent() {
     hexz()
-        .arg("data")
         .arg("info")
         .arg("/nonexistent/snapshot.hexz")
         .assert()
@@ -182,7 +174,6 @@ fn test_sys_keygen() {
     let temp_dir = TempDir::new().unwrap();
 
     hexz()
-        .arg("sys")
         .arg("keygen")
         .arg("--output-dir")
         .arg(temp_dir.path())
@@ -200,7 +191,7 @@ fn test_sys_keygen() {
 
 #[test]
 fn test_sys_doctor() {
-    hexz().arg("sys").arg("doctor").assert().success();
+    hexz().arg("doctor").assert().success();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -216,7 +207,6 @@ fn test_e2e_disk_and_memory_pack() {
 
     // Pack both disk and memory
     hexz()
-        .arg("data")
         .arg("pack")
         .arg("--disk")
         .arg(&disk_file)
@@ -234,7 +224,6 @@ fn test_e2e_disk_and_memory_pack() {
 
     // Get info about the snapshot
     hexz()
-        .arg("data")
         .arg("info")
         .arg(&env.snapshot_path)
         .assert()
@@ -251,7 +240,6 @@ fn test_e2e_compression_comparison() {
 
     // Pack with LZ4
     hexz()
-        .arg("data")
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
@@ -264,7 +252,6 @@ fn test_e2e_compression_comparison() {
 
     // Pack with Zstd
     hexz()
-        .arg("data")
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
@@ -293,7 +280,6 @@ fn test_e2e_pack_info_roundtrip() {
 
     // Pack
     hexz()
-        .arg("data")
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
@@ -304,7 +290,6 @@ fn test_e2e_pack_info_roundtrip() {
 
     // Info with JSON output
     hexz()
-        .arg("data")
         .arg("info")
         .arg(&env.snapshot_path)
         .arg("--json")
@@ -320,7 +305,6 @@ fn test_e2e_silent_mode() {
 
     // Pack with silent flag
     let output = hexz()
-        .arg("data")
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
@@ -345,7 +329,6 @@ fn test_e2e_custom_block_size() {
 
     // Pack with custom block size (128KB)
     hexz()
-        .arg("data")
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
@@ -372,7 +355,6 @@ fn test_data_pack_with_train_dict() {
     );
 
     hexz()
-        .arg("data")
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
@@ -397,7 +379,6 @@ fn test_data_pack_with_encryption() {
     let input_file = env.create_test_file("encrypted.bin", 8192);
 
     hexz()
-        .arg("data")
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)

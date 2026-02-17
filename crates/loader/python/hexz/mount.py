@@ -87,7 +87,7 @@ class _MountPoint:
                 os.makedirs(self.mount_point)
 
         # Start hexz vm mount in background (CLI uses hexz vm mount)
-        cmd = [self.binary_path, "vm", "mount", self.snapshot_path, self.mount_point]
+        cmd = [self.binary_path, "mount", self.snapshot_path, self.mount_point]
 
         self._process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE

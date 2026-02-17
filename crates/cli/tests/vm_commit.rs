@@ -25,7 +25,6 @@ fn create_base_snapshot(env: &TestEnv, disk_data: &[u8], compression: &str) -> s
 
     let snapshot_path = env.temp_dir.path().join("base.hxz");
     hexz()
-        .arg("data")
         .arg("pack")
         .arg("--disk")
         .arg(&disk_file)
@@ -93,7 +92,6 @@ fn test_vm_commit_thick_lz4() {
     let output = env.temp_dir.path().join("committed.hxz");
 
     hexz()
-        .arg("vm")
         .arg("commit")
         .arg(&base)
         .arg(&overlay)
@@ -124,7 +122,6 @@ fn test_vm_commit_thick_zstd() {
     let output = env.temp_dir.path().join("committed_zstd.hxz");
 
     hexz()
-        .arg("vm")
         .arg("commit")
         .arg(&base)
         .arg(&overlay)
@@ -152,7 +149,6 @@ fn test_vm_commit_thin_mode() {
     let output = env.temp_dir.path().join("thin.hxz");
 
     hexz()
-        .arg("vm")
         .arg("commit")
         .arg(&base)
         .arg(&overlay)
@@ -184,7 +180,6 @@ fn test_vm_commit_no_modifications() {
     let output = env.temp_dir.path().join("no_changes.hxz");
 
     hexz()
-        .arg("vm")
         .arg("commit")
         .arg(&base)
         .arg(&overlay)
@@ -209,7 +204,6 @@ fn test_vm_commit_deletes_overlay_by_default() {
 
     // No --keep-overlay flag → overlay should be deleted
     hexz()
-        .arg("vm")
         .arg("commit")
         .arg(&base)
         .arg(&overlay)
@@ -236,7 +230,6 @@ fn test_vm_commit_with_message() {
     let output = env.temp_dir.path().join("messaged.hxz");
 
     hexz()
-        .arg("vm")
         .arg("commit")
         .arg(&base)
         .arg(&overlay)
@@ -250,12 +243,7 @@ fn test_vm_commit_with_message() {
     assert!(output.exists());
 
     // Verify the message is readable via info
-    hexz()
-        .arg("data")
-        .arg("info")
-        .arg(&output)
-        .assert()
-        .success();
+    hexz().arg("info").arg(&output).assert().success();
 }
 
 #[test]
@@ -272,7 +260,6 @@ fn test_vm_commit_custom_block_size() {
     let output = env.temp_dir.path().join("block32k.hxz");
 
     hexz()
-        .arg("vm")
         .arg("commit")
         .arg(&base)
         .arg(&overlay)
@@ -302,7 +289,6 @@ fn test_vm_commit_output_is_valid_snapshot() {
     let output = env.temp_dir.path().join("valid.hxz");
 
     hexz()
-        .arg("vm")
         .arg("commit")
         .arg(&base)
         .arg(&overlay)
@@ -313,7 +299,6 @@ fn test_vm_commit_output_is_valid_snapshot() {
 
     // Verify output is a valid snapshot by running info
     hexz()
-        .arg("data")
         .arg("info")
         .arg(&output)
         .assert()
@@ -333,7 +318,6 @@ fn test_vm_commit_thick_info_shows_disk() {
     let output = env.temp_dir.path().join("readable.hxz");
 
     hexz()
-        .arg("vm")
         .arg("commit")
         .arg(&base)
         .arg(&overlay)
@@ -344,7 +328,6 @@ fn test_vm_commit_thick_info_shows_disk() {
 
     // Verify committed snapshot reports correct metadata
     hexz()
-        .arg("data")
         .arg("info")
         .arg(&output)
         .assert()
@@ -372,7 +355,6 @@ fn test_vm_commit_nonexistent_base() {
     let output = env.temp_dir.path().join("out.hxz");
 
     hexz()
-        .arg("vm")
         .arg("commit")
         .arg("/nonexistent/base.hxz")
         .arg(&overlay)
@@ -391,7 +373,6 @@ fn test_vm_commit_nonexistent_overlay() {
     let output = env.temp_dir.path().join("out.hxz");
 
     hexz()
-        .arg("vm")
         .arg("commit")
         .arg(&base)
         .arg("/nonexistent/overlay.bin")
@@ -416,7 +397,6 @@ fn test_vm_commit_thin_shows_in_info() {
     let output = env.temp_dir.path().join("thin_info.hxz");
 
     hexz()
-        .arg("vm")
         .arg("commit")
         .arg(&base)
         .arg(&overlay)
@@ -427,12 +407,7 @@ fn test_vm_commit_thin_shows_in_info() {
         .success();
 
     // Info should show this is a thin snapshot with parent reference
-    hexz()
-        .arg("data")
-        .arg("info")
-        .arg(&output)
-        .assert()
-        .success();
+    hexz().arg("info").arg(&output).assert().success();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -453,7 +428,6 @@ fn test_vm_commit_all_zero_blocks() {
     let output = env.temp_dir.path().join("zeros.hxz");
 
     hexz()
-        .arg("vm")
         .arg("commit")
         .arg(&base)
         .arg(&overlay)
@@ -485,7 +459,6 @@ fn test_vm_commit_many_modified_blocks() {
     let output = env.temp_dir.path().join("many_mods.hxz");
 
     hexz()
-        .arg("vm")
         .arg("commit")
         .arg(&base)
         .arg(&overlay)
@@ -512,7 +485,6 @@ fn test_vm_commit_thin_many_modified_blocks() {
     let output = env.temp_dir.path().join("thin_many.hxz");
 
     hexz()
-        .arg("vm")
         .arg("commit")
         .arg(&base)
         .arg(&overlay)
@@ -543,7 +515,6 @@ fn test_vm_commit_lz4_base_zstd_commit() {
 
     // Commit with zstd (different from base)
     hexz()
-        .arg("vm")
         .arg("commit")
         .arg(&base)
         .arg(&overlay)
@@ -557,12 +528,7 @@ fn test_vm_commit_lz4_base_zstd_commit() {
     assert!(output.exists());
 
     // Verify the output snapshot is valid
-    hexz()
-        .arg("data")
-        .arg("info")
-        .arg(&output)
-        .assert()
-        .success();
+    hexz().arg("info").arg(&output).assert().success();
 }
 
 #[test]
@@ -579,7 +545,6 @@ fn test_vm_commit_zstd_base_lz4_commit() {
 
     // Commit with lz4
     hexz()
-        .arg("vm")
         .arg("commit")
         .arg(&base)
         .arg(&overlay)
