@@ -1,222 +1,109 @@
 # Why Hexz for Machine Learning
 
-This document explains the fundamental problems Hexz solves for ML engineering and why traditional approaches fall short.
+This document explains what Hexz actually solves in ML workflows, where it helps, and where it does not.
 
-## The Data Bottleneck Problem
+---
 
-Modern GPUs can process millions of samples per second. However, getting data **to** the GPU fast enough is increasingly the bottleneck in ML training.
+## What Hexz is
 
-### The Numbers
+Hexz is a block-compressed archive format with random access and content deduplication. In ML contexts this matters in two places:
 
-Consider training a vision model on ImageNet-21K:
-- **Dataset size**: 14 million images, ~1.3TB
-- **GPU throughput**: 1000 images/second (modern A100)
-- **Required data bandwidth**: ~130MB/s sustained
+1. **Checkpoint versioning** — storing many iterations of the same model without paying full storage cost for each one
+2. **Dataset access** — reading arbitrary samples from a compressed archive without extracting it
 
-Traditional approaches fail at this scale:
+These are different problems and Hexz solves them to different degrees.
 
-| Approach | Throughput | Issues |
-|----------|-----------|---------|
-| Individual files (NFS) | ~20MB/s | Open() syscall overhead, metadata lookups |
-| tar.gz archives | ~80MB/s | Must decompress sequentially, no random access |
-| WebDataset shards | ~100MB/s | Requires pre-sharding, breaks true shuffling |
-| Uncompressed files | 500MB/s | 10× storage cost, slow to transfer |
+---
 
-The fundamental tension: **compression saves storage/bandwidth** but **random access requires decompression overhead**.
+## Checkpoint versioning
 
-## Traditional Solutions and Their Trade-offs
+This is where Hexz has the clearest advantage over existing tools.
 
-### Approach 1: Download Everything Locally
+A fine-tuned 7B model is ~14GB. Fine-tune it 50 times with different hyperparameters and you have 700GB of nearly-identical files. The standard approaches:
 
-**Strategy**: `aws s3 sync` the entire dataset to local NVMe before training.
+- **Raw file copies**: 700GB. No dedup. Pay for every byte every time.
+- **git-lfs**: Tracks which blob corresponds to which version. Does not deduplicate content. Still 700GB.
+- **DVC**: Same as git-lfs — a pointer tracker, not a content store. Still 700GB.
+- **Hexz thin snapshots**: Store the base model once. Each fine-tune stores only changed blocks. With CDC dedup and ~5% weight change per run, 50 checkpoints costs roughly the space of 3-4 full copies.
 
-**Pros**:
-- Fastest I/O during training
-- No network dependency
+**Validated:** The dedup benchmark shows 92.4% deduplication on shifted data (two 50MB versions with 1KB insertion). Fixed-size block dedup breaks to 0% on the same data. See `cargo bench --bench dedup_efficiency`.
 
-**Cons**:
-- Hours to download multi-TB datasets
-- Requires expensive local storage (1TB NVMe = $100+/instance)
-- Wastes space on redundant data (multiple dataset versions)
-- Can't start training until download completes
+**Not yet implemented:** A shared external dedup index across unrelated `.hxz` files. Cross-file dedup currently requires using the thin snapshot parent chain (`hexz build ... --parent v1.hxz`) or packing multiple versions into one archive in a single operation.
 
-**Reality**: With 10 researchers sharing a dataset, you've downloaded it 10 times.
+---
 
-### Approach 2: WebDataset with Sharding
+## Dataset access
 
-**Strategy**: Split dataset into thousands of tar files, stream sequentially.
+Hexz stores training data as a single compressed archive with a two-level index. Any sample can be read in O(log N) index lookups plus one block decompression.
 
-**Pros**:
-- Decent throughput (~100MB/s)
-- Supported by many frameworks
+**Validated benchmarks** (Python, real image datasets on i7-14700K):
 
-**Cons**:
-- **Breaks shuffling**: Can only shuffle within shards, not globally
-- **Complex management**: 10,000 shards = 10,000 files to track
-- **Sequential only**: Can't seek to arbitrary sample without reading shard from start
-- **Update overhead**: Adding 1% new data requires rebalancing all shards
+| | Sequential Read | Random Access | Shuffled Epoch |
+|---|---|---|---|
+| Local files | 387 MB/s | 6.2 µs | 360 MB/s |
+| HDF5 (LZF) | 56 MB/s | 40.8 µs | 55 MB/s |
+| **Hexz (LZ4)** | **1,218 MB/s** | **3.4 µs** | **525 MB/s** |
 
-**Reality**: You compromise on data quality (shuffling) for I/O speed.
+These are on CIFAR-10 (108MB), STL-10 (28MB), CIFAR-100 (18MB). Small datasets that fit entirely in RAM on a fast machine. The numbers show that the Rust I/O path is significantly faster than HDF5's Python path, and faster than the OS file cache path for sequential reads.
 
-### Approach 3: HDF5 / Zarr
+**What these numbers do not show:**
 
-**Strategy**: Store dataset in chunked array format.
+- Performance at TB scale from S3. At that scale the bottleneck is network bandwidth (~1-10 Gbps), not decompression. Hexz's sequential throughput is irrelevant when you're waiting on the network.
+- Comparison against WebDataset. Those benchmarks are not yet run. Do not assume Hexz beats WebDataset on sequential streaming throughput — WebDataset has a deeply optimized prefetch pipeline tuned for PyTorch's DataLoader.
 
-**Pros**:
-- Random access support
-- Compression per chunk
-- Good for array-like data
+---
 
-**Cons**:
-- **High overhead for variable-size data** (images, text)
-- **Compression tied to chunk size**: Small chunks = poor ratio, large chunks = high latency
-- **Complex metadata**: Directory-like structure adds overhead
-- **Write-heavy**: Creating a dataset is slow
+## Why block compression (not file compression)
 
-**Reality**: Works for specific use cases (medical imaging), not general-purpose.
+File-level compression (gzip, zstd over a tar) gives better ratios but zero random access. To read sample #500,000 from a gzip'd tar you decompress from byte 0.
 
-## The Hexz Approach
+Block-level compression (Hexz) compresses each 64KB block independently. To read sample #500,000 you read and decompress the ~1-2 blocks that contain it. Index lookup: ~174ns warm, ~6.6µs cold.
 
-Hexz is designed from the ground up for ML workloads, combining:
+The tradeoff: ~15-20% worse compression ratio for 1000× better random access latency. For ML training with shuffling this is the right tradeoff.
 
-1. **Block-level compression** (random access with good ratios)
-2. **Streaming from S3/HTTP** (train without local copies)
-3. **Content-defined chunking** (deduplication across versions)
-4. **Rust-powered concurrency** (bypass Python GIL)
+---
 
-### Architecture for ML
+## Why CDC for dataset versioning
 
-```mermaid
-graph TB
-    S3[S3 Bucket<br/>1.3TB Compressed] -->|Range Requests| Engine[Hexz Engine<br/>Rust]
-    Engine -->|Decompress| Cache[LRU Cache<br/>256MB]
-    Cache -->|Zero-Copy| PyTorch[PyTorch DataLoader]
-    PyTorch -->|Batches| GPU[GPU Training]
+Fixed-size block dedup works fine for append-only datasets (new samples added to the end). It breaks when data shifts — when samples are inserted, removed, or modified anywhere in the middle. A 1-byte insertion shifts every subsequent block boundary, making all subsequent blocks appear as new content.
 
-    style Engine fill:#f9f,stroke:#333
-    style Cache fill:#bbf,stroke:#333
-```
+FastCDC computes chunk boundaries based on content, not byte offsets. After an insertion, boundaries re-sync a few blocks later. The validated benchmark: 92.4% of shifted data deduplicated vs 0% with fixed-size. See `cargo bench --bench dedup_efficiency`.
 
-**Key Insights**:
+Tradeoff: CDC packing is 2.6× slower (4.9 GB/s → 1.9 GB/s). This is a one-time write cost. Reading CDC-packed archives is the same speed as fixed-size.
 
-1. **Only fetch what you need**: Random access means the first epoch downloads ~30% of data (working set), not 100%
-2. **Cache hot blocks**: LRU cache means second+ epochs are fast (most data in RAM)
-3. **Decompress in parallel**: Multi-worker DataLoaders decompress blocks concurrently
-4. **GIL-free**: Rust threads do I/O without blocking Python
+---
 
-### Real-World Performance
+## Where Hexz does not help
 
-**Scenario**: Train ResNet-50 on ImageNet-21K (1.3TB dataset) from S3
+**Sequential streaming at maximum throughput.** WebDataset and MosaicML StreamingDataset have tuned their DataLoader integration for maximum sequential throughput with prefetching. For pure sequential streaming of a dataset you never shuffle, they may match or exceed Hexz.
 
-[BENCHMARK NOT YET VALIDATED]
+**Small datasets.** For datasets under 1GB, just use folders. The packing step and index overhead are not worth it.
 
-This comparison requires end-to-end integration testing with actual S3 infrastructure. Preliminary estimates suggest:
-- First epoch: Comparable to WebDataset (network-bound)
-- Second epoch: Faster due to caching (cache hit rate dependent)
-- Storage: Significantly lower (cache working set vs full copy)
+**Purely tabular data.** Parquet and DuckDB are better for structured data with column queries.
 
-See `crates/cli/benches/ai/` for ML-specific benchmarks that have been validated.
+**Single checkpoint, no versioning.** If you save one checkpoint and never compare versions, safetensors is simpler, faster to write (no compression), and universally supported.
 
-## Design Decisions
+---
 
-### Why Block Compression (Not File Compression)?
+## Comparison with other formats
 
-**File-level compression** (tar.gz):
-- High compression ratio (uses entire file context)
-- No random access (must decompress from start)
+| | Random Access | Dedup Across Versions | Single File | No Daemon | S3 Streaming |
+|---|---|---|---|---|---|
+| Raw files | Yes | No | No | Yes | Slow (per-file requests) |
+| tar.gz | No | No | Yes | Yes | No |
+| WebDataset | Shard-only | No | No | Yes | Yes |
+| HDF5 | Yes (slow) | No | Yes | Yes | Partial |
+| safetensors | Yes | No | Yes | Yes | No |
+| git-lfs / DVC | No | No (pointer only) | No | No | Yes |
+| **Hexz** | **Yes** | **Yes (CDC + thin snapshots)** | **Yes** | **Yes** | **Yes** |
 
-**Block-level compression** (Hexz):
-- Moderate compression ratio (each block compressed independently)
-- True random access (decompress only needed blocks)
+WebDataset comparison is listed but not benchmarked — do not treat the throughput column as validated until those benchmarks are run.
 
-**Trade-off**: 15-20% worse compression ratio for 1000× better random access latency.
+---
 
-For ML training, this is the right trade-off:
-- Epoch 1 bandwidth: 100MB/s vs 80MB/s (acceptable)
-- Random sample access: 50µs vs 5000ms (critical difference)
+## See also
 
-### Why Content-Defined Chunking?
-
-Both fixed-size and CDC support deduplication, but CDC handles edits better.
-
-**Fixed-size blocks**:
-- Fast (4.9 GB/s pack speed)
-- Dedup works great for append-only updates
-- Insert 1 byte at start → all blocks shift → dedup breaks
-
-**Content-defined chunking** (FastCDC):
-- Slower (1.9 GB/s pack speed, 2.6× overhead)
-- Dedup works for all types of updates
-- Insert 1 byte → only affected blocks change → dedup preserved
-
-**Validated benchmark** (`cargo bench --bench dedup_efficiency`):
-
-50 MB base + 50 MB shifted (1KB inserted at start), packed into one snapshot:
-- Fixed blocks: -0.4% dedup (boundary shift breaks all blocks, 100.43 MB combined)
-- CDC: 92.4% dedup (boundaries re-sync, 54.02 MB combined)
-
-With insertions (samples inserted into middle):
-- Fixed blocks: ~0% deduplication (boundary shifts break every block)
-- CDC: 92%+ deduplication (resilient to shifts)
-
-**Recommendation**: Use fixed-size for append-only workflows, CDC when editing/inserting data.
-
-### Why Rust (Not Python)?
-
-Python's GIL (Global Interpreter Lock) prevents true parallelism. With 8 DataLoader workers:
-
-**Pure Python**:
-- Workers run sequentially due to GIL
-- 8 workers ≈ 1.2× speedup (context switching overhead)
-
-**Rust Core (Hexz)**:
-- Workers decompress in parallel (GIL released during I/O)
-- 8 workers = 7.5× speedup
-
-**Note**: Multi-worker scaling benchmarks exist in `crates/cli/benches/ai/multiworker.rs` but end-to-end PyTorch integration numbers need validation.
-
-## Comparison Matrix
-
-| Feature | Individual Files | tar.gz | WebDataset | HDF5 | **Hexz** |
-|---------|-----------------|--------|-----------|------|---------|
-| Random Access | ✓ | ✗ | Partial | ✓ | ✓ |
-| Compression | ✗ | ✓✓✓ | ✓✓ | ✓✓ | ✓✓ |
-| True Shuffling | ✓ | ✗ | Partial | ✓ | ✓ |
-| S3 Streaming | Slow | ✗ | ✓ | Partial | ✓✓ |
-| Deduplication | ✗ | ✗ | ✗ | ✗ | ✓ |
-| Update Cost | Low | High | Medium | Medium | Low |
-| Multi-Version | ✗ | ✗ | ✗ | ✗ | ✓ |
-
-## When NOT to Use Hexz
-
-Hexz is optimized for specific ML scenarios. It may not be ideal when:
-
-1. **Sequential-only access**: If you never shuffle and always read sequentially, WebDataset tar shards may be simpler
-2. **Small datasets (<1GB)**: Overhead of index not worth it, just use folders
-3. **Constantly changing data**: If dataset changes every hour, packing overhead may dominate
-4. **Tabular data**: Databases (Parquet, DuckDB) are better for structured data
-
-## The Future of ML Data Loading
-
-Hexz represents a shift in thinking:
-
-**Old paradigm**: Download everything, then train
-**New paradigm**: Stream what you need, cache what's hot
-
-As datasets grow to petabyte scale and training moves to the cloud, the old approach doesn't scale:
-- Can't fit 1PB on local disk
-- Downloading takes days
-- Storage costs dominate compute costs
-
-Hexz enables:
-- **Instant training start** (download index, not data)
-- **Cost efficiency** (pay for storage once, use from many instances)
-- **Version management** (deduplicate across versions)
-- **Reproducibility** (snapshots are immutable)
-
-## See Also
-
-- [Tutorial: First ML Pipeline](../tutorials/first-ml-pipeline.md)
-- [Explanation: Architecture](architecture.md)
-- [How-To: Setup S3 Streaming](../how-to/ml-workflows/setup-s3-streaming.md)
-- [ADR-0002: Block-Level Compression](../adr/0002-block-level-compression.md)
+- [Architecture explanation](architecture.md)
+- [Content-defined chunking deep dive](content-defined-chunking.md)
+- [Benchmarks](../project-docs/BENCHMARKS.md)
+- [Competitive comparison](../project-docs/COMPETITIVE_COMPARISON.md)

@@ -1,224 +1,169 @@
-
-# Hexz: High-Performance Data Streaming Engine
+# Hexz
 
 [![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://hexz-org.github.io/hexz/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-**Hexz** is a Rust-based streaming engine designed to eliminate "GPU Starvation" in AI training. It allows PyTorch to stream massive datasets directly from compressed S3 storage into GPU memory, bypassing the Python GIL and OS page cache.
+Hexz is a **seekable, deduplicated, block-compressed binary archive format** written in Rust, with Python bindings. A `.hxz` file stores arbitrary binary data in independently-compressed blocks with a two-level index, enabling random access to any byte range without decompressing the whole archive. Content-defined chunking (FastCDC) means blocks that are identical across different versions of a file are stored only once.
 
-At its core, Hexz is a **seekable, deduplicated compression filesystem**.
-
-> **Why is there VM code in here?**
-> Hexz’s engine is so low-latency that it was originally built to **boot entire operating systems** over the network in milliseconds. This has been adapted to load large datasets for machine learning.
-
-## The Problem: The "Data Bottleneck"
-
-Modern GPUs are too fast for standard data loaders.
-
-1. **S3 is high-latency:** Fetching millions of small images one-by-one is slow.
-2. **Existing formats are rigid:** Tools like `WebDataset` require "sharding" data into thousands of tar files, breaking random shuffling.
-3. **Storage is expensive:** Redundant data (checkpoints, code, synthetic data) wastes PB of storage.
-
-## The Solution: Hexz
-
-Hexz introduces a **Seekable Compressed Archive**.
-
-* **Stream, Don't Shard:** Store your 10TB dataset as a single compressed stream. Hexz can seek to *any* individual sample ID instantly without decompressing the whole block.
-* **Native Deduplication:** Identical blocks are stored once. A dataset with 50% redundancy uses 50% less storage and bandwidth automatically.
-* **Rust-Powered Concurrency:** We bypass Python's slow `multiprocessing` by handling data pre-fetching in lightweight Rust threads.
+The core primitive: **read any byte range, from any version, without extracting anything, from a single file, with no running daemon.**
 
 ---
 
-## Quick Start: AI Training
+## What it actually does
 
-Hexz acts as a drop-in replacement for standard PyTorch datasets.
+- **Random access to compressed data** — O(log N) lookup via a two-level index. Cold access: ~6.6 µs. Warm (cached): ~174 ns.
+- **Content deduplication** — FastCDC chunking with BLAKE3 hashing. Identical blocks across versions are stored once. Resilient to insertions/edits (not just appends).
+- **Thin snapshots** — A child file references its parent and only stores changed blocks. A chain of checkpoints costs the space of one full copy plus deltas.
+- **Pluggable backends** — Local file, mmap, HTTP byte-range requests, S3. The same API works for all of them.
+- **Block-level encryption** — AES-256-GCM per block. AES-NI accelerated (~2.1 GB/s). Encryption and signing (Ed25519) can coexist.
+- **Python bindings** — PyO3, zero-copy buffer protocol, GIL released during I/O.
 
-### 1. Installation
+## What it does not do
+
+- It is not a training data pipeline. WebDataset, MosaicML StreamingDataset, and similar tools have optimized the PyTorch DataLoader integration deeply. Hexz does not compete there.
+- It is not a database. There is no query engine, no schema enforcement, no transactions.
+- It is not a platform. There is no server to run, no UI, no access control layer. Those are roadmap items.
+- It cannot load arbitrary pickled Python objects. `torch.load` compatibility is not a goal.
+- Cross-file deduplication via a shared external index is **not yet implemented**. Deduplication currently works within a single pack operation or via the parent-child thin snapshot chain.
+
+---
+
+## Validated benchmarks
+
+All numbers below are from real benchmark runs. Microbenchmarks run on Intel i7-14700K, 64GB RAM, NVMe SSD, Linux.
+
+**Engine performance (microbenchmarks, single-threaded):**
+
+| Operation | Throughput |
+|---|---|
+| LZ4 decompress | 32.1 GB/s |
+| LZ4 compress | 23.6 GB/s |
+| Zstd-3 decompress | 13.4 GB/s |
+| Pack LZ4, no CDC | 4.9 GB/s |
+| Pack LZ4 + CDC | 1.9 GB/s |
+| Sequential read (100MB file) | 9.0 GB/s |
+| Random access, cold cache | 6.6 µs |
+| Random access, warm cache | 174 ns |
+
+**End-to-end ML data loading (Python, real image datasets):**
+
+Benchmarked against CIFAR-10 (108MB), STL-10 (28MB), CIFAR-100 (18MB) — small datasets, validated on real hardware:
+
+| | Sequential Read | Random Access | Shuffled Epoch |
+|---|---|---|---|
+| Local files (baseline) | 387 MB/s | 6.2 µs | 360 MB/s |
+| HDF5 (LZF) | 56 MB/s | 40.8 µs | 55 MB/s |
+| **Hexz (LZ4)** | **1,218 MB/s** | **3.4 µs** | **525 MB/s** |
+
+These are Python-level numbers on a dataset that fits in RAM. At TB scale from S3, the bottleneck is network bandwidth — Hexz won't change that.
+
+**Deduplication (validated):**
+
+50MB base file + 50MB shifted version (1KB inserted at start), packed into one archive:
+
+| Method | Combined size | Dedup of shifted data |
+|---|---|---|
+| Fixed-size blocks | 100.4 MB | 0% |
+| CDC blocks | 54.0 MB | **92.4%** |
+
+Fixed-size dedup breaks when data shifts. CDC doesn't.
+
+---
+
+## Where Hexz is a good fit
+
+**Many versions of the same large binary file.** Model checkpoints, dataset versions, VM snapshots — anything where adjacent versions share most of their content. The thin snapshot chain plus CDC dedup means you store one full copy and pay only for what changed.
+
+**Random access to a specific part without downloading the whole file.** Read a single tensor from a 14GB checkpoint, or a single sample from a 1TB dataset, by fetching only the blocks that contain it — over HTTP or S3.
+
+**Single-file portability.** No directory of chunks, no sidecar metadata files, no daemon. One `.hxz` file contains data, index, and optional manifest.
+
+## Where Hexz is not a good fit
+
+**Single training run, no versioning.** If you pack once and never deduplicate across versions, safetensors (for model weights) or WebDataset (for training data) are simpler and have broader ecosystem support.
+
+**Checkpoints under 1GB.** The overhead is not worth it at small scale.
+
+**Sequential-only streaming at maximum throughput.** WebDataset and MosaicML StreamingDataset have deeply optimized the PyTorch DataLoader prefetch pipeline. They will match or beat Hexz on pure sequential throughput.
+
+**Windows.** The FUSE and mmap paths have not been validated on Windows. Core I/O and the Python bindings work, but don't treat Windows as a supported platform yet.
+
+---
+
+## Installation
 
 ```bash
-# Python library (PyTorch Dataset, readers, writers)
+# Python library
 pip install hexz
 
-# CLI tool (pack, build, convert, inspect, VM management)
+# CLI tool
 cargo install hexz-cli
 ```
 
-Pre-built binaries are also available on the [GitHub releases](https://github.com/hexz-org/hexz/releases) page.
-
-### 2. Train from a hexz snapshot
-
-```python
-import hexz
-import torch
-
-# One compressed file — no extraction, no temp dirs
-dataset = hexz.Dataset("train.hxz", item_size=3073, shuffle=True)
-
-loader = torch.utils.data.DataLoader(dataset, batch_size=128)
-
-for batch in loader:
-    raw = batch.numpy()
-    labels = raw[:, 0].astype("int64")
-    pixels = raw[:, 1:].reshape(-1, 3, 32, 32).astype("float32") / 255.0
-    # ... train your model
-```
-
-### 3. Pack Your Data
-
-Use the CLI to convert your raw folder into a high-performance Hexz archive.
-
-```bash
-# Compresses, deduplicates, and indexes your dataset
-hexz pack --input ./raw_images --output dataset.hxz --dedup
-
-```
-
----
-
-## Hosted Datasets
-
-Pre-packed datasets are available as [GitHub Release assets](https://github.com/hexz-org/hexz-examples/releases/tag/datasets-v1). Download a single `.hxz` file and start training — no extraction needed.
-
-| Dataset | Samples | Size |
-|---------|---------|------|
-| [CIFAR-10](https://github.com/hexz-org/hexz-examples/releases/tag/datasets-v1) | 60,000 | ~95 MB |
-| [CIFAR-100](https://github.com/hexz-org/hexz-examples/releases/tag/datasets-v1) | 60,000 | ~140 MB |
+## Quick start
 
 ```python
 import hexz
 
-dataset = hexz.Dataset("cifar100-train.hxz", item_size=3073, shuffle=True)
+# Write
+with hexz.open("data.hxz", mode="w", compression="lz4") as writer:
+    writer.add_file("disk.img")
+
+# Read
+with hexz.open("data.hxz") as reader:
+    chunk = reader.read(4096)      # read 4KB
+    reader.seek(1024 * 1024)       # seek to 1MB offset
+    block = reader[100:200]        # slice notation
 ```
 
-The `.hxz` files are smaller than torchvision's raw archives — already compressed with LZ4 and deduplicated with CDC.
+Thin snapshot (only stores changed blocks):
 
-To host your own datasets, see [hexz-examples/dataset-upload](https://github.com/hexz-org/hexz-examples/tree/main/dataset-upload).
+```python
+import hexz
 
----
+# Pack v2, referencing v1 as parent
+hexz.build("v2_source/", "v2.hxz", parent="v1.hxz")
 
-## Examples
-
-See [hexz-examples](https://github.com/hexz-org/hexz-examples) for complete, runnable demos:
-
-| Example | What it shows |
-|---------|---------------|
-| [cifar100-training](https://github.com/hexz-org/hexz-examples/tree/main/cifar100-training) | Train CIFAR-100 from hexz vs torchvision — speed, storage, and accuracy compared |
-| [checkpoint-dedup](https://github.com/hexz-org/hexz-examples/tree/main/checkpoint-dedup) | Deduplicate fine-tuning checkpoints with CDC — 80% storage savings |
-| [dataset-upload](https://github.com/hexz-org/hexz-examples/tree/main/dataset-upload) | Pack and upload datasets to Hugging Face for zero-download streaming |
+# v2.hxz contains only blocks not already in v1.hxz
+```
 
 ---
 
-## System Capabilities
+## Format demonstration: VM boot
 
-Hexz includes a full **Virtual Machine Manager** (`hexz-cli` + `hexz-fuse`). We maintain this to demonstrate the extreme low-latency capabilities of the file format.
-
-### Instant VM Boot
-
-Boot a VM directly from a compressed snapshot. The OS starts executing instructions immediately while blocks are paged in on-demand.
+The format is general enough to boot an operating system from a compressed snapshot, paging blocks in on demand. This is not a primary use case — it's a demonstration that the random access latency is low enough for interactive workloads.
 
 ```bash
-# Boot an Ubuntu snapshot with 4GB RAM
 hexz boot ubuntu-22.04.hxz --ram 4G
-
-```
-
-### Live Snapshotting
-
-Capture the exact state (Disk + RAM) of a running VM to resume later—useful for debugging training crashes or "pausing" expensive compute environments.
-
-```bash
-# Snapshot a running VM to a new file
-hexz snapshot --socket /tmp/vm.sock --output checkpoint.hxz
-
 ```
 
 ---
 
 ## Architecture
 
-The project is organized as a high-performance Rust Workspace:
-
 | Crate | Purpose |
-| --- | --- |
-| **`crates/loader`** | **(Primary Product)** Python bindings via PyO3 for AI data streaming. |
-| **`crates/core`** | The brain. Handles the seekable file format, compression codecs, and deduplication logic. |
-| **`crates/cli`** | The `hexz` command-line tool for packing datasets and managing VMs. |
-| **`crates/fuse`** | A FUSE adapter that mounts Hexz archives as local filesystems (used for VMs). |
-| **`crates/server`** | High-throughput HTTP server for streaming data blocks. |
+|---|---|
+| `crates/core` | Format, compression, dedup, index, storage backends |
+| `crates/loader` | Python bindings via PyO3 |
+| `crates/cli` | `hexz` command-line tool |
+| `crates/fuse` | FUSE adapter for mounting archives |
+| `crates/server` | HTTP server for block streaming |
 
 ## Development
 
-**All development commands go through the Makefile.** From the repo root, run **`make help`** to see every target. There are no separate setup scripts or one-off cargo/maturin commands to remember.
-
-| What you want | Command |
-|---------------|--------|
-| List all commands | `make help` |
-| One-time setup (tools + venv) | `make setup` (run `make setup-check` first to see required system packages) |
-| Build CLI + Python | `make build` or `make rust` / `make develop` |
-| Run all tests | `make test` |
-| Lint & format | `make lint` / `make fmt` |
-| Full CI locally | `make ci` |
-
-## Documentation
-
-* **[Live Documentation](https://hexz-org.github.io/hexz/)** — Comprehensive guides and API reference.
-* **[Quick start](docs/tutorials/getting-started.md)** — Create a snapshot and read it in 5 minutes.
-* **[Contributing](docs/project-docs/CONTRIBUTING.md)** — Setup, branching, and PR checklist (all Makefile-based).
-
-## Build from Source
-
-### Prerequisites (checked by `make setup`)
-
-Run **`make setup-check`** from the repo root. It will report any missing system packages and show install commands for your OS. You need:
-
-* **Rust** — rustup + cargo ([rustup.rs](https://rustup.rs))
-* **pkg-config** — for C library detection
-* **Python 3** — for the AI loader
-* **libfuse** — dev headers (VM/mount support; Linux: libfuse-dev or fuse2; macOS: macFUSE)
-* **qemu** — optional, only for VM boot tests
-
-### Compiling
-
-From repo root (after installing any packages suggested by `make setup-check`):
+All commands go through the Makefile:
 
 ```bash
-make setup    # one-time: Rust components, cargo tools, Python venv
-make build    # Rust workspace + Python wheel
-# Or: make rust (CLI only), make develop (editable Python package)
+make help          # list all targets
+make setup         # one-time setup
+make build         # Rust + Python
+make test          # all tests
+make bench         # benchmarks
+make lint          # clippy + format check
 ```
-
-## Benchmarks
-
-Performance measured on Intel i7-14700K with 64GB RAM:
-
-* **Compression:** LZ4 at 22 GB/s (compress) / 31 GB/s (decompress)
-* **Sequential Read:** 8-9 GB/s (LZ4 compression)
-* **Random Access:** 6.6 µs (cold cache), 174 ns (warm cache)
-* **Multi-worker Scaling:** 2.9× speedup with 8 workers, 4.1× with 16 workers
-* **Hashing:** BLAKE3 at 5.3 GB/s (2.2× faster than SHA-256)
-
-**See [`docs/project-docs/BENCHMARKS.md`](docs/project-docs/BENCHMARKS.md)** for complete validated results and reproduction commands.
-
-Run benchmarks: `cargo bench --bench compression` or `make bench` from repo root.
 
 ---
 
 ## License
 
-Copyright 2026 Alethic Systems
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
----
-
-*Hexz is an open-source project exploring the limits of seekable compression and zero-copy I/O.*
+Copyright 2026 Alethic Systems. Apache License, Version 2.0.
