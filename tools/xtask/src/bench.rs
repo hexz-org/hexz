@@ -23,6 +23,7 @@ const MACRO_BENCHES: &[&str] = &[
     "write_throughput",
     "dedup_efficiency",
     "block_size_tradeoffs",
+    "pack_memory",
 ];
 
 const AI_BENCHES: &[&str] = &[
