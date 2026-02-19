@@ -110,4 +110,9 @@ Documentation contributions are welcome! Please:
 
 ## License
 
-Documentation is licensed under Apache 2.0, same as the Hexz project.
+Licensed under either of
+
+- [Apache License, Version 2.0](../LICENSE-APACHE)
+- [MIT License](../LICENSE-MIT)
+
+at your option.

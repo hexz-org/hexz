@@ -1,7 +1,8 @@
 # Hexz: Efficient Model Checkpoint Storage
 
 [![Documentation](https://img.shields.io/badge/docs-latest-blue.svg)](https://hexz-org.github.io/hexz/)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE-MIT)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE-APACHE)
 
 Hexz is a high-performance storage engine designed for **ML model checkpoints**. It uses content-defined chunking (CDC) and a two-level index to enable massive storage savings and instant random access for large model weights (fine-tuning, LoRA sweeps, RLHF).
 
@@ -89,3 +90,14 @@ pip install hexz
 # CLI tool
 cargo install hexz-cli
 ```
+
+---
+
+## License
+
+Licensed under either of
+
+- [Apache License, Version 2.0](LICENSE-APACHE)
+- [MIT License](LICENSE-MIT)
+
+at your option.
