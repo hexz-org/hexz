@@ -109,15 +109,21 @@ impl Printer {
         println!();
 
         // Collect all arguments
-        let mut args: Vec<_> = sub.get_arguments().collect();
-        args.sort_by(|a, b| a.get_id().cmp(b.get_id()));
+        let args: Vec<_> = sub.get_arguments().collect();
 
         // Partition into Positionals (Arguments) and Options (Flags)
-        // We identify positionals by the lack of short/long flags.
-        let (positionals, flags): (Vec<_>, Vec<_>) = args
+        // Robust check: Positionals are arguments that have NO short flag AND NO long flag.
+        let (mut positionals, mut flags): (Vec<_>, Vec<_>) = args
             .into_iter()
             .filter(|a| a.get_id() != "help" && a.get_id() != "version")
-            .partition(|a| a.get_long().is_none() && a.get_short().is_none());
+            .partition(|a| a.get_short().is_none() && a.get_long().is_none());
+
+        // Sort positionals by index (so SOURCE comes before OUTPUT)
+        // If index is missing, we push it to the end.
+        positionals.sort_by_key(|a| a.get_index().unwrap_or(usize::MAX));
+
+        // Sort flags alphabetically
+        flags.sort_by(|a, b| a.get_id().cmp(b.get_id()));
 
         // 3. Arguments Section (Positional)
         if !positionals.is_empty() {

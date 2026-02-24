@@ -1,4 +1,3 @@
-//! Command-line argument definitions for the Hexz CLI.
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -35,10 +34,11 @@ pub enum Commands {
     #[command(
         long_about = "Creates a highly compressed, encrypted, and deduplicated archive from a disk image or memory dump.\n\nIt uses Content-Defined Chunking (CDC) to ensure that only changed weights are stored when archiving multiple versions of a model. This is the primary way to ingest data into Hexz."
     )]
-    #[command(
-        after_help = "hexz pack --disk ./model.bin --output model.hxz --compression zstd --cdc"
-    )]
+    #[command(after_help = "hexz pack model.hxz --disk ./model.bin --compression zstd --cdc")]
     Pack {
+        /// Output archive path (.hxz)
+        output: PathBuf,
+
         /// Path to disk image to pack
         #[arg(long)]
         disk: Option<PathBuf>,
@@ -46,10 +46,6 @@ pub enum Commands {
         /// Path to memory dump to pack
         #[arg(long)]
         memory: Option<PathBuf>,
-
-        /// Output archive path (.hxz)
-        #[arg(short, long)]
-        output: PathBuf,
 
         /// Compression algorithm (lz4, zstd, none)
         #[arg(long, default_value = "lz4")]
@@ -109,7 +105,7 @@ pub enum Commands {
     #[command(
         long_about = "Analyzes the differences between a base image and an overlay.\n\nThis is useful for auditing what changed in a fine-tuning run or verifying that a thin snapshot only contains the expected deltas."
     )]
-    #[command(after_help = "hexz diff --overlay finetuned.hxz --blocks")]
+    #[command(after_help = "hexz diff finetuned.overlay --blocks")]
     Diff {
         /// Path to overlay
         overlay: PathBuf,
@@ -128,19 +124,17 @@ pub enum Commands {
     #[command(
         long_about = "Recursively builds a Hexz archive from a local directory structure.\n\nUnlike 'pack' which handles raw disk images, 'build' is designed for file-system level packing."
     )]
-    #[command(after_help = "hexz build --source ./checkpoints/ --output archive.hxz")]
+    #[command(after_help = "hexz build ./checkpoints/ archive.hxz")]
     Build {
         /// Source directory
-        #[arg(long)]
         source: PathBuf,
+
+        /// Output archive path
+        output: PathBuf,
 
         /// Optional memory dump
         #[arg(long)]
         memory: Option<PathBuf>,
-
-        /// Output archive path
-        #[arg(short, long)]
-        output: PathBuf,
 
         /// Build profile
         #[arg(long)]
@@ -172,7 +166,7 @@ pub enum Commands {
     #[command(
         long_about = "Ingests external formats like tar, HDF5, or WebDataset into a Hexz snapshot.\n\nThis allows legacy datasets to benefit from Hexz's random access and deduplication features."
     )]
-    #[command(after_help = "hexz convert --format tar --input data.tar --output data.hxz")]
+    #[command(after_help = "hexz convert tar data.tar data.hxz")]
     Convert {
         /// Source format (tar, hdf5, webdataset)
         format: String,
@@ -209,7 +203,7 @@ pub enum Commands {
     #[command(
         long_about = "Boots a transient Virtual Machine directly from a Hexz snapshot.\n\nThe VM uses a copy-on-write overlay, meaning the original snapshot remains immutable. Changes are lost on shutdown unless --persist is used."
     )]
-    #[command(after_help = "hexz boot --snap ubuntu.hxz --ram 4G --no-graphics")]
+    #[command(after_help = "hexz boot ubuntu.hxz --ram 4G --no-graphics")]
     Boot {
         /// Snapshot to boot from
         snap: String,
@@ -253,11 +247,13 @@ pub enum Commands {
     #[command(
         long_about = "Runs an OS installer from an ISO and captures the result into a new Hexz snapshot.\n\nThis automates the process of creating base images for VMs."
     )]
-    #[command(after_help = "hexz install --iso alpine.iso --output alpine-base.hxz")]
+    #[command(after_help = "hexz install alpine.iso alpine-base.hxz")]
     Install {
         /// Path to ISO image
-        #[arg(long)]
         iso: PathBuf,
+
+        /// Output snapshot path
+        output: PathBuf,
 
         /// Virtual disk size (e.g., "10G")
         #[arg(long, default_value = "10G")]
@@ -266,10 +262,6 @@ pub enum Commands {
         /// RAM size (e.g., "4G")
         #[arg(long, default_value = "4G")]
         ram: String,
-
-        /// Output snapshot path
-        #[arg(short, long)]
-        output: PathBuf,
 
         /// Disable graphics
         #[arg(long)]
@@ -290,22 +282,18 @@ pub enum Commands {
     #[command(
         long_about = "Triggers a live snapshot of a running VM via the QMP socket.\n\nThis allows for capturing the state of a running system without shutting it down."
     )]
-    #[command(after_help = "hexz snap --socket /tmp/qmp.sock --base base.hxz --output live.hxz")]
+    #[command(after_help = "hexz snap /tmp/qmp.sock base.hxz overlay.bin live.hxz")]
     Snap {
         /// QMP socket path
-        #[arg(long)]
         socket: PathBuf,
 
         /// Base snapshot
-        #[arg(long)]
         base: PathBuf,
 
         /// Overlay path
-        #[arg(long)]
         overlay: PathBuf,
 
         /// Output snapshot
-        #[arg(short, long)]
         output: PathBuf,
     },
 
@@ -482,10 +470,9 @@ pub enum Commands {
     #[cfg(feature = "signing")]
     #[command(display_order = 24)]
     #[command(long_about = "Cryptographically signs a Hexz archive using a private key.")]
-    #[command(after_help = "hexz sign --key private.pem model.hxz")]
+    #[command(after_help = "hexz sign private.pem model.hxz")]
     Sign {
         /// Private key path
-        #[arg(long)]
         key: PathBuf,
 
         /// Archive to sign
@@ -498,10 +485,9 @@ pub enum Commands {
     #[command(
         long_about = "Verifies the cryptographic signature of an archive using a public key."
     )]
-    #[command(after_help = "hexz verify --key public.pem model.hxz")]
+    #[command(after_help = "hexz verify public.pem model.hxz")]
     Verify {
         /// Public key path
-        #[arg(long)]
         key: PathBuf,
 
         /// Archive to verify
