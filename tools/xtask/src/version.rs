@@ -3,6 +3,7 @@ use anyhow::{Context, Result, bail};
 use semver::Version;
 use serde::Deserialize;
 use std::path::Path;
+use std::process::Command;
 
 // ── TOML structures ─────────────────────────────────────────────────────────
 
@@ -140,6 +141,24 @@ fn pypi_version(name: &str) -> Result<Option<Version>> {
     }
 }
 
+// ── Git checks ──────────────────────────────────────────────────────────────
+
+fn is_git_clean() -> Result<bool> {
+    let output = Command::new("git")
+        .args(["status", "--porcelain"])
+        .output()
+        .context("failed to run git status")?;
+    Ok(output.stdout.is_empty())
+}
+
+fn current_git_branch() -> Result<String> {
+    let output = Command::new("git")
+        .args(["branch", "--show-current"])
+        .output()
+        .context("failed to run git branch")?;
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
 // ── Main logic ──────────────────────────────────────────────────────────────
 
 pub fn run() -> Result<()> {
@@ -147,8 +166,41 @@ pub fn run() -> Result<()> {
     let ws_ver = workspace_version(&root)?;
     let mut failed = false;
 
-    println!("{GREEN}Checking versions\u{2026}{RESET}");
+    println!("{GREEN}Checking versions and environment\u{2026}{RESET}");
     println!("  Workspace version: {ws_ver}\n");
+
+    // ── Pre-release Git Checks ──────────────────────────────────────────────
+
+    println!("  {BOLD}Git Environment{RESET}");
+
+    let branch = current_git_branch()?;
+    let ok_branch = branch == "main" || branch == "master";
+    if !ok_branch {
+        failed = true;
+    }
+    if ok_branch {
+        println!("  {} branch is '{branch}'", check_mark(true));
+    } else {
+        println!(
+            "  {} {RED}branch is '{branch}' (expected main or master){RESET}",
+            check_mark(false)
+        );
+    }
+
+    let clean = is_git_clean()?;
+    if !clean {
+        failed = true;
+    }
+    if clean {
+        println!("  {} working directory is clean", check_mark(true));
+    } else {
+        println!(
+            "  {} {RED}working directory has uncommitted changes{RESET}",
+            check_mark(false)
+        );
+    }
+
+    println!();
 
     // ── Consistency checks ──────────────────────────────────────────────────
 
@@ -246,11 +298,11 @@ pub fn run() -> Result<()> {
 
     if failed {
         println!(
-            "  {RED}{BOLD}Version check failed \u{2014} fix versions before releasing{RESET}\n"
+            "  {RED}{BOLD}Pre-release checks failed \u{2014} resolve issues before releasing{RESET}\n"
         );
-        bail!("version check failed");
+        bail!("pre-release checks failed");
     }
 
-    println!("  {GREEN}{BOLD}All version checks passed{RESET}\n");
+    println!("  {GREEN}{BOLD}All pre-release checks passed{RESET}\n");
     Ok(())
 }
