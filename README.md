@@ -12,7 +12,7 @@ Hexz is a high-performance storage engine designed for **ML model checkpoints**.
 
 ## Why Hexz?
 
-- **Extreme Deduplication** — CDC-based dedup across checkpoint chains means only changed weights are stored. A 14GB model fine-tuned 50 times costs ~20GB, not 700GB.
+- **Deduplication** — CDC-based dedup across checkpoint chains means only changed weights are stored. A 14GB model fine-tuned 50 times costs ~20GB, not 700GB.
 - **Instant Random Access** — Read specific tensors from a 100GB checkpoint (e.g., a single layer) without downloading or decompressing the whole file. O(log N) lookup.
 - **Thin Snapshots** — Child checkpoints reference their parent and only store deltas. Perfect for iterative fine-tuning and audit trails.
 - **Zero-Copy I/O** — Direct loading into NumPy and PyTorch buffers via the Python buffer protocol. Released GIL during I/O.

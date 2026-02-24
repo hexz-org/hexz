@@ -38,6 +38,9 @@ from typing import Any, Union
 # Arrays (always available)
 from .array import ArrayView, read_array, write_array
 
+# Checkpoint (always available — torch is lazy-imported inside function bodies)
+from . import checkpoint
+
 # Conversion utilities (always available)
 from .convert import convert
 
@@ -163,6 +166,8 @@ __all__ = [
     # === Build (2) ===
     "build",
     "PROFILES",
+    # === Checkpoint (1) ===
+    "checkpoint",
     # === Conversion (1) ===
     "convert",
     # === Inspection (1) ===
