@@ -8,6 +8,7 @@ This directory contains examples demonstrating the key features and use cases of
 - **`zero_copy_performance.py`**: Benchmarking Hexz's zero-copy loading against Python's `pickle`.
 
 ## Machine Learning & Data Science
+- **`resnet_finetune_checkpoints.py`**: Real transfer learning workflow — ResNet-18 on CIFAR-10, three checkpoints (pretrained → head fine-tune → layer4 fine-tune), with measured dedup savings and selective load speedups. Requires `torchvision`.
 - **`video_frame_access.py`**: Fast random access to specific frames in a large video dataset.
 - **`llm_weight_dedup.py`**: Saving space when storing multiple versions of large model weights.
 - **`medical_imaging_3d.py`**: Efficient 2D slicing of massive 3D medical volumes (MRI/CT).

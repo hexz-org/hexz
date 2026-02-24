@@ -49,6 +49,61 @@ with hexz.Writer("finetuned.hxz", packing="tight") as writer:
 
 ---
 
+## Checkpoint API
+
+`hexz.checkpoint` is a tensor-aware save/load API built on top of the storage engine. Pass it a PyTorch `state_dict` and it handles serialisation, manifest tracking, and cross-version deduplication automatically.
+
+```python
+import hexz.checkpoint as ckpt
+
+# Save
+ckpt.save(model.state_dict(), "v1.hxz")
+
+# Fine-tune, then save only the delta against v1
+ckpt.save(model.state_dict(), "v2.hxz", parent="v1.hxz")
+
+# Load everything back
+state = ckpt.load("v2.hxz")
+model.load_state_dict({k: v for k, v in state.items() if isinstance(v, torch.Tensor)})
+
+# Load a single tensor without touching the rest of the file
+head = ckpt.load("v2.hxz", keys=["fc.weight", "fc.bias"], device="cuda:0")
+
+# Inspect structure without reading any weights
+info = ckpt.manifest("v2.hxz")
+# {"fc.weight": {"dtype": "float32", "shape": [10, 512], "offset": ..., "length": ...}, ...}
+```
+
+Supported dtypes: `float16`, `float32`, `float64`, `bfloat16`, `int8`, `int16`, `int32`, `int64`, `uint8`, `bool`. Scalars (`int`, `float`, `bool`, `str`) are stored inline in the manifest JSON.
+
+### Real-world benchmark: ResNet-18 transfer learning on CIFAR-10
+
+A standard transfer learning workflow — pretrained ImageNet weights, then two rounds of fine-tuning with progressively more layers unfrozen — run on an RTX 4060 Ti ([full example](examples/resnet_finetune_checkpoints.py)):
+
+| Checkpoint | What changed | File size | Accuracy |
+|---|---|---|---|
+| v1 — pretrained ResNet-18 | full model | 41.5 MB | 8.3% (ImageNet weights, no CIFAR training) |
+| v2 — head fine-tuned | fc layer only (5,130 params) | **0.1 MB** | 78.7% |
+| v3 — layer4 + head fine-tuned | layer4 + fc (8.4M params) | 31.2 MB | 87.9% |
+
+```
+Naive storage (3 full copies):   134.2 MB
+Hexz checkpoint chain:            72.8 MB   (46% smaller)
+```
+
+v2 is 0.1 MB because only the 5,130-parameter classifier head changed — the 11.2M frozen conv weights are stored once in v1 and referenced for free in v2 and v3. v3 is 31.2 MB because layer4 (75% of the network by parameter count) was genuinely updated.
+
+**Selective loading** is proportionally faster:
+
+```
+Full model load (122 tensors):    49 ms
+Classifier head only (2 tensors):  0.6 ms   (82× faster)
+```
+
+This matters when you have dozens of fine-tuned variants and want to compare heads, swap classifiers, or inspect specific layers without pulling the entire checkpoint into memory.
+
+---
+
 ## What it is not
 
 - **Not a training data pipeline**: WebDataset or StreamingDataset are better for sequential sample streaming. Hexz is optimized for model weights and random-access blobs.
