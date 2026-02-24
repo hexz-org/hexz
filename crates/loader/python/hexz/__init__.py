@@ -35,11 +35,11 @@ See documentation for advanced usage: https://github.com/hexz-storage/hexz
 
 from typing import Any, Union
 
-# Arrays (always available)
-from .array import ArrayView, read_array, write_array
-
 # Checkpoint (always available — torch is lazy-imported inside function bodies)
 from . import checkpoint
+
+# Arrays (always available)
+from .array import ArrayView, read_array, write_array
 
 # Conversion utilities (always available)
 from .convert import convert
@@ -143,7 +143,7 @@ def open(path: PathLike, *, mode: str = "r", **options: Any) -> Union[Reader, Wr
         raise ValueError(f"Invalid mode: {mode}")
 
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
 
 
 def version() -> str:
