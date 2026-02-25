@@ -1,7 +1,7 @@
 //! Pack data into a Hexz archive.
 //!
 //! This command creates a `.st` archive from disk images and/or memory dumps,
-//! delegating to the core packing logic in [`hexz_core::ops::pack`].
+//! delegating to the core packing logic in [`hexz_ops::pack`].
 //!
 //! # Overview
 //!
@@ -38,7 +38,7 @@
 
 use crate::ui::progress::create_progress_bar;
 use anyhow::Result;
-use hexz_core::ops::pack::{PackConfig, pack_snapshot};
+use hexz_ops::pack::{PackConfig, pack_snapshot};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 

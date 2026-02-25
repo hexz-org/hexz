@@ -63,7 +63,7 @@
 //!
 //! ```no_run
 //! use hexz_core::File;
-//! use hexz_core::store::local::FileBackend;
+//! use hexz_store::local::FileBackend;
 //! use hexz_core::algo::compression::lz4::Lz4Compressor;
 //! use hexz_fuse::vfs::InodeMap;
 //! use std::sync::Arc;
@@ -86,7 +86,7 @@
 //!
 //! ```no_run
 //! # use hexz_core::File;
-//! # use hexz_core::store::local::FileBackend;
+//! # use hexz_store::local::FileBackend;
 //! # use hexz_core::algo::compression::lz4::Lz4Compressor;
 //! # use hexz_fuse::vfs::InodeMap;
 //! # use std::sync::Arc;
@@ -318,7 +318,7 @@ impl InodeMap {
     ///
     /// ```no_run
     /// use hexz_core::File;
-    /// use hexz_core::store::local::FileBackend;
+    /// use hexz_store::local::FileBackend;
     /// use hexz_core::algo::compression::lz4::Lz4Compressor;
     /// use hexz_fuse::vfs::InodeMap;
     /// use std::sync::Arc;
@@ -371,7 +371,7 @@ impl InodeMap {
     ///
     /// ```no_run
     /// # use hexz_core::File;
-    /// # use hexz_core::store::local::FileBackend;
+    /// # use hexz_store::local::FileBackend;
     /// # use hexz_core::algo::compression::lz4::Lz4Compressor;
     /// # use hexz_fuse::vfs::InodeMap;
     /// # use std::sync::Arc;
@@ -439,7 +439,7 @@ impl InodeMap {
     ///
     /// ```no_run
     /// # use hexz_core::File;
-    /// # use hexz_core::store::local::FileBackend;
+    /// # use hexz_store::local::FileBackend;
     /// # use hexz_core::algo::compression::lz4::Lz4Compressor;
     /// # use hexz_fuse::vfs::InodeMap;
     /// # use std::sync::Arc;
@@ -495,7 +495,7 @@ impl InodeMap {
     ///
     /// ```no_run
     /// # use hexz_core::File;
-    /// # use hexz_core::store::local::FileBackend;
+    /// # use hexz_store::local::FileBackend;
     /// # use hexz_core::algo::compression::lz4::Lz4Compressor;
     /// # use hexz_fuse::vfs::InodeMap;
     /// # use std::sync::Arc;
@@ -581,7 +581,7 @@ impl InodeMap {
     ///
     /// ```no_run
     /// # use hexz_core::File;
-    /// # use hexz_core::store::local::FileBackend;
+    /// # use hexz_store::local::FileBackend;
     /// # use hexz_core::algo::compression::lz4::Lz4Compressor;
     /// # use hexz_core::SnapshotStream;
     /// # use hexz_fuse::vfs::InodeMap;

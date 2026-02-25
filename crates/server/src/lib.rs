@@ -111,7 +111,7 @@
 //! ```no_run
 //! use std::sync::Arc;
 //! use hexz_core::File;
-//! use hexz_core::store::local::FileBackend;
+//! use hexz_store::local::FileBackend;
 //! use hexz_core::algo::compression::lz4::Lz4Compressor;
 //! use hexz_server::serve_http;
 //!
@@ -132,7 +132,7 @@
 //! ```no_run
 //! use std::sync::Arc;
 //! use hexz_core::File;
-//! use hexz_core::store::local::FileBackend;
+//! use hexz_store::local::FileBackend;
 //! use hexz_core::algo::compression::lz4::Lz4Compressor;
 //! use hexz_server::serve_nbd;
 //!
@@ -370,7 +370,7 @@ struct AppState {
 /// ```no_run
 /// use std::sync::Arc;
 /// use hexz_core::File;
-/// use hexz_core::store::local::FileBackend;
+/// use hexz_store::local::FileBackend;
 /// use hexz_core::algo::compression::lz4::Lz4Compressor;
 /// use hexz_server::serve_nbd;
 ///
@@ -593,7 +593,7 @@ pub async fn serve_nbd(snap: Arc<File>, port: u16) -> anyhow::Result<()> {
 /// ```no_run
 /// use std::sync::Arc;
 /// use hexz_core::File;
-/// use hexz_core::store::local::FileBackend;
+/// use hexz_store::local::FileBackend;
 /// use hexz_core::algo::compression::lz4::Lz4Compressor;
 /// use hexz_server::serve_s3_gateway;
 ///
@@ -770,7 +770,7 @@ pub async fn serve_s3_gateway(_snap: Arc<File>, port: u16) -> anyhow::Result<()>
 /// ```no_run
 /// use std::sync::Arc;
 /// use hexz_core::File;
-/// use hexz_core::store::local::FileBackend;
+/// use hexz_store::local::FileBackend;
 /// use hexz_core::algo::compression::lz4::Lz4Compressor;
 /// use hexz_server::serve_http;
 ///

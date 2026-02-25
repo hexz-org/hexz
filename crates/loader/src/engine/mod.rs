@@ -158,8 +158,8 @@ pub mod iterator;
 pub mod shuffle;
 
 use hexz_core::File;
-use hexz_core::api::file::SnapshotStream;
-use hexz_core::store::StorageBackend;
+use hexz_core::api::file::{ParentLoader, SnapshotStream};
+use hexz_store::StorageBackend;
 use std::sync::Arc;
 
 /// Errors that can occur when opening or reading snapshots.
@@ -490,45 +490,58 @@ pub struct OpenConfig {
 /// features like prefetching and custom cache sizes. The alternative
 /// `File::new` would use default settings without prefetch support.
 pub fn open_snapshot(config: OpenConfig) -> Result<Arc<File>, OpenError> {
-    let backend: Arc<dyn StorageBackend> = if config.path.starts_with("http://")
-        || config.path.starts_with("https://")
-    {
-        Arc::new(
-            hexz_core::store::http::HttpBackend::new(config.path.clone(), config.allow_restricted)
-                .map_err(|e| OpenError::Io(e.to_string()))?,
-        )
-    } else if config.path.starts_with("s3://") {
-        let remainder = &config.path[5..];
-        let parts: Vec<&str> = remainder.splitn(2, '/').collect();
-        if parts.len() != 2 {
-            return Err(OpenError::InvalidS3Uri(
-                "Expected s3://bucket/key".to_string(),
-            ));
-        }
-        let bucket = parts[0].to_string();
-        let key = parts[1].to_string();
-        let region = config.s3_region.unwrap_or_else(|| "us-east-1".to_string());
+    let backend: Arc<dyn StorageBackend> =
+        if config.path.starts_with("http://") || config.path.starts_with("https://") {
+            Arc::new(
+                hexz_store::http::HttpBackend::new(config.path.clone(), config.allow_restricted)
+                    .map_err(|e| OpenError::Io(e.to_string()))?,
+            )
+        } else if config.path.starts_with("s3://") {
+            let remainder = &config.path[5..];
+            let parts: Vec<&str> = remainder.splitn(2, '/').collect();
+            if parts.len() != 2 {
+                return Err(OpenError::InvalidS3Uri(
+                    "Expected s3://bucket/key".to_string(),
+                ));
+            }
+            let bucket = parts[0].to_string();
+            let key = parts[1].to_string();
+            let region = config.s3_region.unwrap_or_else(|| "us-east-1".to_string());
 
-        Arc::new(
-            hexz_core::store::s3::S3Backend::new(bucket, key, region, config.endpoint_url)
-                .map_err(|e| OpenError::Io(e.to_string()))?,
-        )
-    } else {
-        Arc::new(
-            hexz_core::store::local::FileBackend::new(std::path::Path::new(&config.path))
-                .map_err(|e| OpenError::Io(e.to_string()))?,
-        )
-    };
+            Arc::new(
+                hexz_store::s3::S3Backend::new(bucket, key, region, config.endpoint_url)
+                    .map_err(|e| OpenError::Io(e.to_string()))?,
+            )
+        } else {
+            Arc::new(
+                hexz_store::local::FileBackend::new(std::path::Path::new(&config.path))
+                    .map_err(|e| OpenError::Io(e.to_string()))?,
+            )
+        };
 
-    // Use open_with_cache to auto-detect compression and load dictionary
+    // Use open_with_cache_and_loader to auto-detect compression and wire parent loading.
+    // The parent loader resolves local parent paths so thin snapshots work transparently.
     let prefetch_window = if config.prefetch_count > 0 {
         Some(config.prefetch_count)
     } else {
         None
     };
 
-    File::open_with_cache(backend, None, config.cache_capacity_bytes, prefetch_window)
-        .map_err(|e| OpenError::Io(e.to_string()))
+    let loader: ParentLoader = Box::new(|parent_path: &str| {
+        let backend = Arc::new(hexz_store::local::FileBackend::new(std::path::Path::new(
+            parent_path,
+        ))?);
+        File::open(backend, None)
+    });
+
+    File::open_with_cache_and_loader(
+        backend,
+        None,
+        config.cache_capacity_bytes,
+        prefetch_window,
+        Some(&loader),
+    )
+    .map_err(|e| OpenError::Io(e.to_string()))
 }
 
 /// Returns the total size in bytes of a specific stream in the snapshot.
@@ -699,7 +712,7 @@ pub fn read_stream(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hexz_core::ops::pack::{PackConfig, pack_snapshot};
+    use hexz_ops::pack::{PackConfig, pack_snapshot};
     use std::fs;
     use std::path::PathBuf;
     use tempfile::TempDir;

@@ -4,8 +4,8 @@
 //! correct output and works with various configurations.
 
 use hexz_core::algo::compression::lz4::Lz4Compressor;
-use hexz_core::ops::pack::PackConfig;
-use hexz_core::ops::parallel_pack::{
+use hexz_ops::pack::PackConfig;
+use hexz_ops::parallel_pack::{
     CompressedChunk, ParallelPackConfig, RawChunk, process_chunks_parallel,
 };
 

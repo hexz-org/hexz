@@ -54,7 +54,7 @@
 //! - **Non-zero**: Verification failed (invalid signature or archive not signed)
 
 use anyhow::Result;
-use hexz_core::ops::sign::verify_snapshot;
+use hexz_ops::sign::verify_snapshot;
 use std::path::PathBuf;
 
 /// Verify the Ed25519 signature on a signed Hexz archive.

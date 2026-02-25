@@ -8,7 +8,7 @@
 use crate::ui::progress::create_progress_bar;
 use anyhow::{Context, Result, bail};
 use hexz_core::algo::compression::create_compressor_from_str;
-use hexz_core::ops::snapshot_writer::SnapshotWriter;
+use hexz_ops::snapshot_writer::SnapshotWriter;
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};

@@ -61,7 +61,7 @@
 //! ```
 
 use anyhow::{Context, Result};
-use hexz_core::ops::inspect::inspect_snapshot;
+use hexz_ops::inspect::inspect_snapshot;
 use indicatif::HumanBytes;
 use std::path::PathBuf;
 

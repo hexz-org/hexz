@@ -9,17 +9,23 @@ use crate::format::index::{BlockInfo, IndexPage, MasterIndex, PageEntry};
 use crate::format::magic::{HEADER_SIZE, MAGIC_BYTES};
 use crate::format::version::{VersionCompatibility, check_version, compatibility_message};
 use crate::store::StorageBackend;
-use crate::store::local::file::FileBackend;
 use bytes::Bytes;
 use crc32fast::hash as crc32_hash;
 use std::mem::MaybeUninit;
-use std::path::Path;
 use std::ptr;
 use std::sync::{Arc, Mutex};
 
 use hexz_common::constants::{BLOCK_OFFSET_PARENT, DEFAULT_BLOCK_SIZE};
 use hexz_common::{Error, Result};
 use rayon::prelude::*;
+
+/// A factory function that opens a parent snapshot by path.
+///
+/// Provided by the caller of [`File::with_cache_and_loader`] so that the
+/// core read API has no hard dependency on any specific storage backend
+/// implementation. Storage crates supply a concrete loader; callers that
+/// know parents cannot exist may pass `None`.
+pub type ParentLoader = Box<dyn Fn(&str) -> Result<Arc<File>> + Send + Sync>;
 
 /// Shared zero block for the default block size to avoid allocating when returning zero blocks.
 static ZEROS_64K: [u8; DEFAULT_BLOCK_SIZE as usize] = [0u8; DEFAULT_BLOCK_SIZE as usize];
@@ -96,7 +102,7 @@ pub enum SnapshotStream {
 ///
 /// ```no_run
 /// use hexz_core::{File, SnapshotStream};
-/// use hexz_core::store::local::FileBackend;
+/// use hexz_store::local::FileBackend;
 /// use hexz_core::algo::compression::lz4::Lz4Compressor;
 /// use std::sync::Arc;
 ///
@@ -116,7 +122,7 @@ pub enum SnapshotStream {
 ///
 /// ```no_run
 /// use hexz_core::File;
-/// use hexz_core::store::local::FileBackend;
+/// use hexz_store::local::FileBackend;
 /// use hexz_core::algo::compression::lz4::Lz4Compressor;
 /// use std::sync::Arc;
 ///
@@ -198,7 +204,7 @@ impl File {
     ///
     /// ```no_run
     /// use hexz_core::{File, SnapshotStream};
-    /// use hexz_core::store::local::FileBackend;
+    /// use hexz_store::local::FileBackend;
     /// use hexz_core::algo::compression::lz4::Lz4Compressor;
     /// use std::sync::Arc;
     ///
@@ -229,15 +235,33 @@ impl File {
         cache_capacity_bytes: Option<usize>,
         prefetch_window_size: Option<u32>,
     ) -> Result<Arc<Self>> {
+        Self::open_with_cache_and_loader(
+            backend,
+            encryptor,
+            cache_capacity_bytes,
+            prefetch_window_size,
+            None,
+        )
+    }
+
+    /// Like [`open_with_cache`](Self::open_with_cache) but accepts an optional parent loader.
+    pub fn open_with_cache_and_loader(
+        backend: Arc<dyn StorageBackend>,
+        encryptor: Option<Box<dyn Encryptor>>,
+        cache_capacity_bytes: Option<usize>,
+        prefetch_window_size: Option<u32>,
+        parent_loader: Option<&ParentLoader>,
+    ) -> Result<Arc<Self>> {
         let header = Header::read_from_backend(backend.as_ref())?;
         let dictionary = header.load_dictionary(backend.as_ref())?;
         let compressor = create_compressor(header.compression, None, dictionary);
-        Self::with_cache(
+        Self::with_cache_and_loader(
             backend,
             compressor,
             encryptor,
             cache_capacity_bytes,
             prefetch_window_size,
+            parent_loader,
         )
     }
 
@@ -280,7 +304,7 @@ impl File {
     ///
     /// ```no_run
     /// use hexz_core::File;
-    /// use hexz_core::store::local::FileBackend;
+    /// use hexz_store::local::FileBackend;
     /// use hexz_core::algo::compression::lz4::Lz4Compressor;
     /// use std::sync::Arc;
     ///
@@ -305,6 +329,32 @@ impl File {
         encryptor: Option<Box<dyn Encryptor>>,
         cache_capacity_bytes: Option<usize>,
         prefetch_window_size: Option<u32>,
+    ) -> Result<Arc<Self>> {
+        Self::with_cache_and_loader(
+            backend,
+            compressor,
+            encryptor,
+            cache_capacity_bytes,
+            prefetch_window_size,
+            None,
+        )
+    }
+
+    /// Like [`with_cache`](Self::with_cache) but accepts an optional parent loader.
+    ///
+    /// The `parent_loader` is called for each path in the snapshot's `parent_paths`
+    /// header field. Passing `None` disables automatic parent chaining — reads that
+    /// fall through to a parent will return an error unless no parent paths are present.
+    ///
+    /// This is the primary constructor used by `hexz-store` to supply a
+    /// `FileBackend`-based loader without coupling this crate to any backend impl.
+    pub fn with_cache_and_loader(
+        backend: Arc<dyn StorageBackend>,
+        compressor: Box<dyn Compressor>,
+        encryptor: Option<Box<dyn Encryptor>>,
+        cache_capacity_bytes: Option<usize>,
+        prefetch_window_size: Option<u32>,
+        parent_loader: Option<&ParentLoader>,
     ) -> Result<Arc<Self>> {
         let header_bytes = backend.read_exact(0, HEADER_SIZE)?;
         let header: Header = bincode::deserialize(&header_bytes)?;
@@ -343,12 +393,19 @@ impl File {
 
         let master: MasterIndex = bincode::deserialize(&index_bytes)?;
 
-        // Recursively load parent if present
+        // Recursively load parent snapshots if a loader is provided.
         let mut parents = Vec::new();
-        for parent_path in &header.parent_paths {
-            tracing::info!("Loading parent snapshot: {}", parent_path);
-            let p_backend = Arc::new(FileBackend::new(Path::new(parent_path))?);
-            parents.push(File::open(p_backend, None)?);
+        if let Some(loader) = parent_loader {
+            for parent_path in &header.parent_paths {
+                tracing::info!("Loading parent snapshot: {}", parent_path);
+                parents.push(loader(parent_path)?);
+            }
+        } else if !header.parent_paths.is_empty() {
+            tracing::warn!(
+                "Snapshot has {} parent path(s) but no parent_loader was provided; \
+                 parent-reference blocks will not be resolvable.",
+                header.parent_paths.len()
+            );
         }
 
         let block_size = header.block_size as usize;
@@ -409,6 +466,27 @@ impl File {
             SnapshotStream::Primary => self.master.primary_size,
             SnapshotStream::Secondary => self.master.secondary_size,
         }
+    }
+
+    /// Iterates all non-sparse block hashes for the given stream.
+    ///
+    /// Used by `hexz-ops` to build a `ParentIndex` for cross-file deduplication
+    /// without requiring access to private fields.
+    pub fn iter_block_hashes(&self, stream: SnapshotStream) -> Result<Vec<[u8; 32]>> {
+        let pages = match stream {
+            SnapshotStream::Primary => &self.master.primary_pages,
+            SnapshotStream::Secondary => &self.master.secondary_pages,
+        };
+        let mut hashes = Vec::new();
+        for page_entry in pages {
+            let page = self.get_page(page_entry)?;
+            for block_info in &page.blocks {
+                if !block_info.is_sparse() && block_info.hash != [0u8; 32] {
+                    hashes.push(block_info.hash);
+                }
+            }
+        }
+        Ok(hashes)
     }
 
     /// Returns the block metadata for a given logical offset.

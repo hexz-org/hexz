@@ -10,6 +10,8 @@ description = "CLI tool for managing Hexz snapshots and datasets"
 
 [dependencies]
 hexz-core = { workspace = true }
+hexz-store = { workspace = true }
+hexz-ops = { workspace = true }
 hexz-common = { workspace = true }
 hexz-fuse = { workspace = true, optional = true }
 hexz-server = { workspace = true, optional = true }
@@ -157,16 +159,16 @@ path = "benches/macro/pack_memory.rs"
 default = ["fuse", "server", "compression-zstd", "encryption", "diagnostics", "signing", "s3"]
 
 # Cloud storage
-s3 = ["hexz-core/s3"]
+s3 = ["hexz-store/s3"]
 
 # Core functionalities
 fuse = ["dep:hexz-fuse", "dep:daemonize", "dep:fuser"]
 server = ["dep:hexz-server", "dep:daemonize"]
-encryption = ["hexz-core/encryption"]
-signing = ["hexz-common/signing"]
+encryption = ["hexz-core/encryption", "hexz-ops/encryption"]
+signing = ["hexz-common/signing", "hexz-ops/signing"]
 
 # Compression algorithms
-compression-zstd = ["hexz-core/compression-zstd"]
+compression-zstd = ["hexz-core/compression-zstd", "hexz-ops/compression-zstd"]
 
 # Optional tools
 diagnostics = []

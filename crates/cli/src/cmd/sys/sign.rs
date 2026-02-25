@@ -65,7 +65,7 @@
 //! ```
 
 use anyhow::Result;
-use hexz_core::ops::sign::sign_snapshot;
+use hexz_ops::sign::sign_snapshot;
 use std::path::PathBuf;
 
 /// Sign a Hexz archive with an Ed25519 private key.

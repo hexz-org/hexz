@@ -160,9 +160,9 @@ use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor, zstd::ZstdCom
 use hexz_core::algo::encryption::aes_gcm::AesGcmEncryptor;
 use hexz_core::format::header::{CompressionType, Header};
 use hexz_core::format::magic::HEADER_SIZE;
-use hexz_core::store::StorageBackend;
-use hexz_core::store::local::FileBackend;
 use hexz_fuse::fuse::Hexz;
+use hexz_store::StorageBackend;
+use hexz_store::local::FileBackend;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{

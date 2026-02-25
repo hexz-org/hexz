@@ -11,8 +11,8 @@
 //! - Data integrity across block boundaries
 
 use hexz_core::File;
-use hexz_core::ops::pack::{PackConfig, pack_snapshot};
-use hexz_core::store::local::FileBackend;
+use hexz_ops::pack::{PackConfig, pack_snapshot};
+use hexz_store::local::FileBackend;
 use std::fs;
 use std::sync::Arc;
 use tempfile::TempDir;

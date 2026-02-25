@@ -1,0 +1,25 @@
+[package]
+name = "hexz-reconstruct"
+description = "Comparative Memory Layout Engine for Ultra-Fine Deduplication"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+hexz-common = { workspace = true }
+hexz-core = { workspace = true, default-features = false }
+bytes = { workspace = true }
+
+# Baseline mmap backend (naive strategy for paper comparison)
+memmap2 = "0.9"
+
+[dev-dependencies]
+criterion = "0.5"
+rand = { workspace = true }
+tempfile = "3.10"
+
+[[bench]]
+name = "layout_micro_bench"
+harness = false

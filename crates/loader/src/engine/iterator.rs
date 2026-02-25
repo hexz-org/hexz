@@ -539,7 +539,7 @@ impl Iterator for SnapshotIterator {
 mod tests {
     use super::*;
     use crate::engine::{OpenConfig, open_snapshot};
-    use hexz_core::ops::pack::{PackConfig, pack_snapshot};
+    use hexz_ops::pack::{PackConfig, pack_snapshot};
     use std::fs;
     use tempfile::TempDir;
 

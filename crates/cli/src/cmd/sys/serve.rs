@@ -139,7 +139,7 @@
 use anyhow::Result;
 use daemonize::Daemonize;
 use hexz_core::File as HexzFile;
-use hexz_core::store::local::FileBackend;
+use hexz_store::local::FileBackend;
 use std::fs::File;
 use std::sync::Arc;
 

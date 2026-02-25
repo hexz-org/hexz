@@ -3,14 +3,13 @@
 //! Uses `std::net::TcpListener` for a lightweight mock that speaks enough
 //! of the S3 REST API (path-style) to exercise `S3Backend`.
 
-#[cfg(feature = "s3")]
 mod tests {
     use std::io::{BufRead, BufReader, Write};
     use std::net::TcpListener;
     use std::thread;
 
-    use hexz_core::store::StorageBackend;
-    use hexz_core::store::s3::S3Backend;
+    use hexz_store::StorageBackend;
+    use hexz_store::s3::S3Backend;
 
     /// Start a mock S3 server that handles HEAD and GET with Range on a single
     /// path-style object `/bucket/key`.

@@ -156,12 +156,17 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           cargo publish -p hexz-common --no-verify
-          sleep 15
+          sleep 20
           cargo publish -p hexz-core --no-verify
-          sleep 15
+          sleep 20
+          cargo publish -p hexz-store --no-verify
+          cargo publish -p hexz-reconstruct --no-verify
+          sleep 20
+          cargo publish -p hexz-ops --no-verify
+          sleep 20
           cargo publish -p hexz-fuse --no-verify
           cargo publish -p hexz-server --no-verify
-          sleep 15
+          sleep 20
           cargo publish -p hexz-cli --no-verify
 
   # ── Publish to PyPI ────────────────────────────────────────────────────────

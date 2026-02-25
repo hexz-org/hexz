@@ -3,7 +3,7 @@
 use super::common;
 use common::*;
 
-use hexz_core::store::{StorageBackend, local::file::FileBackend};
+use hexz_store::{StorageBackend, local::file::FileBackend};
 
 // Basic operations tests
 

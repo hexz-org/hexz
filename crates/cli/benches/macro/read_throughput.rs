@@ -9,7 +9,7 @@ use hexz_cli::cmd::data::pack;
 use hexz_core::File;
 use hexz_core::algo::compression::lz4::Lz4Compressor;
 use hexz_core::api::file::SnapshotStream;
-use hexz_core::store::local::FileBackend;
+use hexz_store::local::FileBackend;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
 

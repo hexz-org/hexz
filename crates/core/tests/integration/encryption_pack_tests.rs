@@ -10,9 +10,9 @@ use hexz_core::algo::compression::zstd::ZstdCompressor;
 use hexz_core::algo::encryption::aes_gcm::AesGcmEncryptor;
 use hexz_core::format::header::Header;
 use hexz_core::format::magic::HEADER_SIZE;
-use hexz_core::ops::pack::{PackConfig, pack_snapshot};
-use hexz_core::store::local::FileBackend;
 use hexz_core::{File, SnapshotStream};
+use hexz_ops::pack::{PackConfig, pack_snapshot};
+use hexz_store::local::FileBackend;
 use std::fs;
 use std::io::Write;
 use std::sync::Arc;
@@ -69,7 +69,7 @@ fn open_encrypted_snapshot(path: &std::path::Path, password: &str) -> Arc<File> 
     File::new(backend, compressor, encryptor).unwrap()
 }
 
-use hexz_core::store::StorageBackend;
+use hexz_store::StorageBackend;
 
 /// Test basic encrypted pack and read with LZ4.
 #[test]

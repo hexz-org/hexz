@@ -1,0 +1,30 @@
+[package]
+name = "hexz-ops"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+description = "High-level snapshot operations: pack, write, inspect, sign"
+
+[dependencies]
+hexz-common.workspace = true
+hexz-core = { workspace = true, default-features = false }
+hexz-store = { workspace = true }
+tracing.workspace = true
+serde.workspace = true
+bincode.workspace = true
+sha2.workspace = true
+blake3 = "1.5"
+crc32fast = "1.3"
+
+# Write path
+crossbeam = "0.8"
+num_cpus = "1.16"
+indicatif = "0.17"
+
+[features]
+default = ["compression-zstd", "encryption", "signing"]
+compression-zstd = ["hexz-core/compression-zstd"]
+encryption = ["hexz-core/encryption"]
+signing = ["hexz-common/signing", "hexz-core/signing"]

@@ -149,10 +149,10 @@
 //!
 //! ```no_run
 //! # use hexz_core::File;
-//! # use hexz_core::store::local::FileBackend;
+//! # use hexz_store::local::FileBackend;
 //! # use hexz_core::algo::compression::lz4::Lz4Compressor;
 //! # use std::sync::Arc;
-//! # fn main() -> anyhow::Result<()> {
+//! # fn main() -> hexz_common::Result<()> {
 //! let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
 //! let compressor = Box::new(Lz4Compressor::new());
 //!

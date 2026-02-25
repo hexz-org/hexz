@@ -7,8 +7,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::thread;
 
-use hexz_core::store::StorageBackend;
-use hexz_core::store::http::HttpBackend;
+use hexz_store::StorageBackend;
+use hexz_store::http::HttpBackend;
 
 /// Start a simple HTTP server that responds to HEAD and GET requests.
 /// Returns (address, join_handle).

@@ -7,9 +7,9 @@ use common::*;
 
 use hexz_core::algo::compression::lz4::Lz4Compressor;
 use hexz_core::algo::compression::zstd::ZstdCompressor;
-use hexz_core::ops::pack::{PackConfig, pack_snapshot};
-use hexz_core::store::local::FileBackend;
 use hexz_core::{File, SnapshotStream};
+use hexz_ops::pack::{PackConfig, pack_snapshot};
+use hexz_store::local::FileBackend;
 use std::fs;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -135,7 +135,7 @@ fn test_cdc_encrypted() {
     use hexz_core::algo::encryption::aes_gcm::AesGcmEncryptor;
     use hexz_core::format::header::Header;
     use hexz_core::format::magic::HEADER_SIZE;
-    use hexz_core::store::StorageBackend;
+    use hexz_store::StorageBackend;
 
     let header_bytes = backend.read_exact(0, HEADER_SIZE).unwrap();
     let header: Header = bincode::deserialize(&header_bytes).unwrap();

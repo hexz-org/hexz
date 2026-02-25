@@ -9,9 +9,9 @@
 use hexz_core::algo::compression::lz4::Lz4Compressor;
 use hexz_core::format::header::Header;
 use hexz_core::format::magic::HEADER_SIZE;
-use hexz_core::ops::pack::{PackConfig, pack_snapshot};
-use hexz_core::store::local::FileBackend;
 use hexz_core::{File, SnapshotStream};
+use hexz_ops::pack::{PackConfig, pack_snapshot};
+use hexz_store::local::FileBackend;
 use std::fs;
 use std::sync::Arc;
 use tempfile::TempDir;

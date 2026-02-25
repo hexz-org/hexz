@@ -3,7 +3,8 @@
 use super::common;
 use common::*;
 
-use hexz_core::store::{StorageBackend, local::mmap::MmapBackend};
+use hexz_core::store::StorageBackend;
+use hexz_reconstruct::store::mmap::MmapBackend;
 
 // Basic operations tests
 

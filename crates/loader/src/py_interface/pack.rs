@@ -2,7 +2,7 @@
 //!
 //! This module provides the `pack()` function, a convenient high-level API for creating
 //! Hexz snapshot files from disk images and memory dumps. It wraps the core
-//! `hexz_core::ops::pack::pack_snapshot` function with Python bindings.
+//! `hexz_ops::pack::pack_snapshot` function with Python bindings.
 //!
 //! # Overview
 //!
@@ -107,7 +107,7 @@
 //!   across runs due to random IVs.
 
 use hexz_common::constants::{DEFAULT_CDC_AVG_CHUNK, DEFAULT_CDC_MAX_CHUNK, DEFAULT_CDC_MIN_CHUNK};
-use hexz_core::ops::pack::{PackConfig, pack_snapshot};
+use hexz_ops::pack::{PackConfig, pack_snapshot};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::path::PathBuf;

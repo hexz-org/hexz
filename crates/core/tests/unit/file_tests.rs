@@ -3,8 +3,8 @@
 //! Tests focus on edge cases, error handling, and less-common code paths.
 
 use hexz_core::algo::compression::lz4::Lz4Compressor;
-use hexz_core::store::local::file::FileBackend;
 use hexz_core::{File, SnapshotStream};
+use hexz_store::local::file::FileBackend;
 use std::io::Write;
 use std::sync::Arc;
 use tempfile::NamedTempFile;

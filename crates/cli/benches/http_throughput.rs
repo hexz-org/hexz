@@ -5,8 +5,8 @@
 //! compare remote-access performance and validate backend behavior.
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use hexz_core::store::StorageBackend;
-use hexz_core::store::http::HttpBackend;
+use hexz_store::StorageBackend;
+use hexz_store::http::HttpBackend;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::Arc;

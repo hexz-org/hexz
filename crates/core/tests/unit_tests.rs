@@ -42,7 +42,6 @@ mod file_tests;
 #[path = "unit/http_mock_tests.rs"]
 mod http_mock_tests;
 
-#[cfg(feature = "s3")]
 #[path = "unit/storage/s3_backend_tests.rs"]
 mod s3_backend_tests;
 

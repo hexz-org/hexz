@@ -9,6 +9,7 @@ description = "FUSE filesystem adapter for Hexz snapshots"
 
 [dependencies]
 hexz-core.workspace = true
+hexz-store.workspace = true
 hexz-common.workspace = true
 anyhow.workspace = true
 fuser = "0.14"

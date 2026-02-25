@@ -41,7 +41,7 @@
 use anyhow::{Context, Result};
 use hexz_common::constants::DEFAULT_ZSTD_LEVEL;
 use hexz_core::format::magic::HEADER_SIZE;
-use hexz_core::store::StorageBackend;
+use hexz_store::StorageBackend;
 use serde_json::Value;
 use std::fs;
 use std::io::{Read, Write};
@@ -208,7 +208,7 @@ fn boot_qemu(
 
     let mount_handle = thread::spawn(move || -> Result<()> {
         let backend = Arc::new(
-            hexz_core::store::local::file::FileBackend::new(std::path::Path::new(&snap_path_clone))
+            hexz_store::local::FileBackend::new(std::path::Path::new(&snap_path_clone))
                 .context("Failed to open snapshot file")?,
         );
 

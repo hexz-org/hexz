@@ -37,7 +37,7 @@
 use anyhow::Result;
 use hexz_core::File;
 use hexz_core::api::file::SnapshotStream;
-use hexz_core::store::local::FileBackend;
+use hexz_store::local::FileBackend;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 use std::sync::Arc;

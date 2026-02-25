@@ -145,9 +145,9 @@ use hexz_core::format::version::{
     CURRENT_VERSION, MAX_SUPPORTED_VERSION, MIN_SUPPORTED_VERSION, check_version,
     compatibility_message,
 };
-use hexz_core::ops::inspect::inspect_snapshot;
+use hexz_ops::inspect::inspect_snapshot;
 #[cfg(feature = "signing")]
-use hexz_core::ops::sign as core_sign;
+use hexz_ops::sign as core_sign;
 use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use std::collections::HashMap;

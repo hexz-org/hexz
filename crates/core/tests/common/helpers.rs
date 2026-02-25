@@ -167,7 +167,7 @@ pub fn random_password() -> String {
 /// Create a simple snapshot for testing using PackConfig
 pub fn create_simple_snapshot() -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn std::error::Error>>
 {
-    use hexz_core::ops::pack::{PackConfig, pack_snapshot};
+    use hexz_ops::pack::{PackConfig, pack_snapshot};
     use std::fs;
     use tempfile::TempDir;
 
@@ -208,7 +208,7 @@ pub fn create_simple_snapshot() -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn
 /// Create a snapshot with memory data using PackConfig
 pub fn create_snapshot_with_memory()
 -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn std::error::Error>> {
-    use hexz_core::ops::pack::{PackConfig, pack_snapshot};
+    use hexz_ops::pack::{PackConfig, pack_snapshot};
     use std::fs;
     use tempfile::TempDir;
 
@@ -252,7 +252,7 @@ pub fn create_snapshot_with_memory()
 /// Create a multi-block snapshot for testing parallel decompression
 pub fn create_multi_block_snapshot()
 -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn std::error::Error>> {
-    use hexz_core::ops::pack::{PackConfig, pack_snapshot};
+    use hexz_ops::pack::{PackConfig, pack_snapshot};
     use std::fs;
     use tempfile::TempDir;
 

@@ -1,0 +1,26 @@
+[package]
+name = "hexz-store"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+description = "Storage backends for Hexz snapshots (local file, HTTP, S3)"
+
+[dependencies]
+hexz-common.workspace = true
+hexz-core = { workspace = true, default-features = false }
+bytes.workspace = true
+tokio = { workspace = true, features = ["rt", "time"] }
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "stream"] }
+url = "2.5"
+
+[dependencies.rust-s3]
+version = "0.33"
+default-features = false
+features = ["tokio-rustls-tls", "fail-on-err"]
+optional = true
+
+[features]
+default = ["s3"]
+s3 = ["dep:rust-s3"]

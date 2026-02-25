@@ -46,7 +46,7 @@
 //!
 //! ```no_run
 //! use hexz_core::File;
-//! use hexz_core::store::local::FileBackend;
+//! use hexz_store::local::FileBackend;
 //! use hexz_core::algo::compression::lz4::Lz4Compressor;
 //! use hexz_fuse::mount_fs;
 //! use std::sync::Arc;
