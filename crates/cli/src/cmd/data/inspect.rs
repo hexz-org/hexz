@@ -123,33 +123,42 @@ use std::path::PathBuf;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 pub fn run(snap: PathBuf, json: bool) -> Result<()> {
+    // Note: inspect_snapshot in hexz_core needs to parse the full index
+    // to return the block_stats every time.
     let info = inspect_snapshot(&snap).context("Failed to inspect snapshot")?;
 
     let total_uncompressed = info.total_uncompressed();
     let ratio = info.compression_ratio();
 
     if json {
-        println!("{{");
-        println!("  \"path\": {:?},", snap);
-        println!("  \"version\": {},", info.version);
-        println!("  \"compression\": {:?},", info.compression);
-        println!("  \"block_size\": {},", info.block_size);
-        println!("  \"encrypted\": {},", info.encrypted);
-        println!("  \"has_disk\": {},", info.has_disk);
-        println!("  \"has_memory\": {},", info.has_memory);
-        println!("  \"variable_blocks\": {},", info.variable_blocks);
-        println!("  \"original_size\": {},", total_uncompressed);
-        println!("  \"compressed_size\": {},", info.file_size);
-        println!("  \"compression_ratio\": {:.2},", ratio);
-        println!("  \"index_offset\": {},", info.index_offset);
-        println!("  \"primary_pages\": {},", info.primary_pages);
-        println!("  \"secondary_pages\": {}", info.secondary_pages);
-        println!("}}");
+        // Output machine-readable JSON
+        let out = serde_json::json!({
+            "path": snap,
+            "version": info.version,
+            "compression": info.compression,
+            "block_size": info.block_size,
+            "encrypted": info.encrypted,
+            "has_primary": info.has_primary,
+            "has_secondary": info.has_secondary,
+            "variable_blocks": info.variable_blocks,
+            "original_size": total_uncompressed,
+            "compressed_size": info.file_size,
+            "compression_ratio": ratio,
+            "index_offset": info.index_offset,
+            "primary_pages": info.primary_pages,
+            "secondary_pages": info.secondary_pages,
+            "parent_path": info.parent_path,
+            "metadata": info.metadata,
+            "block_stats": info.block_stats,
+        });
+
+        println!("{}", serde_json::to_string_pretty(&out)?);
     } else {
+        // Output human-readable text
         println!("Snapshot:       {:?}", snap);
         println!("Format Version: {}", info.version);
         println!("Compression:    {:?}", info.compression);
-        println!("Block Size:     {}", info.block_size);
+        println!("Block Size:     {}", HumanBytes(info.block_size as u64));
 
         println!("\n--- Features ---");
         println!(
@@ -157,12 +166,12 @@ pub fn run(snap: PathBuf, json: bool) -> Result<()> {
             if info.encrypted { "Yes" } else { "No" }
         );
         println!(
-            "Has Disk:       {}",
-            if info.has_disk { "Yes" } else { "No" }
+            "Primary Stream: {}",
+            if info.has_primary { "Yes" } else { "No" }
         );
         println!(
-            "Has Memory:     {}",
-            if info.has_memory { "Yes" } else { "No" }
+            "Secondary Strm: {}",
+            if info.has_secondary { "Yes" } else { "No" }
         );
         println!(
             "Variable Blks:  {}",
@@ -180,8 +189,39 @@ pub fn run(snap: PathBuf, json: bool) -> Result<()> {
 
         println!("\n--- Index Details ---");
         println!("Index Offset:   {}", info.index_offset);
-        println!("Disk Pages:     {}", info.primary_pages);
-        println!("Memory Pages:   {}", info.secondary_pages);
+        println!("Primary Pages:  {}", info.primary_pages);
+        println!("Secondary Pgs:  {}", info.secondary_pages);
+
+        println!("\n--- Lineage & Metadata ---");
+        match &info.parent_path {
+            Some(p) => println!("Parent Link:    {}", p),
+            None => println!("Parent Link:    None (Standalone)"),
+        }
+
+        if let Some(meta) = &info.metadata {
+            println!("Metadata:       {}", meta);
+        } else {
+            println!("Metadata:       None");
+        }
+
+        if let Some(stats) = &info.block_stats {
+            println!("\n--- Deduplication Breakdown (Primary) ---");
+            println!(
+                "Data Blocks:    {} ({})",
+                stats.data_blocks,
+                HumanBytes(stats.data_bytes)
+            );
+            println!(
+                "Parent Refs:    {} ({})",
+                stats.parent_ref_blocks,
+                HumanBytes(stats.parent_ref_bytes)
+            );
+            println!(
+                "Zero Blocks:    {} ({})",
+                stats.zero_blocks,
+                HumanBytes(stats.zero_bytes)
+            );
+        }
     }
 
     Ok(())
