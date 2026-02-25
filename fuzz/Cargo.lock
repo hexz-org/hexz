@@ -387,7 +387,7 @@ dependencies = [
 
 [[package]]
 name = "hexz-common"
-version = "0.5.2"
+version = "0.5.4"
 dependencies = [
  "bincode",
  "ed25519-dalek",
@@ -402,7 +402,7 @@ dependencies = [
 
 [[package]]
 name = "hexz-core"
-version = "0.5.2"
+version = "0.5.4"
 dependencies = [
  "aes-gcm",
  "bincode",

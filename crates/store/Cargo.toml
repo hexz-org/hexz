@@ -9,7 +9,7 @@ description = "Storage backends for Hexz snapshots (local file, HTTP, S3)"
 
 [dependencies]
 hexz-common.workspace = true
-hexz-core = { workspace = true, default-features = false }
+hexz-core = { workspace = true, default-features = false, features = ["compression-zstd", "encryption"] }
 bytes.workspace = true
 tokio = { workspace = true, features = ["rt", "time"] }
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "stream"] }
@@ -20,6 +20,12 @@ version = "0.33"
 default-features = false
 features = ["tokio-rustls-tls", "fail-on-err"]
 optional = true
+
+[dev-dependencies]
+tempfile = "3.8"
+rand = { workspace = true }
+wiremock = "0.6"
+rstest = "0.18"
 
 [features]
 default = ["s3"]

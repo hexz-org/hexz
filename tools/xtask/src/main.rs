@@ -26,6 +26,9 @@ enum Command {
     /// Check version consistency and compare against published versions
     VersionCheck,
 
+    /// Dry-run cargo publish for all crates and build the Python wheel
+    PublishDryRun,
+
     /// Check / install development dependencies
     #[command(subcommand)]
     Setup(setup::SetupCmd),
@@ -74,6 +77,7 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::VersionCheck => version::run(),
+        Command::PublishDryRun => version::publish_dry_run(),
         Command::Setup(cmd) => setup::run(cmd),
         Command::Test(cmd) => test::run(cmd),
         Command::Coverage(cmd) => coverage::run(cmd),

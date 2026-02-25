@@ -25,7 +25,7 @@ fn test_mmap_backend_read_full() {
     let read_data = backend.read_exact(0, 4096).unwrap();
 
     assert_eq!(read_data.len(), 4096);
-    verify_pattern(&read_data, 0x42);
+    assert_bytes_equal(&read_data, &data, "full read");
 }
 
 #[test]

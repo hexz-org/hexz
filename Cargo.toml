@@ -14,19 +14,19 @@ members = [
 ]
 
 [workspace.package]
-version = "0.5.3"
+version = "0.5.4"
 edition = "2024"
 authors = ["Will McCallion"]
 repository = "https://github.com/hexz-org/hexz"
 license = "Apache-2.0"
 
 [workspace.dependencies]
-hexz-common = { path = "crates/common", version = "0.5.3", default-features = false }
-hexz-core = { path = "crates/core", version = "0.5.3", default-features = false }
-hexz-store = { path = "crates/store", version = "0.5.3" }
-hexz-ops = { path = "crates/ops", version = "0.5.3" }
-hexz-fuse = { path = "crates/fuse", version = "0.5.3" }
-hexz-server = { path = "crates/server", version = "0.5.3" }
+hexz-common = { path = "crates/common", version = "0.5.4", default-features = false }
+hexz-core = { path = "crates/core", version = "0.5.4", default-features = false }
+hexz-store = { path = "crates/store", version = "0.5.4" }
+hexz-ops = { path = "crates/ops", version = "0.5.4" }
+hexz-fuse = { path = "crates/fuse", version = "0.5.4" }
+hexz-server = { path = "crates/server", version = "0.5.4" }
 
 anyhow = "1.0"
 thiserror = "1.0"

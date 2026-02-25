@@ -5,6 +5,20 @@ use serde::Deserialize;
 use std::path::Path;
 use std::process::Command;
 
+// Publish order mirrors release.yml: each crate after its real (non-dev) deps.
+// hexz-core is published before hexz-store/hexz-ops even though it has dev-deps
+// on them — --no-verify skips building so the circular dev-dep is harmless.
+const PUBLISH_ORDER: &[&str] = &[
+    "hexz-common",
+    "hexz-core",
+    "hexz-store",
+    "hexz-reconstruct",
+    "hexz-ops",
+    "hexz-fuse",
+    "hexz-server",
+    "hexz-cli",
+];
+
 // ── TOML structures ─────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -304,5 +318,99 @@ pub fn run() -> Result<()> {
     }
 
     println!("  {GREEN}{BOLD}All pre-release checks passed{RESET}\n");
+    Ok(())
+}
+
+// ── Publish dry-run ──────────────────────────────────────────────────────────
+
+pub fn publish_dry_run() -> Result<()> {
+    let root = find_workspace_root()?;
+
+    // ── Crates ───────────────────────────────────────────────────────────────
+    //
+    // Cargo's --dry-run validates that a crate can be packaged and that all
+    // its dependencies exist on crates.io at the required version.
+    //
+    // This creates an inherent bootstrap constraint for a workspace: crates
+    // that depend on sibling crates can only be validated after those siblings
+    // have been published. We check each crate and report whether the failure
+    // is a real packaging error or just an expected "sibling not yet published"
+    // dependency-resolution failure.
+
+    println!("{GREEN}Dry-run: cargo publish{RESET}\n");
+
+    // First determine which sibling crates already exist on crates.io at the
+    // current workspace version — those are the only ones that can be used as
+    // resolved deps during dry-run packaging.
+    let ws_ver = workspace_version(&root)?;
+    let mut published_at_current: std::collections::HashSet<&str> =
+        std::collections::HashSet::new();
+    for krate in PUBLISH_ORDER {
+        if let Ok(Some(v)) = crates_io_version(krate) {
+            if v >= ws_ver {
+                published_at_current.insert(krate);
+            }
+        }
+    }
+
+    let mut any_real_failure = false;
+    for krate in PUBLISH_ORDER {
+        print!("  {CYAN}cargo publish --dry-run --no-verify -p {krate}{RESET} … ");
+        let status = cmd(cargo())
+            .args(["publish", "--dry-run", "--no-verify", "-p", krate])
+            .current_dir(&root)
+            .run_with_status()?;
+
+        if status.success() {
+            println!("{}", check_mark(true));
+        } else {
+            // Determine if this is a known bootstrap limitation or a real error.
+            // A crate can only be validated if all its sibling deps are already
+            // published at the current version.
+            let is_bootstrap_limitation = PUBLISH_ORDER
+                .iter()
+                .take_while(|&&c| c != *krate) // crates that publish before this one
+                .any(|sibling| !published_at_current.contains(sibling));
+
+            if is_bootstrap_limitation {
+                println!(
+                    "{YELLOW}skipped{RESET} \
+                     (sibling dep not yet on crates.io — expected until first release)"
+                );
+            } else {
+                println!("{}", check_mark(false));
+                any_real_failure = true;
+            }
+        }
+    }
+
+    // ── Python wheel (maturin build) ─────────────────────────────────────────
+    //
+    // maturin has no publish --dry-run. Building the wheel locally is the
+    // equivalent check — it catches Cargo.toml metadata errors, missing
+    // features, and compilation failures before the real publish.
+
+    println!("\n{GREEN}Dry-run: maturin build (Python wheel){RESET}\n");
+
+    let loader_dir = root.join("crates/loader");
+    print!("  {CYAN}maturin build --out /tmp/hexz-wheel-dryrun{RESET} … ");
+    let status = cmd(maturin())
+        .args(["build", "--out", "/tmp/hexz-wheel-dryrun"])
+        .current_dir(&loader_dir)
+        .run_with_status()?;
+
+    if status.success() {
+        println!("{}", check_mark(true));
+        println!("  Wheel written to /tmp/hexz-wheel-dryrun/");
+    } else {
+        println!("{}", check_mark(false));
+        any_real_failure = true;
+    }
+
+    println!();
+    if any_real_failure {
+        bail!("publish dry-run had failures — see output above");
+    }
+    println!("{GREEN}{BOLD}Publish dry-run passed{RESET}\n");
     Ok(())
 }

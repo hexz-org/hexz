@@ -41,11 +41,7 @@ encryption = ["dep:aes-gcm", "dep:pbkdf2", "dep:hmac", "dep:zeroize"]
 signing = ["hexz-common/signing"]
 
 [dev-dependencies]
-hexz-store = { workspace = true }
-hexz-ops = { workspace = true }
-hexz-reconstruct = { path = "../reconstruct" }
 tempfile = "3.8"
 rand = "0.8"
-wiremock = "0.6"
 rstest = "0.18"
 proptest = "1.0"

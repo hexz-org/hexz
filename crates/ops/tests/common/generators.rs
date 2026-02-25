@@ -1,4 +1,4 @@
-// Test data generators (no external crate dependencies beyond rand/tempfile)
+// Test data generators
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::io::Write;
@@ -51,6 +51,7 @@ pub fn create_random_data_with_seed(size: usize, seed: u64) -> Vec<u8> {
 }
 
 /// Create sparse data (mostly zeros with islands of non-zero data)
+/// `sparsity` is the fraction of zeros (0.0 = no zeros, 1.0 = all zeros)
 pub fn create_sparse_data(size: usize, sparsity: f64) -> Vec<u8> {
     assert!(
         (0.0..=1.0).contains(&sparsity),
@@ -60,12 +61,14 @@ pub fn create_sparse_data(size: usize, sparsity: f64) -> Vec<u8> {
     let mut rng = StdRng::seed_from_u64(42);
     let mut data = vec![0u8; size];
 
+    // Number of non-zero bytes
     let non_zero_count = ((1.0 - sparsity) * size as f64) as usize;
 
+    // Randomly place non-zero bytes
     for _ in 0..non_zero_count {
         let idx = rng.gen_range(0..size);
         let val: u8 = rng.r#gen();
-        data[idx] = if val == 0 { 1 } else { val };
+        data[idx] = if val == 0 { 1 } else { val }; // Ensure non-zero
     }
 
     data
@@ -80,11 +83,14 @@ pub fn create_compressible_data(size: usize, entropy: f64) -> Vec<u8> {
     );
 
     if entropy < 0.1 {
+        // Very low entropy: all zeros
         return vec![0u8; size];
     } else if entropy > 7.9 {
+        // High entropy: random data
         return create_random_data(size);
     }
 
+    // Medium entropy: mix of repeating patterns and random data
     let mut rng = StdRng::seed_from_u64(42);
     let random_ratio = entropy / 8.0;
     let mut data = Vec::with_capacity(size);
@@ -109,12 +115,16 @@ pub fn create_compressible_data(size: usize, entropy: f64) -> Vec<u8> {
 }
 
 /// Create structured data with repeating patterns
+/// `pattern_size` is the size of the repeating unit
 pub fn create_structured_data(size: usize, pattern_size: usize) -> Vec<u8> {
     assert!(pattern_size > 0, "Pattern size must be > 0");
 
     let mut rng = StdRng::seed_from_u64(42);
+
+    // Create the base pattern
     let pattern: Vec<u8> = (0..pattern_size).map(|_| rng.r#gen()).collect();
 
+    // Repeat the pattern to fill the size
     let mut data = Vec::with_capacity(size);
     for i in 0..size {
         data.push(pattern[i % pattern_size]);
@@ -149,4 +159,44 @@ pub fn create_test_files(count: usize, size: usize) -> std::io::Result<(TempDir,
     }
 
     Ok((dir, paths))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_test_file_zeros() {
+        let file = create_test_file(1024, DataPattern::Zeros).unwrap();
+        let data = std::fs::read(file.path()).unwrap();
+        assert_eq!(data.len(), 1024);
+        assert!(data.iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn test_create_random_data() {
+        let data1 = create_random_data(1024);
+        let data2 = create_random_data(1024);
+        assert_eq!(data1.len(), 1024);
+        assert_eq!(data2.len(), 1024);
+        // Same seed produces same data
+        assert_eq!(data1, data2);
+    }
+
+    #[test]
+    fn test_create_sparse_data() {
+        let data = create_sparse_data(10000, 0.9);
+        let zero_count = data.iter().filter(|&&b| b == 0).count();
+        // Should be approximately 90% zeros (within 5% tolerance)
+        assert!((zero_count as f64 / 10000.0 - 0.9).abs() < 0.05);
+    }
+
+    #[test]
+    fn test_create_structured_data() {
+        let data = create_structured_data(1000, 10);
+        // Verify pattern repeats
+        for i in 0..990 {
+            assert_eq!(data[i], data[i + 10]);
+        }
+    }
 }

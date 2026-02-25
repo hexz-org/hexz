@@ -147,7 +147,7 @@
 //!
 //! ## Integration with File
 //!
-//! ```no_run
+//! ```ignore
 //! # use hexz_core::File;
 //! # use hexz_store::local::FileBackend;
 //! # use hexz_core::algo::compression::lz4::Lz4Compressor;

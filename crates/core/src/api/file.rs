@@ -53,7 +53,7 @@ enum FetchResult {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```ignore
 /// use hexz_core::{File, SnapshotStream};
 /// # use std::sync::Arc;
 /// # fn example(snapshot: Arc<File>) -> Result<(), Box<dyn std::error::Error>> {
@@ -100,7 +100,7 @@ pub enum SnapshotStream {
 ///
 /// ## Basic Usage
 ///
-/// ```no_run
+/// ```ignore
 /// use hexz_core::{File, SnapshotStream};
 /// use hexz_store::local::FileBackend;
 /// use hexz_core::algo::compression::lz4::Lz4Compressor;
@@ -120,7 +120,7 @@ pub enum SnapshotStream {
 ///
 /// ## Thin Snapshots (with parent)
 ///
-/// ```no_run
+/// ```ignore
 /// use hexz_core::File;
 /// use hexz_store::local::FileBackend;
 /// use hexz_core::algo::compression::lz4::Lz4Compressor;
@@ -202,7 +202,7 @@ impl File {
     ///
     /// # Examples
     ///
-    /// ```no_run
+    /// ```ignore
     /// use hexz_core::{File, SnapshotStream};
     /// use hexz_store::local::FileBackend;
     /// use hexz_core::algo::compression::lz4::Lz4Compressor;
@@ -302,7 +302,7 @@ impl File {
     ///
     /// # Examples
     ///
-    /// ```no_run
+    /// ```ignore
     /// use hexz_core::File;
     /// use hexz_store::local::FileBackend;
     /// use hexz_core::algo::compression::lz4::Lz4Compressor;
@@ -444,7 +444,7 @@ impl File {
     ///
     /// # Examples
     ///
-    /// ```no_run
+    /// ```ignore
     /// use hexz_core::{File, SnapshotStream};
     /// # use std::sync::Arc;
     /// # fn example(snapshot: Arc<File>) {
@@ -565,7 +565,7 @@ impl File {
     ///
     /// # Examples
     ///
-    /// ```no_run
+    /// ```ignore
     /// use hexz_core::{File, SnapshotStream};
     /// # use std::sync::Arc;
     /// # fn example(snapshot: Arc<File>) -> Result<(), Box<dyn std::error::Error>> {

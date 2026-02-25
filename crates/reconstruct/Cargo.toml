@@ -9,7 +9,7 @@ repository.workspace = true
 
 [dependencies]
 hexz-common = { workspace = true }
-hexz-core = { workspace = true, default-features = false }
+hexz-core = { workspace = true, default-features = false, features = ["compression-zstd", "encryption"] }
 bytes = { workspace = true }
 
 # Baseline mmap backend (naive strategy for paper comparison)

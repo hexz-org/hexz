@@ -1,8 +1,7 @@
-// Test fixtures and utilities
+// Test fixtures and utilities for hexz-reconstruct tests
 pub mod generators;
 pub mod helpers;
 
-// Re-export everything for test modules to use via `use common::*`
 #[allow(unused_imports)]
 pub use generators::*;
 #[allow(unused_imports)]

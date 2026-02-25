@@ -23,6 +23,15 @@ crossbeam = "0.8"
 num_cpus = "1.16"
 indicatif = "0.17"
 
+[dev-dependencies]
+hexz-store = { workspace = true }
+tempfile = "3.8"
+rand = { workspace = true }
+wiremock = "0.6"
+rstest = "0.18"
+proptest = "1.0"
+bincode = { workspace = true }
+
 [features]
 default = ["compression-zstd", "encryption", "signing"]
 compression-zstd = ["hexz-core/compression-zstd"]
