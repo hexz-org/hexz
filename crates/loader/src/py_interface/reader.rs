@@ -17,7 +17,7 @@
 //! - **Dual Access Modes**: Cursor-based sequential reads or explicit offset random access
 //! - **Zero-Copy Reads**: Direct memory mapping into NumPy arrays and buffer protocol objects
 //! - **GIL Release**: All I/O operations release the Global Interpreter Lock for parallelism
-//! - **Thread Safety**: Cursor state protected by `Mutex` allows safe concurrent access
+//! - **Thread Safety**: Cursor state is an `AtomicU64` — lock-free concurrent access
 //! - **Pickle Support**: Full serialization support for multiprocessing workflows
 //! - **Context Manager**: Implements `__enter__`/`__exit__` for resource management
 //!
@@ -78,9 +78,9 @@
 //!
 //! # Thread Safety
 //!
-//! `Reader` is thread-safe: the cursor is protected by a `Mutex`, allowing multiple
-//! threads to safely share a single reader instance. However, for best performance in
-//! multi-threaded scenarios, create one reader per thread to avoid cursor contention.
+//! `Reader` is thread-safe: the cursor is an `AtomicU64`, so reads and seeks are
+//! lock-free. For best throughput in multi-threaded scenarios, use explicit `offset`
+//! arguments (which never touch the cursor) rather than sharing cursor state across threads.
 //!
 //! # Integration Examples
 //!
@@ -157,10 +157,11 @@
 
 use hexz_core::File;
 use hexz_core::api::file::SnapshotStream;
-use pyo3::exceptions::{PyIOError, PyOSError, PyRuntimeError, PyValueError};
+use pyo3::exceptions::{PyIOError, PyOSError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::engine::{self, OpenConfig};
 use crate::tensor;
@@ -243,7 +244,7 @@ use crate::tensor;
 pub struct Reader {
     pub(crate) inner: Arc<File>,
     path: String,
-    cursor: Mutex<u64>,
+    cursor: AtomicU64,
 }
 
 #[pymethods]
@@ -318,7 +319,7 @@ impl Reader {
         Ok(Reader {
             inner,
             path,
-            cursor: Mutex::new(0),
+            cursor: AtomicU64::new(0),
         })
     }
 
@@ -394,10 +395,7 @@ impl Reader {
                 (at, len, false)
             }
             None => {
-                let cursor_val = *self
-                    .cursor
-                    .lock()
-                    .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?;
+                let cursor_val = self.cursor.load(Ordering::Relaxed);
                 if cursor_val >= total_size {
                     return Ok(PyBytes::new(py, &[]));
                 }
@@ -425,11 +423,7 @@ impl Reader {
         })?;
 
         if update_cursor {
-            let mut cursor = self
-                .cursor
-                .lock()
-                .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?;
-            *cursor = start + len as u64;
+            self.cursor.store(start + len as u64, Ordering::Relaxed);
         }
 
         Ok(bytes)
@@ -529,14 +523,7 @@ impl Reader {
     fn readinto(&self, py: Python<'_>, buffer: Bound<'_, PyAny>) -> PyResult<usize> {
         let total_size = self.inner.size(SnapshotStream::Primary);
 
-        // Capture cursor value and release lock before I/O (matches read() pattern).
-        let start = {
-            let cursor = self
-                .cursor
-                .lock()
-                .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?;
-            *cursor
-        };
+        let start = self.cursor.load(Ordering::Relaxed);
 
         if start >= total_size {
             return Ok(0);
@@ -564,14 +551,7 @@ impl Reader {
                 .map_err(|e| PyIOError::new_err(e.to_string()))
         })?;
 
-        // Re-acquire lock only for the cursor update
-        {
-            let mut cursor = self
-                .cursor
-                .lock()
-                .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?;
-            *cursor = start + result as u64;
-        }
+        self.cursor.store(start + result as u64, Ordering::Relaxed);
 
         Ok(result)
     }
@@ -613,15 +593,11 @@ impl Reader {
     /// ```
     #[pyo3(signature = (offset, whence=None))]
     fn seek(&self, offset: i64, whence: Option<i32>) -> PyResult<u64> {
-        let mut cursor = self
-            .cursor
-            .lock()
-            .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?;
         let total_size = self.inner.size(SnapshotStream::Primary);
 
         let new_pos = match whence.unwrap_or(0) {
             0 => offset,
-            1 => *cursor as i64 + offset,
+            1 => self.cursor.load(Ordering::Relaxed) as i64 + offset,
             2 => total_size as i64 + offset,
             _ => return Err(PyValueError::new_err("Invalid whence argument")),
         };
@@ -630,8 +606,8 @@ impl Reader {
             return Err(PyValueError::new_err("Seek before start of file"));
         }
 
-        *cursor = new_pos as u64;
-        Ok(*cursor)
+        self.cursor.store(new_pos as u64, Ordering::Relaxed);
+        Ok(new_pos as u64)
     }
 
     /// Get the current cursor position.
@@ -650,11 +626,8 @@ impl Reader {
     /// reader.read(1024)  # cursor advances to 1024
     /// pos = reader.tell()  # returns 1024
     /// ```
-    fn tell(&self) -> PyResult<u64> {
-        Ok(*self
-            .cursor
-            .lock()
-            .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?)
+    fn tell(&self) -> u64 {
+        self.cursor.load(Ordering::Relaxed)
     }
 
     /// Check if the snapshot is readable.
@@ -847,11 +820,8 @@ impl Reader {
     /// # Returns
     ///
     /// Current cursor position as unsigned 64-bit integer.
-    fn __getstate__(&self) -> PyResult<u64> {
-        Ok(*self
-            .cursor
-            .lock()
-            .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))?)
+    fn __getstate__(&self) -> u64 {
+        self.cursor.load(Ordering::Relaxed)
     }
 
     /// Restore state from pickling.
@@ -862,11 +832,7 @@ impl Reader {
     /// # Arguments
     ///
     /// - `state`: Cursor position to restore
-    fn __setstate__(&self, state: u64) -> PyResult<()> {
-        *self
-            .cursor
-            .lock()
-            .map_err(|_| PyRuntimeError::new_err("Cursor lock poisoned"))? = state;
-        Ok(())
+    fn __setstate__(&self, state: u64) {
+        self.cursor.store(state, Ordering::Relaxed);
     }
 }
