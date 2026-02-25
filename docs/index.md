@@ -1,10 +1,6 @@
 # Hexz Documentation
 
-**Hexz** is a high-performance storage engine designed for **ML model checkpoints**. It uses content-defined chunking (CDC) to enable massive storage savings and instant random access for large model weights.
-
-**Store 100 fine-tuned checkpoints for the cost of 6.**
-
-Built in Rust with Python bindings (PyO3), Hexz provides random access to compressed, deduplicated data with sub-millisecond latency.
+**Hexz** is a seekable, block-compressed archive format with content deduplication, written in Rust with Python bindings (PyO3). It stores large binary data compressed, and supports reading any byte range without decompressing the whole file.
 
 ## Quick Navigation by Role
 
@@ -44,7 +40,7 @@ This documentation follows the [Diátaxis framework](https://diataxis.fr/), orga
 *Learn by doing — step-by-step lessons for beginners*
 
 - [Getting Started with Hexz](tutorials/getting-started.md) — Your first snapshot in 10 minutes
-- [Model Checkpoint Dedup](examples/checkpoint_pivot.py) — (Example Script) Save 90% space on fine-tuning
+- [Model Checkpoint Dedup](examples/checkpoint_pivot.py) — (Example Script) Thin snapshots for fine-tuned models
 - [Booting Your First VM](tutorials/booting-your-first-vm.md) — Boot an OS from a snapshot
 
 ### How-To Guides (Goal-Oriented)
@@ -89,10 +85,10 @@ A **snapshot** (`.hxz` file) is an immutable, compressed archive with:
 
 ### Core Features
 
-- **Extreme Deduplication**: CDC-based dedup across checkpoint chains means only changed weights are stored.
-- **Random Access**: Read any byte range (e.g. a single layer) without downloading or decompressing the whole file.
-- **Zero-Copy I/O**: Direct loading into NumPy and PyTorch buffers.
-- **Cloud Native**: Efficient byte-range fetching from S3 or HTTP.
+- **Deduplication**: CDC-based dedup across checkpoint chains — only changed blocks are stored.
+- **Random Access**: Read any byte range without downloading or decompressing the whole file.
+- **Buffer protocol**: Direct loading into NumPy and PyTorch buffers via Python's buffer protocol.
+- **Remote backends**: Byte-range fetching from S3 or HTTP — only the blocks you need.
 
 ---
 

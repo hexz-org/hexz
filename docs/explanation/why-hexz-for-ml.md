@@ -24,7 +24,7 @@ A fine-tuned 7B model is ~14GB. Fine-tune it 50 times with different hyperparame
 - **Raw file copies**: 700GB. No dedup. Pay for every byte every time.
 - **git-lfs**: Tracks which blob corresponds to which version. Does not deduplicate content. Still 700GB.
 - **DVC**: Same as git-lfs — a pointer tracker, not a content store. Still 700GB.
-- **Hexz thin snapshots**: Store the base model once. Each fine-tune stores only changed blocks. With CDC dedup and ~5% weight change per run, 50 checkpoints costs roughly the space of 3-4 full copies.
+- **Hexz thin snapshots**: Store the base model once. Each fine-tune stores only changed blocks. With CDC dedup and small per-run weight changes, 50 checkpoints can cost significantly less than 50 full copies — actual savings depend on how much changes per run.
 
 **Validated:** The dedup benchmark shows 92.4% deduplication on shifted data (two 50MB versions with 1KB insertion). Fixed-size block dedup breaks to 0% on the same data. See `cargo bench --bench dedup_efficiency`.
 

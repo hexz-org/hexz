@@ -16,7 +16,7 @@ Each copy:
 - Uses memory bandwidth
 - Adds latency
 
-For ML training loading gigabytes per second, copies become the bottleneck.
+For I/O-bound ML training workloads, reducing copies can reduce memory bandwidth and latency.
 
 ## Zero-Copy Approach
 
@@ -136,19 +136,15 @@ reader.read(buffer=array)  # Writes to tensor
 
 ## Performance Impact
 
-[BENCHMARK NOT YET VALIDATED]
+> **Not yet benchmarked end-to-end.** The analysis below is based on the implementation, not measured numbers.
 
-The zero-copy approach should provide significant speedup by eliminating intermediate copies:
+**Traditional approach** — multiple copies:
+- Disk → Rust buffer → Python `bytes` → NumPy array
 
-**Traditional approach**:
-- Multiple copies: Disk → Python bytes → NumPy → PyTorch
-- Each copy consumes memory bandwidth and CPU time
+**With buffer protocol** — fewer copies:
+- Disk → decompress directly into caller-provided NumPy buffer
 
-**Zero-copy approach**:
-- Direct path: Disk → NumPy buffer (via PyO3 buffer protocol)
-- PyTorch tensor is zero-copy view of NumPy array
-
-Actual speedup depends on workload characteristics and needs end-to-end Python benchmarking to validate.
+The practical speedup depends on workload characteristics (block size, cache hit rate, compression ratio) and has not yet been measured in a full Python DataLoader loop.
 
 ## Limitations
 

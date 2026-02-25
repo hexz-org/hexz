@@ -8,8 +8,7 @@ Hexz is a **seekable, block-compressed, content-deduplicated binary archive form
 
 The core primitive: store large binary data (like ML model weights) compressed, access any byte range (like a single layer) without decompressing the whole archive, and deduplicate identical content across versions using Content-Defined Chunking (CDC).
 
-Primary use case:
-**ML Checkpoint Management** — store many iterations of a model (fine-tuning, LoRA sweeps, RLHF) without paying full storage cost for each one. Store 100 fine-tuned models for the cost of 6.
+Primary use cases: ML checkpoint versioning (storing many iterations of a model without full storage cost for each one) and dataset access (reading arbitrary samples from a compressed archive without extracting it).
 
 ---
 
@@ -17,7 +16,7 @@ Primary use case:
 
 Traditional archives require sequential decompression. To read byte 1,000,000 from a gzip file you must decompress from byte 0.
 
-Hexz uses **block-level compression**: data is split into 64KB blocks, each compressed independently. To read at offset 1,000,000 you look up which block(s) cover that range (O(log N) index lookup), decompress only those blocks, and return the slice. Cold access latency: ~6.6 µs. Warm (cached): ~174 ns.
+Hexz uses **block-level compression**: data is split into 64KB blocks, each compressed independently. To read at offset 1,000,000 you look up which block(s) cover that range (O(log N) index lookup), decompress only those blocks, and return the slice. Cold access latency on an NVMe machine: ~6.6 µs. Warm (cached): ~174 ns.
 
 Tradeoff: ~15-20% worse compression ratio than file-level compression. Worth it whenever you need random access to parts of a huge file (e.g. loading layers over S3).
 
@@ -65,7 +64,7 @@ FastCDC computes a rolling hash over every byte to find content-defined chunk bo
 
 Result: CDC packing is 2.6× slower (4.9 GB/s → 1.9 GB/s).
 
-CDC only affects **packing time** (write). Reading a CDC-packed archive is the same speed as reading a fixed-size-packed archive. For model versioning, the storage savings of CDC (90%+) far outweigh the one-time write overhead.
+CDC only affects **packing time** (write). Reading a CDC-packed archive is the same speed as reading a fixed-size-packed archive. For model versioning with data that shifts across versions, CDC dedup typically outweighs the one-time write overhead — but savings depend heavily on how much content actually repeats.
 
 ---
 
@@ -75,10 +74,10 @@ Use **fixed-size** when:
 - You have a single version of a file and will never store a derivative of it.
 - Pack speed matters more than storage cost.
 
-Use **CDC** (Recommended for ML) when:
-- You are storing multiple versions of the same model (fine-tuning).
-- Weights change in-place across runs.
-- You want ~92% dedup on shifted data rather than 0% with fixed-size.
+Use **CDC** when:
+- You are storing multiple versions of the same data (e.g. fine-tuned checkpoints).
+- Content shifts across versions (insertions, removals, in-place edits).
+- The validated dedup benchmark shows 92.4% savings on shifted data vs 0% with fixed-size.
 
 ---
 
@@ -89,7 +88,7 @@ Use **CDC** (Recommended for ML) when:
 1. **Cross-file deduplication (New)**: When creating a new snapshot, you can provide a `parent` snapshot. Hexz will automatically scan the parent's block hashes and store lightweight references for any identical chunks it finds in the new file.
 2. **Thin snapshots (parent-child chain)**: A child file explicitly references its parent. The child only stores blocks not already in the parent.
 
-This is what enables storing a 14GB fine-tuned model in ~500MB if only a few layers were modified.
+This enables storing a fine-tuned model checkpoint in significantly less space than a full copy, depending on how many layers changed.
 
 ---
 
