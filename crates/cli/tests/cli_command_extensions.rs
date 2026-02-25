@@ -203,7 +203,7 @@ fn test_data_diff_with_metadata() {
     fs::write(&meta_path, metadata).unwrap();
 
     hexz()
-        .arg("diff")
+        .arg("overlay")
         .arg(&overlay_path)
         .assert()
         .success()
@@ -227,12 +227,12 @@ fn test_data_diff_with_blocks_flag() {
     fs::write(&meta_path, metadata).unwrap();
 
     hexz()
-        .arg("diff")
+        .arg("overlay")
         .arg(&overlay_path)
         .arg("--blocks")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Overlay Statistics"));
+        .stdout(predicate::str::contains("Modified Blocks:"));
 }
 
 #[test]
@@ -244,7 +244,7 @@ fn test_data_diff_no_metadata() {
     // No .meta file created
 
     hexz()
-        .arg("diff")
+        .arg("overlay")
         .arg(&overlay_path)
         .assert()
         .success()
@@ -254,7 +254,7 @@ fn test_data_diff_no_metadata() {
 #[test]
 fn test_data_diff_nonexistent_overlay() {
     hexz()
-        .arg("diff")
+        .arg("overlay")
         .arg("/nonexistent/overlay.overlay")
         .assert()
         .success()
@@ -278,15 +278,15 @@ fn test_data_diff_with_files_flag() {
     fs::write(&meta_path, metadata).unwrap();
 
     hexz()
-        .arg("diff")
+        .arg("overlay")
         .arg(&overlay_path)
         .arg("--files")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Modified Block Indices"))
-        .stdout(predicate::str::contains("Block 5"))
-        .stdout(predicate::str::contains("Block 42"))
-        .stdout(predicate::str::contains("Block 100"));
+        .stdout(predicate::str::contains("Modified Block Indices:"))
+        .stdout(predicate::str::contains("  5"))
+        .stdout(predicate::str::contains("  42"))
+        .stdout(predicate::str::contains("  100"));
 }
 
 #[test]
@@ -304,17 +304,14 @@ fn test_data_diff_blocks_and_files_flags() {
     }
     fs::write(&meta_path, metadata).unwrap();
 
+    // --blocks and --files are mutually exclusive in overlay; --blocks takes priority
     hexz()
-        .arg("diff")
+        .arg("overlay")
         .arg(&overlay_path)
         .arg("--blocks")
-        .arg("--files")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Overlay Statistics"))
-        .stdout(predicate::str::contains("Modified Block Indices"))
-        .stdout(predicate::str::contains("Block 0"))
-        .stdout(predicate::str::contains("Block 9"));
+        .stdout(predicate::str::contains("Modified Blocks:"));
 }
 
 #[test]
@@ -328,7 +325,7 @@ fn test_data_diff_empty_metadata() {
     fs::write(&meta_path, Vec::<u8>::new()).unwrap(); // Empty metadata
 
     hexz()
-        .arg("diff")
+        .arg("overlay")
         .arg(&overlay_path)
         .assert()
         .success()

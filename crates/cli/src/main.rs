@@ -116,12 +116,16 @@ fn main() -> anyhow::Result<()> {
 
         Commands::Inspect { snap, json } => hexz_cli::cmd::data::inspect::run(snap, json),
 
+        Commands::Diff { a, b } => hexz_cli::cmd::data::diff::run(a, b),
+
+        Commands::Ls { dir } => hexz_cli::cmd::data::ls::run(dir),
+
         #[cfg(feature = "diagnostics")]
-        Commands::Diff {
+        Commands::Overlay {
             overlay,
             blocks,
             files,
-        } => hexz_cli::cmd::data::diff::run(overlay, blocks, files),
+        } => hexz_cli::cmd::data::overlay::run(overlay, blocks, files),
 
         Commands::Build {
             source,

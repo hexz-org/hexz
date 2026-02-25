@@ -1,200 +1,198 @@
-//! Show differences in overlay and identify modified blocks.
+//! Compare block hashes between two Hexz archives.
 //!
-//! This command analyzes overlay files created by the FUSE mount (in read-write mode)
-//! to display which blocks have been modified, providing statistics about write
-//! activity and changed data. The overlay mechanism tracks writes at 4 KiB granularity,
-//! allowing efficient copy-on-write semantics without modifying the base snapshot.
+//! Reports how much data is shared between two snapshots, how many blocks are
+//! unique to each, and the implied storage savings from deduplication.
 //!
-//! # Overlay Format
-//!
-//! When mounting a snapshot in read-write mode, two files are created:
-//!
-//! **Overlay File (`.overlay`):**
-//! - Contains modified 4 KiB blocks written by the VM/guest
-//! - Sparse file with blocks at their original logical offsets
-//! - Only modified blocks consume disk space
-//!
-//! **Metadata File (`.meta`):**
-//! - Contains a sorted list of modified block indices (8 bytes each)
-//! - Used to quickly enumerate changed blocks without scanning the overlay
-//! - Format: array of `u64` block numbers in little-endian encoding
-//!
-//! # Use Cases
-//!
-//! - **Change Tracking**: Identify what data has been modified during VM execution
-//! - **Incremental Commits**: Determine which blocks need to be merged into new snapshot
-//! - **Debugging**: Investigate unexpected writes or storage growth
-//! - **Capacity Planning**: Estimate commit size before running `vm commit`
-//! - **File-Level Analysis**: Map modified blocks to files (future enhancement)
-//!
-//! # Output Modes
-//!
-//! **Default Mode (Summary):**
-//! Displays basic statistics:
-//! - Total number of modified blocks
-//! - Estimated data size changed
-//!
-//! **Blocks Mode (`--blocks`):**
-//! Shows overlay statistics with human-readable sizes.
-//!
-//! **Files Mode (`--files`):**
-//! Lists individual modified block indices. File-level resolution
-//! (mapping blocks to filesystem inodes) is not yet implemented.
-//!
-//! # Comparison to Other Diff Tools
-//!
-//! Unlike traditional file diffs (e.g., `diff`, `rsync --dry-run`):
-//! - Operates at block level, not file level
-//! - Does not require mounting or filesystem parsing
-//! - Fast: reads only the small metadata file, not entire overlay
-//! - Shows raw block changes, not semantic file differences
-//!
-//! # Common Usage Patterns
+//! # Common Usage
 //!
 //! ```bash
-//! # Show summary of changes
-//! hexz diff overlay.img
-//!
-//! # Show detailed block statistics
-//! hexz diff overlay.img --blocks
-//!
-//! # List all modified block indices
-//! hexz diff overlay.img --files
-//!
-//! # Estimate commit size before running vm commit
-//! hexz diff vm-state.overlay --blocks
-//! # Output: "Modified Blocks: 5120 | Total Changed Data: 20.0 MB"
+//! hexz diff base.hxz finetuned.hxz
 //! ```
 
-use anyhow::Result;
-use hexz_common::constants::{META_ENTRY_SIZE, OVERLAY_BLOCK_SIZE};
+use anyhow::{Context, Result};
+use hexz_core::format::header::Header;
+use hexz_core::format::index::{IndexPage, MasterIndex};
+use hexz_ops::inspect::inspect_snapshot;
 use indicatif::HumanBytes;
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-/// Executes the diff command to analyze overlay modifications.
-///
-/// Reads the overlay metadata file (`.meta`) to determine which blocks have been
-/// modified, then displays statistics about the changes. The metadata file contains
-/// a sorted array of 64-bit block indices that were written during overlay operation.
-///
-/// # Arguments
-///
-/// * `overlay` - Path to the overlay file (e.g., `vm-state.overlay`)
-/// * `blocks` - If true, display block-level statistics with human-readable sizes
-/// * `files` - If true, display individual modified block indices (file mapping not implemented)
-///
-/// # Output Format
-///
-/// **Blocks Mode:**
-/// ```text
-/// --- Overlay Statistics ---
-/// Modified Blocks: 5120
-/// Total Changed Data: 20.0 MB
-/// ```
-///
-/// **Files Mode:**
-/// ```text
-/// --- Modified Files (Heuristic) ---
-/// File resolution is not yet implemented. Use --blocks for raw stats.
-/// Modified Block Indices:
-///   Block 128
-///   Block 129
-///   Block 256
-///   ...
-/// ```
-///
-/// **Default Mode:**
-/// ```text
-/// Overlay: "vm-state.overlay"
-/// Modified Blocks: 5120
-/// Estimated Size: 20.0 MB
-/// ```
-///
-/// # File-Level Resolution (Future Enhancement)
-///
-/// To map block indices to files, the implementation would need to:
-/// 1. Read the base image partition table (MBR/GPT)
-/// 2. Identify the filesystem type (ext4, xfs, ntfs, etc.)
-/// 3. Parse the filesystem metadata (superblock, inode tables)
-/// 4. Map block indices to inode numbers
-/// 5. Resolve inode paths from directory entries
-///
-/// This requires filesystem-specific parsers and is left for future work.
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - The overlay file does not exist (note: metadata file absence is not an error)
-/// - The metadata file cannot be opened or read
-/// - I/O errors occur while reading block indices
-///
-/// Note: If the metadata file does not exist, the command prints a message and
-/// returns successfully (interpreted as zero modifications).
-///
-/// # Examples
-///
-/// ```no_run
-/// use std::path::PathBuf;
-/// use hexz_cli::cmd::data::diff;
-///
-/// // Show summary of overlay changes
-/// diff::run(PathBuf::from("vm-state.overlay"), false, false)?;
-///
-/// // Display detailed statistics
-/// diff::run(PathBuf::from("vm-state.overlay"), true, false)?;
-///
-/// // List all modified block indices
-/// diff::run(PathBuf::from("vm-state.overlay"), false, true)?;
-/// # Ok::<(), anyhow::Error>(())
-/// ```
-pub fn run(overlay: PathBuf, blocks: bool, files: bool) -> Result<()> {
-    let meta_path = overlay.with_extension("meta");
-    if !meta_path.exists() {
-        println!("No metadata file found for overlay: {:?}", overlay);
-        return Ok(());
-    }
+/// Per-block classification for one archive, derived from a single index scan.
+struct BlockSummary {
+    /// Hashes of blocks with actual data stored in this file.
+    hashes: HashSet<[u8; 32]>,
+    /// Bytes covered by parent-ref blocks (shared with parent by definition).
+    parent_ref_bytes: u64,
+    /// Number of parent-ref blocks.
+    parent_ref_blocks: usize,
+    /// Bytes of data blocks whose hash is not in `hashes` of the other file.
+    unique_bytes: u64,
+    unique_blocks: usize,
+}
 
-    let mut f = File::open(&meta_path)?;
-    let len = f.metadata()?.len();
-    let count = len / META_ENTRY_SIZE as u64;
+fn scan(path: &Path) -> Result<BlockSummary> {
+    let mut f = File::open(path)?;
+    let header = Header::read_from(&mut f)?;
+    let master = MasterIndex::read_from(&mut f, header.index_offset)?;
 
-    if blocks {
-        println!("--- Overlay Statistics ---");
-        println!("Modified Blocks: {}", count);
-        println!(
-            "Total Changed Data: {}",
-            HumanBytes(count * OVERLAY_BLOCK_SIZE)
-        );
-    }
+    let mut hashes = HashSet::new();
+    let mut parent_ref_bytes = 0u64;
+    let mut parent_ref_blocks = 0usize;
 
-    if files {
-        println!("\n--- Modified Files (Heuristic) ---");
-        println!("File resolution is not yet implemented. Use --blocks for raw stats.");
-        // TODO: Future implementation:
-        // 1. Read base image MBR/GPT.
-        // 2. Identify partition.
-        // 3. Mount or parse filesystem (ext4/xfs).
-        // 4. Map block indices to file inodes.
-
-        println!("Modified Block Indices:");
-        let mut buf = [0u8; META_ENTRY_SIZE];
-        f.seek(SeekFrom::Start(0))?;
-        for _ in 0..count {
-            if f.read_exact(&mut buf).is_ok() {
-                let blk = u64::from_le_bytes(buf);
-                println!("  Block {}", blk);
+    for page_meta in &master.primary_pages {
+        f.seek(SeekFrom::Start(page_meta.offset))?;
+        let mut buf = vec![0u8; page_meta.length as usize];
+        f.read_exact(&mut buf)?;
+        let page: IndexPage = bincode::deserialize(&buf)?;
+        for block in page.blocks {
+            if block.is_parent_ref() {
+                parent_ref_blocks += 1;
+                parent_ref_bytes += block.logical_len as u64;
+            } else if !block.is_sparse() && block.hash != [0u8; 32] {
+                hashes.insert(block.hash);
             }
         }
     }
 
-    if !blocks && !files {
-        // Default behavior: just show summary
-        println!("Overlay: {:?}", overlay);
-        println!("Modified Blocks: {}", count);
-        println!("Estimated Size: {}", HumanBytes(count * OVERLAY_BLOCK_SIZE));
+    Ok(BlockSummary {
+        hashes,
+        parent_ref_bytes,
+        parent_ref_blocks,
+        unique_bytes: 0,
+        unique_blocks: 0,
+    })
+}
+
+/// Compare two archives and report shared vs. unique block data.
+pub fn run(a: PathBuf, b: PathBuf) -> Result<()> {
+    let info_a = inspect_snapshot(&a).with_context(|| format!("Failed to read {}", a.display()))?;
+    let info_b = inspect_snapshot(&b).with_context(|| format!("Failed to read {}", b.display()))?;
+
+    let mut summary_a =
+        scan(&a).with_context(|| format!("Failed to read blocks from {}", a.display()))?;
+    let mut summary_b =
+        scan(&b).with_context(|| format!("Failed to read blocks from {}", b.display()))?;
+
+    // Classify each file's data blocks as shared or unique relative to the other.
+    // parent-ref blocks in B are shared with A by definition (they point at the parent).
+    let mut shared_blocks = summary_b.parent_ref_blocks;
+    let mut shared_bytes = summary_b.parent_ref_bytes;
+
+    // Scan B's data blocks against A's hash set.
+    {
+        let mut f = File::open(&b)?;
+        let header = Header::read_from(&mut f)?;
+        let master = MasterIndex::read_from(&mut f, header.index_offset)?;
+
+        for page_meta in &master.primary_pages {
+            f.seek(SeekFrom::Start(page_meta.offset))?;
+            let mut buf = vec![0u8; page_meta.length as usize];
+            f.read_exact(&mut buf)?;
+            let page: IndexPage = bincode::deserialize(&buf)?;
+            for block in page.blocks {
+                if block.is_parent_ref() || block.is_sparse() || block.hash == [0u8; 32] {
+                    continue;
+                }
+                if summary_a.hashes.contains(&block.hash) {
+                    shared_blocks += 1;
+                    shared_bytes += block.logical_len as u64;
+                } else {
+                    summary_b.unique_blocks += 1;
+                    summary_b.unique_bytes += block.logical_len as u64;
+                }
+            }
+        }
     }
+
+    // Scan A's data blocks against B's hash set for unique-to-A count.
+    {
+        let mut f = File::open(&a)?;
+        let header = Header::read_from(&mut f)?;
+        let master = MasterIndex::read_from(&mut f, header.index_offset)?;
+
+        for page_meta in &master.primary_pages {
+            f.seek(SeekFrom::Start(page_meta.offset))?;
+            let mut buf = vec![0u8; page_meta.length as usize];
+            f.read_exact(&mut buf)?;
+            let page: IndexPage = bincode::deserialize(&buf)?;
+            for block in page.blocks {
+                if block.is_parent_ref() || block.is_sparse() || block.hash == [0u8; 32] {
+                    continue;
+                }
+                if !summary_b.hashes.contains(&block.hash) {
+                    summary_a.unique_blocks += 1;
+                    summary_a.unique_bytes += block.logical_len as u64;
+                }
+            }
+        }
+    }
+
+    // --- Render ---
+    let name_a = a.file_name().unwrap_or(a.as_os_str()).to_string_lossy();
+    let name_b = b.file_name().unwrap_or(b.as_os_str()).to_string_lossy();
+    let max_name = name_a.len().max(name_b.len());
+
+    let total_a_data_blocks = summary_a.hashes.len();
+    let total_b_data_blocks = summary_b.hashes.len() + summary_b.parent_ref_blocks;
+
+    println!();
+    println!(
+        "  {:<width$}  {:>10}  {:>6} blocks",
+        name_a,
+        HumanBytes(info_a.file_size),
+        total_a_data_blocks,
+        width = max_name,
+    );
+    println!(
+        "  {:<width$}  {:>10}  {:>6} blocks",
+        name_b,
+        HumanBytes(info_b.file_size),
+        total_b_data_blocks,
+        width = max_name,
+    );
+    println!();
+
+    let total_b_bytes = (shared_bytes + summary_b.unique_bytes).max(1);
+    let pct = |n: u64| n as f64 / total_b_bytes as f64 * 100.0;
+
+    // When B is a thin snapshot, its parent-ref blocks cover data owned by A.
+    // Those hashes aren't stored in B's index, so A's blocks appear "not found in B"
+    // even though they're shared. Suppress the misleading "only in A" count in that case.
+    let is_thin_b = summary_b.parent_ref_blocks > 0;
+    let thin_note = if is_thin_b {
+        format!("  ({} via parent refs)", summary_b.parent_ref_blocks)
+    } else {
+        String::new()
+    };
+
+    println!(
+        "  Shared:        {:>10}  {:>6} blocks  ({:.0}%){}",
+        HumanBytes(shared_bytes),
+        shared_blocks,
+        pct(shared_bytes),
+        thin_note,
+    );
+    println!(
+        "  New in {:<width$}  {:>10}  {:>6} blocks",
+        format!("{}:", name_b),
+        HumanBytes(summary_b.unique_bytes),
+        summary_b.unique_blocks,
+        width = max_name + 1,
+    );
+    if !is_thin_b {
+        println!(
+            "  Only in {:<width$}  {:>10}  {:>6} blocks",
+            format!("{}:", name_a),
+            HumanBytes(summary_a.unique_bytes),
+            summary_a.unique_blocks,
+            width = max_name + 1,
+        );
+    }
+    println!();
+    println!("  Storage saved: {}", HumanBytes(shared_bytes));
+    println!();
 
     Ok(())
 }

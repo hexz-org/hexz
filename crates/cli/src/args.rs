@@ -99,22 +99,47 @@ pub enum Commands {
         json: bool,
     },
 
-    /// Show differences in overlay
-    #[cfg(feature = "diagnostics")]
+    /// Compare block hashes between two archives
     #[command(display_order = 3)]
     #[command(
-        long_about = "Analyzes the differences between a base image and an overlay.\n\nThis is useful for auditing what changed in a fine-tuning run or verifying that a thin snapshot only contains the expected deltas."
+        long_about = "Compares the BLAKE3 block hashes of two Hexz archives.\n\nReports how much data is shared between them, unique to each, and the storage savings achieved through deduplication. Useful for understanding how much a fine-tuned checkpoint differs from its base."
     )]
-    #[command(after_help = "hexz diff finetuned.overlay --blocks")]
+    #[command(after_help = "hexz diff base.hxz finetuned.hxz")]
     Diff {
-        /// Path to overlay
+        /// First archive
+        a: PathBuf,
+
+        /// Second archive
+        b: PathBuf,
+    },
+
+    /// List archives in a directory as a lineage tree
+    #[command(display_order = 4)]
+    #[command(
+        long_about = "Scans a directory for .hxz archives and renders their parent-child relationships as a tree.\n\nParent links are read from each archive's header. Archives whose declared parent lives outside the scanned directory are annotated as external."
+    )]
+    #[command(after_help = "hexz ls ./checkpoints/")]
+    Ls {
+        /// Directory to scan
+        dir: PathBuf,
+    },
+
+    /// Inspect a FUSE overlay file
+    #[cfg(feature = "diagnostics")]
+    #[command(display_order = 30)]
+    #[command(
+        long_about = "Analyzes the overlay file created by a FUSE read-write mount.\n\nShows which 4 KiB blocks were written during the session and the total amount of changed data."
+    )]
+    #[command(after_help = "hexz overlay vm-state.overlay --blocks")]
+    Overlay {
+        /// Path to overlay file
         overlay: PathBuf,
 
-        /// Show block-level differences
+        /// Show block count and total changed size
         #[arg(long)]
         blocks: bool,
 
-        /// Show file-level differences
+        /// List individual modified block indices
         #[arg(long)]
         files: bool,
     },

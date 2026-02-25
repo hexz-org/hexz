@@ -1284,7 +1284,7 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "hexz-cli"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1320,7 +1320,7 @@ dependencies = [
 
 [[package]]
 name = "hexz-common"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "bincode",
  "ed25519-dalek",
@@ -1336,7 +1336,7 @@ dependencies = [
 
 [[package]]
 name = "hexz-core"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "aes-gcm",
  "bincode",
@@ -1363,7 +1363,7 @@ dependencies = [
 
 [[package]]
 name = "hexz-fuse"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "anyhow",
  "bincode",
@@ -1379,7 +1379,7 @@ dependencies = [
 
 [[package]]
 name = "hexz-loader"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "bincode",
  "hexz-common",
@@ -1395,7 +1395,7 @@ dependencies = [
 
 [[package]]
 name = "hexz-ops"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "bincode",
  "blake3",
@@ -1418,7 +1418,7 @@ dependencies = [
 
 [[package]]
 name = "hexz-reconstruct"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "bytes",
  "criterion",
@@ -1431,7 +1431,7 @@ dependencies = [
 
 [[package]]
 name = "hexz-server"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "anyhow",
  "axum",
@@ -1451,7 +1451,7 @@ dependencies = [
 
 [[package]]
 name = "hexz-store"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "bytes",
  "hexz-common",

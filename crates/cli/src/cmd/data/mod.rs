@@ -9,21 +9,22 @@
 //! - [`pack`]: Create archives from raw disk images or memory dumps
 //! - [`build`]: Build archives from source directories with profiles
 //! - [`inspect`]: Inspect archive metadata (header, index, compression stats)
-//! - [`diff`]: Show block/file-level differences in overlays (diagnostics)
+//! - [`diff`]: Compare block hashes between two archives
+//! - [`ls`]: List archives in a directory as a lineage tree
 //! - [`analyze`]: Run DCAM analysis to optimize CDC parameters (diagnostics)
+//! - [`overlay`]: Inspect FUSE overlay files (diagnostics)
 //!
 //! # Workflow Example
 //!
 //! ```bash
-//! # 1. Analyze optimal parameters
-//! hexz analyze disk.img
+//! # Save two checkpoints then compare them
+//! hexz diff base.hxz finetuned.hxz
 //!
-//! # 2. Pack with optimized settings
-//! hexz pack --disk disk.img --output snapshot.st --cdc \
-//!   --min-chunk 8192 --avg-chunk 32768
+//! # List all checkpoints in a directory as a lineage tree
+//! hexz ls ./checkpoints/
 //!
-//! # 3. Inspect the result
-//! hexz inspect snapshot.st --json
+//! # Inspect a single archive
+//! hexz inspect snapshot.hxz --json
 //! ```
 //!
 //! # Archive Format
@@ -41,15 +42,15 @@
 //! - **Dictionary Training**: Improves Zstandard compression by 10-30%
 //! - **Block Size**: Larger blocks = less overhead, worse deduplication
 
-pub mod inspect;
-pub mod pack;
-
-#[cfg(feature = "diagnostics")]
+pub mod build;
+pub mod convert;
 pub mod diff;
+pub mod inspect;
+pub mod ls;
+pub mod pack;
 
 #[cfg(feature = "diagnostics")]
 pub mod analyze;
 
-pub mod build;
-
-pub mod convert;
+#[cfg(feature = "diagnostics")]
+pub mod overlay;
