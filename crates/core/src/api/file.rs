@@ -130,7 +130,7 @@ pub enum SnapshotStream {
 /// )?;
 ///
 /// // The thin snapshot will automatically load its parent based on
-/// // the parent_path field in the header
+/// // the parent_paths field in the header
 /// let thin_backend = Arc::new(FileBackend::new("incremental.hxz".as_ref())?);
 /// let thin = File::new(
 ///     thin_backend,
@@ -161,7 +161,7 @@ pub struct File {
 
     /// Optional parent snapshot for thin (incremental) snapshots.
     /// When a block's offset is BLOCK_OFFSET_PARENT, data is fetched from parent.
-    parent: Option<Arc<File>>,
+    parents: Vec<Arc<File>>,
 
     /// LRU cache for decompressed blocks (per-stream, per-block-index)
     cache_l1: BlockCache,
@@ -344,13 +344,12 @@ impl File {
         let master: MasterIndex = bincode::deserialize(&index_bytes)?;
 
         // Recursively load parent if present
-        let parent = if let Some(parent_path) = &header.parent_path {
+        let mut parents = Vec::new();
+        for parent_path in &header.parent_paths {
             tracing::info!("Loading parent snapshot: {}", parent_path);
             let p_backend = Arc::new(FileBackend::new(Path::new(parent_path))?);
-            Some(File::open(p_backend, None)?)
-        } else {
-            None
-        };
+            parents.push(File::open(p_backend, None)?);
+        }
 
         let block_size = header.block_size as usize;
         let l1_capacity = if let Some(bytes) = cache_capacity_bytes {
@@ -368,7 +367,7 @@ impl File {
             backend,
             compressor,
             encryptor,
-            parent,
+            parents,
             cache_l1: BlockCache::with_capacity(l1_capacity),
             page_cache: ShardedPageCache::default(),
             prefetcher,
@@ -526,8 +525,10 @@ impl File {
         };
 
         if pages.is_empty() {
-            if let Some(parent) = &self.parent {
-                return parent.read_at(stream, offset, actual_len);
+            for parent in &self.parents {
+                if parent.get_block_info(stream, offset)?.is_some() {
+                    return parent.read_at(stream, offset, actual_len);
+                }
             }
             return Ok(vec![0u8; actual_len]);
         }
@@ -617,11 +618,17 @@ impl File {
                     );
 
                     if block.offset == BLOCK_OFFSET_PARENT {
-                        // Parent block: delegate or zero-fill
-                        if let Some(parent) = &self.parent {
-                            let dest = &mut target[buf_offset..buf_offset + to_copy];
-                            parent.read_at_into_uninit(stream, current_pos, dest)?;
-                        } else {
+                        // Parent block: delegate to the parent that has it, or zero-fill
+                        let mut found = false;
+                        for parent in &self.parents {
+                            if parent.get_block_info(stream, current_pos)?.is_some() {
+                                let dest = &mut target[buf_offset..buf_offset + to_copy];
+                                parent.read_at_into_uninit(stream, current_pos, dest)?;
+                                found = true;
+                                break;
+                            }
+                        }
+                        if !found {
                             Self::zero_fill_uninit(&mut target[buf_offset..buf_offset + to_copy]);
                         }
                         current_pos += to_copy as u64;
@@ -865,8 +872,10 @@ impl File {
 
         // Delegate to parent if no index pages
         if pages.is_empty() {
-            if let Some(parent) = &self.parent {
-                return parent.read_at_into_uninit(stream, offset, target);
+            for parent in &self.parents {
+                if parent.get_block_info(stream, offset)?.is_some() {
+                    return parent.read_at_into_uninit(stream, offset, target);
+                }
             }
             Self::zero_fill_uninit(target);
             return Ok(());
@@ -892,10 +901,16 @@ impl File {
         // Handle any remaining unprocessed data
         let remaining = actual_len - buf_offset;
         if remaining > 0 {
-            if let Some(parent) = &self.parent {
-                let current_pos = offset + buf_offset as u64;
-                parent.read_at_into_uninit(stream, current_pos, &mut target[buf_offset..])?;
-            } else {
+            let current_pos = offset + buf_offset as u64;
+            let mut found = false;
+            for parent in &self.parents {
+                if parent.get_block_info(stream, current_pos)?.is_some() {
+                    parent.read_at_into_uninit(stream, current_pos, &mut target[buf_offset..])?;
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
                 Self::zero_fill_uninit(&mut target[buf_offset..]);
             }
         }

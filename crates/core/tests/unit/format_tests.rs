@@ -34,7 +34,7 @@ fn test_header_serialization_minimal() {
         version: FORMAT_VERSION,
         block_size: 65536,
         index_offset: 1024,
-        parent_path: None,
+        parent_paths: Vec::new(),
         dictionary_offset: None,
         dictionary_length: None,
         metadata_offset: None,
@@ -71,7 +71,7 @@ fn test_header_serialization_full() {
         version: FORMAT_VERSION,
         block_size: 16384,
         index_offset: 999999,
-        parent_path: Some("/path/to/parent.hxz".to_string()),
+        parent_paths: vec!["/path/to/parent.hxz".to_string()],
         dictionary_offset: Some(5000),
         dictionary_length: Some(4096),
         metadata_offset: Some(10000),
@@ -94,8 +94,8 @@ fn test_header_serialization_full() {
     let deserialized: Header = bincode::deserialize(&serialized).unwrap();
 
     assert_eq!(
-        deserialized.parent_path,
-        Some("/path/to/parent.hxz".to_string())
+        deserialized.parent_paths,
+        vec!["/path/to/parent.hxz".to_string()]
     );
     assert_eq!(deserialized.dictionary_offset, Some(5000));
     assert_eq!(deserialized.signature_length, Some(64));
@@ -325,7 +325,7 @@ fn test_invalid_magic_bytes() {
         version: FORMAT_VERSION,
         block_size: 65536,
         index_offset: 1024,
-        parent_path: None,
+        parent_paths: Vec::new(),
         dictionary_offset: None,
         dictionary_length: None,
         metadata_offset: None,
@@ -362,7 +362,7 @@ fn test_large_block_sizes() {
             version: FORMAT_VERSION,
             block_size: size,
             index_offset: 1024,
-            parent_path: None,
+            parent_paths: Vec::new(),
             dictionary_offset: None,
             dictionary_length: None,
             metadata_offset: None,

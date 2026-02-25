@@ -168,13 +168,13 @@ pub fn run(
 
     // --- Finalize ---
     let parent_path = if thin {
-        Some(
+        vec![
             std::fs::canonicalize(&base_path)?
                 .to_string_lossy()
                 .to_string(),
-        )
+        ]
     } else {
-        None
+        Vec::new()
     };
 
     let meta_bytes = message.as_ref().map(|m| m.as_bytes());

@@ -754,7 +754,7 @@ impl Reader {
         dict.set_item("block_size", header.block_size)?;
         dict.set_item("compression", format!("{:?}", header.compression))?;
         dict.set_item("encrypted", header.encryption.is_some())?;
-        dict.set_item("parent_path", header.parent_path.as_deref())?;
+        dict.set_item("parent_paths", &header.parent_paths)?;
 
         // Stream sizes from the cached master index.
         let primary_size = self.inner.size(SnapshotStream::Primary);

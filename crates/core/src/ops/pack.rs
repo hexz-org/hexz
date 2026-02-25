@@ -815,7 +815,7 @@ where
         pb.finish();
     }
 
-    writer.finalize(None, None)?;
+    writer.finalize(Vec::new(), None)?;
 
     Ok(())
 }

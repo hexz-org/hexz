@@ -422,7 +422,7 @@ impl SnapshotWriter {
     }
 
     /// Writes master index + header, consuming the writer.
-    pub fn finalize(mut self, parent_path: Option<String>, metadata: Option<&[u8]>) -> Result<()> {
+    pub fn finalize(mut self, parent_paths: Vec<String>, metadata: Option<&[u8]>) -> Result<()> {
         // If a stream is still active, end it
         if self.stream_active {
             self.end_stream()?;
@@ -450,7 +450,7 @@ impl SnapshotWriter {
             version: FORMAT_VERSION,
             block_size: self.block_size,
             index_offset,
-            parent_path,
+            parent_paths: parent_paths.into_iter().collect(),
             dictionary_offset: self.dict_offset,
             dictionary_length: self.dict_len,
             metadata_offset: meta_offset,
@@ -545,7 +545,7 @@ mod tests {
         w.write_data_block(&vec![0xAA; 4096]).unwrap();
         w.write_data_block(&vec![0u8; 4096]).unwrap(); // zero block
         w.end_stream().unwrap();
-        w.finalize(None, None).unwrap();
+        w.finalize(Vec::new(), None).unwrap();
 
         // Verify file is readable
         let mut f = File::open(&path).unwrap();
@@ -572,13 +572,13 @@ mod tests {
         w.begin_stream(true, 4096);
         w.write_parent_ref(&[0u8; 32], 4096).unwrap();
         w.end_stream().unwrap();
-        w.finalize(Some("/parent.hxz".to_string()), None).unwrap();
+        w.finalize(vec!["/parent.hxz".to_string()], None).unwrap();
 
         let mut f = File::open(&path).unwrap();
         let mut header_buf = vec![0u8; HEADER_SIZE];
         f.read_exact(&mut header_buf).unwrap();
         let header: Header = bincode::deserialize(&header_buf).unwrap();
-        assert_eq!(header.parent_path.as_deref(), Some("/parent.hxz"));
+        assert_eq!(header.parent_paths, vec!["/parent.hxz"]);
 
         let _ = std::fs::remove_file(&path);
     }
@@ -604,7 +604,7 @@ mod tests {
         );
         w.write_data_block(&vec![0xCC; 4096]).unwrap(); // unique
         w.end_stream().unwrap();
-        w.finalize(None, None).unwrap();
+        w.finalize(Vec::new(), None).unwrap();
 
         let _ = std::fs::remove_file(&path);
     }
@@ -623,7 +623,7 @@ mod tests {
         w.end_stream().unwrap();
 
         let meta = b"test metadata";
-        w.finalize(None, Some(meta)).unwrap();
+        w.finalize(Vec::new(), Some(meta)).unwrap();
 
         let mut f = File::open(&path).unwrap();
         let mut header_buf = vec![0u8; HEADER_SIZE];

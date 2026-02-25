@@ -172,7 +172,7 @@ proptest! {
             version: FORMAT_VERSION,
             block_size,
             index_offset,
-            parent_path: None,
+            parent_paths: Vec::new(),
             dictionary_offset: None,
             dictionary_length: None,
             metadata_offset: None,

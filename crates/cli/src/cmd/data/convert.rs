@@ -146,7 +146,7 @@ fn convert_tar(
     let meta_bytes = serde_json::to_vec(&metadata)?;
 
     writer
-        .finalize(None, Some(&meta_bytes))
+        .finalize(Vec::new(), Some(&meta_bytes))
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     if let Some(ref pb) = pb {

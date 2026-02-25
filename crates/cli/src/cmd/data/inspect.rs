@@ -147,7 +147,7 @@ pub fn run(snap: PathBuf, json: bool) -> Result<()> {
             "index_offset": info.index_offset,
             "primary_pages": info.primary_pages,
             "secondary_pages": info.secondary_pages,
-            "parent_path": info.parent_path,
+            "parent_paths": info.parent_paths,
             "metadata": info.metadata,
             "block_stats": info.block_stats,
         });
@@ -193,9 +193,16 @@ pub fn run(snap: PathBuf, json: bool) -> Result<()> {
         println!("Secondary Pgs:  {}", info.secondary_pages);
 
         println!("\n--- Lineage & Metadata ---");
-        match &info.parent_path {
-            Some(p) => println!("Parent Link:    {}", p),
-            None => println!("Parent Link:    None (Standalone)"),
+        if info.parent_paths.is_empty() {
+            println!("Parent Links:   None (Standalone)");
+        } else {
+            for (i, p) in info.parent_paths.iter().enumerate() {
+                if i == 0 {
+                    println!("Parent Links:   {}", p);
+                } else {
+                    println!("                {}", p);
+                }
+            }
         }
 
         if let Some(meta) = &info.metadata {

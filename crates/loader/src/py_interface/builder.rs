@@ -100,7 +100,7 @@ use std::sync::Arc;
 #[pyclass(module = "hexz.hexz_loader")]
 pub struct Builder {
     writer: Option<SnapshotWriter>,
-    parent_path: Option<String>,
+    parent_paths: Vec<String>,
     cdc_enabled: bool,
     min_chunk: u32,
     avg_chunk: u32,
@@ -190,12 +190,9 @@ impl Builder {
             .build()
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
-        // Primary parent path for the header is the first one provided
-        let primary_parent = parent_paths.first().cloned();
-
         Ok(Builder {
             writer: Some(writer),
-            parent_path: primary_parent,
+            parent_paths,
             cdc_enabled: cdc,
             min_chunk,
             avg_chunk,
@@ -250,7 +247,7 @@ impl Builder {
             .map_err(|e| PyIOError::new_err(format!("Failed to resolve base path: {}", e)))?;
 
         if thin {
-            self.parent_path = Some(abs_base_path.to_string_lossy().to_string());
+            self.parent_paths = vec![abs_base_path.to_string_lossy().to_string()];
         }
 
         let abs_overlay_path = std::fs::canonicalize(&overlay_path)
@@ -393,7 +390,7 @@ impl Builder {
         };
 
         writer
-            .finalize(self.parent_path.clone(), meta)
+            .finalize(std::mem::take(&mut self.parent_paths), meta)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
         Ok(())

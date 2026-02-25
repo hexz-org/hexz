@@ -36,7 +36,7 @@ use super::magic::{FORMAT_VERSION, MAGIC_BYTES};
 ///
 /// # Thin Provisioning
 ///
-/// When `parent_path` is set, this snapshot is a thin snapshot that references
+/// When `parent_paths` is set, this snapshot is a thin snapshot that references
 /// blocks from the parent. Blocks marked with [`BLOCK_OFFSET_PARENT`] are
 /// read from the parent snapshot instead of the current file.
 ///
@@ -48,9 +48,7 @@ pub struct Header {
     pub block_size: u32,
     pub index_offset: u64,
 
-    /// Path to the parent snapshot for thin provisioning.
-    /// If None, this is a standalone (thick) snapshot.
-    pub parent_path: Option<String>,
+    pub parent_paths: Vec<String>,
 
     pub dictionary_offset: Option<u64>,
     pub dictionary_length: Option<u32>,
@@ -160,7 +158,7 @@ impl Default for Header {
             version: FORMAT_VERSION,
             block_size: DEFAULT_BLOCK_SIZE,
             index_offset: 0,
-            parent_path: None,
+            parent_paths: Vec::new(),
             dictionary_offset: None,
             dictionary_length: None,
             metadata_offset: None,
@@ -186,7 +184,7 @@ mod tests {
         assert_eq!(header.version, FORMAT_VERSION);
         assert_eq!(header.block_size, DEFAULT_BLOCK_SIZE);
         assert_eq!(header.index_offset, 0);
-        assert!(header.parent_path.is_none());
+        assert!(header.parent_paths.is_empty());
         assert!(header.dictionary_offset.is_none());
         assert!(header.dictionary_length.is_none());
         assert!(header.metadata_offset.is_none());
@@ -232,9 +230,9 @@ mod tests {
     #[allow(clippy::field_reassign_with_default)]
     fn test_hexz_header_with_parent_path() {
         let mut header = Header::default();
-        header.parent_path = Some("/path/to/parent.hxz".to_string());
+        header.parent_paths = vec!["/path/to/parent.hxz".to_string()];
 
-        assert_eq!(header.parent_path.as_deref(), Some("/path/to/parent.hxz"));
+        assert_eq!(header.parent_paths, vec!["/path/to/parent.hxz"]);
     }
 
     #[test]
@@ -319,7 +317,7 @@ mod tests {
             version: FORMAT_VERSION,
             block_size: 65536,
             index_offset: 1048576,
-            parent_path: Some("/parent.hxz".to_string()),
+            parent_paths: vec!["/parent.hxz".to_string()],
             dictionary_offset: Some(4096),
             dictionary_length: Some(16384),
             metadata_offset: Some(20480),
@@ -343,7 +341,7 @@ mod tests {
 
         assert_eq!(deserialized, header);
         assert_eq!(deserialized.block_size, 65536);
-        assert_eq!(deserialized.parent_path.as_deref(), Some("/parent.hxz"));
+        assert_eq!(deserialized.parent_paths, vec!["/parent.hxz"]);
         assert!(deserialized.features.has_disk);
         assert!(deserialized.features.has_memory);
         assert!(deserialized.features.variable_blocks);

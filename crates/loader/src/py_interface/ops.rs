@@ -396,7 +396,7 @@ pub fn inspect(py: Python<'_>, path: String) -> PyResult<PyObject> {
     dict.set_item("block_size", info.block_size)?;
     dict.set_item("compression", format!("{:?}", info.compression))?;
     dict.set_item("encrypted", info.encrypted)?;
-    dict.set_item("parent_path", info.parent_path)?;
+    dict.set_item("parent_path", info.parent_paths)?;
     dict.set_item("primary_size", info.primary_size)?;
     dict.set_item("secondary_size", info.secondary_size)?;
     dict.set_item("file_size", info.file_size)?;
