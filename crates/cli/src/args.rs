@@ -89,8 +89,8 @@ pub enum Commands {
     #[command(
         long_about = "Reads the header and index of a Hexz archive without decompressing the full body.\n\nUse this to verify archive integrity, check compression ratios, or view metadata about the stored snapshot."
     )]
-    #[command(after_help = "hexz info ./model.hxz --json")]
-    Info {
+    #[command(after_help = "hexz inspect ./model.hxz --json")]
+    Inspect {
         /// Path to archive
         snap: PathBuf,
 

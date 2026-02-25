@@ -46,7 +46,7 @@ impl Printer {
             let item = (name.clone(), about);
 
             match name.as_str() {
-                "pack" | "info" | "diff" | "build" | "analyze" | "convert" => {
+                "pack" | "inspect" | "diff" | "build" | "analyze" | "convert" => {
                     archive_cmds.push(item)
                 }
                 "boot" | "install" | "snap" | "commit" | "mount" | "unmount" => vm_cmds.push(item),

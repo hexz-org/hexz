@@ -114,7 +114,7 @@ fn main() -> anyhow::Result<()> {
             silent,
         ),
 
-        Commands::Info { snap, json } => hexz_cli::cmd::data::info::run(snap, json),
+        Commands::Inspect { snap, json } => hexz_cli::cmd::data::inspect::run(snap, json),
 
         #[cfg(feature = "diagnostics")]
         Commands::Diff {
