@@ -70,9 +70,7 @@ fn test_data_build_generic_profile() {
 
     hexz()
         .arg("build")
-        .arg("--source")
         .arg(&input_file)
-        .arg("-o")
         .arg(&env.snapshot_path)
         .arg("--profile")
         .arg("generic")
@@ -89,9 +87,7 @@ fn test_data_build_eda_profile() {
 
     hexz()
         .arg("build")
-        .arg("--source")
         .arg(&input_file)
-        .arg("-o")
         .arg(&env.snapshot_path)
         .arg("--profile")
         .arg("eda")
@@ -108,9 +104,7 @@ fn test_data_build_embedded_profile() {
 
     hexz()
         .arg("build")
-        .arg("--source")
         .arg(&input_file)
-        .arg("-o")
         .arg(&env.snapshot_path)
         .arg("--profile")
         .arg("embedded")
@@ -127,9 +121,7 @@ fn test_data_build_ml_profile() {
 
     hexz()
         .arg("build")
-        .arg("--source")
         .arg(&input_file)
-        .arg("-o")
         .arg(&env.snapshot_path)
         .arg("--profile")
         .arg("ml")
@@ -147,9 +139,7 @@ fn test_data_build_unknown_profile() {
     // Unknown profile should fallback to generic with warning
     hexz()
         .arg("build")
-        .arg("--source")
         .arg(&input_file)
-        .arg("-o")
         .arg(&env.snapshot_path)
         .arg("--profile")
         .arg("unknown_profile")
@@ -166,9 +156,7 @@ fn test_data_build_with_cdc() {
 
     hexz()
         .arg("build")
-        .arg("--source")
         .arg(&input_file)
-        .arg("-o")
         .arg(&env.snapshot_path)
         .arg("--profile")
         .arg("generic")
@@ -185,9 +173,7 @@ fn test_data_build_missing_source() {
 
     hexz()
         .arg("build")
-        .arg("--source")
         .arg("/nonexistent/source.bin")
-        .arg("-o")
         .arg(&env.snapshot_path)
         .assert()
         .failure();
@@ -363,7 +349,6 @@ fn test_sys_bench_valid_snapshot() {
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
-        .arg("-o")
         .arg(&env.snapshot_path)
         .assert()
         .success();
@@ -400,7 +385,6 @@ fn test_sys_sign_and_verify_roundtrip() {
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
-        .arg("-o")
         .arg(&env.snapshot_path)
         .assert()
         .success();
@@ -429,7 +413,6 @@ fn test_sys_sign_and_verify_roundtrip() {
     // Sign the snapshot
     hexz()
         .arg("sign")
-        .arg("--key")
         .arg(&private_key)
         .arg(&env.snapshot_path)
         .assert()
@@ -438,7 +421,6 @@ fn test_sys_sign_and_verify_roundtrip() {
     // Verify the signature
     hexz()
         .arg("verify")
-        .arg("--key")
         .arg(&public_key)
         .arg(&env.snapshot_path)
         .assert()
@@ -456,7 +438,6 @@ fn test_sys_verify_unsigned_snapshot() {
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
-        .arg("-o")
         .arg(&env.snapshot_path)
         .assert()
         .success();
@@ -476,7 +457,6 @@ fn test_sys_verify_unsigned_snapshot() {
     // Try to verify unsigned snapshot - should fail
     hexz()
         .arg("verify")
-        .arg("--key")
         .arg(&public_key)
         .arg(&env.snapshot_path)
         .assert()
@@ -491,7 +471,6 @@ fn test_sys_sign_nonexistent_snapshot() {
 
     hexz()
         .arg("sign")
-        .arg("--key")
         .arg(&key_path)
         .arg("/nonexistent/snapshot.hxz")
         .assert()

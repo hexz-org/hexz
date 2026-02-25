@@ -113,13 +113,13 @@ use std::path::PathBuf;
 ///
 /// ```no_run
 /// use std::path::PathBuf;
-/// use hexz_cli::cmd::data::info;
+/// use hexz_cli::cmd::data::inspect;
 ///
 /// // Display human-readable snapshot information
-/// info::run(PathBuf::from("snapshot.hxz"), false)?;
+/// inspect::run(PathBuf::from("snapshot.hxz"), false)?;
 ///
 /// // Output JSON for automated processing
-/// info::run(PathBuf::from("snapshot.hxz"), true)?;
+/// inspect::run(PathBuf::from("snapshot.hxz"), true)?;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 pub fn run(snap: PathBuf, json: bool) -> Result<()> {

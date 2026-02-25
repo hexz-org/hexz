@@ -49,7 +49,6 @@ fn test_data_pack_basic() {
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
-        .arg("-o")
         .arg(&env.snapshot_path)
         .assert()
         .success();
@@ -70,7 +69,6 @@ fn test_data_pack_with_compression_lz4() {
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
-        .arg("-o")
         .arg(&env.snapshot_path)
         .arg("--compression")
         .arg("lz4")
@@ -89,7 +87,6 @@ fn test_data_pack_with_compression_zstd() {
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
-        .arg("-o")
         .arg(&env.snapshot_path)
         .arg("--compression")
         .arg("zstd")
@@ -109,7 +106,6 @@ fn test_data_pack_with_cdc() {
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
-        .arg("-o")
         .arg(&env.snapshot_path)
         .arg("--cdc")
         .assert()
@@ -126,7 +122,6 @@ fn test_data_pack_nonexistent_file() {
         .arg("pack")
         .arg("--disk")
         .arg("/nonexistent/file.bin")
-        .arg("-o")
         .arg(&env.snapshot_path)
         .assert()
         .failure();
@@ -142,14 +137,13 @@ fn test_data_info() {
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
-        .arg("-o")
         .arg(&env.snapshot_path)
         .assert()
         .success();
 
     // Then get info about it
     hexz()
-        .arg("info")
+        .arg("inspect")
         .arg(&env.snapshot_path)
         .assert()
         .success()
@@ -159,7 +153,7 @@ fn test_data_info() {
 #[test]
 fn test_data_info_nonexistent() {
     hexz()
-        .arg("info")
+        .arg("inspect")
         .arg("/nonexistent/snapshot.hexz")
         .assert()
         .failure();
@@ -212,7 +206,6 @@ fn test_e2e_disk_and_memory_pack() {
         .arg(&disk_file)
         .arg("--memory")
         .arg(&memory_file)
-        .arg("-o")
         .arg(&env.snapshot_path)
         .assert()
         .success();
@@ -224,7 +217,7 @@ fn test_e2e_disk_and_memory_pack() {
 
     // Get info about the snapshot
     hexz()
-        .arg("info")
+        .arg("inspect")
         .arg(&env.snapshot_path)
         .assert()
         .success();
@@ -243,7 +236,6 @@ fn test_e2e_compression_comparison() {
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
-        .arg("-o")
         .arg(&lz4_snap)
         .arg("--compression")
         .arg("lz4")
@@ -255,7 +247,6 @@ fn test_e2e_compression_comparison() {
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
-        .arg("-o")
         .arg(&zstd_snap)
         .arg("--compression")
         .arg("zstd")
@@ -283,14 +274,13 @@ fn test_e2e_pack_info_roundtrip() {
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
-        .arg("-o")
         .arg(&env.snapshot_path)
         .assert()
         .success();
 
     // Info with JSON output
     hexz()
-        .arg("info")
+        .arg("inspect")
         .arg(&env.snapshot_path)
         .arg("--json")
         .assert()
@@ -308,7 +298,6 @@ fn test_e2e_silent_mode() {
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
-        .arg("-o")
         .arg(&env.snapshot_path)
         .arg("--silent")
         .assert()
@@ -332,7 +321,6 @@ fn test_e2e_custom_block_size() {
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
-        .arg("-o")
         .arg(&env.snapshot_path)
         .arg("--block-size")
         .arg("131072")
@@ -358,7 +346,6 @@ fn test_data_pack_with_train_dict() {
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
-        .arg("-o")
         .arg(&env.snapshot_path)
         .arg("--compression")
         .arg("zstd")
@@ -382,7 +369,6 @@ fn test_data_pack_with_encryption() {
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)
-        .arg("-o")
         .arg(&env.snapshot_path)
         .arg("--encrypt")
         .assert()

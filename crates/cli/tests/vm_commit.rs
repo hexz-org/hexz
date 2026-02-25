@@ -28,7 +28,6 @@ fn create_base_snapshot(env: &TestEnv, disk_data: &[u8], compression: &str) -> s
         .arg("pack")
         .arg("--disk")
         .arg(&disk_file)
-        .arg("-o")
         .arg(&snapshot_path)
         .arg("--compression")
         .arg(compression)
@@ -243,7 +242,7 @@ fn test_vm_commit_with_message() {
     assert!(output.exists());
 
     // Verify the message is readable via info
-    hexz().arg("info").arg(&output).assert().success();
+    hexz().arg("inspect").arg(&output).assert().success();
 }
 
 #[test]
@@ -299,7 +298,7 @@ fn test_vm_commit_output_is_valid_snapshot() {
 
     // Verify output is a valid snapshot by running info
     hexz()
-        .arg("info")
+        .arg("inspect")
         .arg(&output)
         .assert()
         .success()
@@ -328,7 +327,7 @@ fn test_vm_commit_thick_info_shows_disk() {
 
     // Verify committed snapshot reports correct metadata
     hexz()
-        .arg("info")
+        .arg("inspect")
         .arg(&output)
         .assert()
         .success()
@@ -407,7 +406,7 @@ fn test_vm_commit_thin_shows_in_info() {
         .success();
 
     // Info should show this is a thin snapshot with parent reference
-    hexz().arg("info").arg(&output).assert().success();
+    hexz().arg("inspect").arg(&output).assert().success();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -528,7 +527,7 @@ fn test_vm_commit_lz4_base_zstd_commit() {
     assert!(output.exists());
 
     // Verify the output snapshot is valid
-    hexz().arg("info").arg(&output).assert().success();
+    hexz().arg("inspect").arg(&output).assert().success();
 }
 
 #[test]

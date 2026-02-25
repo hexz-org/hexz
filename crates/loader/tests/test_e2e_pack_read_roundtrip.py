@@ -77,13 +77,12 @@ def _make_synthetic_file(path: str, size: int, pattern: str = "deterministic") -
 def _pack_with_cli(
     hexz_bin: str, disk_path: str, output_path: str, compression: str
 ) -> None:
-    """Run: hexz data pack --disk <disk_path> --output <output_path> --compression <compression>."""
+    """Run: hexz data pack --disk <disk_path>  <output_path> --compression <compression>."""
     cmd = [
         hexz_bin,
         "pack",
         "--disk",
         disk_path,
-        "--output",
         output_path,
         "--compression",
         compression,

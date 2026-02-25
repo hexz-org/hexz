@@ -120,7 +120,7 @@ fn test_data_convert_tar_info_roundtrip() {
 
     // Inspect should work on the resulting snapshot
     hexz()
-        .arg("info")
+        .arg("inspect")
         .arg(&env.snapshot_path)
         .arg("--json")
         .assert()

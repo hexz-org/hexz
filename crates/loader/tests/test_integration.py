@@ -1,14 +1,16 @@
-import pytest
-import os
 import http.server
-import socketserver
-import threading
-import tempfile
-import shutil
-import numpy as np
-import tarfile
-import hexz
 import io  # Added missing import
+import os
+import shutil
+import socketserver
+import tarfile
+import tempfile
+import threading
+
+import numpy as np
+import pytest
+
+import hexz
 
 # --- Fixtures ---
 
@@ -222,7 +224,7 @@ def test_thin_snapshot(sample_snapshot, temp_dir):
 
     # Verify inspection shows parent
     info = hexz.inspect(thin_path)
-    assert info["parent_path"] == base_path
+    assert info["parent_path"] == [base_path]
 
     # Verify data is readable (transparently resolved)
     reader = hexz.open(thin_path)
