@@ -623,8 +623,11 @@ impl File {
             return Ok(vec![0u8; actual_len]);
         }
 
-        let mut buf: Vec<MaybeUninit<u8>> = Vec::new();
-        buf.resize_with(actual_len, MaybeUninit::uninit);
+        let mut buf: Vec<MaybeUninit<u8>> = Vec::with_capacity(actual_len);
+        // SAFETY: MaybeUninit<u8> does not require initialization; we only need
+        // the allocation. read_at_into_uninit writes every byte before we
+        // transmute to Vec<u8> below.
+        unsafe { buf.set_len(actual_len) };
         self.read_at_into_uninit(stream, offset, &mut buf)?;
         let ptr = buf.as_mut_ptr().cast::<u8>();
         let len = buf.len();

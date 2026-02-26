@@ -147,6 +147,11 @@ harness = false
 path = "benches/micro/cache_shard_hash.rs"
 
 [[bench]]
+name = "read_alloc"
+harness = false
+path = "benches/micro/read_alloc.rs"
+
+[[bench]]
 name = "dedup_efficiency"
 harness = false
 path = "benches/macro/dedup_efficiency.rs"
