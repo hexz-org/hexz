@@ -493,6 +493,36 @@ impl<R: Read> FixedChunker<R> {
             Ok(Some(&self.buffer))
         }
     }
+
+    /// Returns the next chunk as an owned `Vec<u8>`, or `None` at EOF.
+    ///
+    /// Swaps the internal buffer with a fresh allocation so the caller
+    /// takes ownership without copying. After the first call, the fresh
+    /// buffer is reused from the previous swap, so steady-state
+    /// allocations are zero.
+    fn next_chunk_owned(&mut self) -> std::io::Result<Option<Vec<u8>>> {
+        if self.done {
+            return Ok(None);
+        }
+        let mut pos = 0;
+        self.buffer.resize(self.block_size, 0);
+        while pos < self.block_size {
+            match self.reader.read(&mut self.buffer[pos..]) {
+                Ok(0) => break,
+                Ok(n) => pos += n,
+                Err(e) => return Err(e),
+            }
+        }
+        if pos == 0 {
+            self.done = true;
+            Ok(None)
+        } else {
+            self.buffer.truncate(pos);
+            let mut owned = vec![0u8; self.block_size];
+            std::mem::swap(&mut self.buffer, &mut owned);
+            Ok(Some(owned))
+        }
+    }
 }
 
 impl<R: Read> Iterator for FixedChunker<R> {
@@ -1128,14 +1158,14 @@ where
         } else {
             let mut chunker = FixedChunker::new(f, reader_config.block_size as usize);
             loop {
-                match chunker.next_chunk() {
+                match chunker.next_chunk_owned() {
                     Ok(Some(chunk)) => {
                         let chunk_len = chunk.len();
                         if tx_raw
                             .send((
                                 seq,
                                 RawChunk {
-                                    data: chunk.to_vec(),
+                                    data: chunk,
                                     logical_offset: logical_pos,
                                 },
                             ))
