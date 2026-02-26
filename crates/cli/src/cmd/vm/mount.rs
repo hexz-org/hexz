@@ -162,7 +162,7 @@ use hexz_core::format::header::{CompressionType, Header};
 use hexz_core::format::magic::HEADER_SIZE;
 use hexz_fuse::fuse::Hexz;
 use hexz_store::StorageBackend;
-use hexz_store::local::FileBackend;
+use hexz_store::local::MmapBackend;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{
@@ -258,7 +258,7 @@ fn open_snapshot(hexz_path: &str, cache_size: Option<String>) -> Result<Arc<File
 
     // Pre-read header for password prompt
     let (header, password) = {
-        let backend = FileBackend::new(&abs_hexz_path)?;
+        let backend = MmapBackend::new(&abs_hexz_path)?;
         let header_bytes = backend.read_exact(0, HEADER_SIZE)?;
         let header: Header = bincode::deserialize(&header_bytes)?;
 
@@ -270,7 +270,7 @@ fn open_snapshot(hexz_path: &str, cache_size: Option<String>) -> Result<Arc<File
         (header, password)
     };
 
-    let backend = Arc::new(FileBackend::new(&abs_hexz_path)?);
+    let backend = Arc::new(MmapBackend::new(&abs_hexz_path)?);
 
     let dictionary = if let (Some(offset), Some(length)) =
         (header.dictionary_offset, header.dictionary_length)

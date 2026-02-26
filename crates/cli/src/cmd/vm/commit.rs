@@ -11,7 +11,7 @@ use hexz_core::File as HexzFile;
 use hexz_core::algo::compression::create_compressor_from_str;
 use hexz_core::api::file::SnapshotStream;
 use hexz_ops::snapshot_writer::SnapshotWriter;
-use hexz_store::local::FileBackend;
+use hexz_store::local::MmapBackend;
 use indicatif::ProgressBar;
 use std::collections::HashSet;
 use std::fs::File;
@@ -37,7 +37,7 @@ pub fn run(
         overlay_path, output_path, thin
     );
 
-    let backend = Arc::new(FileBackend::new(&base_path)?);
+    let backend = Arc::new(MmapBackend::new(&base_path)?);
     let base_snap = HexzFile::open(backend, None)?;
 
     let meta_path = overlay_path.with_extension("meta");

@@ -139,7 +139,7 @@
 use anyhow::Result;
 use daemonize::Daemonize;
 use hexz_core::File as HexzFile;
-use hexz_store::local::FileBackend;
+use hexz_store::local::MmapBackend;
 use std::fs::File;
 use std::sync::Arc;
 
@@ -165,7 +165,7 @@ use std::sync::Arc;
 ///    - Redirect stderr to `/tmp/hexz-serve.err`
 ///
 /// 2. **Snapshot Loading**:
-///    - Open snapshot file via `FileBackend`
+///    - Open snapshot file via `MmapBackend`
 ///    - Read and parse header
 ///    - Load compression dictionary if present
 ///    - Initialize decompressor (LZ4 or Zstd)
@@ -242,7 +242,7 @@ pub fn run(hexz_path: String, port: u16, daemon: bool, nbd: bool, s3: bool) -> R
         .enable_all()
         .build()?
         .block_on(async {
-            let backend = Arc::new(FileBackend::new(std::path::Path::new(&hexz_path))?);
+            let backend = Arc::new(MmapBackend::new(std::path::Path::new(&hexz_path))?);
             let snap = HexzFile::open(backend, None)?;
 
             if nbd {

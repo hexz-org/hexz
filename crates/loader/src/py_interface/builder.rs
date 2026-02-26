@@ -88,7 +88,7 @@ use hexz_core::algo::dedup::{cdc::StreamChunker, dcam::DedupeParams};
 use hexz_core::api::file::SnapshotStream;
 use hexz_ops::pack::FixedChunker;
 use hexz_ops::snapshot_writer::SnapshotWriter;
-use hexz_store::local::FileBackend;
+use hexz_store::local::MmapBackend;
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::collections::HashSet;
@@ -170,7 +170,7 @@ impl Builder {
         let mut parent_snapshots = Vec::new();
         for p_path in &parent_paths {
             let backend = Arc::new(
-                FileBackend::new(std::path::Path::new(p_path))
+                MmapBackend::new(std::path::Path::new(p_path))
                     .map_err(|e| PyIOError::new_err(e.to_string()))?,
             );
             let snap =
@@ -265,7 +265,7 @@ impl Builder {
         }
 
         let backend = Arc::new(
-            FileBackend::new(&abs_base_path).map_err(|e| PyIOError::new_err(e.to_string()))?,
+            MmapBackend::new(&abs_base_path).map_err(|e| PyIOError::new_err(e.to_string()))?,
         );
         let base_snap =
             HexzFile::open(backend, None).map_err(|e| PyIOError::new_err(e.to_string()))?;

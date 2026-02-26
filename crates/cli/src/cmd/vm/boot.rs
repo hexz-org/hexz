@@ -208,7 +208,7 @@ fn boot_qemu(
 
     let mount_handle = thread::spawn(move || -> Result<()> {
         let backend = Arc::new(
-            hexz_store::local::FileBackend::new(std::path::Path::new(&snap_path_clone))
+            hexz_store::local::MmapBackend::new(std::path::Path::new(&snap_path_clone))
                 .context("Failed to open snapshot file")?,
         );
 

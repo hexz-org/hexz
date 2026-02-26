@@ -37,7 +37,7 @@
 use anyhow::Result;
 use hexz_core::File;
 use hexz_core::api::file::SnapshotStream;
-use hexz_store::local::FileBackend;
+use hexz_store::local::MmapBackend;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -96,7 +96,7 @@ pub fn run(
     _threads: Option<usize>,
 ) -> Result<()> {
     println!("Benchmarking snapshot: {:?}", snap_path);
-    let backend = Arc::new(FileBackend::new(&snap_path)?);
+    let backend = Arc::new(MmapBackend::new(&snap_path)?);
     let snap = File::open(backend, None)?;
     let primary_size = snap.size(SnapshotStream::Primary);
 

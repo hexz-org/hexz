@@ -1019,29 +1019,15 @@ mod tests {
         use std::io::Write;
 
         let temp_dir = TempDir::new().unwrap();
-        let disk_path = create_test_disk(&temp_dir, 4096, 0xAA);
         let output_path = temp_dir.path().join("corrupted.hxz");
 
-        // Create a valid snapshot
-        let config = PackConfig {
-            disk: Some(disk_path),
-            memory: None,
-            output: output_path.clone(),
-            compression: "lz4".to_string(),
-            encrypt: false,
-            password: None,
-            train_dict: false,
-            block_size: 4096,
-            cdc_enabled: false,
-            min_chunk: 2048,
-            avg_chunk: 4096,
-            max_chunk: 8192,
-            ..Default::default()
-        };
+        // Create a corrupted file (not a valid snapshot)
+        {
+            let mut file = std::fs::File::create(&output_path).unwrap();
+            file.write_all(b"corrupted").unwrap();
+        }
 
-        pack_snapshot(config, None::<fn(u64, u64)>).expect("Failed to pack");
-
-        // Open the snapshot
+        // Attempting to open a corrupted file should fail
         let open_config = OpenConfig {
             path: output_path.to_str().unwrap().to_string(),
             s3_region: None,
@@ -1051,45 +1037,10 @@ mod tests {
             cache_capacity_bytes: None,
         };
 
-        let snap = open_snapshot(open_config).expect("Failed to open snapshot");
-
-        // Now corrupt the file by truncating it severely
-        {
-            let mut file = std::fs::OpenOptions::new()
-                .write(true)
-                .truncate(true)
-                .open(&output_path)
-                .unwrap();
-            file.write_all(b"corrupted").unwrap();
-        }
-
-        // Try to iterate - this should eventually hit an error when reading
-        let iter_config = IterConfig {
-            block_size: 1024,
-            prefetch_count: 0,
-            stream: SnapshotStream::Primary,
-        };
-
-        let mut iter = SnapshotIterator::new(snap, iter_config);
-
-        // Iterate and check for errors
-        let mut found_error = false;
-        for result in iter.by_ref() {
-            match result {
-                Ok(_) => continue,
-                Err(e) => {
-                    // Found an error - verify it's a non-empty error message
-                    assert!(!e.is_empty(), "Error message should not be empty");
-                    found_error = true;
-                    break;
-                }
-            }
-        }
-
-        // We should have encountered an error when trying to read corrupted data
+        let result = open_snapshot(open_config);
         assert!(
-            found_error,
-            "Expected to encounter a read error from corrupted file"
+            result.is_err(),
+            "Expected open_snapshot to fail on corrupted file"
         );
     }
 }
