@@ -14,6 +14,7 @@ use bytes::Bytes;
 use crc32fast::hash as crc32_hash;
 use std::mem::MaybeUninit;
 use std::ptr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use hexz_common::constants::{BLOCK_OFFSET_PARENT, DEFAULT_BLOCK_SIZE};
@@ -785,12 +786,16 @@ impl File {
             .collect();
 
         // Phase 2: Parallel decompress and copy
+        let has_error = AtomicBool::new(false);
         let err: Mutex<Option<Error>> = Mutex::new(None);
         work_items
             .par_iter()
             .zip(raw_blocks)
             .for_each(|(work_item, fetch_result)| {
-                if err.lock().map_or(true, |e| e.is_some()) {
+                // Fast path: single atomic load (~1 cycle), no lock contention.
+                // Relaxed ordering is sufficient — this is a best-effort early-exit
+                // hint; the final err.lock() after the loop provides synchronization.
+                if has_error.load(Ordering::Relaxed) {
                     return;
                 }
 
@@ -800,6 +805,7 @@ impl File {
                 let fetched = match fetch_result {
                     Ok(r) => r,
                     Err(e) => {
+                        has_error.store(true, Ordering::Relaxed);
                         if let Ok(mut guard) = err.lock() {
                             let _ = guard.replace(e);
                         }
@@ -819,6 +825,7 @@ impl File {
                                 d
                             }
                             Err(e) => {
+                                has_error.store(true, Ordering::Relaxed);
                                 if let Ok(mut guard) = err.lock() {
                                     let _ = guard.replace(e);
                                 }
