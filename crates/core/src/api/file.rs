@@ -684,7 +684,9 @@ impl File {
         offset: u64,
         actual_len: usize,
     ) -> Result<(Vec<WorkItem>, usize)> {
-        let mut local_work: Vec<WorkItem> = Vec::new();
+        let block_size = self.header.block_size.max(1) as usize;
+        let estimated_blocks = actual_len.div_ceil(block_size);
+        let mut local_work: Vec<WorkItem> = Vec::with_capacity(estimated_blocks);
         let mut buf_offset = 0;
         let mut current_pos = offset;
         let mut remaining = actual_len;
