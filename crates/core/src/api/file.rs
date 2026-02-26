@@ -1027,13 +1027,94 @@ impl File {
                 let snap = Arc::clone(self);
                 let stream_copy = stream;
                 rayon::spawn(move || {
-                    let mut buf = vec![MaybeUninit::uninit(); prefetch_len];
-                    let _ = snap.read_at_uninit_inner(stream_copy, next_offset, &mut buf, true);
+                    let _ = snap.warm_blocks(stream_copy, next_offset, prefetch_len);
                     // Release the in-flight guard so the next read can prefetch
                     if let Some(pf) = &snap.prefetcher {
                         pf.clear_in_flight();
                     }
                 });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Warms the block cache for the given byte range without allocating a target buffer.
+    ///
+    /// Unlike [`read_at_into_uninit`](Self::read_at_into_uninit), this method only fetches,
+    /// decompresses, and inserts blocks into the L1 cache. It skips blocks that are already
+    /// cached, zero-length, or parent-delegated. No output buffer is allocated or written to.
+    ///
+    /// Used by the prefetcher to reduce overhead: the old path allocated a throwaway buffer
+    /// of `block_size * 4` bytes and copied decompressed data into it, only to discard it.
+    fn warm_blocks(&self, stream: SnapshotStream, offset: u64, len: usize) -> Result<()> {
+        if len == 0 {
+            return Ok(());
+        }
+        let stream_size = self.size(stream);
+        if offset >= stream_size {
+            return Ok(());
+        }
+        let actual_len = std::cmp::min(len as u64, stream_size - offset) as usize;
+
+        let pages = match stream {
+            SnapshotStream::Primary => &self.master.primary_pages,
+            SnapshotStream::Secondary => &self.master.secondary_pages,
+        };
+        if pages.is_empty() {
+            return Ok(());
+        }
+
+        let page_idx = match pages.binary_search_by(|p| p.start_logical.cmp(&offset)) {
+            Ok(idx) => idx,
+            Err(idx) => idx.saturating_sub(1),
+        };
+
+        let mut current_pos = offset;
+        let mut remaining = actual_len;
+
+        for page_entry in pages.iter().skip(page_idx) {
+            if remaining == 0 {
+                break;
+            }
+            if page_entry.start_logical > current_pos + remaining as u64 {
+                break;
+            }
+
+            let page = self.get_page(page_entry)?;
+            let mut block_logical_start = page_entry.start_logical;
+
+            for (i, block) in page.blocks.iter().enumerate() {
+                if remaining == 0 {
+                    break;
+                }
+                let block_end = block_logical_start + block.logical_len as u64;
+
+                if block_end > current_pos {
+                    let offset_in_block = (current_pos - block_logical_start) as usize;
+                    let to_advance = std::cmp::min(
+                        remaining,
+                        (block.logical_len as usize).saturating_sub(offset_in_block),
+                    );
+
+                    // Only warm regular blocks (skip parent-delegated and zero blocks).
+                    // fetch_raw_block handles the cache check internally — on a hit it
+                    // returns Decompressed which we simply ignore via the Compressed match.
+                    if block.offset != BLOCK_OFFSET_PARENT && block.length > 0 {
+                        let global_idx = page_entry.start_block + i as u64;
+                        if let Ok(FetchResult::Compressed(raw)) =
+                            self.fetch_raw_block(stream, global_idx, block)
+                        {
+                            if let Ok(data) = self.decompress_and_verify(raw, global_idx, block) {
+                                self.cache_l1.insert(stream, global_idx, data);
+                            }
+                        }
+                    }
+
+                    current_pos += to_advance as u64;
+                    remaining -= to_advance;
+                }
+                block_logical_start += block.logical_len as u64;
             }
         }
 
