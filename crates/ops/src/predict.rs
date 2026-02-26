@@ -10,9 +10,7 @@ use hexz_core::algo::compression::Compressor;
 use hexz_core::algo::compression::lz4::Lz4Compressor;
 use hexz_core::algo::compression::zstd::ZstdCompressor;
 use hexz_core::algo::dedup::cdc::analyze_stream;
-use hexz_core::algo::dedup::dcam::{
-    DedupeParams, calculate_c, expected_chunk_length, predict_ratio,
-};
+use hexz_core::algo::dedup::dcam::DedupeParams;
 
 use crate::pack::calculate_entropy;
 use crate::write::is_zero_chunk;
@@ -24,7 +22,13 @@ pub struct PredictConfig {
     pub path: PathBuf,
     /// Block size in bytes for fixed-chunk analysis.
     pub block_size: usize,
-    /// Number of evenly-spaced blocks to sample.
+    /// CDC minimum chunk size.
+    pub min_chunk: u32,
+    /// CDC average chunk size.
+    pub avg_chunk: u32,
+    /// CDC maximum chunk size.
+    pub max_chunk: u32,
+    /// Number of evenly-spaced blocks to sample for compression estimates.
     pub sample_count: usize,
     /// Max bytes to feed to `analyze_stream` for CDC analysis.
     pub dedup_scan_limit: u64,
@@ -35,6 +39,9 @@ impl Default for PredictConfig {
         Self {
             path: PathBuf::new(),
             block_size: 65536,
+            min_chunk: 16384,
+            avg_chunk: 65536,
+            max_chunk: 131072,
             sample_count: 4000,
             dedup_scan_limit: 256 * 1024 * 1024,
         }
@@ -66,17 +73,15 @@ pub struct PredictReport {
     pub fixed_dedup_ratio: f64,
     pub fixed_dedup_savings_pct: f64,
 
-    // CDC dedup (from analyze_stream + DCAM)
+    // CDC dedup (from analyze_stream with user's params)
     pub cdc_scan_bytes: u64,
-    pub cdc_change_rate: f64,
-    pub cdc_baseline_ratio: f64,
-    pub cdc_baseline_savings_pct: f64,
-
-    // DCAM optimal parameters
-    pub dcam_best_f: u32,
-    pub dcam_best_ratio: f64,
-    pub dcam_best_savings_pct: f64,
-    pub dcam_best_avg_chunk: f64,
+    pub cdc_min_chunk: u32,
+    pub cdc_avg_chunk: u32,
+    pub cdc_max_chunk: u32,
+    pub cdc_chunks_total: u64,
+    pub cdc_chunks_unique: u64,
+    pub cdc_dedup_ratio: f64,
+    pub cdc_dedup_savings_pct: f64,
 
     // Combined estimates
     pub estimated_packed_size_lz4_fixed: u64,
@@ -93,7 +98,7 @@ pub fn predict(config: PredictConfig) -> Result<PredictReport> {
         return Err(Error::Format("File is empty".to_string()));
     }
 
-    // Phase 1: Sample evenly-spaced blocks
+    // Phase 1: Sample evenly-spaced blocks for compression + entropy estimates
     let step = (file_size / config.sample_count as u64).max(config.block_size as u64);
     let mut buf = vec![0u8; config.block_size];
 
@@ -108,7 +113,7 @@ pub fn predict(config: PredictConfig) -> Result<PredictReport> {
     let mut zstd_compressed_total: u64 = 0;
     let mut raw_sampled_total: u64 = 0;
 
-    // Phase 2: Fixed dedup tracking via blake3 hash set
+    // Fixed dedup tracking via blake3 hash set
     let mut seen_hashes: HashSet<u64> = HashSet::new();
     let mut unique_sampled_bytes: u64 = 0;
 
@@ -128,14 +133,15 @@ pub fn predict(config: PredictConfig) -> Result<PredictReport> {
         blocks_sampled += 1;
         raw_sampled_total += n as u64;
 
+        // Dedup tracking for all blocks (including zeros)
+        let digest = *blake3::hash(chunk).as_bytes();
+        let hash = u64::from_le_bytes(digest[..8].try_into().unwrap());
+        if seen_hashes.insert(hash) {
+            unique_sampled_bytes += n as u64;
+        }
+
         if is_zero_chunk(chunk) {
             zero_count += 1;
-            // Zero blocks hash to the same value, still track for dedup
-            let digest = *blake3::hash(chunk).as_bytes();
-            let hash = u64::from_le_bytes(digest[..8].try_into().unwrap());
-            if seen_hashes.insert(hash) {
-                unique_sampled_bytes += n as u64;
-            }
             attempt += 1;
             continue;
         }
@@ -150,19 +156,12 @@ pub fn predict(config: PredictConfig) -> Result<PredictReport> {
         if let Ok(compressed) = lz4.compress(chunk) {
             lz4_compressed_total += compressed.len() as u64;
         } else {
-            lz4_compressed_total += n as u64; // fallback: assume incompressible
+            lz4_compressed_total += n as u64;
         }
         if let Ok(compressed) = zstd.compress(chunk) {
             zstd_compressed_total += compressed.len() as u64;
         } else {
             zstd_compressed_total += n as u64;
-        }
-
-        // Dedup tracking
-        let digest = *blake3::hash(chunk).as_bytes();
-        let hash = u64::from_le_bytes(digest[..8].try_into().unwrap());
-        if seen_hashes.insert(hash) {
-            unique_sampled_bytes += n as u64;
         }
 
         attempt += 1;
@@ -188,20 +187,18 @@ pub fn predict(config: PredictConfig) -> Result<PredictReport> {
         0.0
     };
 
-    // Zero blocks compress to nearly nothing, so add their contribution
-    // (zero blocks weren't compressed above, account for them as ~0 compressed bytes)
-    let zero_compressed_approx = zero_count as u64 * 20; // ~20 bytes per zero block after compression
-    let total_raw_for_ratio = raw_sampled_total;
+    // Account for zero blocks in compression estimates
+    let zero_compressed_approx = zero_count as u64 * 20;
     let lz4_total_with_zeros = lz4_compressed_total + zero_compressed_approx;
     let zstd_total_with_zeros = zstd_compressed_total + zero_compressed_approx;
 
-    let lz4_ratio = if total_raw_for_ratio > 0 {
-        lz4_total_with_zeros as f64 / total_raw_for_ratio as f64
+    let lz4_ratio = if raw_sampled_total > 0 {
+        lz4_total_with_zeros as f64 / raw_sampled_total as f64
     } else {
         1.0
     };
-    let zstd_ratio = if total_raw_for_ratio > 0 {
-        zstd_total_with_zeros as f64 / total_raw_for_ratio as f64
+    let zstd_ratio = if raw_sampled_total > 0 {
+        zstd_total_with_zeros as f64 / raw_sampled_total as f64
     } else {
         1.0
     };
@@ -219,60 +216,37 @@ pub fn predict(config: PredictConfig) -> Result<PredictReport> {
     };
     let fixed_dedup_savings_pct = (1.0 - fixed_dedup_ratio) * 100.0;
 
-    // Phase 3: CDC analysis via analyze_stream
+    // Phase 2: CDC analysis with the user's actual chunk params
     let scan_limit = config.dedup_scan_limit.min(file_size);
     f.seek(SeekFrom::Start(0))?;
     let reader = f.by_ref().take(scan_limit);
-    let baseline = DedupeParams::lbfs_baseline();
-    let cdc_stats = analyze_stream(reader, &baseline)?;
 
-    let cdc_change_rate = if cdc_stats.unique_chunk_count > 0 {
-        calculate_c(cdc_stats.unique_bytes, scan_limit, &baseline)
-    } else {
-        1.0
-    };
-
-    let cdc_baseline_ratio = predict_ratio(file_size, cdc_change_rate, &baseline);
-    let cdc_baseline_savings_pct = (1.0 - cdc_baseline_ratio) * 100.0;
-
-    // Phase 4: DCAM parameter sweep
-    let mut best_ratio = cdc_baseline_ratio;
-    let mut best_f = baseline.f;
-
-    for f_val in 11..=17 {
-        let avg = 1u32 << f_val;
-        let min = avg / 4;
-        let max = avg * 8;
-        if min == 0 {
-            continue;
-        }
-        let params = DedupeParams {
-            f: f_val,
-            m: min,
-            z: max,
-            w: 48,
-            v: 8,
-        };
-        let ratio = predict_ratio(file_size, cdc_change_rate, &params);
-        if ratio < best_ratio {
-            best_ratio = ratio;
-            best_f = f_val;
-        }
-    }
-
-    let best_params = DedupeParams {
-        f: best_f,
-        m: (1u32 << best_f) / 4,
-        z: (1u32 << best_f) * 8,
+    // Convert user's min/avg/max to DedupeParams
+    // f = log2(avg_chunk) since avg chunk ≈ 2^f
+    let f_bits = (config.avg_chunk as f64).log2().round() as u32;
+    let cdc_params = DedupeParams {
+        f: f_bits,
+        m: config.min_chunk,
+        z: config.max_chunk,
         w: 48,
         v: 8,
     };
-    let dcam_best_avg_chunk = expected_chunk_length(&best_params);
-    let dcam_best_savings_pct = (1.0 - best_ratio) * 100.0;
+
+    let cdc_stats = analyze_stream(reader, &cdc_params)?;
+
+    // Direct measured dedup ratio from the scan
+    let cdc_dedup_ratio = if cdc_stats.chunk_count > 0 && cdc_stats.unique_chunk_count > 0 {
+        cdc_stats.unique_bytes as f64
+            / (cdc_stats.unique_bytes as f64 * cdc_stats.chunk_count as f64
+                / cdc_stats.unique_chunk_count as f64)
+    } else {
+        1.0
+    };
+    let cdc_dedup_savings_pct = (1.0 - cdc_dedup_ratio) * 100.0;
 
     // Combined estimates
     let estimated_packed_size_lz4_fixed = (file_size as f64 * lz4_ratio * fixed_dedup_ratio) as u64;
-    let estimated_packed_size_zstd_cdc = (file_size as f64 * zstd_ratio * best_ratio) as u64;
+    let estimated_packed_size_zstd_cdc = (file_size as f64 * zstd_ratio * cdc_dedup_ratio) as u64;
 
     let best_packed = estimated_packed_size_lz4_fixed.min(estimated_packed_size_zstd_cdc);
     let overall_best_savings_pct = (1.0 - best_packed as f64 / file_size as f64) * 100.0;
@@ -298,14 +272,13 @@ pub fn predict(config: PredictConfig) -> Result<PredictReport> {
         fixed_dedup_savings_pct,
 
         cdc_scan_bytes: scan_limit,
-        cdc_change_rate,
-        cdc_baseline_ratio,
-        cdc_baseline_savings_pct,
-
-        dcam_best_f: best_f,
-        dcam_best_ratio: best_ratio,
-        dcam_best_savings_pct,
-        dcam_best_avg_chunk,
+        cdc_min_chunk: config.min_chunk,
+        cdc_avg_chunk: config.avg_chunk,
+        cdc_max_chunk: config.max_chunk,
+        cdc_chunks_total: cdc_stats.chunk_count,
+        cdc_chunks_unique: cdc_stats.unique_chunk_count,
+        cdc_dedup_ratio,
+        cdc_dedup_savings_pct,
 
         estimated_packed_size_lz4_fixed,
         estimated_packed_size_zstd_cdc,

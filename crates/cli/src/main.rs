@@ -152,8 +152,13 @@ fn main() -> anyhow::Result<()> {
         Commands::Predict {
             file,
             block_size,
+            min_chunk,
+            avg_chunk,
+            max_chunk,
             json,
-        } => hexz_cli::cmd::data::predict::run(file, block_size, json),
+        } => hexz_cli::cmd::data::predict::run(
+            file, block_size, min_chunk, avg_chunk, max_chunk, json,
+        ),
 
         // --------------------------------------------------------------------
         // Virtual Machine Operations

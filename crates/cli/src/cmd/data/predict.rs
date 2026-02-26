@@ -3,10 +3,20 @@ use hexz_ops::predict::{PredictConfig, predict};
 use indicatif::HumanBytes;
 use std::path::PathBuf;
 
-pub fn run(path: PathBuf, block_size: u32, json: bool) -> Result<()> {
+pub fn run(
+    path: PathBuf,
+    block_size: u32,
+    min_chunk: u32,
+    avg_chunk: u32,
+    max_chunk: u32,
+    json: bool,
+) -> Result<()> {
     let config = PredictConfig {
         path,
         block_size: block_size as usize,
+        min_chunk,
+        avg_chunk,
+        max_chunk,
         ..Default::default()
     };
 
@@ -58,14 +68,13 @@ pub fn run(path: PathBuf, block_size: u32, json: bool) -> Result<()> {
         report.fixed_dedup_savings_pct
     );
     println!(
-        "  CDC Dedup:      {:.1}% savings  (c={:.4})",
-        report.cdc_baseline_savings_pct, report.cdc_change_rate
-    );
-    println!(
-        "  CDC Optimal:    {:.1}% savings  (f={}, avg chunk ~{})",
-        report.dcam_best_savings_pct,
-        report.dcam_best_f,
-        HumanBytes(report.dcam_best_avg_chunk as u64)
+        "  CDC Dedup:      {:.1}% savings  ({} chunks, {} unique, min/avg/max {}/{}/{})",
+        report.cdc_dedup_savings_pct,
+        report.cdc_chunks_total,
+        report.cdc_chunks_unique,
+        HumanBytes(report.cdc_min_chunk as u64),
+        HumanBytes(report.cdc_avg_chunk as u64),
+        HumanBytes(report.cdc_max_chunk as u64),
     );
     println!();
 
@@ -80,14 +89,24 @@ pub fn run(path: PathBuf, block_size: u32, json: bool) -> Result<()> {
     );
     println!();
 
-    // Build a recommendation based on results
+    // Recommendation
     let file_path = &report.file_path;
     if report.overall_best_savings_pct > 10.0 {
-        if report.dcam_best_savings_pct > 1.0 {
-            println!(
+        if report.cdc_dedup_savings_pct > 1.0 {
+            print!(
                 "Try: hexz pack output.hxz --disk {} --compression zstd --cdc",
                 file_path
             );
+            if report.cdc_min_chunk != 16384
+                || report.cdc_avg_chunk != 65536
+                || report.cdc_max_chunk != 131072
+            {
+                print!(
+                    " --min-chunk {} --avg-chunk {} --max-chunk {}",
+                    report.cdc_min_chunk, report.cdc_avg_chunk, report.cdc_max_chunk
+                );
+            }
+            println!();
         } else {
             println!(
                 "Try: hexz pack output.hxz --disk {} --compression zstd",

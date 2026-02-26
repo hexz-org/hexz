@@ -205,6 +205,18 @@ pub enum Commands {
         #[arg(long, default_value_t = 65536)]
         block_size: u32,
 
+        /// Minimum chunk size for CDC
+        #[arg(long, default_value_t = 16384)]
+        min_chunk: u32,
+
+        /// Average chunk size for CDC
+        #[arg(long, default_value_t = 65536)]
+        avg_chunk: u32,
+
+        /// Maximum chunk size for CDC
+        #[arg(long, default_value_t = 131072)]
+        max_chunk: u32,
+
         /// Output as JSON
         #[arg(long)]
         json: bool,
