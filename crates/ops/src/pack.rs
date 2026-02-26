@@ -793,7 +793,14 @@ where
                 cb(pos, total);
             }
         };
-        process_stream(path.clone(), true, &mut writer, &config, Some(&cb))?;
+        process_stream(
+            path.clone(),
+            true,
+            &mut writer,
+            &config,
+            dictionary.clone(),
+            Some(&cb),
+        )?;
     }
 
     // Process secondary stream
@@ -806,7 +813,14 @@ where
                 cb(pos, total);
             }
         };
-        process_stream(path.clone(), false, &mut writer, &config, Some(&cb))?;
+        process_stream(
+            path.clone(),
+            false,
+            &mut writer,
+            &config,
+            dictionary.clone(),
+            Some(&cb),
+        )?;
     }
 
     if let Some(ref pb) = progress_bar {
@@ -932,6 +946,7 @@ fn process_stream<F>(
     is_disk: bool,
     writer: &mut SnapshotWriter,
     config: &PackConfig,
+    dictionary: Option<Vec<u8>>,
     progress_callback: Option<&F>,
 ) -> Result<()>
 where
@@ -944,7 +959,7 @@ where
 
     // Use parallel path when enabled and not encrypting (encryption needs sequential nonces)
     if config.parallel && !config.encrypt {
-        process_stream_parallel(f, len, writer, config, progress_callback)?;
+        process_stream_parallel(f, len, writer, config, dictionary, progress_callback)?;
     } else {
         process_stream_serial(f, len, writer, config, progress_callback)?;
     }
@@ -1017,6 +1032,7 @@ fn process_stream_parallel<F>(
     len: u64,
     writer: &mut SnapshotWriter,
     config: &PackConfig,
+    dictionary: Option<Vec<u8>>,
     progress_callback: Option<&F>,
 ) -> Result<()>
 where
@@ -1033,8 +1049,8 @@ where
         num_cpus::get()
     };
 
-    // Create shared compressor for all workers
-    let (compressor, _) = create_compressor_from_str(&config.compression, None, None)?;
+    // Create shared compressor for all workers, passing the trained dictionary
+    let (compressor, _) = create_compressor_from_str(&config.compression, None, dictionary)?;
     let compressor: Arc<Box<dyn Compressor + Send + Sync>> = Arc::new(compressor);
 
     // Bounded channels for backpressure: enough to keep workers busy without excessive memory.
