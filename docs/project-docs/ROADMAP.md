@@ -41,15 +41,19 @@ The pivot toward checkpoint versioning as the primary use case. No new format ch
 
 ## v0.6.0 — Read Path Performance
 
-Known bottlenecks in the read path. Issues already tracked:
+Known bottlenecks in the read path:
 
-| Issue | Description |
-|---|---|
-| [#113](https://github.com/hexz-org/hexz/issues/113) | Replace `block_on` in S3/HTTP backends with proper async runtime |
-| [#114](https://github.com/hexz-org/hexz/issues/114) | Shard the page cache Mutex (currently a single global lock) |
-| [#115](https://github.com/hexz-org/hexz/issues/115) | Reduce per-call locking in Python loader cursor |
-| [#122](https://github.com/hexz-org/hexz/issues/122) | Reusable buffer pool for decompression |
-| [#56](https://github.com/hexz-org/hexz/issues/56) | `Writer.add_bytes()` without temporary file |
+| Issue | Description | Status |
+|---|---|---|
+| [#115](https://github.com/hexz-org/hexz/issues/115) | Replace `Mutex<u64>` cursor with `AtomicU64` in Python Reader | **Done** |
+| [#122](https://github.com/hexz-org/hexz/issues/122) | Reusable buffer pool for decompression + raise parallel threshold | **Done** |
+| [#113](https://github.com/hexz-org/hexz/issues/113) | Replace `block_on` in S3/HTTP backends with proper async runtime | |
+| [#114](https://github.com/hexz-org/hexz/issues/114) | Shard the page cache Mutex (currently a single global lock) | |
+| [#56](https://github.com/hexz-org/hexz/issues/56) | `Writer.add_bytes()` without temporary file | |
+| — | Prefetch: replace `thread::spawn` per prefetch with a dedicated thread or rayon task | |
+| — | Mmap backend: zero-copy `Bytes` from mmap instead of `copy_from_slice` per block | |
+| — | FileBackend: pool or reuse `BytesMut` allocations in `read_exact` | |
+| — | S3 backend: avoid `Bytes::copy_from_slice` — take ownership of response bytes directly | |
 
 ---
 
