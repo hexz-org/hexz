@@ -30,21 +30,21 @@ pub fn open_local(
 }
 
 /// Like [`open_local`] but with custom cache and prefetch settings.
+/// Like [`open_local`] but with custom cache and prefetch settings.
 pub fn open_local_with_cache(
     path: &std::path::Path,
     encryptor: Option<Box<dyn Encryptor>>,
     cache_capacity_bytes: Option<usize>,
     prefetch_window_size: Option<u32>,
 ) -> Result<Arc<File>> {
-    let backend = Arc::new(local::FileBackend::new(path)?);
+    let backend: Arc<dyn StorageBackend> = Arc::new(local::MmapBackend::new(path)?);
     let header = Header::read_from_backend(backend.as_ref())?;
     let dictionary = header.load_dictionary(backend.as_ref())?;
     let compressor = create_compressor(header.compression, None, dictionary);
 
     let loader: ParentLoader = Box::new(|parent_path: &str| {
         let pb = std::path::Path::new(parent_path);
-        let pb = Arc::new(local::FileBackend::new(pb)?);
-        // Parent loaders use the default open path (no nested custom cache).
+        let pb: Arc<dyn StorageBackend> = Arc::new(local::MmapBackend::new(pb)?);
         File::open(pb, None)
     });
 

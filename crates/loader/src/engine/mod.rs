@@ -514,7 +514,7 @@ pub fn open_snapshot(config: OpenConfig) -> Result<Arc<File>, OpenError> {
             )
         } else {
             Arc::new(
-                hexz_store::local::FileBackend::new(std::path::Path::new(&config.path))
+                hexz_store::local::MmapBackend::new(std::path::Path::new(&config.path))
                     .map_err(|e| OpenError::Io(e.to_string()))?,
             )
         };
@@ -528,9 +528,9 @@ pub fn open_snapshot(config: OpenConfig) -> Result<Arc<File>, OpenError> {
     };
 
     let loader: ParentLoader = Box::new(|parent_path: &str| {
-        let backend = Arc::new(hexz_store::local::FileBackend::new(std::path::Path::new(
-            parent_path,
-        ))?);
+        let backend: Arc<dyn StorageBackend> = Arc::new(hexz_store::local::MmapBackend::new(
+            std::path::Path::new(parent_path),
+        )?);
         File::open(backend, None)
     });
 

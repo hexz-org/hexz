@@ -1417,19 +1417,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hexz-reconstruct"
-version = "0.5.5"
-dependencies = [
- "bytes",
- "criterion",
- "hexz-common",
- "hexz-core",
- "memmap2",
- "rand 0.8.5",
- "tempfile",
-]
-
-[[package]]
 name = "hexz-server"
 version = "0.5.5"
 dependencies = [
@@ -1456,6 +1443,7 @@ dependencies = [
  "bytes",
  "hexz-common",
  "hexz-core",
+ "memmap2",
  "rand 0.8.5",
  "reqwest",
  "rstest",

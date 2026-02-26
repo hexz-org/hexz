@@ -9,7 +9,6 @@ members = [
     "crates/server",
     "crates/cli",
     "crates/loader",
-    "crates/reconstruct",
     "tools/xtask",
 ]
 

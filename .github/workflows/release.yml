@@ -156,15 +156,14 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           # Publish in real dependency order (non-dev deps determine ordering).
-          # hexz-core's dev-deps on hexz-store/hexz-ops/hexz-reconstruct are fine
-          # because --no-verify skips building; they just need a version in Cargo.toml
-          # so crates.io can record the dep without resolving it at publish time.
+          # hexz-core's dev-deps on hexz-store/hexz-ops are fine because --no-verify
+          # skips building; they just need a version in Cargo.toml so crates.io can
+          # record the dep without resolving it at publish time.
           cargo publish -p hexz-common --no-verify
           sleep 30
           cargo publish -p hexz-core --no-verify
           sleep 30
           cargo publish -p hexz-store --no-verify
-          cargo publish -p hexz-reconstruct --no-verify
           sleep 30
           cargo publish -p hexz-ops --no-verify
           sleep 30

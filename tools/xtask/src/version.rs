@@ -12,7 +12,6 @@ const PUBLISH_ORDER: &[&str] = &[
     "hexz-common",
     "hexz-core",
     "hexz-store",
-    "hexz-reconstruct",
     "hexz-ops",
     "hexz-fuse",
     "hexz-server",

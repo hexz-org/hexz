@@ -11,6 +11,7 @@ description = "Storage backends for Hexz snapshots (local file, HTTP, S3)"
 hexz-common.workspace = true
 hexz-core = { workspace = true, default-features = false, features = ["compression-zstd", "encryption"] }
 bytes.workspace = true
+memmap2 = "0.9"
 tokio = { workspace = true, features = ["rt", "time"] }
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "stream"] }
 url = "2.5"

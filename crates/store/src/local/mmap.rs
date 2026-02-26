@@ -1,8 +1,8 @@
-//! Memory-mapped file storage backend.
+//! Memory-mapped file storage backend with zero-copy reads.
 //!
-//! This is the **baseline** implementation used by the paper's benchmarks.
-//! All novel mmap strategies (arena reset, huge pages, prefault, io_uring)
-//! are implemented alongside this module for direct comparison.
+//! `MmapBackend` maps the entire file into the process address space and returns
+//! `Bytes` slices backed by the mapping. Each `read_exact` call is O(1) — just
+//! an atomic refcount increment and pointer arithmetic, with no `memcpy`.
 
 use bytes::Bytes;
 use hexz_common::Result;
@@ -10,14 +10,11 @@ use hexz_core::store::StorageBackend;
 use memmap2::Mmap;
 use std::fs::File;
 
-/// A read-only memory-mapped file backend.
+/// A read-only memory-mapped file backend with zero-copy reads.
 ///
 /// Maps the entire file into the process address space with `MAP_PRIVATE | PROT_READ`.
-/// Page faults are handled transparently by the kernel — this is the naive baseline
-/// that the paper's novel strategies aim to beat.
-///
-/// Reads are zero-copy: `read_exact` returns a `Bytes` slice backed by the mmap
-/// region, avoiding `memcpy` entirely.
+/// Reads return `Bytes` slices that reference the mapped region directly, avoiding
+/// any allocation or copy on the read path.
 #[derive(Debug)]
 pub struct MmapBackend {
     bytes: Bytes,
@@ -31,8 +28,6 @@ impl MmapBackend {
         let len = file.metadata()?.len();
         // SAFETY: The file is immutable for the lifetime of the mapping (snapshot semantics).
         let map = unsafe { Mmap::map(&file)? };
-        // Wrap the Mmap in Bytes via from_owner so that slicing is zero-copy.
-        // The Mmap is moved into the Bytes and kept alive by its refcount.
         let bytes = Bytes::from_owner(map);
         Ok(Self { bytes, len })
     }
