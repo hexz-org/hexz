@@ -109,7 +109,7 @@ fn test_data_build_unknown_profile() {
 }
 
 #[test]
-fn test_data_build_with_cdc() {
+fn test_data_build_with_profile() {
     let env = TestEnv::new();
     let input_file = env.create_pattern_file("cdc_test.bin", &[0xAB; 4096], 100);
 
@@ -119,7 +119,6 @@ fn test_data_build_with_cdc() {
         .arg(&env.snapshot_path)
         .arg("--profile")
         .arg("generic")
-        .arg("--cdc")
         .assert()
         .success();
 

@@ -34,7 +34,7 @@ pub enum Commands {
     #[command(
         long_about = "Creates a highly compressed, encrypted, and deduplicated archive from a disk image or memory dump.\n\nIt uses Content-Defined Chunking (CDC) to ensure that only changed weights are stored when archiving multiple versions of a model. This is the primary way to ingest data into Hexz."
     )]
-    #[command(after_help = "hexz pack model.hxz --disk ./model.bin --compression zstd --cdc")]
+    #[command(after_help = "hexz pack model.hxz --disk ./model.bin --compression zstd")]
     Pack {
         /// Output archive path (.hxz)
         output: PathBuf,
@@ -63,21 +63,17 @@ pub enum Commands {
         #[arg(long, default_value_t = 65536, value_parser = clap::value_parser!(u32).range(1..))]
         block_size: u32,
 
-        /// Enable content-defined chunking (CDC)
-        #[arg(long)]
-        cdc: bool,
+        /// Minimum CDC chunk size (auto-detected if not specified)
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        min_chunk: Option<u32>,
 
-        /// Minimum chunk size for CDC
-        #[arg(long, default_value_t = 16384, value_parser = clap::value_parser!(u32).range(1..))]
-        min_chunk: u32,
+        /// Average CDC chunk size (auto-detected if not specified)
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        avg_chunk: Option<u32>,
 
-        /// Average chunk size for CDC
-        #[arg(long, default_value_t = 65536, value_parser = clap::value_parser!(u32).range(1..))]
-        avg_chunk: u32,
-
-        /// Maximum chunk size for CDC
-        #[arg(long, default_value_t = 131072, value_parser = clap::value_parser!(u32).range(1..))]
-        max_chunk: u32,
+        /// Maximum CDC chunk size (auto-detected if not specified)
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        max_chunk: Option<u32>,
 
         /// Number of compression worker threads (0 = auto)
         #[arg(long)]
@@ -152,10 +148,6 @@ pub enum Commands {
         /// Enable encryption
         #[arg(long)]
         encrypt: bool,
-
-        /// Enable CDC
-        #[arg(long)]
-        cdc: bool,
     },
 
     /// Convert external formats to Hexz snapshot
@@ -205,17 +197,17 @@ pub enum Commands {
         #[arg(long, default_value_t = 65536)]
         block_size: u32,
 
-        /// Minimum chunk size for CDC
-        #[arg(long, default_value_t = 16384)]
-        min_chunk: u32,
+        /// Minimum CDC chunk size (auto-detected if not specified)
+        #[arg(long)]
+        min_chunk: Option<u32>,
 
-        /// Average chunk size for CDC
-        #[arg(long, default_value_t = 65536)]
-        avg_chunk: u32,
+        /// Average CDC chunk size (auto-detected if not specified)
+        #[arg(long)]
+        avg_chunk: Option<u32>,
 
-        /// Maximum chunk size for CDC
-        #[arg(long, default_value_t = 131072)]
-        max_chunk: u32,
+        /// Maximum CDC chunk size (auto-detected if not specified)
+        #[arg(long)]
+        max_chunk: Option<u32>,
 
         /// Output as JSON
         #[arg(long)]
@@ -298,10 +290,6 @@ pub enum Commands {
         /// Enable VNC
         #[arg(long)]
         vnc: bool,
-
-        /// Enable CDC
-        #[arg(long)]
-        cdc: bool,
     },
 
     /// Create snapshot via QMP

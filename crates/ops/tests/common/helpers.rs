@@ -189,10 +189,9 @@ pub fn create_simple_snapshot() -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn
         password: None,
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: false,
-        min_chunk: 16384,
-        avg_chunk: 65536,
-        max_chunk: 131072,
+        min_chunk: Some(16384),
+        avg_chunk: Some(65536),
+        max_chunk: Some(131072),
         ..Default::default()
     };
 
@@ -234,10 +233,9 @@ pub fn create_snapshot_with_memory()
         password: None,
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: false,
-        min_chunk: 16384,
-        avg_chunk: 65536,
-        max_chunk: 131072,
+        min_chunk: Some(16384),
+        avg_chunk: Some(65536),
+        max_chunk: Some(131072),
         ..Default::default()
     };
 
@@ -274,10 +272,9 @@ pub fn create_multi_block_snapshot()
         password: None,
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: false,
-        min_chunk: 16384,
-        avg_chunk: 65536,
-        max_chunk: 131072,
+        min_chunk: Some(16384),
+        avg_chunk: Some(65536),
+        max_chunk: Some(131072),
         ..Default::default()
     };
 

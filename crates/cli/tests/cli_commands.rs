@@ -97,7 +97,7 @@ fn test_data_pack_with_compression_zstd() {
 }
 
 #[test]
-fn test_data_pack_with_cdc() {
+fn test_data_pack_with_explicit_chunks() {
     let env = TestEnv::new();
     // Create file with repeating pattern (good for CDC)
     let input_file = env.create_pattern_file("dedup.bin", &[0xAB; 4096], 100);
@@ -107,7 +107,12 @@ fn test_data_pack_with_cdc() {
         .arg("--disk")
         .arg(&input_file)
         .arg(&env.snapshot_path)
-        .arg("--cdc")
+        .arg("--min-chunk")
+        .arg("16384")
+        .arg("--avg-chunk")
+        .arg("65536")
+        .arg("--max-chunk")
+        .arg("131072")
         .assert()
         .success();
 

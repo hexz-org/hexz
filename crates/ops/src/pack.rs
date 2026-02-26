@@ -193,12 +193,11 @@
 //!     output: PathBuf::from("ubuntu.hxz"),
 //!     compression: "zstd".to_string(),
 //!     train_dict: true,         // Train dictionary for better ratio
-//!     cdc_enabled: true,        // Content-defined chunking
 //!     encrypt: true,
 //!     password: Some("secure_passphrase".to_string()),
-//!     min_chunk: 16384,         // 16 KiB minimum chunk
-//!     avg_chunk: 65536,         // 64 KiB average chunk
-//!     max_chunk: 262144,        // 256 KiB maximum chunk
+//!     min_chunk: Some(16384),   // 16 KiB minimum chunk
+//!     avg_chunk: Some(65536),   // 64 KiB average chunk
+//!     max_chunk: Some(262144),  // 256 KiB maximum chunk
 //!     ..Default::default()
 //! };
 //!
@@ -287,8 +286,8 @@ use std::path::{Path, PathBuf};
 use crate::parallel_pack::{CompressedChunk, RawChunk};
 use crate::snapshot_writer::SnapshotWriter;
 use hexz_core::algo::compression::{create_compressor_from_str, zstd::ZstdCompressor};
-use hexz_core::algo::dedup::cdc::StreamChunker;
-use hexz_core::algo::dedup::dcam::DedupeParams;
+use hexz_core::algo::dedup::cdc::{StreamChunker, analyze_stream};
+use hexz_core::algo::dedup::dcam::{DedupeParams, optimize_params};
 use hexz_core::algo::encryption::{Encryptor, aes_gcm::AesGcmEncryptor};
 
 /// Configuration parameters for snapshot packing.
@@ -316,10 +315,9 @@ use hexz_core::algo::encryption::{Encryptor, aes_gcm::AesGcmEncryptor};
 ///     compression: "zstd".to_string(),
 ///     encrypt: true,
 ///     password: Some("secret".to_string()),
-///     cdc_enabled: true,
-///     min_chunk: 16384,
-///     avg_chunk: 65536,
-///     max_chunk: 131072,
+///     min_chunk: Some(16384),
+///     avg_chunk: Some(65536),
+///     max_chunk: Some(131072),
 ///     ..Default::default()
 /// };
 /// ```
@@ -341,14 +339,12 @@ pub struct PackConfig {
     pub train_dict: bool,
     /// Block size in bytes.
     pub block_size: u32,
-    /// Enable content-defined chunking (CDC).
-    pub cdc_enabled: bool,
-    /// Minimum chunk size for CDC.
-    pub min_chunk: u32,
-    /// Average chunk size for CDC.
-    pub avg_chunk: u32,
-    /// Maximum chunk size for CDC.
-    pub max_chunk: u32,
+    /// Minimum chunk size for CDC (auto-detected if None).
+    pub min_chunk: Option<u32>,
+    /// Average chunk size for CDC (auto-detected if None).
+    pub avg_chunk: Option<u32>,
+    /// Maximum chunk size for CDC (auto-detected if None).
+    pub max_chunk: Option<u32>,
     /// Enable parallel compression (use multiple CPU cores).
     pub parallel: bool,
     /// Number of worker threads (0 = auto-detect).
@@ -368,10 +364,9 @@ impl Default for PackConfig {
             password: None,
             train_dict: false,
             block_size: 65536,
-            cdc_enabled: false,
-            min_chunk: 16384,
-            avg_chunk: 65536,
-            max_chunk: 131072,
+            min_chunk: None,
+            avg_chunk: None,
+            max_chunk: None,
             parallel: true,      // Enable by default for performance
             num_workers: 0,      // Auto-detect CPU cores
             show_progress: true, // Show progress by default
@@ -444,97 +439,63 @@ pub fn calculate_entropy(data: &[u8]) -> f64 {
     entropy
 }
 
-/// Fixed-size block chunker with buffer reuse.
+/// Resolve CDC parameters for packing, using DCAM auto-detection when not specified.
 ///
-/// Splits input into equal-sized blocks (except possibly the last one).
-/// Simpler and faster than CDC, but less effective for deduplication.
+/// If all three chunk params are `Some`, uses them directly (user override).
+/// Otherwise, scans the entire input file with LBFS baseline parameters and
+/// uses DCAM `optimize_params` to find the optimal settings.
 ///
-/// Reuses an internal buffer across calls to `next_chunk()`, eliminating
-/// per-chunk allocation after the first call.
-pub struct FixedChunker<R> {
-    reader: R,
-    block_size: usize,
-    buffer: Vec<u8>,
-    done: bool,
-}
-
-impl<R: Read> FixedChunker<R> {
-    /// Creates a new fixed-size chunker.
-    pub fn new(reader: R, block_size: usize) -> Self {
-        Self {
-            reader,
-            block_size,
-            buffer: vec![0u8; block_size],
-            done: false,
-        }
+/// Supports partial overrides: e.g. only `--min-chunk` specified, DCAM fills the rest.
+pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupeParams> {
+    // If user provided all three, use them directly
+    if let (Some(min), Some(avg), Some(max)) =
+        (config.min_chunk, config.avg_chunk, config.max_chunk)
+    {
+        let f = (avg as f64).log2().round() as u32;
+        return Ok(DedupeParams {
+            f,
+            m: min,
+            z: max,
+            w: 48,
+            v: 52,
+        });
     }
 
-    /// Returns the next chunk as a borrowed slice, or `None` at EOF.
-    ///
-    /// Zero allocations after the first call thanks to buffer reuse.
-    fn next_chunk(&mut self) -> std::io::Result<Option<&[u8]>> {
-        if self.done {
-            return Ok(None);
-        }
-        let mut pos = 0;
-        self.buffer.resize(self.block_size, 0);
-        while pos < self.block_size {
-            match self.reader.read(&mut self.buffer[pos..]) {
-                Ok(0) => break,
-                Ok(n) => pos += n,
-                Err(e) => return Err(e),
-            }
-        }
-        if pos == 0 {
-            self.done = true;
-            Ok(None)
-        } else {
-            self.buffer.truncate(pos);
-            Ok(Some(&self.buffer))
-        }
+    // DCAM auto-detection: scan the entire file with LBFS baseline
+    let baseline = DedupeParams::lbfs_baseline();
+    let file = File::open(path)?;
+    let file_size = file.metadata()?.len();
+
+    if file_size == 0 {
+        // Degenerate case: return baseline
+        return Ok(baseline);
     }
 
-    /// Returns the next chunk as an owned `Vec<u8>`, or `None` at EOF.
-    ///
-    /// Swaps the internal buffer with a fresh allocation so the caller
-    /// takes ownership without copying. After the first call, the fresh
-    /// buffer is reused from the previous swap, so steady-state
-    /// allocations are zero.
-    fn next_chunk_owned(&mut self) -> std::io::Result<Option<Vec<u8>>> {
-        if self.done {
-            return Ok(None);
-        }
-        let mut pos = 0;
-        self.buffer.resize(self.block_size, 0);
-        while pos < self.block_size {
-            match self.reader.read(&mut self.buffer[pos..]) {
-                Ok(0) => break,
-                Ok(n) => pos += n,
-                Err(e) => return Err(e),
-            }
-        }
-        if pos == 0 {
-            self.done = true;
-            Ok(None)
-        } else {
-            self.buffer.truncate(pos);
-            let mut owned = vec![0u8; self.block_size];
-            std::mem::swap(&mut self.buffer, &mut owned);
-            Ok(Some(owned))
-        }
-    }
-}
+    let stats = analyze_stream(file, &baseline)?;
+    let optimized = optimize_params(file_size, stats.unique_bytes, &baseline);
 
-impl<R: Read> Iterator for FixedChunker<R> {
-    type Item = std::io::Result<Vec<u8>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.next_chunk() {
-            Ok(Some(slice)) => Some(Ok(slice.to_vec())),
-            Ok(None) => None,
-            Err(e) => Some(Err(e)),
-        }
+    // Apply any user-provided partial overrides
+    let mut params = optimized.params;
+    if let Some(min) = config.min_chunk {
+        params.m = min;
     }
+    if let Some(avg) = config.avg_chunk {
+        params.f = (avg as f64).log2().round() as u32;
+    }
+    if let Some(max) = config.max_chunk {
+        params.z = max;
+    }
+
+    tracing::debug!(
+        "DCAM auto-detected CDC params: f={} m={} z={} (change_rate={:.4}, predicted_ratio={:.4})",
+        params.f,
+        params.m,
+        params.z,
+        optimized.change_rate,
+        optimized.predicted_ratio,
+    );
+
+    Ok(params)
 }
 
 /// Packs a snapshot file from disk and/or memory images.
@@ -670,10 +631,9 @@ impl<R: Read> Iterator for FixedChunker<R> {
 /// let config = PackConfig {
 ///     disk: Some(PathBuf::from("incremental-backup.raw")),
 ///     output: PathBuf::from("backup.hxz"),
-///     cdc_enabled: true,
-///     min_chunk: 16384,   // 16 KiB
-///     avg_chunk: 65536,   // 64 KiB
-///     max_chunk: 262144,  // 256 KiB
+///     min_chunk: Some(16384),   // 16 KiB
+///     avg_chunk: Some(65536),   // 64 KiB
+///     max_chunk: Some(262144),  // 256 KiB
 ///     ..Default::default()
 /// };
 ///
@@ -776,10 +736,18 @@ where
         (None, None)
     };
 
+    // Resolve CDC parameters (auto-detect via DCAM or use user overrides)
+    let cdc_params = if let Some(path) = config.disk.as_ref().or(config.memory.as_ref()) {
+        resolve_cdc_params(path, &config)?
+    } else {
+        // Fallback to LBFS baseline (shouldn't reach here due to validation above)
+        DedupeParams::lbfs_baseline()
+    };
+
     // Build the snapshot writer with optional encryption
     let mut builder = SnapshotWriter::builder(&config.output, compressor, compression_type)
         .block_size(config.block_size)
-        .variable_blocks(config.cdc_enabled);
+        .variable_blocks(true);
 
     if let (Some(enc), Some(params)) = (encryptor, enc_params) {
         builder = builder.encryption(enc, params);
@@ -827,6 +795,7 @@ where
             path.clone(),
             true,
             &mut writer,
+            &cdc_params,
             &config,
             dictionary.clone(),
             Some(&cb),
@@ -847,6 +816,7 @@ where
             path.clone(),
             false,
             &mut writer,
+            &cdc_params,
             &config,
             dictionary.clone(),
             Some(&cb),
@@ -975,6 +945,7 @@ fn process_stream<F>(
     path: PathBuf,
     is_disk: bool,
     writer: &mut SnapshotWriter,
+    cdc_params: &DedupeParams,
     config: &PackConfig,
     dictionary: Option<Vec<u8>>,
     progress_callback: Option<&F>,
@@ -989,9 +960,17 @@ where
 
     // Use parallel path when enabled and not encrypting (encryption needs sequential nonces)
     if config.parallel && !config.encrypt {
-        process_stream_parallel(f, len, writer, config, dictionary, progress_callback)?;
+        process_stream_parallel(
+            f,
+            len,
+            writer,
+            cdc_params,
+            config,
+            dictionary,
+            progress_callback,
+        )?;
     } else {
-        process_stream_serial(f, len, writer, config, progress_callback)?;
+        process_stream_serial(f, len, writer, cdc_params, progress_callback)?;
     }
 
     writer.end_stream()?;
@@ -1003,7 +982,7 @@ fn process_stream_serial<F>(
     f: File,
     len: u64,
     writer: &mut SnapshotWriter,
-    config: &PackConfig,
+    cdc_params: &DedupeParams,
     progress_callback: Option<&F>,
 ) -> Result<()>
 where
@@ -1011,37 +990,13 @@ where
 {
     let mut logical_pos = 0u64;
 
-    if config.cdc_enabled {
-        let params = DedupeParams {
-            f: (config.avg_chunk as f64).log2() as u32,
-            m: config.min_chunk,
-            z: config.max_chunk,
-            w: 48,
-            v: 8,
-        };
-        let chunker = StreamChunker::new(f, params);
-        for chunk_res in chunker {
-            let chunk = chunk_res?;
-            logical_pos += chunk.len() as u64;
-            writer.write_data_block(&chunk)?;
-            if let Some(callback) = progress_callback {
-                callback(logical_pos, len);
-            }
-        }
-    } else {
-        let mut chunker = FixedChunker::new(f, config.block_size as usize);
-        loop {
-            match chunker.next_chunk() {
-                Ok(Some(chunk)) => {
-                    logical_pos += chunk.len() as u64;
-                    writer.write_data_block(chunk)?;
-                    if let Some(callback) = progress_callback {
-                        callback(logical_pos, len);
-                    }
-                }
-                Ok(None) => break,
-                Err(e) => return Err(Error::Io(e)),
-            }
+    let chunker = StreamChunker::new(f, *cdc_params);
+    for chunk_res in chunker {
+        let chunk = chunk_res?;
+        logical_pos += chunk.len() as u64;
+        writer.write_data_block(&chunk)?;
+        if let Some(callback) = progress_callback {
+            callback(logical_pos, len);
         }
     }
 
@@ -1061,6 +1016,7 @@ fn process_stream_parallel<F>(
     f: File,
     len: u64,
     writer: &mut SnapshotWriter,
+    cdc_params: &DedupeParams,
     config: &PackConfig,
     dictionary: Option<Vec<u8>>,
     progress_callback: Option<&F>,
@@ -1123,63 +1079,27 @@ where
     drop(tx_compressed);
 
     // Spawn reader thread: reads input, chunks it, feeds workers
-    let reader_config = config.clone();
+    let reader_cdc_params = *cdc_params;
     let reader = std::thread::spawn(move || -> Result<()> {
-        let mut seq = 0u64;
         let mut logical_pos = 0u64;
 
-        if reader_config.cdc_enabled {
-            let params = DedupeParams {
-                f: (reader_config.avg_chunk as f64).log2() as u32,
-                m: reader_config.min_chunk,
-                z: reader_config.max_chunk,
-                w: 48,
-                v: 8,
-            };
-            let chunker = StreamChunker::new(f, params);
-            for chunk_res in chunker {
-                let chunk = chunk_res?;
-                let chunk_len = chunk.len();
-                if tx_raw
-                    .send((
-                        seq,
-                        RawChunk {
-                            data: chunk,
-                            logical_offset: logical_pos,
-                        },
-                    ))
-                    .is_err()
-                {
-                    break; // Workers shut down
-                }
-                logical_pos += chunk_len as u64;
-                seq += 1;
+        let chunker = StreamChunker::new(f, reader_cdc_params);
+        for (seq, chunk_res) in chunker.enumerate() {
+            let chunk = chunk_res?;
+            let chunk_len = chunk.len();
+            if tx_raw
+                .send((
+                    seq as u64,
+                    RawChunk {
+                        data: chunk,
+                        logical_offset: logical_pos,
+                    },
+                ))
+                .is_err()
+            {
+                break; // Workers shut down
             }
-        } else {
-            let mut chunker = FixedChunker::new(f, reader_config.block_size as usize);
-            loop {
-                match chunker.next_chunk_owned() {
-                    Ok(Some(chunk)) => {
-                        let chunk_len = chunk.len();
-                        if tx_raw
-                            .send((
-                                seq,
-                                RawChunk {
-                                    data: chunk,
-                                    logical_offset: logical_pos,
-                                },
-                            ))
-                            .is_err()
-                        {
-                            break; // Workers shut down
-                        }
-                        logical_pos += chunk_len as u64;
-                        seq += 1;
-                    }
-                    Ok(None) => break,
-                    Err(e) => return Err(Error::Io(e)),
-                }
-            }
+            logical_pos += chunk_len as u64;
         }
         Ok(())
     });
@@ -1245,7 +1165,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
 
     #[test]
     fn test_calculate_entropy_empty() {
@@ -1300,69 +1219,6 @@ mod tests {
     }
 
     #[test]
-    fn test_fixed_chunker_exact_blocks() {
-        let data = vec![1, 2, 3, 4, 5, 6, 7, 8];
-        let cursor = Cursor::new(data);
-        let chunker = FixedChunker::new(cursor, 4);
-
-        let chunks: Vec<_> = chunker.map(|r| r.unwrap()).collect();
-
-        assert_eq!(chunks.len(), 2);
-        assert_eq!(chunks[0], vec![1, 2, 3, 4]);
-        assert_eq!(chunks[1], vec![5, 6, 7, 8]);
-    }
-
-    #[test]
-    fn test_fixed_chunker_partial_last_block() {
-        let data = vec![1, 2, 3, 4, 5];
-        let cursor = Cursor::new(data);
-        let chunker = FixedChunker::new(cursor, 3);
-
-        let chunks: Vec<_> = chunker.map(|r| r.unwrap()).collect();
-
-        assert_eq!(chunks.len(), 2);
-        assert_eq!(chunks[0], vec![1, 2, 3]);
-        assert_eq!(chunks[1], vec![4, 5]);
-    }
-
-    #[test]
-    fn test_fixed_chunker_empty_input() {
-        let data = vec![];
-        let cursor = Cursor::new(data);
-        let chunker = FixedChunker::new(cursor, 1024);
-
-        let chunks: Vec<_> = chunker.map(|r| r.unwrap()).collect();
-
-        assert_eq!(chunks.len(), 0);
-    }
-
-    #[test]
-    fn test_fixed_chunker_single_byte_blocks() {
-        let data = vec![1, 2, 3];
-        let cursor = Cursor::new(data);
-        let chunker = FixedChunker::new(cursor, 1);
-
-        let chunks: Vec<_> = chunker.map(|r| r.unwrap()).collect();
-
-        assert_eq!(chunks.len(), 3);
-        assert_eq!(chunks[0], vec![1]);
-        assert_eq!(chunks[1], vec![2]);
-        assert_eq!(chunks[2], vec![3]);
-    }
-
-    #[test]
-    fn test_fixed_chunker_large_block_size() {
-        let data = vec![1, 2, 3, 4, 5];
-        let cursor = Cursor::new(data.clone());
-        let chunker = FixedChunker::new(cursor, 10000);
-
-        let chunks: Vec<_> = chunker.map(|r| r.unwrap()).collect();
-
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0], data);
-    }
-
-    #[test]
     fn test_pack_config_default() {
         let config = PackConfig::default();
 
@@ -1371,10 +1227,9 @@ mod tests {
         assert_eq!(config.password, None);
         assert!(!config.train_dict);
         assert_eq!(config.block_size, 65536);
-        assert!(!config.cdc_enabled);
-        assert_eq!(config.min_chunk, 16384);
-        assert_eq!(config.avg_chunk, 65536);
-        assert_eq!(config.max_chunk, 131072);
+        assert_eq!(config.min_chunk, None);
+        assert_eq!(config.avg_chunk, None);
+        assert_eq!(config.max_chunk, None);
     }
 
     #[test]
@@ -1442,43 +1297,5 @@ mod tests {
             entropy2 < entropy3,
             "Even more unique values should further increase entropy"
         );
-    }
-
-    #[test]
-    fn test_fixed_chunker_with_different_sizes() {
-        let data = vec![0u8; 10000];
-
-        // Test with various chunk sizes
-        for chunk_size in [64, 256, 1024, 4096, 65536] {
-            let cursor = Cursor::new(data.clone());
-            let chunker = FixedChunker::new(cursor, chunk_size);
-
-            let chunks: Vec<_> = chunker.map(|r| r.unwrap()).collect();
-
-            // Verify total data matches
-            let total_len: usize = chunks.iter().map(|c| c.len()).sum();
-            assert_eq!(
-                total_len,
-                data.len(),
-                "Total chunked data should match original for chunk_size={}",
-                chunk_size
-            );
-
-            // Verify all except possibly last chunk have correct size
-            for (i, chunk) in chunks.iter().enumerate() {
-                if i < chunks.len() - 1 {
-                    assert_eq!(
-                        chunk.len(),
-                        chunk_size,
-                        "Non-final chunks should be exactly chunk_size"
-                    );
-                } else {
-                    assert!(
-                        chunk.len() <= chunk_size,
-                        "Final chunk should be <= chunk_size"
-                    );
-                }
-            }
-        }
     }
 }

@@ -23,9 +23,9 @@
 //! hexz vm install --iso debian.iso --disk-size 10G \
 //!   --ram 2G --output debian.st --vnc
 //!
-//! # Install with CDC for better deduplication
+//! # Install Alpine with minimal disk
 //! hexz vm install --iso alpine.iso --disk-size 5G \
-//!   --ram 1G --output alpine.st --cdc
+//!   --ram 1G --output alpine.st
 //! ```
 //!
 //! # Requirements
@@ -38,7 +38,7 @@
 //!
 //! - Installation speed depends on ISO and hardware
 //! - Packing uses LZ4 compression by default (fast)
-//! - Add `--cdc` for better deduplication (slower but smaller)
+//! - CDC parameters are auto-detected via DCAM for optimal deduplication
 
 use anyhow::{Context, Result};
 use std::path::PathBuf;
@@ -80,7 +80,6 @@ pub fn run(
     output: PathBuf,
     no_graphics: bool,
     vnc: bool,
-    cdc: bool,
 ) -> Result<()> {
     println!("Creating temporary raw disk ({})...", primary_size);
     let temp_dir = tempfile::tempdir()?;
@@ -149,10 +148,9 @@ pub fn run(
         false,
         false,
         DEFAULT_BLOCK_SIZE,
-        cdc,
-        16384,
-        65536,
-        131072,
+        None, // min_chunk (auto-detected)
+        None, // avg_chunk (auto-detected)
+        None, // max_chunk (auto-detected)
         None, // workers (auto)
         false,
     )?;

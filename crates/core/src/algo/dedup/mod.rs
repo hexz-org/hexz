@@ -52,4 +52,4 @@ pub mod dcam;
 pub mod hash_table;
 
 pub use cdc::{CdcStats, StreamChunker};
-pub use dcam::DedupeParams;
+pub use dcam::{DedupeParams, OptimizedParams};

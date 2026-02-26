@@ -42,12 +42,11 @@ pub fn create_dataset(
         false, // no encryption
         false, // no dict training
         sample_size as u32,
-        false, // no CDC
-        16384, // min_chunk
-        sample_size as u32,
-        (sample_size * 2) as u32,
-        None,
-        true,
+        None, // min_chunk (auto)
+        None, // avg_chunk (auto)
+        None, // max_chunk (auto)
+        None, // workers
+        true, // silent
     )
     .unwrap();
 

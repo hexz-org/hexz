@@ -744,10 +744,9 @@ mod tests {
             password: None,
             train_dict: false,
             block_size: 4096,
-            cdc_enabled: false,
-            min_chunk: 4096,
-            avg_chunk: 8192,
-            max_chunk: 16384,
+            min_chunk: Some(4096),
+            avg_chunk: Some(8192),
+            max_chunk: Some(16384),
             ..Default::default()
         };
 
@@ -1075,10 +1074,9 @@ mod tests {
             password: None,
             train_dict: false,
             block_size: 4096,
-            cdc_enabled: false,
-            min_chunk: 4096,
-            avg_chunk: 8192,
-            max_chunk: 16384,
+            min_chunk: Some(4096),
+            avg_chunk: Some(8192),
+            max_chunk: Some(16384),
             ..Default::default()
         };
 

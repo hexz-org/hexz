@@ -60,7 +60,6 @@ fn test_crc32_corruption_detected() {
         password: None,
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: false,
         ..Default::default()
     };
     pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
@@ -144,7 +143,6 @@ fn test_crc32_valid_data_passes() {
         password: None,
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: false,
         ..Default::default()
     };
     pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
@@ -183,7 +181,6 @@ fn test_zero_block_sparse_handling() {
         password: None,
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: false,
         ..Default::default()
     };
     pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
@@ -228,7 +225,6 @@ fn test_mixed_zero_nonzero_blocks() {
         password: None,
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: false,
         ..Default::default()
     };
     pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
@@ -295,7 +291,6 @@ fn test_read_past_last_page_zeroes() {
         password: None,
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: false,
         ..Default::default()
     };
     pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
@@ -365,7 +360,6 @@ fn test_cross_boundary_reads() {
         password: None,
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: false,
         ..Default::default()
     };
     pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
@@ -427,7 +421,6 @@ fn test_encrypted_read_with_crc_check() {
         password: Some(password.to_string()),
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: false,
         ..Default::default()
     };
     pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
@@ -476,7 +469,6 @@ fn test_encrypted_corruption_detected() {
         password: Some(password.to_string()),
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: false,
         ..Default::default()
     };
     pack_snapshot(config, None::<fn(u64, u64)>).unwrap();

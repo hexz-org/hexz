@@ -212,11 +212,10 @@ pub fn run(snap: PathBuf, json: bool) -> Result<()> {
         }
 
         if let Some(stats) = &info.block_stats {
-            println!("\n--- Deduplication Breakdown (Primary) ---");
+            println!("\n--- Block Analysis (Primary) ---");
             println!(
-                "Data Blocks:    {} ({})",
-                stats.data_blocks,
-                HumanBytes(stats.data_bytes)
+                "Data Blocks:    {} ({} unique, {} dedup'd)",
+                stats.data_blocks, stats.unique_blocks, stats.dedup_blocks
             );
             println!(
                 "Parent Refs:    {} ({})",
@@ -228,6 +227,28 @@ pub fn run(snap: PathBuf, json: bool) -> Result<()> {
                 stats.zero_blocks,
                 HumanBytes(stats.zero_bytes)
             );
+            if info.variable_blocks && stats.data_blocks > 0 {
+                println!(
+                    "Chunk Sizes:    {} min / {} avg / {} max",
+                    HumanBytes(stats.min_block_size as u64),
+                    HumanBytes(stats.avg_block_size as u64),
+                    HumanBytes(stats.max_block_size as u64),
+                );
+            }
+            if stats.data_blocks > 0 {
+                println!(
+                    "Data On Disk:   {} compressed ({} logical)",
+                    HumanBytes(stats.compressed_data_bytes),
+                    HumanBytes(stats.data_bytes),
+                );
+            }
+            if stats.dedup_blocks > 0 {
+                println!(
+                    "Dedup Savings:  {} ({} blocks)",
+                    HumanBytes(stats.dedup_bytes_saved),
+                    stats.dedup_blocks,
+                );
+            }
         }
     }
 

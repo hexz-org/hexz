@@ -154,10 +154,9 @@ fn bench_dedup_no_duplication(c: &mut Criterion) {
                     false,
                     false,
                     65536,
-                    false, // no CDC
-                    16384,
-                    65536,
-                    131072,
+                    Some(16384),  // min_chunk
+                    Some(65536),  // avg_chunk
+                    Some(131072), // max_chunk
                     None,
                     true,
                 )
@@ -191,10 +190,9 @@ fn bench_dedup_no_duplication(c: &mut Criterion) {
                     false,
                     false,
                     65536,
-                    true, // CDC enabled
-                    16384,
-                    65536,
-                    131072,
+                    Some(16384),  // min_chunk
+                    Some(65536),  // avg_chunk
+                    Some(131072), // max_chunk
                     None,
                     true,
                 )
@@ -251,10 +249,9 @@ fn bench_dedup_25_percent(c: &mut Criterion) {
                     false,
                     false,
                     65536,
-                    false,
-                    16384,
-                    65536,
-                    131072,
+                    Some(16384),  // min_chunk
+                    Some(65536),  // avg_chunk
+                    Some(131072), // max_chunk
                     None,
                     true,
                 )
@@ -288,10 +285,9 @@ fn bench_dedup_25_percent(c: &mut Criterion) {
                     false,
                     false,
                     65536,
-                    true,
-                    16384,
-                    65536,
-                    131072,
+                    Some(16384),  // min_chunk
+                    Some(65536),  // avg_chunk
+                    Some(131072), // max_chunk
                     None,
                     true,
                 )
@@ -369,10 +365,9 @@ fn bench_dedup_shifted(c: &mut Criterion) {
                     false,
                     false,
                     65536,
-                    false,
-                    16384,
-                    65536,
-                    131072,
+                    Some(16384),  // min_chunk
+                    Some(65536),  // avg_chunk
+                    Some(131072), // max_chunk
                     None,
                     true,
                 )
@@ -394,10 +389,9 @@ fn bench_dedup_shifted(c: &mut Criterion) {
                     false,
                     false,
                     65536,
-                    false, // fixed-size
-                    16384,
-                    65536,
-                    131072,
+                    Some(16384),  // min_chunk
+                    Some(65536),  // avg_chunk
+                    Some(131072), // max_chunk
                     None,
                     true,
                 )
@@ -429,10 +423,9 @@ fn bench_dedup_shifted(c: &mut Criterion) {
                     false,
                     false,
                     65536,
-                    true, // CDC
-                    16384,
-                    65536,
-                    131072,
+                    Some(16384),  // min_chunk
+                    Some(65536),  // avg_chunk
+                    Some(131072), // max_chunk
                     None,
                     true,
                 )
@@ -454,10 +447,9 @@ fn bench_dedup_shifted(c: &mut Criterion) {
                     false,
                     false,
                     65536,
-                    true, // CDC
-                    16384,
-                    65536,
-                    131072,
+                    Some(16384),  // min_chunk
+                    Some(65536),  // avg_chunk
+                    Some(131072), // max_chunk
                     None,
                     true,
                 )

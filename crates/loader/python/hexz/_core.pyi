@@ -4,7 +4,7 @@ This file provides type hints for the _hexz_core extension module
 implemented in Rust using PyO3.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Union
 
 class Reader:
     """Low-level reader for Hexz snapshots (Rust implementation)."""
@@ -169,6 +169,11 @@ class Builder:
         block_size: int = 65536,
         compression: str = "lz4",
         compression_level: Optional[int] = None,
+        dedup: bool = True,
+        min_chunk: Optional[int] = None,
+        avg_chunk: Optional[int] = None,
+        max_chunk: Optional[int] = None,
+        parent: Optional[Union[str, List[str]]] = None,
     ) -> None:
         """Create a new snapshot builder.
 
@@ -177,6 +182,11 @@ class Builder:
             block_size: Block size in bytes
             compression: Compression algorithm ("lz4" or "zstd")
             compression_level: Compression level (algorithm-specific, optional)
+            dedup: Enable deduplication
+            min_chunk: Minimum CDC chunk size (auto-detected if not specified)
+            avg_chunk: Average CDC chunk size (auto-detected if not specified)
+            max_chunk: Maximum CDC chunk size (auto-detected if not specified)
+            parent: Path to parent snapshot for cross-file dedup
         """
         ...
 
@@ -213,28 +223,36 @@ class Builder:
         ...
 
 def pack(
-    disk: str,
     output: str,
+    disk: Optional[str] = None,
+    memory: Optional[str] = None,
     compression: str = "lz4",
+    block_size: int = 65536,
     encrypt: bool = False,
     password: Optional[str] = None,
-    dedup: bool = True,
-    min_chunk: int = 16384,
-    avg_chunk: int = 65536,
-    max_chunk: int = 131072,
+    min_chunk: Optional[int] = None,
+    avg_chunk: Optional[int] = None,
+    max_chunk: Optional[int] = None,
+    parallel: bool = True,
+    num_workers: int = 0,
+    show_progress: bool = True,
 ) -> None:
-    """Pack a disk image into a Hexz snapshot.
+    """Pack disk and/or memory images into a Hexz snapshot.
 
     Args:
-        disk: Path to input disk image
         output: Path to output .hxz file
+        disk: Path to input disk image
+        memory: Path to memory dump file
         compression: Compression algorithm ("lz4" or "zstd")
+        block_size: Block size in bytes
         encrypt: Enable encryption
         password: Encryption password
-        dedup: Enable deduplication
-        min_chunk: Minimum CDC chunk size
-        avg_chunk: Average CDC chunk size
-        max_chunk: Maximum CDC chunk size
+        min_chunk: Minimum CDC chunk size (auto-detected if not specified)
+        avg_chunk: Average CDC chunk size (auto-detected if not specified)
+        max_chunk: Maximum CDC chunk size (auto-detected if not specified)
+        parallel: Enable parallel processing
+        num_workers: Number of worker threads (0 = auto)
+        show_progress: Show progress bar
     """
     ...
 

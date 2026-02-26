@@ -135,8 +135,6 @@
 //! - **sign_image()**: Requires reading entire index for SHA-256 hashing
 //! - **snapshot_vm()**: Blocks until VM memory dump completes (can take seconds to minutes)
 
-#[cfg(unix)]
-use hexz_common::constants::{DEFAULT_CDC_AVG_CHUNK, DEFAULT_CDC_MAX_CHUNK, DEFAULT_CDC_MIN_CHUNK};
 use hexz_common::constants::{META_ENTRY_SIZE, OVERLAY_BLOCK_SIZE};
 #[cfg(feature = "signing")]
 use hexz_common::sign;
@@ -471,8 +469,9 @@ pub fn analyze(py: Python<'_>, path: String) -> PyResult<HashMap<String, f64>> {
         let cdc_stats = cdc::analyze_stream(&buffer[..], &baseline)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
-        let c = dcam::calculate_c(cdc_stats.unique_bytes, cdc_stats.total_bytes, &baseline);
-        let ratio = dcam::predict_ratio(cdc_stats.total_bytes, c, &baseline);
+        // Use read_len for calculate_c (sampled data), full len for predict_ratio (whole file)
+        let c = dcam::calculate_c(cdc_stats.unique_bytes, read_len, &baseline);
+        let ratio = dcam::predict_ratio(len, c, &baseline);
 
         Ok((cdc_stats.unique_bytes, c, ratio))
     })?;
@@ -800,11 +799,10 @@ pub fn snapshot_vm(
             "lz4",
             None,
             true,
-            false,
-            DEFAULT_CDC_MIN_CHUNK,
-            DEFAULT_CDC_AVG_CHUNK,
-            DEFAULT_CDC_MAX_CHUNK,
-            None,
+            None, // min_chunk (LBFS baseline)
+            None, // avg_chunk (LBFS baseline)
+            None, // max_chunk (LBFS baseline)
+            None, // parent
         )?;
         builder.merge_overlay(py, base_path, overlay_path, false)?;
         builder.add_memory_file(py, mem_path)?;

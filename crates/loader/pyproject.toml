@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "hexz"
-version = "0.5.5"
+version = "0.6.0"
 description = "High-performance snapshot storage library with compression and encryption"
 authors = [{name = "Will McCallion"}]
 readme = "README.md"

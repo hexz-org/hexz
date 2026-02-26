@@ -39,7 +39,6 @@ fn create_encrypted_snapshot(
         password: Some(password.to_string()),
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: false,
         ..Default::default()
     };
 
@@ -159,7 +158,6 @@ fn test_encrypted_varied_data() {
         password: Some(password.to_string()),
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: false,
         ..Default::default()
     };
 
@@ -203,7 +201,6 @@ fn test_encrypted_dual_stream() {
         password: Some(password.to_string()),
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: false,
         ..Default::default()
     };
 
@@ -241,7 +238,6 @@ fn test_encrypted_pack_no_password_fails() {
         password: None, // Missing password
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: false,
         ..Default::default()
     };
 

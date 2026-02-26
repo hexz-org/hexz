@@ -143,17 +143,15 @@ use std::path::PathBuf;
 ///     PathBuf::from("snapshot.hxz"),
 ///     Some("generic".to_string()),
 ///     false,  // no encryption
-///     false,  // no CDC
 /// )?;
 ///
-/// // Build ML profile with encryption and CDC
+/// // Build ML profile with encryption
 /// build::run(
 ///     PathBuf::from("ml-vm.img"),
 ///     None,
 ///     PathBuf::from("ml.hxz"),
 ///     Some("ml".to_string()),
 ///     true,   // encrypt
-///     true,   // enable CDC
 /// )?;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
@@ -163,7 +161,6 @@ pub fn run(
     output: PathBuf,
     profile: Option<String>,
     encrypt: bool,
-    cdc: bool,
 ) -> Result<()> {
     // 1. Resolve profile
     let build_profile = match profile.as_deref() {
@@ -199,11 +196,10 @@ pub fn run(
         encrypt,
         train_dict,
         block_size,
-        cdc,
-        16384,  // min_chunk default
-        65536,  // avg_chunk default
-        131072, // max_chunk default
-        None,   // workers (auto)
-        false,  // silent
+        None,  // min_chunk (auto-detected)
+        None,  // avg_chunk (auto-detected)
+        None,  // max_chunk (auto-detected)
+        None,  // workers (auto)
+        false, // silent
     )
 }

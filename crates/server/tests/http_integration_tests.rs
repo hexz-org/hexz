@@ -45,10 +45,9 @@ impl DiskOnlyFixture {
             password: None,
             train_dict: false,
             block_size: 65536,
-            cdc_enabled: false,
-            min_chunk: 16384,
-            avg_chunk: 65536,
-            max_chunk: 131072,
+            min_chunk: Some(16384),
+            avg_chunk: Some(65536),
+            max_chunk: Some(131072),
             ..Default::default()
         };
         pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
@@ -93,10 +92,9 @@ impl DualStreamFixture {
             password: None,
             train_dict: false,
             block_size: 65536,
-            cdc_enabled: false,
-            min_chunk: 16384,
-            avg_chunk: 65536,
-            max_chunk: 131072,
+            min_chunk: Some(16384),
+            avg_chunk: Some(65536),
+            max_chunk: Some(131072),
             ..Default::default()
         };
         pack_snapshot(config, None::<fn(u64, u64)>).unwrap();

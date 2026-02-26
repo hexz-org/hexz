@@ -65,15 +65,6 @@ pub const DICT_TRAINING_SIZE: usize = 110 * 1024;
 /// Sentinel offset indicating a block is stored in the parent snapshot.
 pub const BLOCK_OFFSET_PARENT: u64 = u64::MAX;
 
-/// Default minimum chunk size for content-defined chunking (16 KiB).
-pub const DEFAULT_CDC_MIN_CHUNK: u32 = 16384;
-
-/// Default average chunk size for content-defined chunking (64 KiB).
-pub const DEFAULT_CDC_AVG_CHUNK: u32 = 65536;
-
-/// Default maximum chunk size for content-defined chunking (128 KiB).
-pub const DEFAULT_CDC_MAX_CHUNK: u32 = 131072;
-
 /// Overlay block granularity (4 KiB).
 ///
 /// Matches standard filesystem block size for copy-on-write compatibility.

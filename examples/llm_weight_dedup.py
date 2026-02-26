@@ -32,7 +32,6 @@ def run_example():
     base_weights = np.random.bytes(model_size_mb * 1024 * 1024)
 
     # 2. Save the Base Model
-    # We enable CDC (Content Defined Chunking) to allow future dedup
     print("Saving base model...")
     with hexz.Writer(base_path, packing="tight") as writer:
         writer.add(base_weights)

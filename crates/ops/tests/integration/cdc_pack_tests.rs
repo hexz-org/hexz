@@ -39,10 +39,9 @@ fn test_cdc_pack_lz4() {
         password: None,
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: true,
-        min_chunk: 16384,
-        avg_chunk: 65536,
-        max_chunk: 131072,
+        min_chunk: Some(16384),
+        avg_chunk: Some(65536),
+        max_chunk: Some(131072),
         ..Default::default()
     };
 
@@ -81,10 +80,9 @@ fn test_cdc_pack_zstd() {
         password: None,
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: true,
-        min_chunk: 16384,
-        avg_chunk: 65536,
-        max_chunk: 131072,
+        min_chunk: Some(16384),
+        avg_chunk: Some(65536),
+        max_chunk: Some(131072),
         ..Default::default()
     };
 
@@ -121,10 +119,9 @@ fn test_cdc_encrypted() {
         password: Some(password.to_string()),
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: true,
-        min_chunk: 16384,
-        avg_chunk: 65536,
-        max_chunk: 131072,
+        min_chunk: Some(16384),
+        avg_chunk: Some(65536),
+        max_chunk: Some(131072),
         ..Default::default()
     };
 
@@ -173,10 +170,9 @@ fn test_cdc_small_chunks() {
         password: None,
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: true,
-        min_chunk: 4096,
-        avg_chunk: 16384,
-        max_chunk: 65536,
+        min_chunk: Some(4096),
+        avg_chunk: Some(16384),
+        max_chunk: Some(65536),
         ..Default::default()
     };
 
@@ -217,10 +213,9 @@ fn test_cdc_deduplication() {
         password: None,
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: true,
-        min_chunk: 16384,
-        avg_chunk: 65536,
-        max_chunk: 131072,
+        min_chunk: Some(16384),
+        avg_chunk: Some(65536),
+        max_chunk: Some(131072),
         ..Default::default()
     };
 
@@ -270,10 +265,9 @@ fn test_cdc_dual_stream() {
         password: None,
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: true,
-        min_chunk: 16384,
-        avg_chunk: 65536,
-        max_chunk: 131072,
+        min_chunk: Some(16384),
+        avg_chunk: Some(65536),
+        max_chunk: Some(131072),
         ..Default::default()
     };
 
@@ -320,7 +314,6 @@ fn test_pack_with_progress_callback() {
         password: None,
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: false,
         ..Default::default()
     };
 

@@ -28,16 +28,15 @@
 //! builder.finalize()
 //! ```
 //!
-//! ## Content-Defined Chunking (CDC)
+//! ## Custom CDC Chunk Sizes
 //!
 //! ```python
 //! from hexz import Builder
 //!
-//! # Enable CDC for better deduplication
+//! # CDC is always enabled; override auto-detected chunk sizes if desired
 //! builder = Builder(
 //!     "snapshot.hxz",
 //!     compression="zstd",
-//!     cdc=True,
 //!     min_chunk=16384,   # 16 KiB
 //!     avg_chunk=65536,   # 64 KiB
 //!     max_chunk=131072,  # 128 KiB
@@ -79,14 +78,11 @@
 //! builder.finalize()
 //! ```
 
-use hexz_common::constants::{
-    DEFAULT_CDC_AVG_CHUNK, DEFAULT_CDC_MAX_CHUNK, DEFAULT_CDC_MIN_CHUNK, OVERLAY_BLOCK_SIZE,
-};
+use hexz_common::constants::OVERLAY_BLOCK_SIZE;
 use hexz_core::File as HexzFile;
 use hexz_core::algo::compression::create_compressor_from_str;
 use hexz_core::algo::dedup::{cdc::StreamChunker, dcam::DedupeParams};
 use hexz_core::api::file::SnapshotStream;
-use hexz_ops::pack::FixedChunker;
 use hexz_ops::snapshot_writer::SnapshotWriter;
 use hexz_store::local::MmapBackend;
 use pyo3::exceptions::{PyIOError, PyValueError};
@@ -101,10 +97,9 @@ use std::sync::Arc;
 pub struct Builder {
     writer: Option<SnapshotWriter>,
     parent_paths: Vec<String>,
-    cdc_enabled: bool,
-    min_chunk: u32,
-    avg_chunk: u32,
-    max_chunk: u32,
+    min_chunk: Option<u32>,
+    avg_chunk: Option<u32>,
+    max_chunk: Option<u32>,
     metadata: Vec<u8>,
     block_size: u32,
 }
@@ -125,7 +120,7 @@ pub struct Builder {
 impl Builder {
     /// Create a new snapshot builder.
     #[new]
-    #[pyo3(signature = (output_path, block_size=65536, compression="lz4", compression_level=None, dedup=true, cdc=false, min_chunk=DEFAULT_CDC_MIN_CHUNK, avg_chunk=DEFAULT_CDC_AVG_CHUNK, max_chunk=DEFAULT_CDC_MAX_CHUNK, parent=None))]
+    #[pyo3(signature = (output_path, block_size=65536, compression="lz4", compression_level=None, dedup=true, min_chunk=None, avg_chunk=None, max_chunk=None, parent=None))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         output_path: String,
@@ -133,10 +128,9 @@ impl Builder {
         compression: &str,
         compression_level: Option<i32>,
         dedup: bool,
-        cdc: bool,
-        min_chunk: u32,
-        avg_chunk: u32,
-        max_chunk: u32,
+        min_chunk: Option<u32>,
+        avg_chunk: Option<u32>,
+        max_chunk: Option<u32>,
         parent: Option<Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         let path = PathBuf::from(output_path);
@@ -180,7 +174,7 @@ impl Builder {
 
         let mut writer_builder = SnapshotWriter::builder(&path, compressor, comp_type)
             .block_size(block_size)
-            .variable_blocks(cdc);
+            .variable_blocks(true); // CDC always on
 
         if !parent_snapshots.is_empty() {
             writer_builder = writer_builder.parents(parent_snapshots);
@@ -193,7 +187,6 @@ impl Builder {
         Ok(Builder {
             writer: Some(writer),
             parent_paths,
-            cdc_enabled: cdc,
             min_chunk,
             avg_chunk,
             max_chunk,
@@ -399,8 +392,8 @@ impl Builder {
 
 impl Builder {
     fn process_bytes_stream(&mut self, data: &[u8], is_disk: bool) -> PyResult<()> {
-        let block_size = self.block_size as usize;
         let total_len = data.len() as u64;
+        let params = self.resolve_cdc_params();
 
         let writer = self
             .writer
@@ -409,31 +402,15 @@ impl Builder {
 
         writer.begin_stream(is_disk, total_len);
 
-        if self.cdc_enabled {
-            let params = DedupeParams {
-                f: (self.avg_chunk as f64).log2() as u32,
-                m: self.min_chunk,
-                z: self.max_chunk,
-                w: 48,
-                v: 8,
-            };
-            // CDC chunking over borrowed bytes
-            use std::io::Cursor;
-            let cursor = Cursor::new(data);
-            let chunker = StreamChunker::new(cursor, params);
-            for chunk_res in chunker {
-                let chunk = chunk_res.map_err(|e| PyIOError::new_err(e.to_string()))?;
-                writer
-                    .write_data_block(&chunk)
-                    .map_err(|e| PyIOError::new_err(e.to_string()))?;
-            }
-        } else {
-            // Fixed-size chunking — zero-copy slice iteration
-            for chunk in data.chunks(block_size) {
-                writer
-                    .write_data_block(chunk)
-                    .map_err(|e| PyIOError::new_err(e.to_string()))?;
-            }
+        // CDC chunking over borrowed bytes
+        use std::io::Cursor;
+        let cursor = Cursor::new(data);
+        let chunker = StreamChunker::new(cursor, params);
+        for chunk_res in chunker {
+            let chunk = chunk_res.map_err(|e| PyIOError::new_err(e.to_string()))?;
+            writer
+                .write_data_block(&chunk)
+                .map_err(|e| PyIOError::new_err(e.to_string()))?;
         }
 
         writer
@@ -444,26 +421,13 @@ impl Builder {
     }
 
     fn process_stream(&mut self, py: Python, path: String, is_disk: bool) -> PyResult<()> {
-        let block_size = self.block_size as usize;
-
         let f_in = File::open(&path).map_err(|e| PyIOError::new_err(e.to_string()))?;
         let len = f_in
             .metadata()
             .map_err(|e| PyIOError::new_err(e.to_string()))?
             .len();
 
-        let cdc_enabled = self.cdc_enabled;
-        let cdc_params = if cdc_enabled {
-            Some(DedupeParams {
-                f: (self.avg_chunk as f64).log2() as u32,
-                m: self.min_chunk,
-                z: self.max_chunk,
-                w: 48,
-                v: 8,
-            })
-        } else {
-            None
-        };
+        let cdc_params = self.resolve_cdc_params();
 
         let mut writer = self
             .writer
@@ -473,10 +437,7 @@ impl Builder {
         let writer = py.allow_threads(move || -> PyResult<SnapshotWriter> {
             writer.begin_stream(is_disk, len);
 
-            let chunker: Box<dyn Iterator<Item = std::io::Result<Vec<u8>>>> = match cdc_params {
-                Some(params) => Box::new(StreamChunker::new(f_in, params)),
-                None => Box::new(FixedChunker::new(f_in, block_size)),
-            };
+            let chunker = StreamChunker::new(f_in, cdc_params);
 
             for chunk_res in chunker {
                 let chunk = chunk_res.map_err(|e| PyIOError::new_err(e.to_string()))?;
@@ -494,5 +455,33 @@ impl Builder {
 
         self.writer = Some(writer);
         Ok(())
+    }
+
+    /// Resolve CDC params from user overrides or LBFS baseline fallback.
+    /// Builder is streaming and can't scan ahead, so it falls back to LBFS baseline
+    /// when params are not specified.
+    fn resolve_cdc_params(&self) -> DedupeParams {
+        if let (Some(min), Some(avg), Some(max)) = (self.min_chunk, self.avg_chunk, self.max_chunk)
+        {
+            DedupeParams {
+                f: (avg as f64).log2().round() as u32,
+                m: min,
+                z: max,
+                w: 48,
+                v: 52,
+            }
+        } else {
+            let mut params = DedupeParams::lbfs_baseline();
+            if let Some(min) = self.min_chunk {
+                params.m = min;
+            }
+            if let Some(avg) = self.avg_chunk {
+                params.f = (avg as f64).log2().round() as u32;
+            }
+            if let Some(max) = self.max_chunk {
+                params.z = max;
+            }
+            params
+        }
     }
 }

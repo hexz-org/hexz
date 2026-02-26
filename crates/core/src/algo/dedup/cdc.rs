@@ -460,15 +460,6 @@ use std::io::{self, Read};
 #[derive(Debug)]
 pub struct CdcStats {
     /// Total bytes processed from the input stream.
-    ///
-    /// **Note**: This field is currently not tracked during streaming analysis
-    /// (always set to 0) to avoid memory overhead. It may be populated in future
-    /// versions if needed for enhanced metrics.
-    ///
-    /// To estimate total bytes, use:
-    /// ```text
-    /// total_bytes ≈ unique_bytes * (chunk_count / unique_chunk_count)
-    /// ```
     pub total_bytes: u64,
 
     /// Number of unique bytes after deduplication.
@@ -1238,6 +1229,7 @@ impl<R: Read> Iterator for StreamChunker<R> {
 /// `StreamChunker` directly and handle deduplication in the compression/storage
 /// pipeline. The analysis function is intended as a lightweight dry-run only.
 pub fn analyze_stream<R: Read>(reader: R, params: &DedupeParams) -> io::Result<CdcStats> {
+    let mut total_bytes = 0u64;
     let mut unique_bytes = 0;
     let mut chunk_count = 0;
     let mut unique_chunk_count = 0;
@@ -1249,6 +1241,7 @@ pub fn analyze_stream<R: Read>(reader: R, params: &DedupeParams) -> io::Result<C
     for chunk_res in chunker {
         let chunk = chunk_res?;
         let len = chunk.len() as u64;
+        total_bytes += len;
         // Use first 8 bytes of BLAKE3 digest as a 64-bit hash.
         // BLAKE3 at 16KB chunks is >3 GB/s — only ~2-3x slower than CRC32 —
         // but provides 2^64 hash space (birthday bound at ~4 billion chunks)
@@ -1266,7 +1259,7 @@ pub fn analyze_stream<R: Read>(reader: R, params: &DedupeParams) -> io::Result<C
     }
 
     Ok(CdcStats {
-        total_bytes: 0,
+        total_bytes,
         unique_bytes,
         chunk_count,
         unique_chunk_count,

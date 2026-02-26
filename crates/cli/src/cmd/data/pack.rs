@@ -96,10 +96,9 @@ use std::sync::{Arc, Mutex};
 ///     false,  // no encryption
 ///     true,   // train dictionary
 ///     65536,  // 64 KiB blocks
-///     false,  // fixed-size blocks
-///     16384,
-///     65536,
-///     131072,
+///     None,   // min chunk (auto-detected)
+///     None,   // avg chunk (auto-detected)
+///     None,   // max chunk (auto-detected)
 ///     None,   // workers (auto)
 ///     false,  // show progress
 /// );
@@ -113,23 +112,12 @@ pub fn run(
     encrypt: bool,
     train_dict: bool,
     block_size: u32,
-    cdc: bool,
-    min_chunk: u32,
-    avg_chunk: u32,
-    max_chunk: u32,
+    min_chunk: Option<u32>,
+    avg_chunk: Option<u32>,
+    max_chunk: Option<u32>,
     workers: Option<usize>,
     silent: bool,
 ) -> Result<()> {
-    // Validate CDC chunk size ordering
-    if cdc && !(min_chunk < avg_chunk && avg_chunk < max_chunk) {
-        anyhow::bail!(
-            "CDC chunk sizes must satisfy min_chunk < avg_chunk < max_chunk, got {} < {} < {}",
-            min_chunk,
-            avg_chunk,
-            max_chunk
-        );
-    }
-
     // Get password if encryption is enabled
     let password = if encrypt {
         Some(rpassword::prompt_password("Enter encryption password: ")?)
@@ -173,7 +161,6 @@ pub fn run(
         password,
         train_dict,
         block_size,
-        cdc_enabled: cdc,
         min_chunk,
         avg_chunk,
         max_chunk,

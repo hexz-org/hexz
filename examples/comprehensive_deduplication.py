@@ -48,15 +48,15 @@ class DedupDeepDive:
             self.work_dir / "l_v3.hxz",
         )
         data_v1 = create_blob(self.size_mb, seed=100)
-        with hexz.Writer(v1_path, cdc=True) as w:
+        with hexz.Writer(v1_path) as w:
             w.add_bytes(data_v1)
         split = int(len(data_v1) * 0.9)
         data_v2 = data_v1[:split] + create_blob(self.size_mb // 10, seed=101)
-        with hexz.Writer(v2_path, parent=v1_path, cdc=True) as w:
+        with hexz.Writer(v2_path, parent=v1_path) as w:
             w.add_bytes(data_v2)
         split = int(len(data_v2) * 0.9)
         data_v3 = data_v2[:split] + create_blob(self.size_mb // 10, seed=102)
-        with hexz.Writer(v3_path, parent=v2_path, cdc=True) as w:
+        with hexz.Writer(v3_path, parent=v2_path) as w:
             w.add_bytes(data_v3)
         self.print_stats(
             "Linear Chain",
@@ -71,13 +71,13 @@ class DedupDeepDive:
             self.work_dir / "b_tb.hxz",
         )
         base_data = create_blob(self.size_mb, seed=200)
-        with hexz.Writer(base_p, cdc=True) as w:
+        with hexz.Writer(base_p) as w:
             w.add_bytes(base_data)
         ta_data = base_data + create_blob(5, seed=201)
-        with hexz.Writer(ta_p, parent=base_p, cdc=True) as w:
+        with hexz.Writer(ta_p, parent=base_p) as w:
             w.add_bytes(ta_data)
         tb_data = base_data + create_blob(5, seed=202)
-        with hexz.Writer(tb_p, parent=base_p, cdc=True) as w:
+        with hexz.Writer(tb_p, parent=base_p) as w:
             w.add_bytes(tb_data)
         self.print_stats(
             "Branching",
@@ -95,12 +95,12 @@ class DedupDeepDive:
             create_blob(self.size_mb, seed=300),
             create_blob(self.size_mb, seed=301),
         )
-        with hexz.Writer(s1_p, cdc=True) as w:
+        with hexz.Writer(s1_p) as w:
             w.add_bytes(s1_d)
-        with hexz.Writer(s2_p, cdc=True) as w:
+        with hexz.Writer(s2_p) as w:
             w.add_bytes(s2_d)
         c_d = s1_d[: len(s1_d) // 2] + create_blob(2, seed=302) + s2_d[: len(s2_d) // 2]
-        with hexz.Writer(c_p, parent=[s1_p, s2_p], cdc=True) as w:
+        with hexz.Writer(c_p, parent=[s1_p, s2_p]) as w:
             w.add_bytes(c_d)
         self.print_stats(
             "Global Shards", [s1_p, s2_p, c_p], [len(s1_d), len(s2_d), len(c_d)]
@@ -109,10 +109,10 @@ class DedupDeepDive:
     def shift_resilience(self):
         o_p, s_p = self.work_dir / "orig.hxz", self.work_dir / "shift.hxz"
         o_d = create_blob(self.size_mb, seed=400)
-        with hexz.Writer(o_p, cdc=True) as w:
+        with hexz.Writer(o_p) as w:
             w.add_bytes(o_d)
         s_d = b"X" * 1024 + o_d
-        with hexz.Writer(s_p, parent=o_p, cdc=True) as w:
+        with hexz.Writer(s_p, parent=o_p) as w:
             w.add_bytes(s_d)
         self.print_stats("Shift Resilience", [o_p, s_p], [len(o_d), len(s_d)])
 

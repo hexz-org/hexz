@@ -37,10 +37,10 @@ def main():
     weights_a = create_weights(50, seed=1)
     weights_b = create_weights(50, seed=2)
 
-    with hexz.Writer(path_a, cdc=True) as w:
+    with hexz.Writer(path_a) as w:
         w.add_bytes(weights_a)
 
-    with hexz.Writer(path_b, cdc=True) as w:
+    with hexz.Writer(path_b) as w:
         w.add_bytes(weights_b)
 
     size_a = os.path.getsize(path_a)
@@ -66,7 +66,7 @@ def main():
     print("Saving Hybrid model with [Model A, Model B] as parents...")
     start = time.time()
     # hexz will look into both A and B's indices to find matching blocks
-    with hexz.Writer(path_hybrid, parent=[path_a, path_b], cdc=True) as writer:
+    with hexz.Writer(path_hybrid, parent=[path_a, path_b]) as writer:
         writer.add_bytes(hybrid_weights)
     duration = time.time() - start
 

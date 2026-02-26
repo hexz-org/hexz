@@ -607,7 +607,7 @@ impl DedupeParams {
             m: 2048,
             z: 65536,
             w: 48,
-            v: 8, // 8 bytes hash/pointer overhead
+            v: 52, // bincode-serialized BlockInfo size
         }
     }
 
@@ -1573,4 +1573,68 @@ pub fn calculate_c(ndb: u64, file_size: u64, params: &DedupeParams) -> f64 {
 
     // Clamp between 0.0 and 1.0
     c.clamp(0.0, 1.0)
+}
+
+/// Result of DCAM parameter optimization.
+#[derive(Debug, Clone)]
+pub struct OptimizedParams {
+    /// The optimal CDC parameters found by the sweep.
+    pub params: DedupeParams,
+    /// The predicted deduplication ratio at these parameters.
+    pub predicted_ratio: f64,
+    /// The estimated change rate of the data.
+    pub change_rate: f64,
+}
+
+/// Auto-detect optimal CDC parameters for a given file.
+///
+/// Sweeps fingerprint sizes from f=10 (1KB avg) through f=18 (256KB avg),
+/// deriving min and max chunk sizes from each, and picks the combination
+/// that minimizes the predicted deduplication ratio.
+///
+/// # Arguments
+///
+/// * `file_size` - Total size of the file in bytes.
+/// * `unique_bytes` - Number of unique bytes from a baseline `analyze_stream` run.
+/// * `baseline` - The baseline `DedupeParams` used for the analysis run.
+///
+/// # Returns
+///
+/// `OptimizedParams` containing the best parameters found, the predicted ratio,
+/// and the estimated change rate.
+pub fn optimize_params(
+    file_size: u64,
+    unique_bytes: u64,
+    baseline: &DedupeParams,
+) -> OptimizedParams {
+    let c = calculate_c(unique_bytes, file_size, baseline);
+
+    let mut best_ratio = f64::MAX;
+    let mut best_params = *baseline;
+
+    for f in 10..=18u32 {
+        let avg = 1u32 << f;
+        let m = (avg / 4).max(1024);
+        let z = ((avg as u64) * 8).min(1 << 20) as u32;
+
+        let candidate = DedupeParams {
+            f,
+            m,
+            z,
+            w: baseline.w,
+            v: baseline.v,
+        };
+
+        let ratio = predict_ratio(file_size, c, &candidate);
+        if ratio < best_ratio {
+            best_ratio = ratio;
+            best_params = candidate;
+        }
+    }
+
+    OptimizedParams {
+        params: best_params,
+        predicted_ratio: best_ratio,
+        change_rate: c,
+    }
 }

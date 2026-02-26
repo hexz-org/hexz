@@ -3,6 +3,7 @@
 use hexz_common::Result;
 use hexz_core::format::header::{CompressionType, Header};
 use hexz_core::format::index::{IndexPage, MasterIndex};
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
@@ -15,6 +16,16 @@ pub struct BlockStats {
     pub parent_ref_bytes: u64,
     pub zero_blocks: usize,
     pub zero_bytes: u64,
+
+    pub min_block_size: u32,
+    pub max_block_size: u32,
+    pub avg_block_size: u32,
+
+    pub unique_blocks: usize,
+    pub dedup_blocks: usize,
+    pub dedup_bytes_saved: u64,
+
+    pub compressed_data_bytes: u64,
 }
 
 /// Metadata extracted from a snapshot file.
@@ -79,7 +90,11 @@ pub fn inspect_snapshot(path: impl AsRef<Path>) -> Result<SnapshotInfo> {
     };
 
     // 2. Tally Deduplication Block Stats for the primary stream
-    let mut stats = BlockStats::default();
+    let mut stats = BlockStats {
+        min_block_size: u32::MAX,
+        ..Default::default()
+    };
+    let mut seen_offsets: HashSet<u64> = HashSet::new();
 
     for page_meta in &master.primary_pages {
         f.seek(SeekFrom::Start(page_meta.offset))?;
@@ -98,8 +113,30 @@ pub fn inspect_snapshot(path: impl AsRef<Path>) -> Result<SnapshotInfo> {
             } else {
                 stats.data_blocks += 1;
                 stats.data_bytes += block.logical_len as u64;
+                stats.compressed_data_bytes += block.length as u64;
+
+                if block.logical_len < stats.min_block_size {
+                    stats.min_block_size = block.logical_len;
+                }
+                if block.logical_len > stats.max_block_size {
+                    stats.max_block_size = block.logical_len;
+                }
+
+                if seen_offsets.insert(block.offset) {
+                    stats.unique_blocks += 1;
+                } else {
+                    stats.dedup_blocks += 1;
+                    stats.dedup_bytes_saved += block.logical_len as u64;
+                }
             }
         }
+    }
+
+    // Finalize averages; fix min when no data blocks exist
+    if stats.data_blocks > 0 {
+        stats.avg_block_size = (stats.data_bytes / stats.data_blocks as u64) as u32;
+    } else {
+        stats.min_block_size = 0;
     }
 
     Ok(SnapshotInfo {

@@ -65,14 +65,13 @@
 //! )
 //! ```
 //!
-//! ## Content-Defined Chunking for Deduplication
+//! ## Custom CDC Chunk Sizes
 //!
 //! ```python
-//! # Enable CDC for better deduplication across similar files
+//! # Override auto-detected CDC chunk sizes
 //! pack(
 //!     output="snapshot.hxz",
 //!     disk="disk.img",
-//!     cdc=True,
 //!     min_chunk=16384,   # 16 KiB minimum
 //!     avg_chunk=65536,   # 64 KiB average
 //!     max_chunk=131072   # 128 KiB maximum
@@ -106,7 +105,6 @@
 //! - **Encryption**: Adds ~5-10% overhead. Encrypted snapshots cannot be deduplicated
 //!   across runs due to random IVs.
 
-use hexz_common::constants::{DEFAULT_CDC_AVG_CHUNK, DEFAULT_CDC_MAX_CHUNK, DEFAULT_CDC_MIN_CHUNK};
 use hexz_ops::pack::{PackConfig, pack_snapshot};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
@@ -139,14 +137,11 @@ use std::path::PathBuf;
 ///
 /// - `password` (str, optional): Encryption password. Required if `encrypt=True`.
 ///
-/// - `cdc` (bool, default=False): Enable content-defined chunking for variable-sized blocks.
-///   Improves deduplication across similar snapshots at cost of metadata size.
+/// - `min_chunk` (int, optional): Minimum CDC chunk size in bytes. Auto-detected via DCAM if not specified.
 ///
-/// - `min_chunk` (int, default=16384): Minimum CDC chunk size in bytes (16 KiB)
+/// - `avg_chunk` (int, optional): Average CDC chunk size in bytes. Auto-detected via DCAM if not specified.
 ///
-/// - `avg_chunk` (int, default=65536): Average CDC chunk size in bytes (64 KiB)
-///
-/// - `max_chunk` (int, default=131072): Maximum CDC chunk size in bytes (128 KiB)
+/// - `max_chunk` (int, optional): Maximum CDC chunk size in bytes. Auto-detected via DCAM if not specified.
 ///
 /// # Raises
 ///
@@ -184,11 +179,10 @@ use std::path::PathBuf;
 ///     password="my-password"
 /// )
 ///
-/// # CDC for deduplication
+/// # Custom CDC chunk sizes (auto-detected if omitted)
 /// pack(
 ///     output="deduped.hxz",
 ///     disk="disk.img",
-///     cdc=True,
 ///     min_chunk=32768,
 ///     avg_chunk=65536,
 ///     max_chunk=131072
@@ -211,10 +205,9 @@ use std::path::PathBuf;
     block_size=65536,
     encrypt=false,
     password=None,
-    cdc=false,
-    min_chunk=DEFAULT_CDC_MIN_CHUNK,
-    avg_chunk=DEFAULT_CDC_AVG_CHUNK,
-    max_chunk=DEFAULT_CDC_MAX_CHUNK,
+    min_chunk=None,
+    avg_chunk=None,
+    max_chunk=None,
     parallel=true,
     num_workers=0,
     show_progress=true
@@ -228,10 +221,9 @@ pub fn pack(
     block_size: u32,
     encrypt: bool,
     password: Option<String>,
-    cdc: bool,
-    min_chunk: u32,
-    avg_chunk: u32,
-    max_chunk: u32,
+    min_chunk: Option<u32>,
+    avg_chunk: Option<u32>,
+    max_chunk: Option<u32>,
     parallel: bool,
     num_workers: usize,
     show_progress: bool,
@@ -251,7 +243,6 @@ pub fn pack(
         password,
         train_dict: false,
         block_size,
-        cdc_enabled: cdc,
         min_chunk,
         avg_chunk,
         max_chunk,

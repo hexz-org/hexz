@@ -94,7 +94,6 @@ fn main() -> anyhow::Result<()> {
             encrypt,
             train_dict,
             block_size,
-            cdc,
             min_chunk,
             avg_chunk,
             max_chunk,
@@ -108,7 +107,6 @@ fn main() -> anyhow::Result<()> {
             encrypt,
             train_dict,
             block_size,
-            cdc,
             min_chunk,
             avg_chunk,
             max_chunk,
@@ -128,8 +126,7 @@ fn main() -> anyhow::Result<()> {
             output,
             profile,
             encrypt,
-            cdc,
-        } => hexz_cli::cmd::data::build::run(source, memory, output, profile, encrypt, cdc),
+        } => hexz_cli::cmd::data::build::run(source, memory, output, profile, encrypt),
 
         Commands::Convert {
             format,
@@ -194,8 +191,7 @@ fn main() -> anyhow::Result<()> {
             output,
             no_graphics,
             vnc,
-            cdc,
-        } => hexz_cli::cmd::vm::install::run(iso, primary_size, ram, output, no_graphics, vnc, cdc),
+        } => hexz_cli::cmd::vm::install::run(iso, primary_size, ram, output, no_graphics, vnc),
 
         #[cfg(unix)]
         Commands::Snap {

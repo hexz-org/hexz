@@ -35,8 +35,7 @@ def main():
     base_weights = create_fake_weights(100, pattern=0.0)
 
     start = time.time()
-    # Use CDC for the base model as well so boundaries match in the derivative
-    with hexz.Writer(base_path, compression="lz4", dedup=True, cdc=True) as writer:
+    with hexz.Writer(base_path, compression="lz4", dedup=True) as writer:
         writer.add_bytes(base_weights)
         writer.add_metadata(
             {"name": "base-model-v1", "framework": "pytorch", "type": "foundation"}
@@ -63,7 +62,7 @@ def main():
     # By passing `parent=base_path`, the writer will automatically read the
     # base model's index and avoid storing any data chunks that are already
     # present in the base model.
-    with hexz.Writer(ft_path, compression="lz4", cdc=True, parent=base_path) as writer:
+    with hexz.Writer(ft_path, compression="lz4", parent=base_path) as writer:
         # Save the full fine-tuned weights. The writer will internally turn
         # any unmodified chunks into lightweight parent references.
         writer.add_bytes(bytes(ft_weights))

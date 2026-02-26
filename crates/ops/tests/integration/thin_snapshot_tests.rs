@@ -33,7 +33,6 @@ fn test_thin_snapshot_basic() {
         password: None,
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: false,
         ..Default::default()
     };
     pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
@@ -77,7 +76,6 @@ fn test_zstd_dict_snapshot_read() {
         password: None,
         train_dict: true,
         block_size: 65536,
-        cdc_enabled: false,
         ..Default::default()
     };
 
@@ -126,7 +124,6 @@ fn test_version_check_on_open() {
         password: None,
         train_dict: false,
         block_size: 65536,
-        cdc_enabled: false,
         ..Default::default()
     };
 

@@ -43,7 +43,6 @@ class Writer:
         packing: Optional[PackingMode] = None,
         block_size: int = 64 * 1024,
         dedup: bool = True,
-        cdc: bool = False,
         encrypt: bool = False,
         password: Optional[str] = None,
         parent: Optional[Union[PathLike, List[PathLike]]] = None,
@@ -58,7 +57,6 @@ class Writer:
                   Controls compression level and speed tradeoff
             block_size: Block size in bytes
             dedup: Enable deduplication
-            cdc: Enable content-defined chunking (for better dedup on shifted data)
             encrypt: Enable encryption (Note: Use hexz.pack() for encryption support)
             password: Encryption password (required if encrypt=True)
             parent: Path or list of paths to parent .hxz files to enable cross-file deduplication.
@@ -69,7 +67,7 @@ class Writer:
 
         Example:
             >>> # Create a derivative snapshot that dedups against multiple bases
-            >>> with hexz.Writer("new.hxz", parent=["base1.hxz", "base2.hxz"], cdc=True) as w:
+            >>> with hexz.Writer("new.hxz", parent=["base1.hxz", "base2.hxz"]) as w:
             ...     w.add("v2.bin")
         """
         self._path = str(path)
@@ -79,7 +77,6 @@ class Writer:
         resolved_mode = packing or mode or "balanced"
         self._mode = resolved_mode
         self._dedup = dedup
-        self._cdc = cdc
         self._encrypt = encrypt
         self._password = password
         self._metadata = {}
@@ -108,7 +105,6 @@ class Writer:
             compression=compression,
             compression_level=compression_level,
             dedup=dedup,
-            cdc=cdc,
             parent=self._parent,
         )
 

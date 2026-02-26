@@ -77,14 +77,13 @@ fn setup_comparison(size: usize) -> BenchSetup {
         snap_file.path().to_path_buf(),
         "lz4".to_string(),
         false,
-        false,  // train_dict
-        65536,  // block_size
-        false,  // cdc_enabled
-        16384,  // min_chunk
-        65536,  // avg_chunk
-        131072, // max_chunk
-        None,   // workers
-        true,   // silent
+        false, // train_dict
+        65536, // block_size
+        None,  // min_chunk (auto)
+        None,  // avg_chunk (auto)
+        None,  // max_chunk (auto)
+        None,  // workers
+        true,  // silent
     )
     .unwrap();
 

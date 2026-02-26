@@ -102,7 +102,7 @@ data = await reader.read(size=4096, offset=0)
 ### Writer
 
 ```python
-Writer(path, *, compression="lz4", packing="balanced", block_size=65536, dedup=True, cdc=False, parent=None)
+Writer(path, *, compression="lz4", packing="balanced", block_size=65536, dedup=True, parent=None)
 ```
 
 `parent` accepts a path or list of paths for cross-file deduplication (thin snapshots).

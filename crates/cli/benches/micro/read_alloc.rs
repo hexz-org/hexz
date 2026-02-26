@@ -34,12 +34,11 @@ fn setup_snapshot() -> (NamedTempFile, NamedTempFile) {
         false,
         false,
         BLOCK_SIZE as u32,
-        false,
-        16384,
-        65536,
-        131072,
-        None,
-        true,
+        None, // min_chunk (auto)
+        None, // avg_chunk (auto)
+        None, // max_chunk (auto)
+        None, // workers
+        true, // silent
     )
     .unwrap();
 

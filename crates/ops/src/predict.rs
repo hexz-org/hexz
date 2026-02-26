@@ -10,7 +10,7 @@ use hexz_core::algo::compression::Compressor;
 use hexz_core::algo::compression::lz4::Lz4Compressor;
 use hexz_core::algo::compression::zstd::ZstdCompressor;
 use hexz_core::algo::dedup::cdc::analyze_stream;
-use hexz_core::algo::dedup::dcam::DedupeParams;
+use hexz_core::algo::dedup::dcam::{DedupeParams, optimize_params};
 
 use crate::pack::calculate_entropy;
 use crate::write::is_zero_chunk;
@@ -22,12 +22,12 @@ pub struct PredictConfig {
     pub path: PathBuf,
     /// Block size in bytes for fixed-chunk analysis.
     pub block_size: usize,
-    /// CDC minimum chunk size.
-    pub min_chunk: u32,
-    /// CDC average chunk size.
-    pub avg_chunk: u32,
-    /// CDC maximum chunk size.
-    pub max_chunk: u32,
+    /// CDC minimum chunk size (auto-detected if None).
+    pub min_chunk: Option<u32>,
+    /// CDC average chunk size (auto-detected if None).
+    pub avg_chunk: Option<u32>,
+    /// CDC maximum chunk size (auto-detected if None).
+    pub max_chunk: Option<u32>,
     /// Number of evenly-spaced blocks to sample for compression estimates.
     pub sample_count: usize,
     /// Max bytes to feed to `analyze_stream` for CDC analysis.
@@ -39,9 +39,9 @@ impl Default for PredictConfig {
         Self {
             path: PathBuf::new(),
             block_size: 65536,
-            min_chunk: 16384,
-            avg_chunk: 65536,
-            max_chunk: 131072,
+            min_chunk: None,
+            avg_chunk: None,
+            max_chunk: None,
             sample_count: 4000,
             dedup_scan_limit: 256 * 1024 * 1024,
         }
@@ -216,21 +216,45 @@ pub fn predict(config: PredictConfig) -> Result<PredictReport> {
     };
     let fixed_dedup_savings_pct = (1.0 - fixed_dedup_ratio) * 100.0;
 
-    // Phase 2: CDC analysis with the user's actual chunk params
+    // Phase 2: CDC analysis — auto-detect params via DCAM if not specified
+    f.seek(SeekFrom::Start(0))?;
+
+    // First pass: analyze with LBFS baseline to get change rate
+    let baseline = DedupeParams::lbfs_baseline();
+    let baseline_stats = analyze_stream(f.try_clone()?, &baseline)?;
+
+    let cdc_params = if let (Some(min), Some(avg), Some(max)) =
+        (config.min_chunk, config.avg_chunk, config.max_chunk)
+    {
+        // User provided all three — use them directly
+        let f_bits = (avg as f64).log2().round() as u32;
+        DedupeParams {
+            f: f_bits,
+            m: min,
+            z: max,
+            w: 48,
+            v: 52,
+        }
+    } else {
+        // DCAM auto-detection
+        let optimized = optimize_params(file_size, baseline_stats.unique_bytes, &baseline);
+        let mut params = optimized.params;
+        if let Some(min) = config.min_chunk {
+            params.m = min;
+        }
+        if let Some(avg) = config.avg_chunk {
+            params.f = (avg as f64).log2().round() as u32;
+        }
+        if let Some(max) = config.max_chunk {
+            params.z = max;
+        }
+        params
+    };
+
+    // Second pass: analyze with resolved params
     let scan_limit = config.dedup_scan_limit.min(file_size);
     f.seek(SeekFrom::Start(0))?;
     let reader = f.by_ref().take(scan_limit);
-
-    // Convert user's min/avg/max to DedupeParams
-    // f = log2(avg_chunk) since avg chunk ≈ 2^f
-    let f_bits = (config.avg_chunk as f64).log2().round() as u32;
-    let cdc_params = DedupeParams {
-        f: f_bits,
-        m: config.min_chunk,
-        z: config.max_chunk,
-        w: 48,
-        v: 8,
-    };
 
     let cdc_stats = analyze_stream(reader, &cdc_params)?;
 
@@ -272,9 +296,9 @@ pub fn predict(config: PredictConfig) -> Result<PredictReport> {
         fixed_dedup_savings_pct,
 
         cdc_scan_bytes: scan_limit,
-        cdc_min_chunk: config.min_chunk,
-        cdc_avg_chunk: config.avg_chunk,
-        cdc_max_chunk: config.max_chunk,
+        cdc_min_chunk: cdc_params.m,
+        cdc_avg_chunk: 1 << cdc_params.f,
+        cdc_max_chunk: cdc_params.z,
         cdc_chunks_total: cdc_stats.chunk_count,
         cdc_chunks_unique: cdc_stats.unique_chunk_count,
         cdc_dedup_ratio,

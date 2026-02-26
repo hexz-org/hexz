@@ -1,12 +1,12 @@
 //! Write Throughput Macro-Benchmark.
 //!
 //! This module measures pack operation (sequential write) performance with various
-//! compression algorithms, CDC settings, and encryption. It tests the complete write
-//! pipeline from input data to packed snapshot.
+//! compression algorithms and encryption. It tests the complete write pipeline
+//! from input data to packed snapshot.
 //!
 //! The benchmark measures:
 //! - Pack throughput (MB/s) for different compression algorithms
-//! - CDC overhead (time increase when CDC is enabled)
+//! - CDC chunk size impact (small vs large chunks)
 //! - Encryption overhead
 //! - Bottleneck identification (CPU vs I/O)
 
@@ -55,21 +55,20 @@ fn bench_write_lz4(c: &mut Criterion) {
             |(temp_dir, input_file)| {
                 let output_path = temp_dir.path().join("snapshot.hxz");
 
-                // Pack with LZ4, no CDC, no encryption
+                // Pack with LZ4, auto CDC
                 let result = pack::run(
                     Some(input_file.clone()),
                     None, // no memory dump
                     output_path,
                     "lz4".to_string(),
-                    false,  // no encryption
-                    false,  // no dict training
-                    65536,  // 64KB blocks
-                    false,  // no CDC
-                    16384,  // min chunk (unused without CDC)
-                    65536,  // avg chunk (unused without CDC)
-                    131072, // max chunk (unused without CDC)
-                    None,   // workers (auto)
-                    true,   // silent mode
+                    false, // no encryption
+                    false, // no dict training
+                    65536, // 64KB blocks
+                    None,  // min_chunk (auto)
+                    None,  // avg_chunk (auto)
+                    None,  // max_chunk (auto)
+                    None,  // workers (auto)
+                    true,  // silent mode
                 );
 
                 black_box(&result.unwrap());
@@ -108,12 +107,11 @@ fn bench_write_zstd3(c: &mut Criterion) {
                     false,
                     false,
                     65536,
-                    false,
-                    16384,
-                    65536,
-                    131072,
-                    None,
-                    true,
+                    None, // min_chunk (auto)
+                    None, // avg_chunk (auto)
+                    None, // max_chunk (auto)
+                    None, // workers
+                    true, // silent
                 );
 
                 black_box(&result.unwrap());
@@ -125,16 +123,16 @@ fn bench_write_zstd3(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmarks CDC overhead by comparing with and without CDC.
-fn bench_write_cdc_overhead(c: &mut Criterion) {
+/// Benchmarks CDC chunk size impact: small vs large explicit chunks.
+fn bench_write_cdc_chunk_sizes(c: &mut Criterion) {
     let mut group = c.benchmark_group("Write-CDC");
 
     let size = 100_000_000; // 100 MB
     group.throughput(Throughput::Bytes(size as u64));
     group.sample_size(20);
 
-    // Without CDC
-    group.bench_function("no-CDC", |b| {
+    // Small chunks (16KB avg)
+    group.bench_function("small-chunks", |b| {
         b.iter_with_setup(
             || {
                 let temp_dir = TempDir::new().unwrap();
@@ -152,10 +150,9 @@ fn bench_write_cdc_overhead(c: &mut Criterion) {
                     false,
                     false,
                     65536,
-                    false, // CDC disabled
-                    16384,
-                    65536,
-                    131072,
+                    Some(4096),  // small min
+                    Some(16384), // small avg
+                    Some(65536), // small max
                     None,
                     true,
                 );
@@ -166,8 +163,8 @@ fn bench_write_cdc_overhead(c: &mut Criterion) {
         );
     });
 
-    // With CDC
-    group.bench_function("with-CDC", |b| {
+    // Large chunks (256KB avg)
+    group.bench_function("large-chunks", |b| {
         b.iter_with_setup(
             || {
                 let temp_dir = TempDir::new().unwrap();
@@ -185,10 +182,9 @@ fn bench_write_cdc_overhead(c: &mut Criterion) {
                     false,
                     false,
                     65536,
-                    true, // CDC enabled
-                    16384,
-                    65536,
-                    131072,
+                    Some(65536),   // large min
+                    Some(262144),  // large avg
+                    Some(1048576), // large max
                     None,
                     true,
                 );
@@ -207,6 +203,6 @@ criterion_group! {
     config = Criterion::default()
         .sample_size(20)
         .measurement_time(std::time::Duration::from_secs(10));
-    targets = bench_write_lz4, bench_write_zstd3, bench_write_cdc_overhead
+    targets = bench_write_lz4, bench_write_zstd3, bench_write_cdc_chunk_sizes
 }
 criterion_main!(benches);

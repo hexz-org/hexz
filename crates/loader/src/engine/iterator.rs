@@ -570,10 +570,9 @@ mod tests {
             password: None,
             train_dict: false,
             block_size,
-            cdc_enabled: false,
-            min_chunk: block_size / 2,
-            avg_chunk: block_size,
-            max_chunk: block_size * 2,
+            min_chunk: Some(block_size / 2),
+            avg_chunk: Some(block_size),
+            max_chunk: Some(block_size * 2),
             ..Default::default()
         };
 
@@ -899,10 +898,9 @@ mod tests {
             password: None,
             train_dict: false,
             block_size: 4096,
-            cdc_enabled: false,
-            min_chunk: 2048,
-            avg_chunk: 4096,
-            max_chunk: 8192,
+            min_chunk: Some(2048),
+            avg_chunk: Some(4096),
+            max_chunk: Some(8192),
             ..Default::default()
         };
 
@@ -957,10 +955,9 @@ mod tests {
             password: None,
             train_dict: false,
             block_size: 4096,
-            cdc_enabled: false,
-            min_chunk: 2048,
-            avg_chunk: 4096,
-            max_chunk: 8192,
+            min_chunk: Some(2048),
+            avg_chunk: Some(4096),
+            max_chunk: Some(8192),
             ..Default::default()
         };
 

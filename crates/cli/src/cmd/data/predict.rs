@@ -6,9 +6,9 @@ use std::path::PathBuf;
 pub fn run(
     path: PathBuf,
     block_size: u32,
-    min_chunk: u32,
-    avg_chunk: u32,
-    max_chunk: u32,
+    min_chunk: Option<u32>,
+    avg_chunk: Option<u32>,
+    max_chunk: Option<u32>,
     json: bool,
 ) -> Result<()> {
     let config = PredictConfig {
@@ -94,18 +94,13 @@ pub fn run(
     if report.overall_best_savings_pct > 10.0 {
         if report.cdc_dedup_savings_pct > 1.0 {
             print!(
-                "Try: hexz pack output.hxz --disk {} --compression zstd --cdc",
+                "Try: hexz pack output.hxz --disk {} --compression zstd",
                 file_path
             );
-            if report.cdc_min_chunk != 16384
-                || report.cdc_avg_chunk != 65536
-                || report.cdc_max_chunk != 131072
-            {
-                print!(
-                    " --min-chunk {} --avg-chunk {} --max-chunk {}",
-                    report.cdc_min_chunk, report.cdc_avg_chunk, report.cdc_max_chunk
-                );
-            }
+            print!(
+                " --min-chunk {} --avg-chunk {} --max-chunk {}",
+                report.cdc_min_chunk, report.cdc_avg_chunk, report.cdc_max_chunk
+            );
             println!();
         } else {
             println!(

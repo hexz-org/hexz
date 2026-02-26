@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, Union
 
 class Reader:
     """Synchronous reader for Hexz snapshots.
@@ -59,7 +59,16 @@ class Builder:
     """Low-level snapshot builder for creating Hexz archives from Python."""
 
     def __init__(
-        self, output_path: str, block_size: int = 65536, compression: str = "lz4"
+        self,
+        output_path: str,
+        block_size: int = 65536,
+        compression: str = "lz4",
+        compression_level: Optional[int] = None,
+        dedup: bool = True,
+        min_chunk: Optional[int] = None,
+        avg_chunk: Optional[int] = None,
+        max_chunk: Optional[int] = None,
+        parent: Optional[Union[str, List[str]]] = None,
     ) -> None: ...
     def add_disk_file(self, path: str) -> None: ...
     def add_memory_file(self, path: str) -> None: ...
@@ -76,10 +85,12 @@ def pack(
     block_size: int = 65536,
     encrypt: bool = False,
     password: Optional[str] = None,
-    cdc: bool = False,
-    min_chunk: int = 16384,
-    avg_chunk: int = 65536,
-    max_chunk: int = 131072,
+    min_chunk: Optional[int] = None,
+    avg_chunk: Optional[int] = None,
+    max_chunk: Optional[int] = None,
+    parallel: bool = True,
+    num_workers: int = 0,
+    show_progress: bool = True,
 ) -> None:
     """Pack disk and/or memory images into a Hexz archive."""
     ...
