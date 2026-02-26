@@ -1026,7 +1026,7 @@ impl File {
                 let prefetch_len = (self.header.block_size * 4) as usize;
                 let snap = Arc::clone(self);
                 let stream_copy = stream;
-                std::thread::spawn(move || {
+                rayon::spawn(move || {
                     let mut buf = vec![MaybeUninit::uninit(); prefetch_len];
                     let _ = snap.read_at_uninit_inner(stream_copy, next_offset, &mut buf, true);
                     // Release the in-flight guard so the next read can prefetch
