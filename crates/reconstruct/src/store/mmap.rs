@@ -9,16 +9,18 @@ use hexz_common::Result;
 use hexz_core::store::StorageBackend;
 use memmap2::Mmap;
 use std::fs::File;
-use std::sync::Arc;
 
 /// A read-only memory-mapped file backend.
 ///
 /// Maps the entire file into the process address space with `MAP_PRIVATE | PROT_READ`.
 /// Page faults are handled transparently by the kernel — this is the naive baseline
 /// that the paper's novel strategies aim to beat.
+///
+/// Reads are zero-copy: `read_exact` returns a `Bytes` slice backed by the mmap
+/// region, avoiding `memcpy` entirely.
 #[derive(Debug)]
 pub struct MmapBackend {
-    map: Arc<Mmap>,
+    bytes: Bytes,
     len: u64,
 }
 
@@ -29,10 +31,10 @@ impl MmapBackend {
         let len = file.metadata()?.len();
         // SAFETY: The file is immutable for the lifetime of the mapping (snapshot semantics).
         let map = unsafe { Mmap::map(&file)? };
-        Ok(Self {
-            map: Arc::new(map),
-            len,
-        })
+        // Wrap the Mmap in Bytes via from_owner so that slicing is zero-copy.
+        // The Mmap is moved into the Bytes and kept alive by its refcount.
+        let bytes = Bytes::from_owner(map);
+        Ok(Self { bytes, len })
     }
 }
 
@@ -40,14 +42,14 @@ impl StorageBackend for MmapBackend {
     fn read_exact(&self, offset: u64, len: usize) -> Result<Bytes> {
         let start = offset as usize;
         let end = start + len;
-        if end > self.map.len() {
+        if end > self.bytes.len() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::UnexpectedEof,
                 "Read out of bounds",
             )
             .into());
         }
-        Ok(Bytes::copy_from_slice(&self.map[start..end]))
+        Ok(self.bytes.slice(start..end))
     }
 
     fn len(&self) -> u64 {
