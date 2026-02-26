@@ -149,6 +149,12 @@ fn main() -> anyhow::Result<()> {
             silent,
         ),
 
+        Commands::Predict {
+            file,
+            block_size,
+            json,
+        } => hexz_cli::cmd::data::predict::run(file, block_size, json),
+
         // --------------------------------------------------------------------
         // Virtual Machine Operations
         // --------------------------------------------------------------------

@@ -6,3 +6,4 @@ pub mod diff;
 pub mod inspect;
 pub mod ls;
 pub mod pack;
+pub mod predict;

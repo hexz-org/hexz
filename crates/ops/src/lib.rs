@@ -8,6 +8,7 @@ pub mod inspect;
 pub mod pack;
 pub mod parallel_pack;
 pub mod parent_index;
+pub mod predict;
 pub mod progress;
 #[cfg(feature = "signing")]
 pub mod sign;

@@ -191,6 +191,25 @@ pub enum Commands {
         silent: bool,
     },
 
+    /// Estimate space savings before packing
+    #[command(display_order = 7)]
+    #[command(
+        long_about = "Quickly estimates the compression and deduplication savings if a raw data file\nwere packed into the Hexz format. Samples blocks without reading the whole file,\nso it completes in seconds even on multi-GB inputs."
+    )]
+    #[command(after_help = "hexz predict model.bin --block-size 65536 --json")]
+    Predict {
+        /// Path to the raw data file to analyze
+        file: PathBuf,
+
+        /// Block size in bytes
+        #[arg(long, default_value_t = 65536)]
+        block_size: u32,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     // ------------------------------------------------------------------------
     // Virtual Machine Operations
     // ------------------------------------------------------------------------
