@@ -214,10 +214,7 @@ pub fn handle_read(
 
         if is_modified {
             if let Some(ov) = &mut fs.overlay {
-                let mut temp = vec![0u8; len];
-                if ov.read_file(req_start, &mut temp).is_ok() {
-                    buffer[buf_offset..buf_offset + len].copy_from_slice(&temp);
-                }
+                let _ = ov.read_file(req_start, &mut buffer[buf_offset..buf_offset + len]);
             }
         } else {
             let snap_size = fs.snap.size(stream);
