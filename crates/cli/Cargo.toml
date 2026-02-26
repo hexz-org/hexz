@@ -41,6 +41,7 @@ rayon = "1.10"
 flate2 = "1.0"
 assert_cmd = "2.0"
 predicates = "3.0"
+bytes = { workspace = true }
 
 [lib]
 name = "hexz_cli"
@@ -139,6 +140,11 @@ path = "benches/micro/encryption.rs"
 name = "hash_table"
 harness = false
 path = "benches/micro/hash_table.rs"
+
+[[bench]]
+name = "cache_shard_hash"
+harness = false
+path = "benches/micro/cache_shard_hash.rs"
 
 [[bench]]
 name = "dedup_efficiency"

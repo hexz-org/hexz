@@ -281,8 +281,59 @@ use crate::api::file::SnapshotStream;
 use crate::format::index::IndexPage;
 use bytes::Bytes;
 use lru::LruCache;
+use std::hash::{BuildHasher, Hasher};
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
+
+/// FxHash constant: a large odd prime with good bit-mixing properties.
+/// From Firefox/rustc's FxHash (based on a hash by Glenn Fowler, Landon Noll, and Phong Vo).
+const FX_SEED: u64 = 0x517cc1b727220a95;
+
+/// Fast non-cryptographic hasher for integer keys.
+///
+/// Replaces `DefaultHasher` (SipHash-1-3) for cache shard selection and
+/// LRU internal lookups. SipHash provides HashDoS resistance which is
+/// unnecessary for internal caches with non-adversarial keys. FxHash
+/// reduces per-lookup overhead from ~15-20ns to ~2-3ns.
+struct FxHasher(u64);
+
+impl Hasher for FxHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.0 = (self.0.rotate_left(5) ^ b as u64).wrapping_mul(FX_SEED);
+        }
+    }
+
+    #[inline]
+    fn write_u8(&mut self, i: u8) {
+        self.0 = (self.0.rotate_left(5) ^ i as u64).wrapping_mul(FX_SEED);
+    }
+
+    #[inline]
+    fn write_u64(&mut self, i: u64) {
+        self.0 = (self.0 ^ i).wrapping_mul(FX_SEED);
+    }
+}
+
+/// Builder for [`FxHasher`], implementing [`BuildHasher`] for use with
+/// `LruCache` and shard selection.
+#[derive(Clone)]
+struct FxBuildHasher;
+
+impl BuildHasher for FxBuildHasher {
+    type Hasher = FxHasher;
+
+    #[inline]
+    fn build_hasher(&self) -> FxHasher {
+        FxHasher(0)
+    }
+}
 
 /// Default capacity for the L1 block cache in number of entries (not bytes).
 ///
@@ -357,7 +408,7 @@ type CacheKey = (u8, u64);
 /// blocks up to the configured capacity.
 pub struct BlockCache {
     /// None = capacity 0 (no-op cache). Some = one or more shards.
-    shards: Option<Vec<Mutex<LruCache<CacheKey, Bytes>>>>,
+    shards: Option<Vec<Mutex<LruCache<CacheKey, Bytes, FxBuildHasher>>>>,
 }
 
 /// Number of independent shards in the `BlockCache`.
@@ -519,7 +570,10 @@ impl BlockCache {
         };
         let mut shards = Vec::with_capacity(num_shards);
         for _ in 0..num_shards {
-            shards.push(Mutex::new(LruCache::new(cap_per_shard)));
+            shards.push(Mutex::new(LruCache::with_hasher(
+                cap_per_shard,
+                FxBuildHasher,
+            )));
         }
         Self {
             shards: Some(shards),
@@ -528,55 +582,17 @@ impl BlockCache {
 
     /// Deterministically selects the shard responsible for a given cache key.
     ///
-    /// This function hashes the key using `DefaultHasher` (SipHash-1-3) and maps the
-    /// hash value to a shard index via modulo. This ensures:
-    /// - **Deterministic routing**: Same key always maps to same shard
-    /// - **Uniform distribution**: Keys are evenly spread across shards
-    /// - **No hot spots**: Even skewed access patterns distribute across shards
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - Reference to the cache key `(stream_id, block_index)` to look up
-    ///
-    /// # Returns
-    ///
-    /// - **`Some(&Mutex<LruCache>)`**: Reference to the shard's mutex-protected LRU
-    /// - **`None`**: If cache is disabled (capacity = 0, no shards allocated)
-    ///
-    /// # Hash Stability
-    ///
-    /// The hash function (`DefaultHasher`) is deterministic **within a single process**
-    /// but may change across Rust versions or platforms. Do not rely on shard assignments
-    /// being stable across:
-    /// - Process restarts
-    /// - Rust compiler upgrades
-    /// - Different CPU architectures
-    ///
-    /// # Performance
-    ///
-    /// - **Time complexity**: O(1) (hash computation + modulo)
-    /// - **Typical cost**: ~10-20 ns (hash function overhead)
-    /// - **No allocations**: Purely stack-based computation
-    ///
-    /// # Implementation Notes
-    ///
-    /// The modulo operation (`% shards.len()`) is safe because:
-    /// - `shards.len()` is always > 0 when `shards` is `Some` (enforced by constructor)
-    /// - Modulo by power-of-two-adjacent values (16) is reasonably efficient (~5 cycles)
-    ///
-    /// For future optimization, consider replacing modulo with bitwise AND if `SHARD_COUNT`
-    /// is made a power of two:
-    /// ```text
-    /// idx = (hash as usize) & (SHARD_COUNT - 1)  // Requires SHARD_COUNT = 2^N
-    /// ```
-    fn get_shard(&self, key: &CacheKey) -> Option<&Mutex<LruCache<CacheKey, Bytes>>> {
+    /// Uses FxHash (multiply-xor) instead of SipHash for fast shard selection.
+    /// Cryptographic hash resistance is unnecessary for internal cache keys.
+    #[inline]
+    fn get_shard(
+        &self,
+        key: &CacheKey,
+    ) -> Option<&Mutex<LruCache<CacheKey, Bytes, FxBuildHasher>>> {
         let shards = self.shards.as_ref()?;
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        let mut hasher = DefaultHasher::new();
+        use std::hash::Hash;
+        let mut hasher = FxHasher(0);
         key.hash(&mut hasher);
-        // SHARD_COUNT is a power of two, so bitwise AND is equivalent to modulo
-        // but avoids a division instruction on the hot path.
         let idx = (hasher.finish() as usize) & (shards.len() - 1);
         Some(&shards[idx])
     }
@@ -985,7 +1001,7 @@ pub fn default_page_cache_size() -> NonZeroUsize {
 /// contention when multiple threads look up index pages concurrently.
 #[derive(Debug)]
 pub struct ShardedPageCache {
-    shards: Vec<Mutex<LruCache<u64, Arc<IndexPage>>>>,
+    shards: Vec<Mutex<LruCache<u64, Arc<IndexPage>, FxBuildHasher>>>,
 }
 
 impl ShardedPageCache {
@@ -993,7 +1009,10 @@ impl ShardedPageCache {
     pub fn with_capacity(capacity: usize) -> Self {
         if capacity == 0 {
             return Self {
-                shards: vec![Mutex::new(LruCache::new(NonZeroUsize::MIN))],
+                shards: vec![Mutex::new(LruCache::with_hasher(
+                    NonZeroUsize::MIN,
+                    FxBuildHasher,
+                ))],
             };
         }
         let (num_shards, cap_per_shard) = if capacity <= SINGLE_SHARD_CAPACITY_LIMIT {
@@ -1007,16 +1026,18 @@ impl ShardedPageCache {
         };
         let mut shards = Vec::with_capacity(num_shards);
         for _ in 0..num_shards {
-            shards.push(Mutex::new(LruCache::new(cap_per_shard)));
+            shards.push(Mutex::new(LruCache::with_hasher(
+                cap_per_shard,
+                FxBuildHasher,
+            )));
         }
         Self { shards }
     }
 
-    fn get_shard(&self, key: u64) -> &Mutex<LruCache<u64, Arc<IndexPage>>> {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        let mut hasher = DefaultHasher::new();
-        key.hash(&mut hasher);
+    #[inline]
+    fn get_shard(&self, key: u64) -> &Mutex<LruCache<u64, Arc<IndexPage>, FxBuildHasher>> {
+        let mut hasher = FxHasher(0);
+        hasher.write_u64(key);
         let idx = (hasher.finish() as usize) & (self.shards.len() - 1);
         &self.shards[idx]
     }
