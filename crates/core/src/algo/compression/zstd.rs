@@ -765,9 +765,14 @@ impl Compressor for ZstdCompressor {
                 .finish()
                 .map_err(|e| Error::Compression(e.to_string()))?;
         } else {
-            let compressed = zstd::stream::encode_all(Cursor::new(data), self.level)
+            let mut encoder = zstd::stream::write::Encoder::new(std::mem::take(out), self.level)
                 .map_err(|e| Error::Compression(e.to_string()))?;
-            *out = compressed;
+            encoder
+                .write_all(data)
+                .map_err(|e| Error::Compression(e.to_string()))?;
+            *out = encoder
+                .finish()
+                .map_err(|e| Error::Compression(e.to_string()))?;
         }
         Ok(())
     }

@@ -79,6 +79,29 @@ fn bench_compression(c: &mut Criterion) {
         })
     });
 
+    // compress_into benchmarks: measures buffer reuse effectiveness
+    group.bench_function("Zstd-3 compress_into", |b| {
+        let compressor = ZstdCompressor::new(3, None);
+        let mut buf = Vec::with_capacity(data_size);
+        b.iter(|| {
+            compressor
+                .compress_into(black_box(&data), &mut buf)
+                .unwrap();
+            black_box(&buf);
+        })
+    });
+
+    group.bench_function("LZ4 compress_into", |b| {
+        let compressor = Lz4Compressor::new();
+        let mut buf = Vec::with_capacity(data_size);
+        b.iter(|| {
+            compressor
+                .compress_into(black_box(&data), &mut buf)
+                .unwrap();
+            black_box(&buf);
+        })
+    });
+
     group.finish();
 }
 
