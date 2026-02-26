@@ -122,7 +122,7 @@
 //! let snap = File::new(backend, compressor, None)?;
 //!
 //! // Start HTTP server on port 8080
-//! serve_http(snap, 8080).await?;
+//! serve_http(snap, 8080, "127.0.0.1").await?;
 //! # Ok(())
 //! # }
 //! ```
@@ -143,7 +143,7 @@
 //! let snap = File::new(backend, compressor, None)?;
 //!
 //! // Start NBD server on port 10809
-//! serve_nbd(snap, 10809).await?;
+//! serve_nbd(snap, 10809, "127.0.0.1").await?;
 //! # Ok(())
 //! # }
 //! ```
@@ -229,8 +229,6 @@ use tokio::net::TcpListener;
 /// ```
 ///
 /// Network exposure will require authentication to be enabled (enforced by the CLI).
-const BIND_ADDR: [u8; 4] = [127, 0, 0, 1];
-
 /// Length in bytes of the HTTP `Range` header prefix `"bytes="`.
 ///
 /// The HTTP Range header format is defined in RFC 7233 as:
@@ -381,7 +379,7 @@ struct AppState {
 /// let snap = File::new(backend, compressor, None)?;
 ///
 /// // Start NBD server (runs forever)
-/// serve_nbd(snap, 10809).await?;
+/// serve_nbd(snap, 10809, "127.0.0.1").await?;
 /// # Ok(())
 /// # }
 /// ```
@@ -439,8 +437,8 @@ struct AppState {
 ///
 /// This function does not panic under normal operation. Client errors are logged
 /// and handled gracefully.
-pub async fn serve_nbd(snap: Arc<File>, port: u16) -> anyhow::Result<()> {
-    let addr = SocketAddr::from((BIND_ADDR, port));
+pub async fn serve_nbd(snap: Arc<File>, port: u16, bind: &str) -> anyhow::Result<()> {
+    let addr: SocketAddr = format!("{}:{}", bind, port).parse()?;
     let listener = TcpListener::bind(addr).await?;
 
     tracing::info!("NBD server listening on {}", addr);
@@ -781,7 +779,7 @@ pub async fn serve_s3_gateway(_snap: Arc<File>, port: u16) -> anyhow::Result<()>
 /// let snap = File::new(backend, compressor, None)?;
 ///
 /// // Start HTTP server on port 8080 (runs forever)
-/// serve_http(snap, 8080).await?;
+/// serve_http(snap, 8080, "127.0.0.1").await?;
 /// # Ok(())
 /// # }
 /// ```
@@ -871,8 +869,8 @@ pub async fn serve_s3_gateway(_snap: Arc<File>, port: u16) -> anyhow::Result<()>
 ///
 /// This function does not panic under normal operation. Request handling errors
 /// are converted to HTTP error responses.
-pub async fn serve_http(snap: Arc<File>, port: u16) -> anyhow::Result<()> {
-    let addr = SocketAddr::from((BIND_ADDR, port));
+pub async fn serve_http(snap: Arc<File>, port: u16, bind: &str) -> anyhow::Result<()> {
+    let addr: SocketAddr = format!("{}:{}", bind, port).parse()?;
     let listener = TcpListener::bind(addr).await?;
     tracing::info!("HTTP server listening on {}", addr);
     serve_http_with_listener(snap, listener).await

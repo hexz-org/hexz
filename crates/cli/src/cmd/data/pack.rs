@@ -100,6 +100,7 @@ use std::sync::{Arc, Mutex};
 ///     16384,
 ///     65536,
 ///     131072,
+///     None,   // workers (auto)
 ///     false,  // show progress
 /// );
 /// ```
@@ -116,6 +117,7 @@ pub fn run(
     min_chunk: u32,
     avg_chunk: u32,
     max_chunk: u32,
+    workers: Option<usize>,
     silent: bool,
 ) -> Result<()> {
     // Validate CDC chunk size ordering
@@ -175,6 +177,8 @@ pub fn run(
         min_chunk,
         avg_chunk,
         max_chunk,
+        parallel: workers != Some(1),
+        num_workers: workers.unwrap_or(0),
         ..Default::default()
     };
 

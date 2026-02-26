@@ -46,6 +46,7 @@ pub fn create_dataset(
         16384, // min_chunk
         sample_size as u32,
         (sample_size * 2) as u32,
+        None,
         true,
     )
     .unwrap();

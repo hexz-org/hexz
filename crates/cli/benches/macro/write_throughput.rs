@@ -68,6 +68,7 @@ fn bench_write_lz4(c: &mut Criterion) {
                     16384,  // min chunk (unused without CDC)
                     65536,  // avg chunk (unused without CDC)
                     131072, // max chunk (unused without CDC)
+                    None,   // workers (auto)
                     true,   // silent mode
                 );
 
@@ -111,6 +112,7 @@ fn bench_write_zstd3(c: &mut Criterion) {
                     16384,
                     65536,
                     131072,
+                    None,
                     true,
                 );
 
@@ -154,6 +156,7 @@ fn bench_write_cdc_overhead(c: &mut Criterion) {
                     16384,
                     65536,
                     131072,
+                    None,
                     true,
                 );
 
@@ -186,6 +189,7 @@ fn bench_write_cdc_overhead(c: &mut Criterion) {
                     16384,
                     65536,
                     131072,
+                    None,
                     true,
                 );
 

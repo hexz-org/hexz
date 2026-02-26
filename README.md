@@ -26,8 +26,8 @@ Pre-built binaries for Linux, macOS, and Windows are available on the [releases 
 | `hexz pack` | Pack a disk image or memory dump into a Hexz archive |
 | `hexz inspect` | Read archive header and index without decompressing |
 | `hexz diff` | Show differences in a copy-on-write overlay |
-| `hexz build` | Build an archive from a source directory |
-| `hexz analyze` | Analyze archive structure and deduplication stats |
+| `hexz ls` | List files inside an archive |
+| `hexz build` | Pack with profile-based presets (ml, eda, embedded, generic) |
 | `hexz convert` | Convert tar, HDF5, or WebDataset files to Hexz |
 
 ### Virtual Machine Operations
@@ -45,9 +45,8 @@ Pre-built binaries for Linux, macOS, and Windows are available on the [releases 
 
 | Command | Description |
 |---|---|
-| `hexz doctor` | Run system diagnostics |
-| `hexz bench` | Benchmark archive performance |
-| `hexz serve` | Serve a snapshot over HTTP with byte-range support |
+| `hexz doctor` | Check system compatibility (FUSE, QEMU, DNS) |
+| `hexz serve` | Serve a snapshot over HTTP or NBD with byte-range support |
 | `hexz keygen` | Generate an Ed25519 keypair for signing |
 | `hexz sign` | Sign an archive |
 | `hexz verify` | Verify an archive signature |
@@ -167,7 +166,7 @@ hexz.convert("dataset.tar.gz", "dataset.hxz", compression="zstd")
 
 # Build from a directory using a named profile
 hexz.build("weights/", "model.hxz", profile="ml")
-# Profiles: ml, eda, embedded, generic, archival
+# Profiles: ml, eda, embedded, generic
 ```
 
 ---

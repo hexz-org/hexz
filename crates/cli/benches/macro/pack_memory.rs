@@ -327,6 +327,7 @@ fn bench_pack_memory_50mb(c: &mut Criterion) {
                     16384,
                     65536,
                     131072,
+                    None,
                     true,
                 )
                 .unwrap();
@@ -393,6 +394,7 @@ fn bench_pack_memory_200mb(c: &mut Criterion) {
                     16384,
                     65536,
                     131072,
+                    None,
                     true,
                 )
                 .unwrap();
@@ -459,6 +461,7 @@ fn bench_pack_memory_500mb(c: &mut Criterion) {
                     16384,
                     65536,
                     131072,
+                    None,
                     true,
                 )
                 .unwrap();

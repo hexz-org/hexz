@@ -62,6 +62,7 @@ fn bench_block_size_pack_time(c: &mut Criterion) {
                         16384,
                         65536,
                         131072,
+                        None,
                         true,
                     )
                     .unwrap();

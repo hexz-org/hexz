@@ -204,22 +204,22 @@ use std::sync::Arc;
 /// serve::run(
 ///     "snapshot.hxz".to_string(),
 ///     8080,
+///     "127.0.0.1".to_string(),
 ///     false, // not daemon
 ///     false, // HTTP mode
-///     false, // not S3
 /// )?;
 ///
 /// // Start NBD server as daemon
 /// serve::run(
 ///     "snapshot.hxz".to_string(),
 ///     10809,
+///     "127.0.0.1".to_string(),
 ///     true,  // daemon mode
 ///     true,  // NBD mode
-///     false,
 /// )?;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
-pub fn run(hexz_path: String, port: u16, daemon: bool, nbd: bool, s3: bool) -> Result<()> {
+pub fn run(hexz_path: String, port: u16, bind: String, daemon: bool, nbd: bool) -> Result<()> {
     if daemon {
         let log_dir = std::env::var("XDG_RUNTIME_DIR")
             .or_else(|_| std::env::var("TMPDIR"))
@@ -246,12 +246,9 @@ pub fn run(hexz_path: String, port: u16, daemon: bool, nbd: bool, s3: bool) -> R
             let snap = HexzFile::open(backend, None)?;
 
             if nbd {
-                hexz_server::serve_nbd(snap, port).await
-            } else if s3 {
-                eprintln!("Error: S3 gateway feature is not yet implemented.");
-                Ok(())
+                hexz_server::serve_nbd(snap, port, &bind).await
             } else {
-                hexz_server::serve_http(snap, port).await
+                hexz_server::serve_http(snap, port, &bind).await
             }
         })
 }

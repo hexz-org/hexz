@@ -38,6 +38,7 @@ fn setup_snapshot() -> (NamedTempFile, NamedTempFile) {
         16384,
         65536,
         131072,
+        None,
         true,
     )
     .unwrap();

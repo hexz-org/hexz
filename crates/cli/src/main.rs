@@ -98,6 +98,7 @@ fn main() -> anyhow::Result<()> {
             min_chunk,
             avg_chunk,
             max_chunk,
+            workers,
             silent,
         } => hexz_cli::cmd::data::pack::run(
             disk,
@@ -111,6 +112,7 @@ fn main() -> anyhow::Result<()> {
             min_chunk,
             avg_chunk,
             max_chunk,
+            workers,
             silent,
         ),
 
@@ -120,13 +122,6 @@ fn main() -> anyhow::Result<()> {
 
         Commands::Ls { dir } => hexz_cli::cmd::data::ls::run(dir),
 
-        #[cfg(feature = "diagnostics")]
-        Commands::Overlay {
-            overlay,
-            blocks,
-            files,
-        } => hexz_cli::cmd::data::overlay::run(overlay, blocks, files),
-
         Commands::Build {
             source,
             memory,
@@ -135,9 +130,6 @@ fn main() -> anyhow::Result<()> {
             encrypt,
             cdc,
         } => hexz_cli::cmd::data::build::run(source, memory, output, profile, encrypt, cdc),
-
-        #[cfg(feature = "diagnostics")]
-        Commands::Analyze { input } => hexz_cli::cmd::data::analyze::run(input),
 
         Commands::Convert {
             format,
@@ -209,13 +201,13 @@ fn main() -> anyhow::Result<()> {
             compression,
             block_size,
             keep_overlay,
-            flatten: _,
+            memory,
             message,
             thin,
         } => hexz_cli::cmd::vm::commit::run(
             base,
             overlay,
-            None,
+            memory,
             output,
             compression,
             block_size,
@@ -235,8 +227,9 @@ fn main() -> anyhow::Result<()> {
             uid,
             gid,
             nbd,
+            prefetch,
         } => hexz_cli::cmd::vm::mount::run(
-            snap, mountpoint, overlay, daemon, rw, cache_size, uid, gid, nbd,
+            snap, mountpoint, overlay, daemon, rw, cache_size, uid, gid, nbd, prefetch,
         ),
 
         #[cfg(feature = "fuse")]
@@ -248,22 +241,14 @@ fn main() -> anyhow::Result<()> {
         #[cfg(feature = "diagnostics")]
         Commands::Doctor => hexz_cli::cmd::sys::doctor::run(),
 
-        #[cfg(feature = "diagnostics")]
-        Commands::Bench {
-            image,
-            block_size,
-            duration,
-            threads,
-        } => hexz_cli::cmd::sys::bench::run(image, block_size, duration, threads),
-
         #[cfg(feature = "server")]
         Commands::Serve {
             snap,
             port,
+            bind,
             daemon,
             nbd,
-            s3,
-        } => hexz_cli::cmd::sys::serve::run(snap, port, daemon, nbd, s3),
+        } => hexz_cli::cmd::sys::serve::run(snap, port, bind, daemon, nbd),
 
         #[cfg(feature = "signing")]
         Commands::Keygen { output_dir } => hexz_cli::cmd::sys::keygen::run(output_dir),

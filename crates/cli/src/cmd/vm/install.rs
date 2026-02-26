@@ -153,6 +153,7 @@ pub fn run(
         16384,
         65536,
         131072,
+        None, // workers (auto)
         false,
     )?;
 

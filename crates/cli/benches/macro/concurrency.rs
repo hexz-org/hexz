@@ -62,6 +62,7 @@ fn bench_concurrent_reads(c: &mut Criterion) {
         16384,  // min_chunk
         65536,  // avg_chunk
         131072, // max_chunk
+        None,   // workers
         true,   // silent
     )
     .unwrap();

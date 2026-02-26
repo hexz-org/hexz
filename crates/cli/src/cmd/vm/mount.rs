@@ -252,7 +252,11 @@ pub(crate) fn parse_size(s: &str) -> Result<usize> {
 /// - Password is incorrect (decryption fails)
 /// - Dictionary cannot be loaded (corrupted dictionary region)
 /// - Cache size string is malformed
-fn open_snapshot(hexz_path: &str, cache_size: Option<String>) -> Result<Arc<File>> {
+fn open_snapshot(
+    hexz_path: &str,
+    cache_size: Option<String>,
+    prefetch: Option<u32>,
+) -> Result<Arc<File>> {
     let abs_hexz_path = std::fs::canonicalize(hexz_path)
         .context(format!("Failed to resolve snapshot path: {}", hexz_path))?;
 
@@ -307,7 +311,7 @@ fn open_snapshot(hexz_path: &str, cache_size: Option<String>) -> Result<Arc<File
         compressor,
         encryptor,
         cache_capacity,
-        None, // No prefetching for mount command
+        prefetch,
     )?)
 }
 
@@ -408,9 +412,10 @@ fn open_snapshot(hexz_path: &str, cache_size: Option<String>) -> Result<Arc<File
 ///     1000,  // uid
 ///     1000,  // gid
 ///     false, // FUSE mode
+///     None,  // no prefetch
 /// )?;
 ///
-/// // Read-write mount with persistent overlay
+/// // Read-write mount with persistent overlay and prefetch
 /// mount::run(
 ///     "snapshot.hxz".to_string(),
 ///     PathBuf::from("/mnt"),
@@ -421,6 +426,7 @@ fn open_snapshot(hexz_path: &str, cache_size: Option<String>) -> Result<Arc<File
 ///     1000,
 ///     1000,
 ///     false,
+///     Some(8), // prefetch 8 blocks ahead
 /// )?;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
@@ -435,6 +441,7 @@ pub fn run(
     uid: u32,
     gid: u32,
     nbd: bool,
+    prefetch: Option<u32>,
 ) -> Result<()> {
     if nbd {
         #[cfg(feature = "server")]
@@ -462,7 +469,7 @@ pub fn run(
     };
 
     // Open snapshot
-    let snap = open_snapshot(&hexz_path, cache_size)?;
+    let snap = open_snapshot(&hexz_path, cache_size, prefetch)?;
 
     // Daemonize if requested
     if daemon {
@@ -525,7 +532,7 @@ fn run_nbd(hexz_path: String, mountpoint: PathBuf, cache_size: Option<String>) -
     }
 
     // 2. Open Snapshot
-    let snap = open_snapshot(&hexz_path, cache_size)?;
+    let snap = open_snapshot(&hexz_path, cache_size, None)?;
 
     // 3. Find a free NBD device
     let nbd_dev = find_free_nbd_device()?;
@@ -543,7 +550,7 @@ fn run_nbd(hexz_path: String, mountpoint: PathBuf, cache_size: Option<String>) -
 
     let snap_clone = snap.clone();
     rt.spawn(async move {
-        if let Err(e) = hexz_server::serve_nbd(snap_clone, port).await {
+        if let Err(e) = hexz_server::serve_nbd(snap_clone, port, "127.0.0.1").await {
             eprintln!("NBD Server error: {}", e);
         }
     });

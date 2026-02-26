@@ -79,6 +79,10 @@ pub enum Commands {
         #[arg(long, default_value_t = 131072, value_parser = clap::value_parser!(u32).range(1..))]
         max_chunk: u32,
 
+        /// Number of compression worker threads (0 = auto)
+        #[arg(long)]
+        workers: Option<usize>,
+
         /// Suppress all output and progress bars
         #[arg(long, short)]
         silent: bool,
@@ -124,34 +128,14 @@ pub enum Commands {
         dir: PathBuf,
     },
 
-    /// Inspect a FUSE overlay file
-    #[cfg(feature = "diagnostics")]
-    #[command(display_order = 30)]
-    #[command(
-        long_about = "Analyzes the overlay file created by a FUSE read-write mount.\n\nShows which 4 KiB blocks were written during the session and the total amount of changed data."
-    )]
-    #[command(after_help = "hexz overlay vm-state.overlay --blocks")]
-    Overlay {
-        /// Path to overlay file
-        overlay: PathBuf,
-
-        /// Show block count and total changed size
-        #[arg(long)]
-        blocks: bool,
-
-        /// List individual modified block indices
-        #[arg(long)]
-        files: bool,
-    },
-
-    /// Build archive from source directory
+    /// Pack with profile-based presets
     #[command(display_order = 4)]
     #[command(
-        long_about = "Recursively builds a Hexz archive from a local directory structure.\n\nUnlike 'pack' which handles raw disk images, 'build' is designed for file-system level packing."
+        long_about = "Creates a Hexz archive using a named build profile.\n\nProfiles automatically select compression, block size, and dictionary training settings optimized for different workloads (ML, EDA, embedded, generic)."
     )]
-    #[command(after_help = "hexz build ./checkpoints/ archive.hxz")]
+    #[command(after_help = "hexz build disk.img archive.hxz --profile ml")]
     Build {
-        /// Source directory
+        /// Source disk image
         source: PathBuf,
 
         /// Output archive path
@@ -172,18 +156,6 @@ pub enum Commands {
         /// Enable CDC
         #[arg(long)]
         cdc: bool,
-    },
-
-    /// Analyze archive structure
-    #[cfg(feature = "diagnostics")]
-    #[command(display_order = 5)]
-    #[command(
-        long_about = "Performs a deep structural analysis of the archive format.\n\nUsed primarily for debugging corruption issues or optimizing block alignment strategies."
-    )]
-    #[command(after_help = "hexz analyze ./corrupt_image.hxz")]
-    Analyze {
-        /// Archive to analyze
-        input: PathBuf,
     },
 
     /// Convert external formats to Hexz snapshot
@@ -210,7 +182,7 @@ pub enum Commands {
         #[arg(long, default_value_t = 65536)]
         block_size: u32,
 
-        /// Build profile (ml, eda, embedded, generic, archival)
+        /// Build profile (ml, eda, embedded, generic)
         #[arg(long)]
         profile: Option<String>,
 
@@ -350,9 +322,9 @@ pub enum Commands {
         #[arg(long)]
         keep_overlay: bool,
 
-        /// Flatten all layers into single archive
+        /// Path to memory dump to include
         #[arg(long)]
-        flatten: bool,
+        memory: Option<PathBuf>,
 
         /// Commit message
         #[arg(long)]
@@ -404,6 +376,10 @@ pub enum Commands {
         /// Export as NBD device
         #[arg(long)]
         nbd: bool,
+
+        /// Prefetch window size (number of blocks to read ahead)
+        #[arg(long)]
+        prefetch: Option<u32>,
     },
 
     /// Unmount filesystem
@@ -423,40 +399,16 @@ pub enum Commands {
     #[cfg(feature = "diagnostics")]
     #[command(display_order = 20)]
     #[command(
-        long_about = "Checks the system for compatibility with Hexz features (FUSE, KVM, AVX2, etc.)."
+        long_about = "Checks the system for compatibility with Hexz features (FUSE, QEMU, network)."
     )]
     #[command(after_help = "hexz doctor")]
     Doctor,
-
-    /// Benchmark archive performance
-    #[cfg(feature = "diagnostics")]
-    #[command(display_order = 21)]
-    #[command(
-        long_about = "Runs read/write benchmarks on a specific archive to test throughput and latency."
-    )]
-    #[command(after_help = "hexz bench model.hxz --threads 4")]
-    Bench {
-        /// Archive to benchmark
-        image: PathBuf,
-
-        /// Block size for testing
-        #[arg(long)]
-        block_size: Option<u32>,
-
-        /// Duration in seconds
-        #[arg(long)]
-        duration: Option<u64>,
-
-        /// Number of threads
-        #[arg(long)]
-        threads: Option<usize>,
-    },
 
     /// Serve archive over network
     #[cfg(feature = "server")]
     #[command(display_order = 22)]
     #[command(
-        long_about = "Starts an HTTP/S3 compatible server to stream the snapshot over the network.\n\nClients can fetch specific byte ranges efficiently."
+        long_about = "Starts an HTTP server to stream the snapshot over the network.\n\nClients can fetch specific byte ranges efficiently."
     )]
     #[command(after_help = "hexz serve model.hxz --port 8080")]
     Serve {
@@ -467,6 +419,10 @@ pub enum Commands {
         #[arg(long, default_value_t = 8080)]
         port: u16,
 
+        /// Bind address
+        #[arg(long, default_value = "127.0.0.1")]
+        bind: String,
+
         /// Run as daemon
         #[arg(short, long)]
         daemon: bool,
@@ -474,10 +430,6 @@ pub enum Commands {
         /// Enable NBD protocol
         #[arg(long)]
         nbd: bool,
-
-        /// Enable S3-compatible API
-        #[arg(long)]
-        s3: bool,
     },
 
     /// Generate signing keys

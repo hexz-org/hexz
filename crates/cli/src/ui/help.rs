@@ -46,13 +46,9 @@ impl Printer {
             let item = (name.clone(), about);
 
             match name.as_str() {
-                "pack" | "inspect" | "diff" | "ls" | "build" | "analyze" | "convert" => {
-                    archive_cmds.push(item)
-                }
+                "pack" | "inspect" | "diff" | "ls" | "build" | "convert" => archive_cmds.push(item),
                 "boot" | "install" | "snap" | "commit" | "mount" | "unmount" => vm_cmds.push(item),
-                "doctor" | "bench" | "serve" | "keygen" | "sign" | "verify" | "overlay" => {
-                    sys_cmds.push(item)
-                }
+                "doctor" | "serve" | "keygen" | "sign" | "verify" => sys_cmds.push(item),
                 _ => other_cmds.push(item),
             }
         }
