@@ -126,7 +126,7 @@ impl StorageBackend for S3Backend {
                 ))));
             }
 
-            let data = response_data.as_slice();
+            let data = response_data.bytes().clone();
             if data.len() != len {
                 return Err(Error::Io(IoError::new(
                     ErrorKind::UnexpectedEof,
@@ -134,7 +134,7 @@ impl StorageBackend for S3Backend {
                 )));
             }
 
-            Ok(Bytes::copy_from_slice(data))
+            Ok(data)
         })
     }
 
