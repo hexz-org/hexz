@@ -595,65 +595,6 @@ impl ZstdCompressor {
         zstd::dict::from_samples(samples, max_size)
             .map_err(|e| Error::Compression(format!("Failed to train dict: {}", e)))
     }
-
-    /// Reads decompressed bytes from a zstd decoder into the provided buffer.
-    ///
-    /// This is an internal helper function that drains a streaming decoder (with or without
-    /// dictionary) into a contiguous output buffer. It handles partial reads gracefully and
-    /// returns the total number of bytes read.
-    ///
-    /// # Parameters
-    ///
-    /// * `reader` - A mutable reference to any type implementing `Read` (typically a
-    ///   `zstd::stream::read::Decoder`)
-    /// * `out` - The output buffer to fill with decompressed bytes
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(usize)` containing the number of bytes written to `out`. This may be
-    /// less than `out.len()` if the decoder reaches EOF before the buffer is full.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error::Compression` if the underlying `Read` operation fails due to:
-    /// - Corrupted compressed data
-    /// - I/O errors reading from the source
-    /// - Decompression algorithm errors
-    ///
-    /// # Implementation Notes
-    ///
-    /// This function loops until either:
-    /// - The output buffer is completely filled (`total == out.len()`)
-    /// - The decoder returns 0 bytes (EOF condition)
-    ///
-    /// Each `read()` call may return fewer bytes than requested, so we accumulate
-    /// bytes until one of the terminal conditions is met.
-    fn read_into_buf<R: Read>(reader: &mut R, out: &mut [u8]) -> Result<usize> {
-        let mut total = 0;
-        while total < out.len() {
-            let n = reader
-                .read(&mut out[total..])
-                .map_err(|e| Error::Compression(e.to_string()))?;
-            if n == 0 {
-                break;
-            }
-            total += n;
-        }
-        // Check if there's more data that didn't fit in the buffer
-        if total == out.len() {
-            let mut extra = [0u8; 1];
-            let n = reader
-                .read(&mut extra)
-                .map_err(|e| Error::Compression(e.to_string()))?;
-            if n > 0 {
-                return Err(Error::Compression(format!(
-                    "Decompressed data exceeds output buffer size ({})",
-                    out.len()
-                )));
-            }
-        }
-        Ok(total)
-    }
 }
 
 impl Compressor for ZstdCompressor {
@@ -978,16 +919,34 @@ impl Compressor for ZstdCompressor {
     /// `ZstdCompressor` instance, provided each thread uses its own output buffer.
     fn decompress_into(&self, data: &[u8], out: &mut [u8]) -> Result<usize> {
         if let Some(dict) = &self.decoder_dict {
-            let mut decoder =
-                zstd::stream::read::Decoder::with_prepared_dictionary(Cursor::new(data), dict)
-                    .map_err(|e| Error::Compression(e.to_string()))?;
-
-            Self::read_into_buf(&mut decoder, out)
-        } else {
-            let mut decoder = zstd::stream::read::Decoder::new(Cursor::new(data))
+            // Dictionary path: create a bulk Decompressor with the prepared dictionary.
+            // This uses a single ZSTD_decompress_usingDDict FFI call instead of the
+            // streaming Decoder which sets up a ZSTD_DStream + loops through
+            // ZSTD_decompressStream + does a 1-byte overflow read.
+            let mut decompressor = zstd::bulk::Decompressor::with_prepared_dictionary(dict)
                 .map_err(|e| Error::Compression(e.to_string()))?;
 
-            Self::read_into_buf(&mut decoder, out)
+            decompressor
+                .decompress_to_buffer(data, out)
+                .map_err(|e| Error::Compression(e.to_string()))
+        } else {
+            // Non-dictionary path: reuse a thread-local Decompressor to avoid
+            // allocating a ~150KB ZSTD_DCtx on every call. The DCtx is created
+            // once per thread and reused across all subsequent decompressions.
+            thread_local! {
+                static DECOMPRESSOR: std::cell::RefCell<zstd::bulk::Decompressor<'static>> =
+                    std::cell::RefCell::new(
+                        zstd::bulk::Decompressor::new()
+                            .expect("failed to create zstd decompressor")
+                    );
+            }
+
+            DECOMPRESSOR.with(|cell| {
+                let mut decompressor = cell.borrow_mut();
+                decompressor
+                    .decompress_to_buffer(data, out)
+                    .map_err(|e| Error::Compression(e.to_string()))
+            })
         }
     }
 }
