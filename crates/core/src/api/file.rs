@@ -2,6 +2,7 @@
 
 use crate::algo::compression::{Compressor, create_compressor};
 use crate::algo::encryption::Encryptor;
+use crate::cache::buffer_pool::BufferPool;
 use crate::cache::lru::{BlockCache, ShardedPageCache};
 use crate::cache::prefetch::Prefetcher;
 use crate::format::header::Header;
@@ -177,6 +178,11 @@ pub struct File {
 
     /// Optional prefetcher for background data loading
     prefetcher: Option<Prefetcher>,
+
+    /// Reusable buffer pool for decompression output buffers.
+    /// Reduces allocator contention in parallel decompression and avoids
+    /// repeated alloc/dealloc of identically-sized buffers in serial reads.
+    decompress_pool: BufferPool,
 }
 
 impl File {
@@ -418,6 +424,10 @@ impl File {
         // Initialize prefetcher if window size is specified and > 0
         let prefetcher = prefetch_window_size.filter(|&w| w > 0).map(Prefetcher::new);
 
+        // Size the decompression buffer pool: one buffer per rayon thread plus
+        // a few extra for the serial path and prefetch thread.
+        let pool_size = rayon::current_num_threads() + 2;
+
         Ok(Arc::new(Self {
             header,
             master,
@@ -428,6 +438,7 @@ impl File {
             cache_l1: BlockCache::with_capacity(l1_capacity),
             page_cache: ShardedPageCache::default(),
             prefetcher,
+            decompress_pool: BufferPool::new(pool_size),
         }))
     }
 
@@ -649,7 +660,11 @@ impl File {
     }
 
     /// Minimum number of local blocks to use the parallel decompression path.
-    const PARALLEL_MIN_BLOCKS: usize = 2;
+    ///
+    /// Rayon task dispatch adds ~5-10μs overhead per task. With LZ4 at ~2GB/s,
+    /// a 64KB block decompresses in ~32μs. Below 4 blocks the overhead fraction
+    /// is significant; serial decompression avoids the synchronization cost.
+    const PARALLEL_MIN_BLOCKS: usize = 4;
 
     /// Collects work items for blocks that need decompression.
     ///
@@ -852,11 +867,19 @@ impl File {
         actual_len: usize,
     ) -> Result<()> {
         for (block_idx, info, buf_offset, offset_in_block, to_copy) in work_items {
-            let data = self.resolve_block_data(stream, *block_idx, info)?;
+            let fetched = self.fetch_raw_block(stream, *block_idx, info)?;
+            let data = match fetched {
+                FetchResult::Decompressed(data) => data,
+                FetchResult::Compressed(raw) => {
+                    let data = self.decompress_and_verify(raw, *block_idx, info)?;
+                    self.cache_l1.insert(stream, *block_idx, data.clone());
+                    data
+                }
+            };
+
             let src = data.as_ref();
             let start = *offset_in_block;
             if start < src.len() && *to_copy <= src.len() - start {
-                // Defensive assertion: ensure destination write is within bounds
                 debug_assert!(
                     *buf_offset + *to_copy <= actual_len,
                     "Buffer overflow: attempting to write {} bytes at offset {} into buffer of length {}",
@@ -867,7 +890,6 @@ impl File {
                 // SAFETY: `src[start..start+to_copy]` is in-bounds (checked above).
                 // `target[buf_offset..]` has sufficient room because `buf_offset + to_copy`
                 // never exceeds `actual_len` (tracked during work-item collection).
-                // The debug_assert above validates this invariant.
                 // MaybeUninit<u8> has the same layout as u8.
                 unsafe {
                     ptr::copy_nonoverlapping(
@@ -1154,42 +1176,17 @@ impl File {
             }
         }
 
-        // Pre-allocate exact output buffer to avoid over-allocation inside decompressor.
-        // We use decompress_into() instead of decompress() to eliminate the allocation
-        // and potential reallocation overhead inside the compression library.
-        //
-        // Performance impact: Avoids zero-initialization overhead (~16% improvement for
-        // high-thread-count workloads based on benchmarks).
+        // Checkout a buffer from the pool instead of allocating a new Vec.
+        // The pool maintains pre-allocated buffers of common sizes (typically
+        // block_size = 64KB), eliminating allocator overhead for the hot
+        // decompression path. The buffer is consumed by Bytes::from() below,
+        // so it is not returned to the pool — the pool acts as a fast allocator
+        // for the common case where recently-freed buffers are available.
         let out_len = info.logical_len as usize;
-        let mut out = Vec::with_capacity(out_len);
+        let mut out = self.decompress_pool.checkout(out_len);
 
-        // SAFETY: This unsafe block is required to create an uninitialized buffer for
-        // decompress_into() to write into. This is safe because:
-        //
-        // 1. Contract guarantee: Both LZ4 and Zstd decompress_into() implementations
-        //    promise to either:
-        //    a) Write exactly `out.len()` bytes (the full decompressed size), OR
-        //    b) Return an Err() if decompression fails (buffer underrun, corruption, etc.)
-        //
-        // 2. Size accuracy: We set out.len() to info.logical_len, which is the exact
-        //    decompressed size recorded in the block metadata during compression.
-        //    The decompressor will write exactly this many bytes or fail.
-        //
-        // 3. Error propagation: If decompress_into() returns Err(), we propagate it
-        //    immediately via the ? operator. The uninitialized buffer is dropped
-        //    without ever being read.
-        //
-        // 4. No partial writes: The decompressor APIs do not support partial writes.
-        //    They either fully succeed or fully fail. We never access a partially
-        //    initialized buffer.
-        //
-        // 5. Memory safety: We never read from `out` before decompress_into() succeeds.
-        //    The only subsequent access is Bytes::from(out), which transfers ownership
-        //    of the now-fully-initialized buffer.
-        //
-        // This is a well-established pattern for zero-copy decompression. The clippy
-        // lint is conservative and warns about ANY use of set_len() after with_capacity(),
-        // but in this case we have explicit API guarantees from the decompressor.
+        // SAFETY: See decompress_into_slice() for the full safety argument.
+        // In short: decompress_into() writes exactly out_len bytes or returns Err.
         #[allow(clippy::uninit_vec)]
         unsafe {
             out.set_len(out_len);
@@ -1203,50 +1200,5 @@ impl File {
         }
 
         Ok(Bytes::from(out))
-    }
-
-    /// Resolves raw block data by fetching from cache or decompressing from storage.
-    ///
-    /// This is the core decompression path. It:
-    /// 1. Checks the block cache
-    /// 2. Reads compressed block from backend
-    /// 3. Verifies CRC32 checksum (if stored) and returns `Corruption(block_idx)` on mismatch
-    /// 4. Decrypts (if encrypted)
-    /// 5. Decompresses
-    /// 6. Caches the result
-    ///
-    /// # Parameters
-    ///
-    /// - `stream`: Stream identifier (for cache key)
-    /// - `block_idx`: Global block index
-    /// - `info`: Block metadata (offset, length, compression)
-    ///
-    /// # Returns
-    ///
-    /// Decompressed block data as `Bytes` (zero-copy on cache hit).
-    ///
-    /// # Performance
-    ///
-    /// This method is hot path for cache misses. Decompression throughput:
-    /// - LZ4: ~2 GB/s per core
-    /// - Zstd: ~500 MB/s per core
-    pub(crate) fn resolve_block_data(
-        &self,
-        stream: SnapshotStream,
-        block_idx: u64,
-        info: &BlockInfo,
-    ) -> Result<Bytes> {
-        // Fetch block (from cache or I/O). The FetchResult tracks whether
-        // data is already decompressed, avoiding a TOCTOU race where a
-        // background prefetch thread could modify the cache between fetch
-        // and the decompression decision.
-        match self.fetch_raw_block(stream, block_idx, info)? {
-            FetchResult::Decompressed(data) => Ok(data),
-            FetchResult::Compressed(raw) => {
-                let data = self.decompress_and_verify(raw, block_idx, info)?;
-                self.cache_l1.insert(stream, block_idx, data.clone());
-                Ok(data)
-            }
-        }
     }
 }

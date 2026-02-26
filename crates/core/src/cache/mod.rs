@@ -61,3 +61,9 @@ pub mod prefetch;
 /// Maintains sharded LRU structures used by `File` for efficient
 /// concurrent access and cache eviction.
 pub mod lru;
+
+/// Reusable buffer pool for decompression output buffers.
+///
+/// Pools `Vec<u8>` buffers to reduce allocator pressure during
+/// sequential and parallel decompression.
+pub mod buffer_pool;
