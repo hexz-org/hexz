@@ -79,6 +79,21 @@ fn bench_compression(c: &mut Criterion) {
         })
     });
 
+    // Dynamic dispatch (Box<dyn Compressor>) decompress benchmarks
+    let dyn_lz4: Box<dyn Compressor> = Box::new(Lz4Compressor::new());
+    group.bench_function("LZ4 Decompress (dyn)", |b| {
+        b.iter(|| {
+            dyn_lz4.decompress(black_box(&lz4_compressed)).unwrap();
+        })
+    });
+
+    let dyn_zstd: Box<dyn Compressor> = Box::new(ZstdCompressor::new(3, None));
+    group.bench_function("Zstd-3 Decompress (dyn)", |b| {
+        b.iter(|| {
+            dyn_zstd.decompress(black_box(&zstd_compressed)).unwrap();
+        })
+    });
+
     // compress_into benchmarks: measures buffer reuse effectiveness
     group.bench_function("Zstd-3 compress_into", |b| {
         let compressor = ZstdCompressor::new(3, None);
