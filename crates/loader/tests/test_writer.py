@@ -46,39 +46,14 @@ def test_writer_bytes_written(test_dir):
 
 
 def test_writer_dedup_cdc(test_dir):
-    path = os.path.join(test_dir, "dedup_test.hxz")
-
-    # Create data with repetition
+    """CDC is always-on; verify dedup handles shifted data."""
     chunk = os.urandom(1024 * 1024)  # 1MB random
-    data = chunk * 4  # 4MB total
-
-    # Write with CDC
-    with hexz.Writer(path, dedup=True, cdc=True, compression="lz4") as w:
-        w.add_bytes(data)
-
-    # Write without CDC (fixed block dedup might catch it if aligned, but let's see)
-    # Actually, if we use same chunk 4 times, fixed block dedup should catch it too.
-    # To test CDC specifically, we need shift.
-
     data_shifted = chunk + b"insertion" + chunk
 
-    path_cdc = os.path.join(test_dir, "cdc.hxz")
-    with hexz.Writer(path_cdc, dedup=True, cdc=True) as w:
+    path = os.path.join(test_dir, "cdc_dedup.hxz")
+    with hexz.Writer(path, dedup=True, compression="lz4") as w:
         w.add_bytes(data_shifted)
-        size_cdc = w.bytes_written
+        size = w.bytes_written
 
-    path_nocdc = os.path.join(test_dir, "nocdc.hxz")
-    with hexz.Writer(path_nocdc, dedup=True, cdc=False) as w:
-        w.add_bytes(data_shifted)
-        size_nocdc = w.bytes_written
-
-    # CDC should handle insertion better than fixed blocks
-    # fixed blocks will likely fail to dedup the second chunk because of shift
-    assert size_cdc < size_nocdc
-
-
-def test_writer_cdc_param(test_dir):
-    # Just verify we can pass the parameter
-    path = os.path.join(test_dir, "param_test.hxz")
-    with hexz.Writer(path, cdc=True) as w:
-        w.add_bytes(b"test")
+    # CDC + dedup should recognize the repeated chunk despite the insertion
+    assert size < len(data_shifted)

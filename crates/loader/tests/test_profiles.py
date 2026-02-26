@@ -201,8 +201,8 @@ def test_build_creates_valid_snapshot():
         assert data == test_data
 
 
-def test_build_with_cdc_override():
-    """Test build() with CDC enabled via override."""
+def test_build_with_dedup_override():
+    """Test build() with dedup enabled via override (CDC is always-on)."""
     with tempfile.TemporaryDirectory() as tmpdir:
         input_file = os.path.join(tmpdir, "input.img")
         with open(input_file, "wb") as f:
@@ -210,12 +210,11 @@ def test_build_with_cdc_override():
 
         output_file = os.path.join(tmpdir, "output.hxz")
 
-        # Enable CDC via override
         meta = hexz.build(
             input_file,
             output_file,
             profile="generic",
-            cdc=True,
+            dedup=True,
         )
 
         assert meta is not None
