@@ -158,6 +158,7 @@ fn bench_dedup_no_duplication(c: &mut Criterion) {
                     Some(65536),  // avg_chunk
                     Some(131072), // max_chunk
                     None,
+                    false, // dcam
                     true,
                 )
                 .unwrap();
@@ -194,6 +195,7 @@ fn bench_dedup_no_duplication(c: &mut Criterion) {
                     Some(65536),  // avg_chunk
                     Some(131072), // max_chunk
                     None,
+                    false, // dcam
                     true,
                 )
                 .unwrap();
@@ -253,6 +255,7 @@ fn bench_dedup_25_percent(c: &mut Criterion) {
                     Some(65536),  // avg_chunk
                     Some(131072), // max_chunk
                     None,
+                    false, // dcam
                     true,
                 )
                 .unwrap();
@@ -289,6 +292,7 @@ fn bench_dedup_25_percent(c: &mut Criterion) {
                     Some(65536),  // avg_chunk
                     Some(131072), // max_chunk
                     None,
+                    false, // dcam
                     true,
                 )
                 .unwrap();
@@ -369,6 +373,7 @@ fn bench_dedup_shifted(c: &mut Criterion) {
                     Some(65536),  // avg_chunk
                     Some(131072), // max_chunk
                     None,
+                    false, // dcam
                     true,
                 )
                 .unwrap();
@@ -393,6 +398,7 @@ fn bench_dedup_shifted(c: &mut Criterion) {
                     Some(65536),  // avg_chunk
                     Some(131072), // max_chunk
                     None,
+                    false, // dcam
                     true,
                 )
                 .unwrap();
@@ -427,6 +433,7 @@ fn bench_dedup_shifted(c: &mut Criterion) {
                     Some(65536),  // avg_chunk
                     Some(131072), // max_chunk
                     None,
+                    false, // dcam
                     true,
                 )
                 .unwrap();
@@ -451,6 +458,7 @@ fn bench_dedup_shifted(c: &mut Criterion) {
                     Some(65536),  // avg_chunk
                     Some(131072), // max_chunk
                     None,
+                    false, // dcam
                     true,
                 )
                 .unwrap();

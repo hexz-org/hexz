@@ -148,11 +148,12 @@ pub fn run(
         false,
         false,
         DEFAULT_BLOCK_SIZE,
-        None, // min_chunk (auto-detected)
-        None, // avg_chunk (auto-detected)
-        None, // max_chunk (auto-detected)
-        None, // workers (auto)
-        false,
+        None,  // min_chunk (use default)
+        None,  // avg_chunk (use default)
+        None,  // max_chunk (use default)
+        None,  // workers (auto)
+        false, // dcam (use fixed defaults)
+        false, // silent
     )?;
 
     println!("Cleanup complete.");

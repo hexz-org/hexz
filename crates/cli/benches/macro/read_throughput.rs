@@ -57,6 +57,7 @@ fn setup_benchmark(size: usize) -> (NamedTempFile, NamedTempFile) {
         None,  // avg_chunk (auto)
         None,  // max_chunk (auto)
         None,  // workers
+        false, // dcam
         true,  // silent
     )
     .unwrap();

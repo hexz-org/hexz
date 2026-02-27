@@ -210,7 +210,8 @@ use std::path::PathBuf;
     max_chunk=None,
     parallel=true,
     num_workers=0,
-    show_progress=true
+    show_progress=true,
+    use_dcam=false
 ))]
 pub fn pack(
     py: Python<'_>,
@@ -227,6 +228,7 @@ pub fn pack(
     parallel: bool,
     num_workers: usize,
     show_progress: bool,
+    use_dcam: bool,
 ) -> PyResult<()> {
     if encrypt && password.is_none() {
         return Err(PyValueError::new_err(
@@ -249,6 +251,7 @@ pub fn pack(
         parallel,
         num_workers,
         show_progress,
+        use_dcam,
     };
 
     // Release the GIL during the potentially long-running pack operation

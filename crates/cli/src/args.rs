@@ -79,6 +79,11 @@ pub enum Commands {
         #[arg(long)]
         workers: Option<usize>,
 
+        /// Run DCAM analysis to auto-tune CDC chunk sizes (slower but adaptive).
+        /// Without this flag, CDC uses global defaults: min=16 KiB, avg=64 KiB, max=256 KiB.
+        #[arg(long)]
+        dcam: bool,
+
         /// Suppress all output and progress bars
         #[arg(long, short)]
         silent: bool,

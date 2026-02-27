@@ -58,11 +58,12 @@ fn bench_block_size_pack_time(c: &mut Criterion) {
                         false,
                         false,
                         block_size,
-                        None, // min_chunk (auto)
-                        None, // avg_chunk (auto)
-                        None, // max_chunk (auto)
-                        None, // workers
-                        true, // silent
+                        None,  // min_chunk (auto)
+                        None,  // avg_chunk (auto)
+                        None,  // max_chunk (auto)
+                        None,  // workers
+                        false, // dcam
+                        true,  // silent
                     )
                     .unwrap();
                     drop(temp_dir);

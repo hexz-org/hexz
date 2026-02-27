@@ -323,11 +323,12 @@ fn bench_pack_memory_50mb(c: &mut Criterion) {
                     false,
                     false,
                     block_size as u32,
-                    None, // min_chunk (auto)
-                    None, // avg_chunk (auto)
-                    None, // max_chunk (auto)
-                    None, // workers
-                    true, // silent
+                    None,  // min_chunk (auto)
+                    None,  // avg_chunk (auto)
+                    None,  // max_chunk (auto)
+                    None,  // workers
+                    false, // dcam
+                    true,  // silent
                 )
                 .unwrap();
 
@@ -389,11 +390,12 @@ fn bench_pack_memory_200mb(c: &mut Criterion) {
                     false,
                     false,
                     block_size as u32,
-                    None, // min_chunk (auto)
-                    None, // avg_chunk (auto)
-                    None, // max_chunk (auto)
-                    None, // workers
-                    true, // silent
+                    None,  // min_chunk (auto)
+                    None,  // avg_chunk (auto)
+                    None,  // max_chunk (auto)
+                    None,  // workers
+                    false, // dcam
+                    true,  // silent
                 )
                 .unwrap();
 
@@ -455,11 +457,12 @@ fn bench_pack_memory_500mb(c: &mut Criterion) {
                     false,
                     false,
                     block_size as u32,
-                    None, // min_chunk (auto)
-                    None, // avg_chunk (auto)
-                    None, // max_chunk (auto)
-                    None, // workers
-                    true, // silent
+                    None,  // min_chunk (auto)
+                    None,  // avg_chunk (auto)
+                    None,  // max_chunk (auto)
+                    None,  // workers
+                    false, // dcam
+                    true,  // silent
                 )
                 .unwrap();
 

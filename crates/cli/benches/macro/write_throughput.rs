@@ -68,6 +68,7 @@ fn bench_write_lz4(c: &mut Criterion) {
                     None,  // avg_chunk (auto)
                     None,  // max_chunk (auto)
                     None,  // workers (auto)
+                    false, // dcam
                     true,  // silent mode
                 );
 
@@ -107,11 +108,12 @@ fn bench_write_zstd3(c: &mut Criterion) {
                     false,
                     false,
                     65536,
-                    None, // min_chunk (auto)
-                    None, // avg_chunk (auto)
-                    None, // max_chunk (auto)
-                    None, // workers
-                    true, // silent
+                    None,  // min_chunk (auto)
+                    None,  // avg_chunk (auto)
+                    None,  // max_chunk (auto)
+                    None,  // workers
+                    false, // dcam
+                    true,  // silent
                 );
 
                 black_box(&result.unwrap());
@@ -154,6 +156,7 @@ fn bench_write_cdc_chunk_sizes(c: &mut Criterion) {
                     Some(16384), // small avg
                     Some(65536), // small max
                     None,
+                    false, // dcam
                     true,
                 );
 
@@ -186,6 +189,7 @@ fn bench_write_cdc_chunk_sizes(c: &mut Criterion) {
                     Some(262144),  // large avg
                     Some(1048576), // large max
                     None,
+                    false, // dcam
                     true,
                 );
 

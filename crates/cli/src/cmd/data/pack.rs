@@ -116,6 +116,7 @@ pub fn run(
     avg_chunk: Option<u32>,
     max_chunk: Option<u32>,
     workers: Option<usize>,
+    dcam: bool,
     silent: bool,
 ) -> Result<()> {
     // Get password if encryption is enabled
@@ -166,6 +167,7 @@ pub fn run(
         max_chunk,
         parallel: workers != Some(1),
         num_workers: workers.unwrap_or(0),
+        use_dcam: dcam,
         ..Default::default()
     };
 

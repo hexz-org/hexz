@@ -196,10 +196,11 @@ pub fn run(
         encrypt,
         train_dict,
         block_size,
-        None,  // min_chunk (auto-detected)
-        None,  // avg_chunk (auto-detected)
-        None,  // max_chunk (auto-detected)
+        None,  // min_chunk (use default)
+        None,  // avg_chunk (use default)
+        None,  // max_chunk (use default)
         None,  // workers (auto)
+        false, // dcam (use fixed defaults)
         false, // silent
     )
 }

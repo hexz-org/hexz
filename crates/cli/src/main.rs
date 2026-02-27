@@ -98,6 +98,7 @@ fn main() -> anyhow::Result<()> {
             avg_chunk,
             max_chunk,
             workers,
+            dcam,
             silent,
         } => hexz_cli::cmd::data::pack::run(
             disk,
@@ -111,6 +112,7 @@ fn main() -> anyhow::Result<()> {
             avg_chunk,
             max_chunk,
             workers,
+            dcam,
             silent,
         ),
 

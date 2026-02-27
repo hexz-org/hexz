@@ -351,6 +351,9 @@ pub struct PackConfig {
     pub num_workers: usize,
     /// Show progress bar (if no callback provided).
     pub show_progress: bool,
+    /// Run DCAM analysis to auto-detect optimal CDC parameters.
+    /// When false (default), uses fixed global defaults: min=16 KiB, avg=64 KiB, max=256 KiB.
+    pub use_dcam: bool,
 }
 
 impl Default for PackConfig {
@@ -370,6 +373,7 @@ impl Default for PackConfig {
             parallel: true,      // Enable by default for performance
             num_workers: 0,      // Auto-detect CPU cores
             show_progress: true, // Show progress by default
+            use_dcam: false,     // Use fixed defaults; opt-in DCAM with --dcam
         }
     }
 }
@@ -439,63 +443,78 @@ pub fn calculate_entropy(data: &[u8]) -> f64 {
     entropy
 }
 
-/// Resolve CDC parameters for packing, using DCAM auto-detection when not specified.
+/// Global CDC defaults used when DCAM auto-detection is disabled.
 ///
-/// If all three chunk params are `Some`, uses them directly (user override).
-/// Otherwise, scans the entire input file with LBFS baseline parameters and
-/// uses DCAM `optimize_params` to find the optimal settings.
+/// - min: 16 KiB  — avoids pathologically tiny chunks on large files
+/// - avg: 64 KiB  — good balance of dedup granularity vs. metadata overhead
+/// - max: 256 KiB — caps pathologically large chunks from low-entropy regions
+pub const CDC_DEFAULT_MIN: u32 = 16_384; // 16 KiB
+pub const CDC_DEFAULT_AVG: u32 = 65_536; // 64 KiB  (f = 16)
+pub const CDC_DEFAULT_MAX: u32 = 262_144; // 256 KiB
+
+/// Resolve CDC parameters for packing.
 ///
-/// Supports partial overrides: e.g. only `--min-chunk` specified, DCAM fills the rest.
+/// Resolution order (highest to lowest priority):
+/// 1. Explicit user flags (`--min-chunk`, `--avg-chunk`, `--max-chunk`)
+/// 2. DCAM analysis (only when `config.use_dcam = true`) — scans the full file
+/// 3. Global defaults: min=16 KiB, avg=64 KiB, max=256 KiB
+///
+/// Partial overrides are supported at every level: e.g. only `--min-chunk`
+/// specified while the other two come from DCAM or the defaults.
 pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupeParams> {
-    // If user provided all three, use them directly
-    if let (Some(min), Some(avg), Some(max)) =
-        (config.min_chunk, config.avg_chunk, config.max_chunk)
-    {
-        let f = (avg as f64).log2().round() as u32;
-        return Ok(DedupeParams {
-            f,
+    /// Build a `DedupeParams` from the three logical sizes, filling w/v with
+    /// the standard values used throughout the rest of the code-base.
+    fn from_sizes(min: u32, avg: u32, max: u32) -> DedupeParams {
+        DedupeParams {
+            f: (avg as f64).log2().round() as u32,
             m: min,
             z: max,
             w: 48,
             v: 52,
-        });
+        }
     }
 
-    // DCAM auto-detection: scan the entire file with LBFS baseline
-    let baseline = DedupeParams::lbfs_baseline();
-    let file = File::open(path)?;
-    let file_size = file.metadata()?.len();
-
-    if file_size == 0 {
-        // Degenerate case: return baseline
-        return Ok(baseline);
+    // If the user supplied all three, short-circuit immediately — no file scan.
+    if let (Some(min), Some(avg), Some(max)) =
+        (config.min_chunk, config.avg_chunk, config.max_chunk)
+    {
+        return Ok(from_sizes(min, avg, max));
     }
 
-    let stats = analyze_stream(file, &baseline)?;
-    let optimized = optimize_params(file_size, stats.unique_bytes, &baseline);
+    // Determine the base (min, avg, max) triple, either from DCAM or defaults.
+    let (base_min, base_avg, base_max) = if config.use_dcam {
+        // DCAM: scan the entire file to find data-adaptive optimal params.
+        let baseline = DedupeParams::lbfs_baseline();
+        let file = File::open(path)?;
+        let file_size = file.metadata()?.len();
 
-    // Apply any user-provided partial overrides
-    let mut params = optimized.params;
-    if let Some(min) = config.min_chunk {
-        params.m = min;
-    }
-    if let Some(avg) = config.avg_chunk {
-        params.f = (avg as f64).log2().round() as u32;
-    }
-    if let Some(max) = config.max_chunk {
-        params.z = max;
-    }
+        if file_size == 0 {
+            (CDC_DEFAULT_MIN, CDC_DEFAULT_AVG, CDC_DEFAULT_MAX)
+        } else {
+            let stats = analyze_stream(file, &baseline)?;
+            let optimized = optimize_params(file_size, stats.unique_bytes, &baseline);
+            let p = &optimized.params;
+            let avg = (2u32).pow(p.f);
+            tracing::debug!(
+                "DCAM auto-detected CDC params: f={} m={} z={} (change_rate={:.4}, predicted_ratio={:.4})",
+                p.f,
+                p.m,
+                p.z,
+                optimized.change_rate,
+                optimized.predicted_ratio,
+            );
+            (p.m, avg, p.z)
+        }
+    } else {
+        (CDC_DEFAULT_MIN, CDC_DEFAULT_AVG, CDC_DEFAULT_MAX)
+    };
 
-    tracing::debug!(
-        "DCAM auto-detected CDC params: f={} m={} z={} (change_rate={:.4}, predicted_ratio={:.4})",
-        params.f,
-        params.m,
-        params.z,
-        optimized.change_rate,
-        optimized.predicted_ratio,
-    );
+    // Apply any user-provided partial overrides on top of the base triple.
+    let min = config.min_chunk.unwrap_or(base_min);
+    let avg = config.avg_chunk.unwrap_or(base_avg);
+    let max = config.max_chunk.unwrap_or(base_max);
 
-    Ok(params)
+    Ok(from_sizes(min, avg, max))
 }
 
 /// Packs a snapshot file from disk and/or memory images.

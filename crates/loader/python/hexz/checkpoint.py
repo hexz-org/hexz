@@ -20,10 +20,10 @@ Example:
 from typing import Any, Dict, List, Literal, Optional
 
 from .exceptions import FormatError, ValidationError
+from .reader import Reader
 from .typing import PathLike
 from .utils import Metadata, inspect
 from .writer import Writer
-from .reader import Reader
 
 _CHECKPOINT_VERSION = "1.0"
 
@@ -210,7 +210,7 @@ def save(
         path,
         compression=compression,
         block_size=block_size,
-        dedup=True,
+        dedup=False,
         parent=parent,
     ) as writer:
         for name in tensors_keys:
