@@ -219,11 +219,61 @@ fn bench_chunk_sizes(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmarks allocating (next) vs reusing (next_into) iterator paths.
+///
+/// Measures the allocation overhead of yielding owned Vec<u8> per chunk
+/// vs writing into a single reused buffer across the whole stream.
+fn bench_chunk_alloc_vs_reuse(c: &mut Criterion) {
+    let mut group = c.benchmark_group("CDC-AllocVsReuse");
+
+    let data_size = 10_000_000; // 10 MB
+    let data = generate_random(data_size);
+
+    group.throughput(Throughput::Bytes(data_size as u64));
+
+    let params = DedupeParams {
+        f: 14,    // 16KB average
+        m: 2048,  // 2KB minimum
+        z: 65536, // 64KB maximum
+        w: 48,
+        v: 16,
+    };
+
+    // Baseline: allocating path (Iterator::next — one Vec<u8> per chunk)
+    group.bench_function("next/allocating", |b| {
+        b.iter(|| {
+            let chunker = StreamChunker::new(Cursor::new(&data), params);
+            let mut total = 0usize;
+            for chunk_result in chunker {
+                let chunk = chunk_result.unwrap();
+                total += black_box(chunk.len());
+            }
+            total
+        });
+    });
+
+    // Optimized: reuse path (next_into — one Vec<u8> for the whole stream)
+    group.bench_function("next_into/reuse", |b| {
+        b.iter(|| {
+            let mut chunker = StreamChunker::new(Cursor::new(&data), params);
+            let mut buf = Vec::with_capacity(params.z as usize);
+            let mut total = 0usize;
+            while let Some(res) = chunker.next_into(&mut buf) {
+                let n = res.unwrap();
+                total += black_box(n);
+            }
+            total
+        });
+    });
+
+    group.finish();
+}
+
 criterion_group! {
     name = benches;
     config = Criterion::default()
         .sample_size(50)
         .measurement_time(std::time::Duration::from_secs(3));
-    targets = bench_fastcdc, bench_chunk_sizes
+    targets = bench_fastcdc, bench_chunk_sizes, bench_chunk_alloc_vs_reuse
 }
 criterion_main!(benches);

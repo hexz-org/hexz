@@ -989,12 +989,13 @@ where
     F: Fn(u64, u64),
 {
     let mut logical_pos = 0u64;
+    let mut chunk_buf = Vec::with_capacity(cdc_params.z as usize);
 
-    let chunker = StreamChunker::new(f, *cdc_params);
-    for chunk_res in chunker {
-        let chunk = chunk_res?;
-        logical_pos += chunk.len() as u64;
-        writer.write_data_block(&chunk)?;
+    let mut chunker = StreamChunker::new(f, *cdc_params);
+    while let Some(res) = chunker.next_into(&mut chunk_buf) {
+        let n = res?;
+        logical_pos += n as u64;
+        writer.write_data_block(&chunk_buf)?;
         if let Some(callback) = progress_callback {
             callback(logical_pos, len);
         }

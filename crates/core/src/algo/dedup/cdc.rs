@@ -889,6 +889,86 @@ impl<R: Read> StreamChunker<R> {
     }
 }
 
+impl<R: Read> StreamChunker<R> {
+    /// Determines the length of the next chunk without copying any data.
+    ///
+    /// Handles buffer refilling and EOF. Returns `None` when the stream is
+    /// exhausted, `Some(Err(_))` on I/O error, or `Some(Ok(len))` with the
+    /// number of bytes in the next chunk (always > 0).
+    fn next_chunk_len(&mut self) -> Option<io::Result<usize>> {
+        if self.cursor >= self.filled {
+            if self.eof {
+                return None;
+            }
+            if let Err(e) = self.refill() {
+                return Some(Err(e));
+            }
+            if self.filled == 0 {
+                return None;
+            }
+        }
+
+        let available = self.filled - self.cursor;
+
+        if available < self.max_size && !self.eof {
+            if let Err(e) = self.refill() {
+                return Some(Err(e));
+            }
+        }
+        let available = self.filled - self.cursor;
+
+        let chunk_len = if available < self.min_size {
+            available
+        } else {
+            let data = &self.buffer[self.cursor..self.filled];
+            let search_limit = std::cmp::min(data.len(), self.max_size);
+
+            let chunker = fastcdc::v2020::FastCDC::new(
+                &data[..search_limit],
+                self.min_size as u32,
+                self.avg_size as u32,
+                self.max_size as u32,
+            );
+
+            if let Some(chunk) = chunker.into_iter().next() {
+                chunk.length
+            } else {
+                if available >= self.max_size {
+                    self.max_size
+                } else if self.eof {
+                    available
+                } else if self.filled == self.buffer.len() {
+                    self.max_size
+                } else {
+                    available
+                }
+            }
+        };
+
+        Some(Ok(chunk_len))
+    }
+
+    /// Fills `buf` with the next chunk's bytes, reusing the allocation.
+    ///
+    /// Equivalent to `next()` on the iterator but writes into a caller-owned
+    /// buffer instead of allocating a new `Vec<u8>` per chunk. Use this on
+    /// hot paths where the same buffer can be reused across iterations.
+    ///
+    /// Returns `None` when the stream is exhausted, `Some(Err(_))` on I/O
+    /// error, or `Some(Ok(n))` where `n` is the number of bytes written.
+    pub fn next_into(&mut self, buf: &mut Vec<u8>) -> Option<io::Result<usize>> {
+        let len = match self.next_chunk_len()? {
+            Ok(n) => n,
+            Err(e) => return Some(Err(e)),
+        };
+        let start = self.cursor;
+        self.cursor += len;
+        buf.clear();
+        buf.extend_from_slice(&self.buffer[start..start + len]);
+        Some(Ok(len))
+    }
+}
+
 impl<R: Read> Iterator for StreamChunker<R> {
     type Item = io::Result<Vec<u8>>;
 
@@ -994,61 +1074,13 @@ impl<R: Read> Iterator for StreamChunker<R> {
     /// - **Space**: O(chunk_size) allocation per chunk yielded
     /// - **Throughput**: ~500 MB/s on modern CPUs (bottlenecked by Gear hash)
     fn next(&mut self) -> Option<Self::Item> {
-        if self.cursor >= self.filled {
-            if self.eof {
-                return None;
-            }
-            if let Err(e) = self.refill() {
-                return Some(Err(e));
-            }
-            if self.filled == 0 {
-                return None;
-            }
-        }
-
-        let available = self.filled - self.cursor;
-
-        // Refill if we don't have enough data for a full chunk and more data is available
-        if available < self.max_size && !self.eof {
-            if let Err(e) = self.refill() {
-                return Some(Err(e));
-            }
-        }
-        let available = self.filled - self.cursor;
-
-        let chunk_len = if available < self.min_size {
-            available
-        } else {
-            // Run FastCDC on the available window
-            let data = &self.buffer[self.cursor..self.filled];
-            let search_limit = std::cmp::min(data.len(), self.max_size);
-
-            let chunker = fastcdc::v2020::FastCDC::new(
-                &data[..search_limit],
-                self.min_size as u32,
-                self.avg_size as u32,
-                self.max_size as u32,
-            );
-
-            if let Some(chunk) = chunker.into_iter().next() {
-                chunk.length
-            } else {
-                // No cut point found
-                if available >= self.max_size {
-                    self.max_size
-                } else if self.eof {
-                    available
-                } else if self.filled == self.buffer.len() {
-                    self.max_size
-                } else {
-                    available
-                }
-            }
+        let len = match self.next_chunk_len()? {
+            Ok(n) => n,
+            Err(e) => return Some(Err(e)),
         };
-
         let start = self.cursor;
-        self.cursor += chunk_len;
-        Some(Ok(self.buffer[start..start + chunk_len].to_vec()))
+        self.cursor += len;
+        Some(Ok(self.buffer[start..start + len].to_vec()))
     }
 }
 
