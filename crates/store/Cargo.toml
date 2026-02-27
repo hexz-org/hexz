@@ -12,7 +12,7 @@ hexz-common.workspace = true
 hexz-core = { workspace = true, default-features = false, features = ["compression-zstd", "encryption"] }
 bytes.workspace = true
 memmap2 = "0.9"
-tokio = { workspace = true, features = ["rt", "time"] }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "time"] }
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "stream"] }
 url = "2.5"
 

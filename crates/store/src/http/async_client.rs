@@ -83,20 +83,26 @@ impl HttpBackend {
             .build()
             .map_err(|e| Error::Io(IoError::other(e)))?;
 
-        let len = handle.block_on(async {
-            let resp =
-                send_with_redirects(&client, reqwest::Method::HEAD, &safe_url, HeaderMap::new())
-                    .await?;
-            resp.headers()
-                .get(reqwest::header::CONTENT_LENGTH)
-                .and_then(|v| v.to_str().ok())
-                .and_then(|s| s.parse::<u64>().ok())
-                .ok_or_else(|| {
-                    Error::Io(IoError::new(
-                        ErrorKind::InvalidData,
-                        "Missing Content-Length header",
-                    ))
-                })
+        let len = tokio::task::block_in_place(|| {
+            handle.block_on(async {
+                let resp = send_with_redirects(
+                    &client,
+                    reqwest::Method::HEAD,
+                    &safe_url,
+                    HeaderMap::new(),
+                )
+                .await?;
+                resp.headers()
+                    .get(reqwest::header::CONTENT_LENGTH)
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .ok_or_else(|| {
+                        Error::Io(IoError::new(
+                            ErrorKind::InvalidData,
+                            "Missing Content-Length header",
+                        ))
+                    })
+            })
         })?;
 
         Ok(Self {
@@ -120,20 +126,23 @@ impl StorageBackend for HttpBackend {
             format!("bytes={offset}-{end}").parse().unwrap(),
         );
 
-        self.handle.block_on(async {
-            let resp =
-                send_with_redirects(&self.client, reqwest::Method::GET, &self.url, headers).await?;
-            let bytes = resp
-                .bytes()
-                .await
-                .map_err(|e| Error::Io(IoError::other(e)))?;
-            if bytes.len() != len {
-                return Err(Error::Io(IoError::new(
-                    ErrorKind::UnexpectedEof,
-                    format!("Expected {} bytes, got {}", len, bytes.len()),
-                )));
-            }
-            Ok(bytes)
+        tokio::task::block_in_place(|| {
+            self.handle.block_on(async {
+                let resp =
+                    send_with_redirects(&self.client, reqwest::Method::GET, &self.url, headers)
+                        .await?;
+                let bytes = resp
+                    .bytes()
+                    .await
+                    .map_err(|e| Error::Io(IoError::other(e)))?;
+                if bytes.len() != len {
+                    return Err(Error::Io(IoError::new(
+                        ErrorKind::UnexpectedEof,
+                        format!("Expected {} bytes, got {}", len, bytes.len()),
+                    )));
+                }
+                Ok(bytes)
+            })
         })
     }
 

@@ -1,25 +1,6 @@
 # Hexz Roadmap
 
-> Last Updated: 2026-02-17
-> Current version: v0.4.0
-
----
-
-## What's shipped
-
-- **Core format**: Seekable block-based archive with two-level index, O(log N) random access
-- **Compression**: LZ4, Zstd (levels 1-9), Zstd dictionary training
-- **Encryption**: AES-256-GCM per-block, PBKDF2 key derivation, AES-NI accelerated
-- **Signing**: Ed25519 keypair generation, signing, verification
-- **Deduplication**: BLAKE3 block hashing, FastCDC content-defined chunking, DCAM parameter optimization
-- **Thin snapshots**: Parent-child delta storage via `parent_path` in header
-- **Python bindings**: Reader, Writer, AsyncReader, Dataset (PyTorch), ArrayView, build, convert, inspect, verify, keygen, sign
-- **CLI**: `data pack/build/info/convert/analyze`, `vm boot/install/mount/snap/commit`, `sys doctor/bench/serve/keygen/sign/verify`
-- **Storage backends**: Local file, mmap, S3 (+ S3-compatible endpoints), HTTP/HTTPS byte-range
-- **Performance**: Parallel decompression via Rayon, fixed-window prefetch, sharded LRU cache, GIL release during I/O
-- **Format conversion**: tar, HDF5, WebDataset input
-- **FUSE**: Read-only mount with copy-on-write overlay (Linux)
-- **Platforms**: Linux (x86_64, aarch64), macOS (x86_64, ARM), Windows (x86_64, core only — FUSE/mmap not validated)
+This is the plan for releases. Actual implementations might be slightly different depending on needs at the time.
 
 ---
 

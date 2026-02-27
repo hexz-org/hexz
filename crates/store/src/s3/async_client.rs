@@ -55,16 +55,18 @@ impl S3Backend {
             .map_err(|e| Error::Io(IoError::other(format!("Bucket error: {}", e))))?
             .with_path_style();
 
-        let (head, code) = handle.block_on(async {
-            tokio::time::timeout(std::time::Duration::from_secs(30), bucket.head_object(&key))
-                .await
-                .map_err(|_| {
-                    Error::Io(IoError::new(
-                        ErrorKind::TimedOut,
-                        "S3 connection timeout after 30 seconds",
-                    ))
-                })?
-                .map_err(|e| Error::Io(IoError::other(format!("S3 Head error: {}", e))))
+        let (head, code) = tokio::task::block_in_place(|| {
+            handle.block_on(async {
+                tokio::time::timeout(std::time::Duration::from_secs(30), bucket.head_object(&key))
+                    .await
+                    .map_err(|_| {
+                        Error::Io(IoError::new(
+                            ErrorKind::TimedOut,
+                            "S3 connection timeout after 30 seconds",
+                        ))
+                    })?
+                    .map_err(|e| Error::Io(IoError::other(format!("S3 Head error: {}", e))))
+            })
         })?;
 
         if code != 200 {
@@ -104,37 +106,39 @@ impl StorageBackend for S3Backend {
         }
         let end = offset + len as u64 - 1;
 
-        self.handle.block_on(async {
-            let response_data = tokio::time::timeout(
-                std::time::Duration::from_secs(60),
-                self.bucket.get_object_range(&self.key, offset, Some(end)),
-            )
-            .await
-            .map_err(|_| {
-                Error::Io(IoError::new(
-                    ErrorKind::TimedOut,
-                    "S3 read timeout after 60 seconds",
-                ))
-            })?
-            .map_err(|e| Error::Io(IoError::other(format!("S3 Read error: {}", e))))?;
+        tokio::task::block_in_place(|| {
+            self.handle.block_on(async {
+                let response_data = tokio::time::timeout(
+                    std::time::Duration::from_secs(60),
+                    self.bucket.get_object_range(&self.key, offset, Some(end)),
+                )
+                .await
+                .map_err(|_| {
+                    Error::Io(IoError::new(
+                        ErrorKind::TimedOut,
+                        "S3 read timeout after 60 seconds",
+                    ))
+                })?
+                .map_err(|e| Error::Io(IoError::other(format!("S3 Read error: {}", e))))?;
 
-            let code = response_data.status_code();
-            if code != 200 && code != 206 {
-                return Err(Error::Io(IoError::other(format!(
-                    "S3 error code: {}",
-                    code
-                ))));
-            }
+                let code = response_data.status_code();
+                if code != 200 && code != 206 {
+                    return Err(Error::Io(IoError::other(format!(
+                        "S3 error code: {}",
+                        code
+                    ))));
+                }
 
-            let data = response_data.bytes().clone();
-            if data.len() != len {
-                return Err(Error::Io(IoError::new(
-                    ErrorKind::UnexpectedEof,
-                    format!("Expected {} bytes, got {}", len, data.len()),
-                )));
-            }
+                let data = response_data.bytes().clone();
+                if data.len() != len {
+                    return Err(Error::Io(IoError::new(
+                        ErrorKind::UnexpectedEof,
+                        format!("Expected {} bytes, got {}", len, data.len()),
+                    )));
+                }
 
-            Ok(data)
+                Ok(data)
+            })
         })
     }
 
