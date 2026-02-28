@@ -1,17 +1,21 @@
-//! Checkpoint loading: read tensor bytes from hexz archives.
+//! Checkpoint save/load: tensor-aware I/O for hexz archives.
 //!
-//! Provides the pure-Rust implementation of `checkpoint.load()`. All I/O,
-//! decompression, byte-unshuffle, and XOR delta reconstruction happen here
-//! so the Python wrapper only needs to convert raw bytes into torch tensors.
+//! Provides the pure-Rust implementation of `checkpoint.save()` and
+//! `checkpoint.load()`. All I/O, compression, decompression, byte-shuffle,
+//! and XOR delta encoding/reconstruction happen here so the Python wrapper
+//! only needs to convert between raw bytes and torch tensors.
 
 use hexz_common::{Error, Result};
 use hexz_core::File as HexzFile;
-use hexz_core::algo::transform::{byte_unshuffle, xor_in_place};
+use hexz_core::algo::compression::create_compressor_from_str;
+use hexz_core::algo::transform::{byte_shuffle, byte_unshuffle, xor_in_place};
 use hexz_core::api::file::{ParentLoader, SnapshotStream};
 use hexz_core::format::header::Header;
 use hexz_store::StorageBackend;
 use rayon::prelude::*;
 use serde::Deserialize;
+
+use crate::snapshot_writer::SnapshotWriter;
 
 use std::collections::HashMap;
 use std::fs;
@@ -82,7 +86,260 @@ pub struct CheckpointData {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Implementation
+// Save types
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A single tensor to be saved: raw bytes + metadata.
+pub struct TensorWriteSpec<'a> {
+    pub name: String,
+    pub data: &'a [u8],
+    pub dtype: String,
+    pub shape: Vec<usize>,
+    pub element_size: usize,
+}
+
+/// Configuration for saving a checkpoint.
+pub struct SaveCheckpointConfig<'a> {
+    pub path: PathBuf,
+    pub compression: String,
+    pub compression_level: Option<i32>,
+    pub block_size: u32,
+    pub parent: Option<PathBuf>,
+    pub message: Option<String>,
+    pub num_workers: usize,
+    /// Pre-reconstructed parent tensor bytes for chained XOR delta.
+    /// When the parent itself stores XOR deltas, the caller can provide
+    /// the already-reconstructed base bytes to avoid re-reading the chain.
+    pub base_tensors: Option<HashMap<String, &'a [u8]>>,
+}
+
+/// Map dtype string to element size in bytes.
+pub fn dtype_element_size(dtype: &str) -> usize {
+    match dtype {
+        "float16" | "bfloat16" | "int16" => 2,
+        "float32" | "int32" => 4,
+        "float64" | "int64" => 8,
+        _ => 1, // int8, uint8, bool
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Save implementation
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Save tensors and scalars as a hexz checkpoint.
+///
+/// All I/O, compression, XOR delta encoding, and byte-shuffle are performed
+/// here. The caller (Python wrapper) only needs to extract raw bytes from
+/// torch tensors.
+///
+/// Tensors are written as a single contiguous stream with block-aligned
+/// padding between them, enabling random access via the manifest.
+pub fn save_checkpoint(
+    tensors: &[TensorWriteSpec<'_>],
+    scalars: &HashMap<String, ScalarInfo>,
+    config: &SaveCheckpointConfig<'_>,
+) -> Result<()> {
+    let block_size = config.block_size as usize;
+
+    // Set up compressor
+    let packing_level = if config.parent.is_some() {
+        // Delta saves: fast compression (saved frequently)
+        Some(1)
+    } else {
+        // Baseline saves: use caller's level or default balanced
+        config.compression_level.or(Some(3))
+    };
+    let (compressor, comp_type) =
+        create_compressor_from_str(&config.compression, packing_level, None)?;
+
+    // Open parent snapshot for block-level dedup + XOR delta
+    let parent_snap: Option<Arc<HexzFile>> = if let Some(ref parent_path) = config.parent {
+        let backend = Arc::new(hexz_store::local::MmapBackend::new(parent_path)?);
+        Some(HexzFile::open(backend, None)?)
+    } else {
+        None
+    };
+
+    let mut writer_builder = SnapshotWriter::builder(&config.path, compressor, comp_type)
+        .block_size(config.block_size)
+        .variable_blocks(false);
+
+    if let Some(ref snap) = parent_snap {
+        writer_builder = writer_builder.parent(Arc::clone(snap));
+    }
+
+    let mut writer = writer_builder.build()?;
+
+    // Read parent manifest for XOR delta metadata
+    let parent_manifest: Option<CheckpointManifest> = if let Some(ref parent_path) = config.parent {
+        match read_manifest_bytes(parent_path) {
+            Ok(bytes) => parse_manifest(&bytes).ok(),
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+
+    // Build parent chain for reconstructing xor_delta parents
+    let parent_chain: Vec<(Arc<HexzFile>, CheckpointManifest)> = if let Some(ref snap) = parent_snap
+    {
+        build_parent_chain(snap).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    // Calculate total padded stream size
+    let total_padded: u64 = tensors
+        .iter()
+        .map(|t| {
+            let len = t.data.len() as u64;
+            let pad = (-(len as i64)).rem_euclid(block_size as i64) as u64;
+            len + pad
+        })
+        .sum();
+
+    // Single stream for all tensors
+    writer.begin_stream(true, total_padded);
+
+    let mut tensors_manifest: HashMap<String, serde_json::Value> = HashMap::new();
+    let mut offset: u64 = 0;
+    let zero_pad = vec![0u8; block_size];
+
+    for tensor in tensors {
+        let length = tensor.data.len();
+        let element_size = tensor.element_size;
+
+        // Try XOR delta if parent has this tensor at the same size
+        let used_xor = if let (Some(p_manifest), Some(p_snap)) = (&parent_manifest, &parent_snap) {
+            if let Some(p_info) = p_manifest.tensors.get(&tensor.name) {
+                if p_info.length as usize == length {
+                    // Get the base bytes for XOR
+                    let base_bytes = if p_info.storage == "xor_delta" {
+                        // Parent tensor is itself a delta — get reconstructed bytes
+                        if let Some(ref base_map) = config.base_tensors {
+                            if let Some(base) = base_map.get(&tensor.name) {
+                                Some((*base).to_vec())
+                            } else {
+                                // Reconstruct from parent chain
+                                reconstruct_tensor(p_snap, p_info, &tensor.name, &parent_chain).ok()
+                            }
+                        } else {
+                            // Reconstruct from parent chain
+                            reconstruct_tensor(p_snap, p_info, &tensor.name, &parent_chain).ok()
+                        }
+                    } else {
+                        // Raw parent tensor — read directly
+                        p_snap
+                            .read_at(SnapshotStream::Primary, p_info.offset, length)
+                            .ok()
+                    };
+
+                    if let Some(base) = base_bytes {
+                        // Compute XOR delta + byte shuffle
+                        let mut xor_buf = vec![0u8; length];
+                        xor_buf.copy_from_slice(tensor.data);
+                        xor_in_place(&mut xor_buf, &base);
+
+                        let mut scratch = Vec::new();
+                        byte_shuffle(&mut xor_buf, element_size, &mut scratch);
+
+                        // Write shuffled XOR delta
+                        writer.write_blocks_parallel(&xor_buf, config.num_workers)?;
+
+                        tensors_manifest.insert(
+                            tensor.name.clone(),
+                            serde_json::json!({
+                                "offset": offset,
+                                "length": length,
+                                "dtype": tensor.dtype,
+                                "shape": tensor.shape,
+                                "storage": "xor_delta",
+                                "base_offset": p_info.offset,
+                                "base_length": p_info.length,
+                                "element_size": element_size,
+                            }),
+                        );
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if !used_xor {
+            // Write raw
+            writer.write_blocks_parallel(tensor.data, config.num_workers)?;
+
+            tensors_manifest.insert(
+                tensor.name.clone(),
+                serde_json::json!({
+                    "offset": offset,
+                    "length": length,
+                    "dtype": tensor.dtype,
+                    "shape": tensor.shape,
+                    "storage": "raw",
+                }),
+            );
+        }
+
+        offset += length as u64;
+
+        // Pad to block boundary
+        let pad = (-(length as i64)).rem_euclid(block_size as i64) as usize;
+        if pad > 0 {
+            writer.write_data_block(&zero_pad[..pad])?;
+            offset += pad as u64;
+        }
+    }
+
+    writer.end_stream()?;
+
+    // Build scalars for manifest
+    let scalars_json: HashMap<String, serde_json::Value> = scalars
+        .iter()
+        .map(|(name, info)| {
+            (
+                name.clone(),
+                serde_json::json!({
+                    "type": info.scalar_type,
+                    "value": info.value,
+                }),
+            )
+        })
+        .collect();
+
+    // Build and serialize manifest
+    let manifest = serde_json::json!({
+        "hexz_checkpoint": "1.0",
+        "tensor_count": tensors.len(),
+        "tensors": tensors_manifest,
+        "scalars": scalars_json,
+        "message": config.message,
+    });
+    let manifest_bytes = serde_json::to_vec(&manifest)
+        .map_err(|e| Error::Format(format!("failed to serialize manifest: {}", e)))?;
+
+    // Finalize with parent paths and manifest
+    let parent_paths: Vec<String> = config
+        .parent
+        .as_ref()
+        .map(|p| vec![p.to_string_lossy().into_owned()])
+        .unwrap_or_default();
+
+    writer.finalize(parent_paths, Some(&manifest_bytes))?;
+    Ok(())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Load implementation
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Open a local snapshot with recursive parent chain resolution.

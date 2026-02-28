@@ -357,11 +357,29 @@ impl SnapshotWriter {
         is_disk: bool,
         num_workers: usize,
     ) -> hexz_common::Result<()> {
+        let total_len = data.len() as u64;
+        self.begin_stream(is_disk, total_len);
+        self.write_blocks_parallel(data, num_workers)?;
+        self.end_stream()?;
+        Ok(())
+    }
+
+    /// Compress and write blocks from `data` using rayon, within the current stream.
+    ///
+    /// Unlike `write_stream_parallel`, this does NOT call `begin_stream`/`end_stream`,
+    /// allowing multiple calls within a single stream. The caller must bracket
+    /// calls with `begin_stream`/`end_stream`.
+    ///
+    /// `num_workers` controls rayon parallelism: 0 = global pool (all CPUs),
+    /// N > 0 = dedicated pool with N threads.
+    pub fn write_blocks_parallel(
+        &mut self,
+        data: &[u8],
+        num_workers: usize,
+    ) -> hexz_common::Result<()> {
         use rayon::prelude::*;
 
         let block_size = self.block_size as usize;
-        let total_len = data.len() as u64;
-        self.begin_stream(is_disk, total_len);
 
         // Split into fixed-size blocks — same chunking as the serial path.
         let chunks: Vec<&[u8]> = data.chunks(block_size).collect();
@@ -427,7 +445,6 @@ impl SnapshotWriter {
             }
         }
 
-        self.end_stream()?;
         Ok(())
     }
 

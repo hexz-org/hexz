@@ -1,26 +1,30 @@
 #!/usr/bin/env python3
 """
-Example: LLM Checkpoint Deduplication with Hexz — Mistral-7B
+Example: LLM Fine-tuning with Per-Step Checkpoints — Mistral-7B
 
 A fine-tuning workflow on Mistral-7B-v0.1 using the Alpaca instruction
-dataset. Demonstrates how hexz.checkpoint deduplicates across three
-checkpoints:
+dataset. Demonstrates how hexz.checkpoint creates a version history of
+checkpoints with commit-log messages and chained XOR delta deduplication.
 
-  v1  — pretrained Mistral-7B weights (baseline, nothing trained yet)
-  v2  — fine-tune: lm_head only (all 32 transformer blocks frozen)
-  v3  — fine-tune: last 2 transformer blocks + lm_head (deeper adaptation)
+The checkpoint chain forms a history, much like git commits:
 
-Because frozen layers are byte-for-byte identical across checkpoints, hexz
-stores only the changed weights in v2 and v3. On a 7B model the savings are
-dramatic: v2 and v3 together add just ~tens of MB on top of the ~14 GB
-baseline.
+  step_0.hxz    ← pretrained baseline (~14 GB compressed)
+  step_1.hxz    ← "lm_head fine-tune, step 1/5, loss=3.21"  (~10 MB)
+  step_2.hxz    ← "lm_head fine-tune, step 2/5, loss=2.87"  (~10 MB)
+  ...
+  step_N.hxz    ← "deep fine-tune, step M/M, loss=1.42"     (~500 MB)
+
+Because frozen layers are byte-for-byte identical across saves, hexz
+stores only the changed weights. The `base=` parameter passes the
+previous state dict in memory, eliminating page cache variance and
+making save times consistent regardless of chain depth.
 
 Device selection:
   If the GPU has enough VRAM to hold the model with headroom for training
-  (roughly 1.5× model size), the model is loaded directly to GPU.  Otherwise
+  (roughly 1.5x model size), the model is loaded directly to GPU. Otherwise
   it is loaded to CPU — simpler code, no device_map hacks, standard
-  load_state_dict works — at the cost of slower training.  On a typical 8 GB
-  consumer GPU, CPU mode is selected automatically.  CPU step counts are set
+  load_state_dict works — at the cost of slower training. On a typical 8 GB
+  consumer GPU, CPU mode is selected automatically. CPU step counts are set
   much lower so the demo finishes in reasonable time.
 
 Requirements:
@@ -32,6 +36,7 @@ import os
 import time
 
 import hexz.checkpoint as ckpt
+from hexz.utils import inspect as hexz_inspect
 import torch
 import torch.optim as optim
 from datasets import load_dataset
@@ -47,8 +52,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 # On CUDA, float16 is fine and slightly faster; use it if available.
 TORCH_DTYPE = torch.float16 if torch.cuda.is_available() else torch.bfloat16
 
-# Rough model size: 7B params × 2 bytes (float16) ≈ 14 GB.
-# Training needs ~1.5× that for activations + optimizer headroom.
+# Rough model size: 7B params x 2 bytes (float16) = 14 GB.
+# Training needs ~1.5x that for activations + optimizer headroom.
 _MODEL_BYTES = 7e9 * 2
 _vram = (
     torch.cuda.get_device_properties(0).total_memory if torch.cuda.is_available() else 0
@@ -72,10 +77,12 @@ if TRAIN_DEVICE == "cpu":
     MAX_SEQ_LEN = 64
     HEAD_STEPS = 5
     DEEP_STEPS = 10
+    DEEP_SAVE_EVERY = 5
 else:
     MAX_SEQ_LEN = 256
     HEAD_STEPS = 100
     DEEP_STEPS = 200
+    DEEP_SAVE_EVERY = 50
 
 os.makedirs(CKPT_DIR, exist_ok=True)
 os.environ.setdefault("PYTORCH_ALLOC_CONF", "expandable_segments:True")
@@ -120,17 +127,56 @@ def get_dataloader(tokenizer):
 # ---------------------------------------------------------------------------
 
 
-def train_steps(model, loader, optimizer, n_steps, scheduler=None):
-    """Run exactly n_steps gradient updates.  Returns (avg_loss, elapsed, secs/step)."""
+def snapshot_state(model):
+    """Clone model state_dict in storage dtype for checkpoint base.
+
+    Converts any float32 tensors (from CPU upcast for optimizer stability)
+    back to the storage dtype so frozen layers remain byte-identical for
+    XOR delta deduplication.
+    """
+    sd = {}
+    for k, v in model.state_dict().items():
+        t = v.detach().clone()
+        if t.is_floating_point() and t.dtype != TORCH_DTYPE:
+            t = t.to(TORCH_DTYPE)
+        sd[k] = t
+    return sd
+
+
+def train_with_checkpoints(
+    model,
+    loader,
+    optimizer,
+    n_steps,
+    phase_name,
+    parent_path,
+    base_sd,
+    scheduler=None,
+    save_every=1,
+):
+    """Train with per-step checkpoint saves using chained XOR deltas.
+
+    Each checkpoint is saved with:
+    - parent= pointing to the previous checkpoint (for dedup)
+    - base= with the cloned previous state dict (avoids loading parent from disk)
+    - message= with a commit-log-style training summary
+
+    Returns (avg_loss, final_path, final_sd, checkpoint_paths).
+    """
     model.train()
     total_loss = 0.0
     microsteps = 0
     updates = 0
-    t0 = time.time()
-    t_step = t0
+
+    prev_path = parent_path
+    prev_sd = base_sd
+    paths = []
+    save_times = []
 
     data_iter = iter(loader)
     optimizer.zero_grad()
+    t0 = time.time()
+    t_step = t0
 
     while updates < n_steps:
         try:
@@ -161,24 +207,68 @@ def train_steps(model, loader, optimizer, n_steps, scheduler=None):
                 scheduler.step()
             optimizer.zero_grad()
             updates += 1
+            avg_loss = total_loss / microsteps
 
             now = time.time()
             step_time = now - t_step
             t_step = now
-            elapsed = now - t0
-            avg_loss = total_loss / microsteps
-            remaining = (n_steps - updates) * step_time
-            print(
-                f"  step {updates:>4}/{n_steps}"
-                f"  loss={avg_loss:.4f}"
-                f"  step={step_time:.1f}s"
-                f"  elapsed={elapsed:.0f}s"
-                f"  eta={remaining:.0f}s",
-                flush=True,
-            )
+
+            # Save checkpoint at interval or at the final step
+            if updates % save_every == 0 or updates == n_steps:
+                sd = snapshot_state(model)
+
+                step_path = os.path.join(CKPT_DIR, f"{phase_name}_step{updates}.hxz")
+                lr_str = ""
+                if scheduler is not None:
+                    lr_str = f", lr={optimizer.param_groups[0]['lr']:.2e}"
+                message = (
+                    f"{phase_name}, step {updates}/{n_steps}, "
+                    f"loss={avg_loss:.4f}{lr_str}"
+                )
+
+                t_save = time.time()
+                ckpt.save(
+                    sd,
+                    step_path,
+                    parent=prev_path,
+                    base=prev_sd,
+                    message=message,
+                )
+                t_save = time.time() - t_save
+
+                sz = os.path.getsize(step_path)
+                save_times.append(t_save)
+                paths.append(step_path)
+                print(
+                    f"  step {updates:>4}/{n_steps}"
+                    f"  loss={avg_loss:.4f}"
+                    f"  train={step_time:.1f}s"
+                    f"  save={t_save:.2f}s"
+                    f"  size={sz / 1e6:.1f}MB"
+                    f'  "{message}"',
+                    flush=True,
+                )
+
+                prev_path = step_path
+                prev_sd = sd
+            else:
+                elapsed = now - t0
+                remaining = (n_steps - updates) * step_time
+                print(
+                    f"  step {updates:>4}/{n_steps}"
+                    f"  loss={avg_loss:.4f}"
+                    f"  step={step_time:.1f}s"
+                    f"  elapsed={elapsed:.0f}s"
+                    f"  eta={remaining:.0f}s",
+                    flush=True,
+                )
 
     elapsed = time.time() - t0
-    return total_loss / microsteps, elapsed, elapsed / n_steps
+    if save_times:
+        avg_save = sum(save_times) / len(save_times)
+        print(f"  Avg save time: {avg_save:.2f}s over {len(save_times)} checkpoints")
+
+    return total_loss / microsteps, prev_path, prev_sd, paths
 
 
 def count_trainable(model):
@@ -190,9 +280,9 @@ def count_frozen(model):
 
 
 def section(title):
-    print(f"\n{'─' * 65}")
+    print(f"\n{'=' * 65}")
     print(f"  {title}")
-    print(f"{'─' * 65}")
+    print(f"{'=' * 65}")
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +310,7 @@ def main():
     tokenizer.pad_token = tokenizer.eos_token
 
     # device_map=TRAIN_DEVICE loads everything to one device — no meta tensors,
-    # no accelerate hooks.  model.state_dict() returns real tensors and
+    # no accelerate hooks. model.state_dict() returns real tensors and
     # model.load_state_dict() works normally.
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_ID,
@@ -238,50 +328,60 @@ def main():
     train_loader = get_dataloader(tokenizer)
 
     # -----------------------------------------------------------------------
-    # v1: Save pretrained weights before any fine-tuning
+    # Baseline: save pretrained weights (step 0)
     # -----------------------------------------------------------------------
 
-    section("v1 — Pretrained Mistral-7B (no training)")
+    section("Baseline — Pretrained Mistral-7B (no training)")
 
     for param in model.parameters():
         param.requires_grad = False
 
-    v1_path = os.path.join(CKPT_DIR, "v1_pretrained.hxz")
-    if os.path.exists(v1_path):
-        print(f"Skipping — checkpoint exists: {v1_path}")
-        sz1 = os.path.getsize(v1_path)
+    v0_path = os.path.join(CKPT_DIR, "step_0.hxz")
+    if os.path.exists(v0_path):
+        print(f"Skipping — checkpoint exists: {v0_path}")
     else:
         t0 = time.time()
         ckpt.save(
             model.state_dict(),
-            v1_path,
+            v0_path,
             progress=True,
-            message="pretrained mistral-7b base",
+            message="pretrained mistral-7b baseline",
         )
-        t_save1 = time.time() - t0
-        sz1 = os.path.getsize(v1_path)
-        print(f"Saved → {v1_path}")
-        print(f"  Size:      {sz1 / 1e9:.2f} GB")
-        print(f"  Save time: {t_save1:.1f}s")
+        t_save0 = time.time() - t0
+        sz0 = os.path.getsize(v0_path)
+        print(f"Saved -> {v0_path}")
+        print(f"  Size:      {sz0 / 1e9:.2f} GB")
+        print(f"  Save time: {t_save0:.1f}s")
+
+    # Snapshot baseline state for use as `base=` in first delta save
+    base_sd = snapshot_state(model)
+    all_paths = [v0_path]
 
     # -----------------------------------------------------------------------
-    # v2: Fine-tune lm_head only
+    # Phase 1: Fine-tune lm_head only — save every step
     # -----------------------------------------------------------------------
 
-    section(f"v2 — Fine-tune: lm_head only ({HEAD_STEPS} steps)")
+    section(f"Phase 1 — lm_head fine-tune ({HEAD_STEPS} steps, save every step)")
 
     for name, param in model.named_parameters():
         param.requires_grad = name.startswith("lm_head.")
 
     print(
-        f"Trainable params: {count_trainable(model):,}  (frozen: {count_frozen(model):,})"
+        f"Trainable params: {count_trainable(model):,}  "
+        f"(frozen: {count_frozen(model):,})"
     )
 
-    v2_path = os.path.join(CKPT_DIR, "v2_head_only.hxz")
-    if os.path.exists(v2_path):
-        print(f"Skipping — restoring weights from: {v2_path}")
-        model.load_state_dict(ckpt.load(v2_path, device=TRAIN_DEVICE), strict=False)
-        sz2 = os.path.getsize(v2_path)
+    # Check if final checkpoint already exists
+    head_final = os.path.join(CKPT_DIR, f"head_step{HEAD_STEPS}.hxz")
+    if os.path.exists(head_final):
+        print(f"Skipping — restoring from: {head_final}")
+        model.load_state_dict(ckpt.load(head_final, device=TRAIN_DEVICE), strict=False)
+        base_sd = snapshot_state(model)
+        # Collect existing checkpoint paths for the history
+        for s in range(1, HEAD_STEPS + 1):
+            p = os.path.join(CKPT_DIR, f"head_step{s}.hxz")
+            if os.path.exists(p):
+                all_paths.append(p)
     else:
         # Upcast trainable params to float32 — bf16 optimizer math on CPU produces NaN.
         if TRAIN_DEVICE == "cpu":
@@ -292,42 +392,35 @@ def main():
         optimizer = optim.AdamW(
             (p for p in model.parameters() if p.requires_grad), lr=2e-4
         )
-        loss2, t_train2, sps2 = train_steps(model, train_loader, optimizer, HEAD_STEPS)
-        print(
-            f"Training done: loss={loss2:.4f}  total={t_train2:.0f}s  per-step={sps2:.1f}s"
+        _, _, base_sd, head_paths = train_with_checkpoints(
+            model,
+            train_loader,
+            optimizer,
+            HEAD_STEPS,
+            phase_name="head",
+            parent_path=all_paths[-1],
+            base_sd=base_sd,
+            save_every=1,
         )
+        all_paths.extend(head_paths)
         del optimizer
         gc.collect()
 
-        # Downcast back to storage dtype so frozen layers stay byte-identical for dedup.
+        # Upcast back so model is in training state for next phase
         if TRAIN_DEVICE == "cpu":
             for p in model.parameters():
                 if p.requires_grad:
                     p.data = p.data.to(TORCH_DTYPE)
 
-        t0 = time.time()
-        ckpt.save(
-            model.state_dict(),
-            v2_path,
-            parent=v1_path,
-            progress=True,
-            message="lm_head fine-tune",
-        )
-        t_save2 = time.time() - t0
-        sz2 = os.path.getsize(v2_path)
-        print(f"Saved → {v2_path}")
-        print(f"  Size:      {sz2 / 1e6:.1f} MB  ← only lm_head weights stored")
-        print(f"  Save time: {t_save2:.3f}s")
-
     # -----------------------------------------------------------------------
-    # v3: Unfreeze last 2 transformer blocks + lm_head
+    # Phase 2: Unfreeze last 2 transformer blocks + lm_head — save periodically
     # -----------------------------------------------------------------------
 
     unfreeze_from = n_layers - 2
 
     section(
-        f"v3 — Fine-tune: blocks {unfreeze_from}–{n_layers - 1} + lm_head "
-        f"({DEEP_STEPS} steps)"
+        f"Phase 2 — blocks {unfreeze_from}-{n_layers - 1} + lm_head "
+        f"({DEEP_STEPS} steps, save every {DEEP_SAVE_EVERY})"
     )
 
     for name, param in model.named_parameters():
@@ -338,13 +431,22 @@ def main():
         param.requires_grad = in_last_blocks or name.startswith("lm_head.")
 
     print(
-        f"Trainable params: {count_trainable(model):,}  (frozen: {count_frozen(model):,})"
+        f"Trainable params: {count_trainable(model):,}  "
+        f"(frozen: {count_frozen(model):,})"
     )
 
-    v3_path = os.path.join(CKPT_DIR, "v3_last2blocks_head.hxz")
-    if os.path.exists(v3_path):
-        print(f"Skipping — checkpoint exists: {v3_path}")
-        sz3 = os.path.getsize(v3_path)
+    deep_final = os.path.join(CKPT_DIR, f"deep_step{DEEP_STEPS}.hxz")
+    if os.path.exists(deep_final):
+        print(f"Skipping — checkpoint exists: {deep_final}")
+        # Collect existing checkpoint paths
+        for s in range(DEEP_SAVE_EVERY, DEEP_STEPS + 1, DEEP_SAVE_EVERY):
+            p = os.path.join(CKPT_DIR, f"deep_step{s}.hxz")
+            if os.path.exists(p):
+                all_paths.append(p)
+        if DEEP_STEPS % DEEP_SAVE_EVERY != 0:
+            p = os.path.join(CKPT_DIR, f"deep_step{DEEP_STEPS}.hxz")
+            if os.path.exists(p):
+                all_paths.append(p)
     else:
         gc.collect()
         if TRAIN_DEVICE == "cuda":
@@ -361,12 +463,18 @@ def main():
             weight_decay=0.01,
         )
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=DEEP_STEPS)
-        loss3, t_train3, sps3 = train_steps(
-            model, train_loader, optimizer, DEEP_STEPS, scheduler=scheduler
+        _, _, _, deep_paths = train_with_checkpoints(
+            model,
+            train_loader,
+            optimizer,
+            DEEP_STEPS,
+            phase_name="deep",
+            parent_path=all_paths[-1],
+            base_sd=base_sd,
+            scheduler=scheduler,
+            save_every=DEEP_SAVE_EVERY,
         )
-        print(
-            f"Training done: loss={loss3:.4f}  total={t_train3:.0f}s  per-step={sps3:.1f}s"
-        )
+        all_paths.extend(deep_paths)
         del optimizer, scheduler
         gc.collect()
 
@@ -375,22 +483,38 @@ def main():
                 if p.requires_grad:
                     p.data = p.data.to(TORCH_DTYPE)
 
-        t0 = time.time()
-        ckpt.save(
-            model.state_dict(),
-            v3_path,
-            parent=v2_path,
-            progress=True,
-            message="last 2 blocks + lm_head fine-tune",
-        )
-        t_save3 = time.time() - t0
-        sz3 = os.path.getsize(v3_path)
-        print(f"Saved → {v3_path}")
-        print(
-            f"  Size:      {sz3 / 1e6:.1f} MB  "
-            f"← only blocks {unfreeze_from}–{n_layers - 1} + lm_head stored"
-        )
-        print(f"  Save time: {t_save3:.3f}s")
+    # -----------------------------------------------------------------------
+    # Checkpoint history — inspect the chain like git log
+    # -----------------------------------------------------------------------
+
+    section("Checkpoint history")
+
+    total_chain_bytes = 0
+    for p in all_paths:
+        if os.path.exists(p):
+            sz = os.path.getsize(p)
+            total_chain_bytes += sz
+            meta = ckpt.manifest(p) if p != all_paths[0] else None
+            # Read the commit message from checkpoint metadata
+            try:
+                file_meta = hexz_inspect(p)
+                msg = file_meta.get("message", "")
+            except Exception:
+                msg = ""
+
+            if meta is not None:
+                n_tensors = len(meta)
+                xor_count = sum(
+                    1 for v in meta.values() if v.get("storage") == "xor_delta"
+                )
+                print(
+                    f"  {os.path.basename(p):<30}  {sz / 1e6:>8.1f} MB  "
+                    f"({xor_count}/{n_tensors} xor_delta)"
+                )
+            else:
+                print(f"  {os.path.basename(p):<30}  {sz / 1e9:>8.2f} GB  (baseline)")
+            if msg:
+                print(f"    {msg}")
 
     # -----------------------------------------------------------------------
     # Storage analysis
@@ -398,34 +522,29 @@ def main():
 
     section("Storage analysis")
 
-    bytes_per_param = 2  # float16
+    bytes_per_param = 2  # float16 / bfloat16
     full_mb = total_params * bytes_per_param / 1e6
-    naive_mb = full_mb * 3
-    hexz_mb = (sz1 + sz2 + sz3) / 1e6
+    naive_mb = full_mb * len(all_paths)
+    hexz_mb = total_chain_bytes / 1e6
     savings_pct = (1 - hexz_mb / naive_mb) * 100
 
     print(f"Model:              Mistral-7B-v0.1, {total_params / 1e9:.2f}B parameters")
-    print(f"Checkpoint size:    {full_mb / 1e3:.2f} GB each (float16, uncompressed)")
+    print(f"Checkpoint size:    {full_mb / 1e3:.2f} GB each (uncompressed)")
+    print(f"Checkpoints saved:  {len(all_paths)}")
     print()
-    print(f"  v1  pretrained (full)                 {sz1 / 1e9:7.2f} GB")
     print(
-        f"  v2  +lm_head fine-tune                {sz2 / 1e6:7.1f} MB  ← lm_head only"
+        f"  Naive ({len(all_paths)} x {full_mb / 1e3:.2f} GB):  {naive_mb / 1e3:>8.2f} GB"
     )
-    print(
-        f"  v3  +last-2-blocks fine-tune          {sz3 / 1e6:7.1f} MB  "
-        f"← blocks {unfreeze_from}-{n_layers - 1} + lm_head"
-    )
-    print()
-    print(f"  Naive (3 × {full_mb / 1e3:.2f} GB):          {naive_mb / 1e3:7.2f} GB")
-    print(f"  Hexz chain total:                     {hexz_mb / 1e3:7.2f} GB")
-    print(f"  Savings:                              {savings_pct:.1f}%")
+    print(f"  Hexz chain total:               {hexz_mb / 1e3:>8.2f} GB")
+    print(f"  Savings:                         {savings_pct:>7.1f}%")
 
     # -----------------------------------------------------------------------
     # Latency: selective load vs full load
     # -----------------------------------------------------------------------
 
-    section("Latency: selective load vs full load from v3")
+    section("Latency: selective load vs full load")
 
+    final_path = all_paths[-1]
     state_keys = list(model.state_dict().keys())
     fine_tuned_keys = [
         k
@@ -437,39 +556,25 @@ def main():
     ]
 
     t0 = time.time()
-    partial = ckpt.load(v3_path, keys=fine_tuned_keys)
+    partial = ckpt.load(final_path, keys=fine_tuned_keys)
     t_partial = time.time() - t0
     partial_mb = sum(v.nbytes for v in partial.values() if hasattr(v, "nbytes")) / 1e6
 
     t0 = time.time()
-    full = ckpt.load(v3_path)
+    full = ckpt.load(final_path)
     t_full = time.time() - t0
-    full_delta_mb = sum(v.nbytes for v in full.values() if hasattr(v, "nbytes")) / 1e6
+    full_mb = sum(v.nbytes for v in full.values() if hasattr(v, "nbytes")) / 1e6
 
     print(
-        f"Full v3 load (delta only):             {t_full:.3f}s  "
-        f"({len(full):,} keys, {full_delta_mb:.0f} MB)"
+        f"Full load:                {t_full:.3f}s  "
+        f"({len(full):,} keys, {full_mb:.0f} MB)"
     )
     print(
-        f"Fine-tuned layers only:                {t_partial * 1e3:.1f} ms  "
+        f"Fine-tuned layers only:   {t_partial * 1e3:.1f} ms  "
         f"({len(partial):,} keys, {partial_mb:.0f} MB)"
     )
     if t_partial > 0:
-        print(f"Speedup:                               {t_full / t_partial:.0f}×")
-
-    # -----------------------------------------------------------------------
-    # Manifest — inspect without loading any weights
-    # -----------------------------------------------------------------------
-
-    section("Manifest — inspect v3 delta (no weights loaded)")
-
-    info = ckpt.manifest(v3_path)
-    delta_bytes = sum(v["length"] for v in info.values())
-    print(f"v3 stores {len(info)} tensors ({delta_bytes / 1e6:.1f} MB raw):")
-    for name, meta in sorted(info.items())[:10]:
-        print(f"  {name:<60}  {meta['dtype']}  {meta['shape']}")
-    if len(info) > 10:
-        print(f"  ... and {len(info) - 10} more")
+        print(f"Speedup:                  {t_full / t_partial:.0f}x")
 
     print()
 

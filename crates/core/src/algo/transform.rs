@@ -4,6 +4,34 @@
 //! delta encoding. These transforms improve compression ratios by grouping
 //! similar bytes together before compression.
 
+/// Byte-shuffle: group bytes by position within each element.
+///
+/// For `element_size=4`: `[A0 A1 A2 A3 B0 B1 B2 B3]` → `[A0 B0 A1 B1 A2 B2 A3 B3]`
+///
+/// This creates long runs of similar-valued bytes (e.g. all-zero high bytes
+/// in XOR deltas) that compress dramatically better with zstd/lz4.
+///
+/// The `scratch` buffer is reused across calls to avoid repeated allocation.
+pub fn byte_shuffle(data: &mut [u8], element_size: usize, scratch: &mut Vec<u8>) {
+    if element_size <= 1 || data.len() < element_size {
+        return;
+    }
+    let n = data.len();
+    scratch.resize(n, 0);
+    scratch.copy_from_slice(data);
+    let count = n / element_size;
+    let tail = n % element_size;
+    for i in 0..count {
+        for j in 0..element_size {
+            data[j * count + i] = scratch[i * element_size + j];
+        }
+    }
+    // Copy tail bytes verbatim
+    if tail > 0 {
+        data[count * element_size..].copy_from_slice(&scratch[count * element_size..]);
+    }
+}
+
 /// Byte-unshuffle: inverse of byte_shuffle.
 ///
 /// Groups bytes by their position within each element. For `element_size=4`:
@@ -48,6 +76,35 @@ pub fn xor_in_place(dst: &mut [u8], src: &[u8]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_byte_shuffle_identity_element_size_1() {
+        let mut data = vec![1, 2, 3, 4];
+        let mut scratch = Vec::new();
+        byte_shuffle(&mut data, 1, &mut scratch);
+        assert_eq!(data, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn test_byte_shuffle_element_size_2() {
+        // Interleaved: [A0 A1 B0 B1]
+        // Shuffled (byte lanes grouped): [A0 B0 A1 B1]
+        let mut data = vec![0x10, 0x11, 0x20, 0x21];
+        let mut scratch = Vec::new();
+        byte_shuffle(&mut data, 2, &mut scratch);
+        assert_eq!(data, vec![0x10, 0x20, 0x11, 0x21]);
+    }
+
+    #[test]
+    fn test_shuffle_unshuffle_roundtrip() {
+        let original = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+        let mut data = original.clone();
+        let mut scratch = Vec::new();
+        byte_shuffle(&mut data, 4, &mut scratch);
+        assert_ne!(data, original);
+        byte_unshuffle(&mut data, 4, &mut scratch);
+        assert_eq!(data, original);
+    }
 
     #[test]
     fn test_byte_unshuffle_identity_element_size_1() {

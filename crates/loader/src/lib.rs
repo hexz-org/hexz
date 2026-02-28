@@ -62,7 +62,11 @@ fn hexz_loader(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
 
-    // Checkpoint loading
+    // Checkpoint save/load
+    m.add_function(wrap_pyfunction!(
+        py_interface::checkpoint::save_checkpoint,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(
         py_interface::checkpoint::load_checkpoint,
         m

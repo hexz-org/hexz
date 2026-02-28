@@ -22,10 +22,8 @@ from typing import Any, Dict, List, Literal, Optional
 from .exceptions import FormatError, ValidationError
 from .typing import PathLike
 from .utils import Metadata, inspect
-from .writer import Writer
 from ._internal import (
-    _CHECKPOINT_VERSION,
-    _DTYPE_SIZES,
+    _COMPRESSION_LEVELS,
     _ensure_torch,
     _dtype_to_str,
     _tensor_to_buffer,
@@ -48,6 +46,9 @@ def save(
     message: Optional[str] = None,
 ) -> Metadata:
     """Save a PyTorch state_dict as a Hexz checkpoint.
+
+    All compression, XOR delta encoding, and I/O are performed in Rust
+    with parallel compression via rayon.
 
     Args:
         state_dict: Dictionary mapping names to tensors and scalars.
@@ -85,143 +86,50 @@ def save(
         ...     prev_sd = new_sd
     """
     _ensure_torch()
+    from . import hexz_loader
 
     # Classify all values up front
-    tensors_keys = []
+    tensor_list = []
     scalars_dict: Dict[str, Dict[str, Any]] = {}
 
     for key in sorted(state_dict.keys()):
         value = state_dict[key]
         kind = _classify_value(key, value)
         if kind == "tensor":
-            # Validate dtype early
-            _dtype_to_str(value.dtype)
-            tensors_keys.append(key)
+            dtype_str = _dtype_to_str(value.dtype)
+            buf = _tensor_to_buffer(value)
+            tensor_list.append((key, buf, dtype_str, list(value.shape)))
         else:
             scalars_dict[key] = {
                 "type": _scalar_type_name(value),
                 "value": value,
             }
 
-    # Write tensors
-    tensors_manifest: Dict[str, Dict[str, Any]] = {}
-    offset = 0
+    # Extract base tensor buffers for chained XOR delta
+    base_buffers = None
+    if base is not None:
+        base_buffers = {}
+        for name, _, _, _ in tensor_list:
+            if name in base:
+                base_buffers[name] = _tensor_to_buffer(base[name])
 
-    total_bytes = sum(
-        state_dict[k].nbytes for k in tensors_keys if hasattr(state_dict[k], "nbytes")
-    )
+    # Resolve compression level from packing mode
+    packing = "balanced" if parent is None else "fast"
+    compression_level = _COMPRESSION_LEVELS[packing].get(compression)
 
-    # Build parent tensor map for XOR delta
-    parent_tensors: Optional[Dict[str, Dict[str, Any]]] = None
-    if parent is not None:
-        try:
-            parent_tensors = manifest(parent)
-        except Exception:
-            parent_tensors = None
-
-    _tqdm = None
-    if progress:
-        try:
-            from tqdm import tqdm as _tqdm
-        except ImportError:
-            pass
-
-    # Lazily loaded when parent has xor_delta tensors that need reconstruction
-    _parent_reconstructed: Optional[Dict[str, Any]] = None
-
-    with Writer(
-        path,
+    # All heavy lifting in Rust (compression, XOR delta, I/O, manifest)
+    hexz_loader.save_checkpoint(
+        str(path),
+        tensor_list,
+        scalars_dict,
         compression=compression,
+        compression_level=compression_level,
         block_size=block_size,
-        dedup=False,
-        parent=parent,
-        cdc=False,
+        parent=str(parent) if parent is not None else None,
+        base_tensors=base_buffers,
+        message=message,
         num_workers=num_workers,
-    ) as writer:
-        pbar = (
-            _tqdm(
-                total=total_bytes,
-                unit="B",
-                unit_scale=True,
-                unit_divisor=1024,
-                desc="saving",
-                leave=False,
-            )
-            if _tqdm is not None
-            else None
-        )
-        for name in tensors_keys:
-            tensor = state_dict[name]
-            buf = _tensor_to_buffer(tensor)
-            length = buf.nbytes
-
-            # Try XOR delta if tensor exists in parent with same byte length
-            use_xor = False
-            element_size = _DTYPE_SIZES.get(tensor.dtype, 1) if _DTYPE_SIZES else 1
-            if parent_tensors is not None and name in parent_tensors:
-                pinfo = parent_tensors[name]
-                if pinfo["length"] == length:
-                    if pinfo.get("storage") == "xor_delta":
-                        # Parent tensor is itself a delta — reconstruct the
-                        # actual bytes so we XOR against real values, not the
-                        # shuffled delta stored in the parent's stream.
-                        if _parent_reconstructed is None:
-                            _parent_reconstructed = (
-                                base if base is not None else load(parent, device="cpu")
-                            )
-                        parent_buf = _tensor_to_buffer(_parent_reconstructed[name])
-                        writer.add_xor_delta_from_buffers(buf, parent_buf, element_size)
-                    else:
-                        writer.add_xor_delta(
-                            buf, pinfo["offset"], pinfo["length"], element_size
-                        )
-                    use_xor = True
-
-            if not use_xor:
-                writer.add_bytes(buf)
-
-            if pbar is not None:
-                pbar.set_postfix_str(
-                    name.split(".")[-2] if "." in name else name, refresh=False
-                )
-                pbar.update(length)
-
-            entry: Dict[str, Any] = {
-                "offset": offset,
-                "length": length,
-                "dtype": _dtype_to_str(tensor.dtype),
-                "shape": list(tensor.shape),
-            }
-            if use_xor:
-                pinfo = parent_tensors[name]  # type: ignore[index]
-                entry["storage"] = "xor_delta"
-                entry["base_offset"] = pinfo["offset"]
-                entry["base_length"] = pinfo["length"]
-                entry["element_size"] = element_size
-            else:
-                entry["storage"] = "raw"
-
-            tensors_manifest[name] = entry
-            offset += length
-            # Pad to next block boundary so subsequent tensors stay block-aligned.
-            # Zero blocks are stored as 8-byte markers in SnapshotWriter, essentially free.
-            pad = (-length) % block_size
-            if pad:
-                writer.add_bytes(bytes(pad))
-                offset += pad
-
-        if pbar is not None:
-            pbar.close()
-
-        manifest_data = {
-            "hexz_checkpoint": _CHECKPOINT_VERSION,
-            "tensor_count": len(tensors_keys),
-            "tensors": tensors_manifest,
-            "scalars": scalars_dict,
-        }
-        if message is not None:
-            manifest_data["message"] = message
-        writer.add_metadata(manifest_data)
+    )
 
     return inspect(path)
 

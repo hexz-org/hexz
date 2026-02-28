@@ -278,15 +278,8 @@ impl Builder {
             .ok_or_else(|| PyValueError::new_err("No parent snapshot for XOR delta"))?
             .clone();
 
-        let block_size = self.block_size as usize;
         let total_len = slice.len();
-
-        let writer = self
-            .writer
-            .as_mut()
-            .ok_or_else(|| PyValueError::new_err("Writer closed"))?;
-
-        writer.begin_stream(true, total_len as u64);
+        let num_workers = self.num_workers;
 
         // XOR the whole tensor against the base, then byte-shuffle the result.
         // This must be done on the full tensor (not per-block) so that the reader
@@ -309,15 +302,14 @@ impl Builder {
         byte_shuffle(&mut xor_buf, element_size, &mut shuffle_scratch);
         drop(shuffle_scratch);
 
-        // Write shuffled XOR delta in blocks
-        for chunk in xor_buf.chunks(block_size) {
-            writer
-                .write_data_block(chunk)
-                .map_err(|e| PyIOError::new_err(e.to_string()))?;
-        }
+        // Write shuffled XOR delta using parallel compression
+        let writer = self
+            .writer
+            .as_mut()
+            .ok_or_else(|| PyValueError::new_err("Writer closed"))?;
 
         writer
-            .end_stream()
+            .write_stream_parallel(&xor_buf, true, num_workers)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
         Ok(())
@@ -350,15 +342,8 @@ impl Builder {
             )));
         }
 
-        let block_size = self.block_size as usize;
         let total_len = slice.len();
-
-        let writer = self
-            .writer
-            .as_mut()
-            .ok_or_else(|| PyValueError::new_err("Writer closed"))?;
-
-        writer.begin_stream(true, total_len as u64);
+        let num_workers = self.num_workers;
 
         let mut xor_buf = vec![0u8; total_len];
         xor_buf.copy_from_slice(slice);
@@ -371,14 +356,14 @@ impl Builder {
         byte_shuffle(&mut xor_buf, element_size, &mut shuffle_scratch);
         drop(shuffle_scratch);
 
-        for chunk in xor_buf.chunks(block_size) {
-            writer
-                .write_data_block(chunk)
-                .map_err(|e| PyIOError::new_err(e.to_string()))?;
-        }
+        // Write shuffled XOR delta using parallel compression
+        let writer = self
+            .writer
+            .as_mut()
+            .ok_or_else(|| PyValueError::new_err("Writer closed"))?;
 
         writer
-            .end_stream()
+            .write_stream_parallel(&xor_buf, true, num_workers)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
         Ok(())
@@ -700,28 +685,4 @@ impl Builder {
     }
 }
 
-/// Byte-shuffle: group bytes by position within each element.
-///
-/// For `element_size=4`: `[A0 A1 A2 A3 B0 B1 B2 B3]` → `[A0 B0 A1 B1 A2 B2 A3 B3]`
-///
-/// This creates long runs of similar-valued bytes (e.g. all-zero high bytes
-/// in XOR deltas) that compress dramatically better with zstd/lz4.
-pub(crate) fn byte_shuffle(data: &mut [u8], element_size: usize, scratch: &mut Vec<u8>) {
-    if element_size <= 1 || data.len() < element_size {
-        return;
-    }
-    let n = data.len();
-    scratch.resize(n, 0);
-    scratch.copy_from_slice(data);
-    let count = n / element_size;
-    let tail = n % element_size;
-    for i in 0..count {
-        for j in 0..element_size {
-            data[j * count + i] = scratch[i * element_size + j];
-        }
-    }
-    // Copy tail bytes verbatim
-    if tail > 0 {
-        data[count * element_size..].copy_from_slice(&scratch[count * element_size..]);
-    }
-}
+use hexz_core::algo::transform::byte_shuffle;
