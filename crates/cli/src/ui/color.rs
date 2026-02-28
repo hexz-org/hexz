@@ -13,12 +13,14 @@ pub struct Palette {
     pub reset: &'static str,
     /// Bright cyan — used for label keys.
     pub cyan: &'static str,
-    /// Bright green — used for file sizes.
+    /// Bright green — used for file sizes and success status.
     pub green: &'static str,
     /// Bright yellow — used for annotations and scalar values.
     pub yellow: &'static str,
     /// Dark gray — used for tree chrome and secondary info.
     pub gray: &'static str,
+    /// Bright red — used for error/failure status.
+    pub red: &'static str,
 }
 
 static COLORS: Palette = Palette {
@@ -29,6 +31,7 @@ static COLORS: Palette = Palette {
     green: "\x1b[92m",
     yellow: "\x1b[93m",
     gray: "\x1b[90m",
+    red: "\x1b[91m",
 };
 
 static PLAIN: Palette = Palette {
@@ -39,6 +42,7 @@ static PLAIN: Palette = Palette {
     green: "",
     yellow: "",
     gray: "",
+    red: "",
 };
 
 /// Returns the color palette appropriate for stdout.

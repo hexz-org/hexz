@@ -19,6 +19,8 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
+use crate::ui::color::palette;
+
 /// Per-block classification for one archive, derived from a single index scan.
 struct BlockSummary {
     /// Hashes of blocks with actual data stored in this file.
@@ -130,6 +132,8 @@ pub fn run(a: PathBuf, b: PathBuf) -> Result<()> {
     }
 
     // --- Render ---
+    let p = palette();
+
     let name_a = a.file_name().unwrap_or(a.as_os_str()).to_string_lossy();
     let name_b = b.file_name().unwrap_or(b.as_os_str()).to_string_lossy();
     let max_name = name_a.len().max(name_b.len());
@@ -137,61 +141,84 @@ pub fn run(a: PathBuf, b: PathBuf) -> Result<()> {
     let total_a_data_blocks = summary_a.hashes.len();
     let total_b_data_blocks = summary_b.hashes.len() + summary_b.parent_ref_blocks;
 
-    println!();
-    println!(
-        "  {:<width$}  {:>10}  {:>6} blocks",
-        name_a,
-        HumanBytes(info_a.file_size),
-        total_a_data_blocks,
-        width = max_name,
-    );
-    println!(
-        "  {:<width$}  {:>10}  {:>6} blocks",
-        name_b,
-        HumanBytes(info_b.file_size),
-        total_b_data_blocks,
-        width = max_name,
-    );
-    println!();
+    // Pre-format all alignment-sensitive strings as plain text so ANSI codes
+    // don't skew column widths.
+    let name_a_col = format!("{:<w$}", name_a, w = max_name);
+    let name_b_col = format!("{:<w$}", name_b, w = max_name);
+    let size_a_col = format!("{:>10}", HumanBytes(info_a.file_size));
+    let size_b_col = format!("{:>10}", HumanBytes(info_b.file_size));
+    let blk_a_col = format!("{:>6}", total_a_data_blocks);
+    let blk_b_col = format!("{:>6}", total_b_data_blocks);
+
+    // Label column width: wide enough for "Only in <longest_name>:"
+    let lbl_w = "Only in ".len() + max_name + 1;
+    let shared_lbl = format!("{:<w$}", "Shared:", w = lbl_w);
+    let new_b_lbl = format!("{:<w$}", format!("New in {}:", name_b), w = lbl_w);
+    let only_a_lbl = format!("{:<w$}", format!("Only in {}:", name_a), w = lbl_w);
+    let saved_lbl = format!("{:<w$}", "Storage saved:", w = lbl_w);
+
+    let shared_size = format!("{:>10}", HumanBytes(shared_bytes));
+    let new_b_size = format!("{:>10}", HumanBytes(summary_b.unique_bytes));
+    let only_a_size = format!("{:>10}", HumanBytes(summary_a.unique_bytes));
+    let shared_blk = format!("{:>6}", shared_blocks);
+    let new_b_blk = format!("{:>6}", summary_b.unique_blocks);
+    let only_a_blk = format!("{:>6}", summary_a.unique_blocks);
 
     let total_b_bytes = (shared_bytes + summary_b.unique_bytes).max(1);
     let pct = |n: u64| n as f64 / total_b_bytes as f64 * 100.0;
 
-    // When B is a thin snapshot, its parent-ref blocks cover data owned by A.
-    // Those hashes aren't stored in B's index, so A's blocks appear "not found in B"
-    // even though they're shared. Suppress the misleading "only in A" count in that case.
     let is_thin_b = summary_b.parent_ref_blocks > 0;
     let thin_note = if is_thin_b {
-        format!("  ({} via parent refs)", summary_b.parent_ref_blocks)
+        format!(
+            "  {}({} via parent refs){}",
+            p.gray, summary_b.parent_ref_blocks, p.reset
+        )
     } else {
         String::new()
     };
 
+    // File header
+    println!();
     println!(
-        "  Shared:        {:>10}  {:>6} blocks  ({:.0}%){}",
-        HumanBytes(shared_bytes),
-        shared_blocks,
+        "  {}{}{}  {}{}{}  {} blocks",
+        p.bold, name_a_col, p.reset, p.green, size_a_col, p.reset, blk_a_col
+    );
+    println!(
+        "  {}{}{}  {}{}{}  {} blocks",
+        p.bold, name_b_col, p.reset, p.green, size_b_col, p.reset, blk_b_col
+    );
+    println!();
+
+    // Comparison rows
+    println!(
+        "  {}{}{}  {}{}{}  {} blocks  {}({:.0}%){}{}",
+        p.cyan,
+        shared_lbl,
+        p.reset,
+        p.green,
+        shared_size,
+        p.reset,
+        shared_blk,
+        p.bold,
         pct(shared_bytes),
+        p.reset,
         thin_note,
     );
     println!(
-        "  New in {:<width$}  {:>10}  {:>6} blocks",
-        format!("{}:", name_b),
-        HumanBytes(summary_b.unique_bytes),
-        summary_b.unique_blocks,
-        width = max_name + 1,
+        "  {}{}{}  {}{}{}  {} blocks",
+        p.cyan, new_b_lbl, p.reset, p.yellow, new_b_size, p.reset, new_b_blk,
     );
     if !is_thin_b {
         println!(
-            "  Only in {:<width$}  {:>10}  {:>6} blocks",
-            format!("{}:", name_a),
-            HumanBytes(summary_a.unique_bytes),
-            summary_a.unique_blocks,
-            width = max_name + 1,
+            "  {}{}{}  {}{}{}  {} blocks",
+            p.cyan, only_a_lbl, p.reset, p.dim, only_a_size, p.reset, only_a_blk,
         );
     }
     println!();
-    println!("  Storage saved: {}", HumanBytes(shared_bytes));
+    println!(
+        "  {}{}{}  {}{}{}",
+        p.cyan, saved_lbl, p.reset, p.green, shared_size, p.reset
+    );
     println!();
 
     Ok(())

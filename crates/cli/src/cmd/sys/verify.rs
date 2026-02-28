@@ -101,8 +101,21 @@ use std::path::PathBuf;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 pub fn run(key_path: PathBuf, image_path: PathBuf) -> Result<()> {
-    println!("Verifying {:?} with key {:?}...", image_path, key_path);
+    use crate::ui::color::palette;
+    let p = palette();
+    println!(
+        "{}Verifying{} {} with key {}{}{}...",
+        p.cyan,
+        p.reset,
+        image_path.display(),
+        p.dim,
+        key_path.display(),
+        p.reset,
+    );
     verify_snapshot(&image_path, &key_path)?;
-    println!("Signature Verified! The image index is authentic.");
+    println!(
+        "{}✓ Signature verified.{} The index is authentic.",
+        p.green, p.reset
+    );
     Ok(())
 }
