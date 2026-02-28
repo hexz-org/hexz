@@ -12,12 +12,20 @@ from .exceptions import ValidationError
 from .reader import Reader
 from .typing import PathLike, Shape
 from .writer import Writer
-from ._internal import _check_numpy, HAS_NUMPY
+from ._internal import HAS_NUMPY
 
 if HAS_NUMPY:
     import numpy as np
 else:
     np = None  # type: ignore
+
+
+def _check_numpy():
+    """Check if NumPy is available (reads module-level HAS_NUMPY for mockability)."""
+    if not HAS_NUMPY:
+        raise ImportError(
+            "NumPy is required for array operations. Install it with: pip install numpy"
+        )
 
 
 def read_array(
