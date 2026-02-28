@@ -65,6 +65,8 @@ use hexz_ops::inspect::inspect_snapshot;
 use indicatif::HumanBytes;
 use std::path::PathBuf;
 
+use crate::ui::color::{Palette, palette};
+
 /// Format a scalar value for inline display.
 ///
 /// Floats → 4 decimal places, ints as-is, strings quoted, bools lowercase.
@@ -110,10 +112,19 @@ pub fn format_scalars_summary(scalars: &serde_json::Map<String, serde_json::Valu
     parts.join(", ")
 }
 
+/// Returns a colored, right-padded label for the inspect table.
+///
+/// The visible column width is always 14 characters (`"  " + key + spaces`),
+/// keeping values aligned regardless of ANSI escape sequences.
+fn lbl(key: &str, p: &'static Palette) -> String {
+    let spaces = 14usize.saturating_sub(2 + key.len());
+    format!("  {}{}{}{}", p.cyan, key, p.reset, " ".repeat(spaces))
+}
+
 /// Print metadata lines for a checkpoint: checkpoint info, scalars, message.
 ///
 /// For non-checkpoint metadata, falls back to showing the byte length.
-fn print_metadata_lines(raw: &str) {
+fn print_metadata_lines(raw: &str, p: &'static Palette) {
     if let Ok(obj) = serde_json::from_str::<serde_json::Value>(raw) {
         if let Some(ver) = obj.get("hexz_checkpoint").and_then(|v| v.as_str()) {
             let tensors = obj
@@ -121,91 +132,38 @@ fn print_metadata_lines(raw: &str) {
                 .and_then(|v| v.as_object())
                 .map(|m| m.len())
                 .unwrap_or(0);
-            println!("  checkpoint: v{}, {} tensors", ver, tensors);
+            println!("{}v{}, {} tensors", lbl("checkpoint:", p), ver, tensors);
 
             if let Some(scalars) = obj.get("scalars").and_then(|v| v.as_object()) {
                 if !scalars.is_empty() {
-                    println!("  scalars:    {}", format_scalars_summary(scalars));
+                    println!(
+                        "{}{}{}{}",
+                        lbl("scalars:", p),
+                        p.yellow,
+                        format_scalars_summary(scalars),
+                        p.reset,
+                    );
                 }
             }
 
             if let Some(msg) = obj.get("message").and_then(|v| v.as_str()) {
-                println!("  message:    {}", msg);
+                println!("{}{}", lbl("message:", p), msg);
             }
 
             return;
         }
     }
-    println!("  metadata:   {} bytes", raw.len());
+    println!("{}{} bytes", lbl("metadata:", p), raw.len());
 }
 
 /// Executes the info command to display snapshot metadata.
-///
-/// Reads and parses the snapshot header and master index, then displays
-/// comprehensive metadata about the snapshot's format, compression, features,
-/// and storage statistics. Output can be formatted as human-readable text or
-/// JSON for machine consumption.
-///
-/// # Arguments
-///
-/// * `snap` - Path to the `.st` snapshot file to inspect
-/// * `json` - If true, output JSON format; otherwise, human-readable format
-///
-/// # Output Details
-///
-/// **Human-Readable Format:**
-/// Displays formatted output with sections for Features and Storage Statistics,
-/// using human-friendly byte sizes (e.g., "10.5 GB") and clearly labeled fields.
-///
-/// **JSON Format:**
-/// Outputs a single JSON object with fields:
-/// - `path`: Snapshot file path (string)
-/// - `version`: Format version number (integer)
-/// - `compression`: Compression algorithm ("Lz4" or "Zstd")
-/// - `block_size`: Block size in bytes (integer)
-/// - `encrypted`: Encryption status (boolean)
-/// - `has_disk`: Primary stream present (boolean)
-/// - `has_memory`: Secondary stream present (boolean)
-/// - `variable_blocks`: CDC chunking enabled (boolean)
-/// - `original_size`: Uncompressed size in bytes (integer)
-/// - `compressed_size`: File size in bytes (integer)
-/// - `compression_ratio`: Compression multiplier (float)
-/// - `index_offset`: Master index byte offset (integer)
-/// - `primary_pages`: Number of disk index pages (integer)
-/// - `secondary_pages`: Number of memory index pages (integer)
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - The snapshot file cannot be opened (file not found, permission denied)
-/// - The header cannot be read (file too small, I/O error)
-/// - The header format is invalid (corrupted file, wrong format)
-/// - The master index cannot be read (corrupted index, truncated file)
-/// - The master index format is invalid (version mismatch, corrupted data)
-///
-/// # Examples
-///
-/// ```no_run
-/// use std::path::PathBuf;
-/// use hexz_cli::cmd::data::inspect;
-///
-/// // Display human-readable snapshot information
-/// inspect::run(PathBuf::from("snapshot.hxz"), false)?;
-///
-/// // Output JSON for automated processing
-/// inspect::run(PathBuf::from("snapshot.hxz"), true)?;
-/// # Ok::<(), anyhow::Error>(())
-/// ```
 pub fn run(snap: PathBuf, json: bool) -> Result<()> {
-    // Note: inspect_snapshot in hexz_core needs to parse the full index
-    // to return the block_stats every time.
     let info = inspect_snapshot(&snap).context("Failed to inspect snapshot")?;
 
     let total_uncompressed = info.total_uncompressed();
     let ratio = info.compression_ratio();
 
     if json {
-        // Output machine-readable JSON
         let out = serde_json::json!({
             "path": snap,
             "version": info.version,
@@ -225,65 +183,88 @@ pub fn run(snap: PathBuf, json: bool) -> Result<()> {
             "metadata": info.metadata,
             "block_stats": info.block_stats,
         });
-
         println!("{}", serde_json::to_string_pretty(&out)?);
-    } else {
-        // Compact human-readable output
-        let filename = snap
+        return Ok(());
+    }
+
+    let p = palette();
+
+    let filename = snap
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_else(|| snap.display().to_string());
+
+    let comp_name = match info.compression {
+        hexz_core::format::header::CompressionType::Lz4 => "LZ4",
+        hexz_core::format::header::CompressionType::Zstd => "Zstd",
+    };
+
+    // Title
+    println!("{}{}{}", p.bold, filename, p.reset);
+
+    // Format
+    let block_kib = info.block_size / 1024;
+    println!(
+        "{}v{}, {}, {} KiB blocks",
+        lbl("format:", p),
+        info.version,
+        comp_name,
+        block_kib,
+    );
+
+    // Size
+    println!(
+        "{}{}{}{} on disk, {}{}{} uncompressed ({}{:.2}x{})",
+        lbl("size:", p),
+        p.green,
+        HumanBytes(info.file_size),
+        p.reset,
+        p.green,
+        HumanBytes(total_uncompressed),
+        p.reset,
+        p.bold,
+        ratio,
+        p.reset,
+    );
+
+    // Parent
+    if !info.parent_paths.is_empty() {
+        let parent_display = std::path::Path::new(&info.parent_paths[0])
             .file_name()
             .map(|f| f.to_string_lossy().to_string())
-            .unwrap_or_else(|| snap.display().to_string());
-
-        let comp_name = match info.compression {
-            hexz_core::format::header::CompressionType::Lz4 => "LZ4",
-            hexz_core::format::header::CompressionType::Zstd => "Zstd",
-        };
-
-        println!("{}", filename);
-        let block_kib = info.block_size / 1024;
+            .unwrap_or_else(|| info.parent_paths[0].clone());
         println!(
-            "  format:     v{}, {}, {} KiB blocks",
-            info.version, comp_name, block_kib,
+            "{}{}{}{}",
+            lbl("parent:", p),
+            p.yellow,
+            parent_display,
+            p.reset
         );
-        println!(
-            "  size:       {} on disk, {} uncompressed ({:.2}x)",
-            HumanBytes(info.file_size),
-            HumanBytes(total_uncompressed),
-            ratio,
-        );
+    }
 
-        if !info.parent_paths.is_empty() {
-            // Show just the filename of the first parent
-            let parent_display = std::path::Path::new(&info.parent_paths[0])
-                .file_name()
-                .map(|f| f.to_string_lossy().to_string())
-                .unwrap_or_else(|| info.parent_paths[0].clone());
-            println!("  parent:     {}", parent_display);
+    // Block stats
+    if let Some(stats) = &info.block_stats {
+        let mut parts = Vec::new();
+        if stats.data_blocks > 0 {
+            parts.push(format!(
+                "{} data ({} unique)",
+                stats.data_blocks, stats.unique_blocks
+            ));
         }
+        if stats.parent_ref_blocks > 0 {
+            parts.push(format!("{} parent refs", stats.parent_ref_blocks));
+        }
+        if stats.zero_blocks > 0 {
+            parts.push(format!("{} zero", stats.zero_blocks));
+        }
+        if !parts.is_empty() {
+            println!("{}{}", lbl("blocks:", p), parts.join(", "));
+        }
+    }
 
-        if let Some(stats) = &info.block_stats {
-            let mut parts = Vec::new();
-            if stats.data_blocks > 0 {
-                parts.push(format!(
-                    "{} data ({} unique)",
-                    stats.data_blocks, stats.unique_blocks
-                ));
-            }
-            if stats.parent_ref_blocks > 0 {
-                parts.push(format!("{} parent refs", stats.parent_ref_blocks));
-            }
-            if stats.zero_blocks > 0 {
-                parts.push(format!("{} zero", stats.zero_blocks));
-            }
-            if !parts.is_empty() {
-                println!("  blocks:     {}", parts.join(", "));
-            }
-        }
-
-        // Metadata summary
-        if let Some(meta) = &info.metadata {
-            print_metadata_lines(meta);
-        }
+    // Metadata summary (checkpoint, scalars, message)
+    if let Some(meta) = &info.metadata {
+        print_metadata_lines(meta, p);
     }
 
     Ok(())

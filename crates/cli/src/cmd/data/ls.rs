@@ -32,6 +32,8 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
+use crate::ui::color::{Palette, palette};
+
 struct ArchiveInfo {
     path: PathBuf,
     file_size: u64,
@@ -102,6 +104,82 @@ fn read_archive_info(path: &Path) -> Result<ArchiveInfo> {
     })
 }
 
+fn print_tree(
+    idx: usize,
+    entries: &[ArchiveInfo],
+    children: &HashMap<usize, Vec<usize>>,
+    external_parent: &[Option<&str>],
+    prefix: &str,
+    is_last: bool,
+    p: &'static Palette,
+) {
+    let a = &entries[idx];
+    let connector = if is_last { "└──" } else { "├──" };
+    let name = a.path.file_name().unwrap_or_default().to_string_lossy();
+
+    let (ann_text, ann_color) = if let Some(ext) = external_parent[idx] {
+        let parent_name = Path::new(ext)
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        (format!("← {} (external)", parent_name), p.gray)
+    } else if let Some(msg) = &a.message {
+        (msg.clone(), p.yellow)
+    } else if let Some(scalars) = &a.scalars_summary {
+        (scalars.clone(), p.dim)
+    } else if a.parent.is_none() {
+        ("standalone".to_string(), p.gray)
+    } else {
+        (format!("+{} new blocks", a.data_blocks), p.dim)
+    };
+
+    // Pre-pad with plain strings so ANSI codes don't skew column widths.
+    let name_padded = format!("{:<32}", name);
+    let size_str = format!("{:>10}", HumanBytes(a.file_size));
+
+    println!(
+        "  {}{}{}{} {}{}{} {}{}{}  {}{}{}",
+        prefix,
+        p.gray,
+        connector,
+        p.reset,
+        p.bold,
+        name_padded,
+        p.reset,
+        p.green,
+        size_str,
+        p.reset,
+        ann_color,
+        ann_text,
+        p.reset,
+    );
+
+    let mut kids = children.get(&idx).cloned().unwrap_or_default();
+    kids.sort_by_key(|&i| &entries[i].path);
+
+    // Continue the vertical bar in gray, or use blank space for the last child.
+    let segment = if is_last {
+        "    ".to_string()
+    } else {
+        format!("{}│{}   ", p.gray, p.reset)
+    };
+    let child_prefix = format!("{}{}", prefix, segment);
+
+    for (j, &child) in kids.iter().enumerate() {
+        let last = j == kids.len() - 1;
+        print_tree(
+            child,
+            entries,
+            children,
+            external_parent,
+            &child_prefix,
+            last,
+            p,
+        );
+    }
+}
+
 /// Print a tree of all `.hxz` archives found in `dir`.
 pub fn run(dir: PathBuf) -> Result<()> {
     // --- Collect all .hxz files ---
@@ -141,7 +219,6 @@ pub fn run(dir: PathBuf) -> Result<()> {
         .iter()
         .map(|a| {
             a.parent.as_deref().and_then(|p| {
-                // Try matching on the bare filename of the declared parent path.
                 let parent_name = Path::new(p)
                     .file_name()
                     .unwrap_or_default()
@@ -182,78 +259,29 @@ pub fn run(dir: PathBuf) -> Result<()> {
     roots.sort_by_key(|&i| &entries[i].path);
 
     // --- Render ---
+    let p = palette();
     let total_size: u64 = entries.iter().map(|a| a.file_size).sum();
 
-    println!();
-    println!("  {}/", dir.display());
-
-    fn print_tree(
-        idx: usize,
-        entries: &[ArchiveInfo],
-        children: &HashMap<usize, Vec<usize>>,
-        external_parent: &[Option<&str>],
-        prefix: &str,
-        is_last: bool,
-    ) {
-        let a = &entries[idx];
-        let connector = if is_last { "└──" } else { "├──" };
-        let name = a.path.file_name().unwrap_or_default().to_string_lossy();
-
-        let annotation = if let Some(ext) = external_parent[idx] {
-            // External parent — show where it comes from
-            let parent_name = Path::new(ext)
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned();
-            format!("← {} (external)", parent_name)
-        } else if let Some(msg) = &a.message {
-            msg.clone()
-        } else if let Some(scalars) = &a.scalars_summary {
-            scalars.clone()
-        } else if a.parent.is_none() {
-            "standalone".to_string()
-        } else {
-            format!("+{} new blocks", a.data_blocks)
-        };
-
-        println!(
-            "  {}{} {:<32} {:>10}  {}",
-            prefix,
-            connector,
-            name,
-            HumanBytes(a.file_size).to_string(),
-            annotation,
-        );
-
-        let mut kids = children.get(&idx).cloned().unwrap_or_default();
-        kids.sort_by_key(|&i| &entries[i].path);
-
-        let child_prefix = format!("{}{}   ", prefix, if is_last { " " } else { "│" });
-        for (j, &child) in kids.iter().enumerate() {
-            let last = j == kids.len() - 1;
-            print_tree(
-                child,
-                entries,
-                children,
-                external_parent,
-                &child_prefix,
-                last,
-            );
-        }
-    }
+    // Strip trailing slash so we don't print "dir//" when the user passes "dir/".
+    let dir_str = dir.to_string_lossy();
+    let dir_base = dir_str.trim_end_matches('/');
+    println!("\n  {}{}/{}", p.bold, dir_base, p.reset);
 
     for (i, &root) in roots.iter().enumerate() {
         let last = i == roots.len() - 1;
-        print_tree(root, &entries, &children, &external_parent, "", last);
+        print_tree(root, &entries, &children, &external_parent, "", last, p);
     }
 
     println!();
     println!(
-        "  {} archive{}   {} on disk",
+        "  {}{}{} archive{}   {}{}{} on disk",
+        p.bold,
         entries.len(),
+        p.reset,
         if entries.len() == 1 { "" } else { "s" },
+        p.green,
         HumanBytes(total_size),
+        p.reset,
     );
     println!();
 

@@ -13,5 +13,6 @@
 //!
 //! - [`progress`]: Progress bars and spinners for operation feedback
 
+pub mod color;
 pub mod help;
 pub mod progress;
