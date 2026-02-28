@@ -65,6 +65,32 @@ use hexz_ops::inspect::inspect_snapshot;
 use indicatif::HumanBytes;
 use std::path::PathBuf;
 
+/// Summarize metadata JSON into a compact human-readable string.
+///
+/// If the metadata contains `hexz_checkpoint`, show checkpoint version,
+/// tensor count, and scalar count. Otherwise show the byte length.
+fn summarize_metadata(raw: &str) -> String {
+    if let Ok(obj) = serde_json::from_str::<serde_json::Value>(raw) {
+        if let Some(ver) = obj.get("hexz_checkpoint").and_then(|v| v.as_str()) {
+            let tensors = obj
+                .get("tensors")
+                .and_then(|v| v.as_object())
+                .map(|m| m.len())
+                .unwrap_or(0);
+            let scalars = obj
+                .get("scalars")
+                .and_then(|v| v.as_object())
+                .map(|m| m.len())
+                .unwrap_or(0);
+            return format!(
+                "checkpoint v{}, {} tensors, {} scalars",
+                ver, tensors, scalars
+            );
+        }
+    }
+    format!("{} bytes", raw.len())
+}
+
 /// Executes the info command to display snapshot metadata.
 ///
 /// Reads and parses the snapshot header and master index, then displays
@@ -154,101 +180,62 @@ pub fn run(snap: PathBuf, json: bool) -> Result<()> {
 
         println!("{}", serde_json::to_string_pretty(&out)?);
     } else {
-        // Output human-readable text
-        println!("Snapshot:       {:?}", snap);
-        println!("Format Version: {}", info.version);
-        println!("Compression:    {:?}", info.compression);
-        println!("Block Size:     {}", HumanBytes(info.block_size as u64));
+        // Compact human-readable output
+        let filename = snap
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| snap.display().to_string());
 
-        println!("\n--- Features ---");
+        let comp_name = match info.compression {
+            hexz_core::format::header::CompressionType::Lz4 => "LZ4",
+            hexz_core::format::header::CompressionType::Zstd => "Zstd",
+        };
+
+        println!("{}", filename);
+        let block_kib = info.block_size / 1024;
         println!(
-            "Encrypted:      {}",
-            if info.encrypted { "Yes" } else { "No" }
+            "  format:     v{}, {}, {} KiB blocks",
+            info.version, comp_name, block_kib,
         );
         println!(
-            "Primary Stream: {}",
-            if info.has_primary { "Yes" } else { "No" }
-        );
-        println!(
-            "Secondary Strm: {}",
-            if info.has_secondary { "Yes" } else { "No" }
-        );
-        println!(
-            "Variable Blks:  {}",
-            if info.variable_blocks {
-                "Yes (CDC)"
-            } else {
-                "No"
-            }
+            "  size:       {} on disk, {} uncompressed ({:.2}x)",
+            HumanBytes(info.file_size),
+            HumanBytes(total_uncompressed),
+            ratio,
         );
 
-        println!("\n--- Storage Statistics ---");
-        println!("Original Size:  {}", HumanBytes(total_uncompressed));
-        println!("Compressed:     {}", HumanBytes(info.file_size));
-        println!("Ratio:          {:.2}x", ratio);
-
-        println!("\n--- Index Details ---");
-        println!("Index Offset:   {}", info.index_offset);
-        println!("Primary Pages:  {}", info.primary_pages);
-        println!("Secondary Pgs:  {}", info.secondary_pages);
-
-        println!("\n--- Lineage & Metadata ---");
-        if info.parent_paths.is_empty() {
-            println!("Parent Links:   None (Standalone)");
-        } else {
-            for (i, p) in info.parent_paths.iter().enumerate() {
-                if i == 0 {
-                    println!("Parent Links:   {}", p);
-                } else {
-                    println!("                {}", p);
-                }
-            }
-        }
-
-        if let Some(meta) = &info.metadata {
-            println!("Metadata:       {}", meta);
-        } else {
-            println!("Metadata:       None");
+        if !info.parent_paths.is_empty() {
+            // Show just the filename of the first parent
+            let parent_display = std::path::Path::new(&info.parent_paths[0])
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_else(|| info.parent_paths[0].clone());
+            println!("  parent:     {}", parent_display);
         }
 
         if let Some(stats) = &info.block_stats {
-            println!("\n--- Block Analysis (Primary) ---");
-            println!(
-                "Data Blocks:    {} ({} unique, {} dedup'd)",
-                stats.data_blocks, stats.unique_blocks, stats.dedup_blocks
-            );
-            println!(
-                "Parent Refs:    {} ({})",
-                stats.parent_ref_blocks,
-                HumanBytes(stats.parent_ref_bytes)
-            );
-            println!(
-                "Zero Blocks:    {} ({})",
-                stats.zero_blocks,
-                HumanBytes(stats.zero_bytes)
-            );
-            if info.variable_blocks && stats.data_blocks > 0 {
-                println!(
-                    "Chunk Sizes:    {} min / {} avg / {} max",
-                    HumanBytes(stats.min_block_size as u64),
-                    HumanBytes(stats.avg_block_size as u64),
-                    HumanBytes(stats.max_block_size as u64),
-                );
-            }
+            let mut parts = Vec::new();
             if stats.data_blocks > 0 {
-                println!(
-                    "Data On Disk:   {} compressed ({} logical)",
-                    HumanBytes(stats.compressed_data_bytes),
-                    HumanBytes(stats.data_bytes),
-                );
+                parts.push(format!(
+                    "{} data ({} unique)",
+                    stats.data_blocks, stats.unique_blocks
+                ));
             }
-            if stats.dedup_blocks > 0 {
-                println!(
-                    "Dedup Savings:  {} ({} blocks)",
-                    HumanBytes(stats.dedup_bytes_saved),
-                    stats.dedup_blocks,
-                );
+            if stats.parent_ref_blocks > 0 {
+                parts.push(format!("{} parent refs", stats.parent_ref_blocks));
             }
+            if stats.zero_blocks > 0 {
+                parts.push(format!("{} zero", stats.zero_blocks));
+            }
+            if !parts.is_empty() {
+                println!("  blocks:     {}", parts.join(", "));
+            }
+        }
+
+        // Metadata summary
+        if let Some(meta) = &info.metadata {
+            let summary = summarize_metadata(meta);
+            println!("  metadata:   {}", summary);
         }
     }
 

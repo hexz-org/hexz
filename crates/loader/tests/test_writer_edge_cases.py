@@ -157,7 +157,7 @@ def test_writer_add_bytes_error_handling():
             w.add_bytes(b"test data")
 
             # Try to write invalid type (should raise error)
-            with pytest.raises((TypeError, AttributeError)):
+            with pytest.raises((TypeError, AttributeError, ValueError)):
                 w.add_bytes("not bytes")  # String instead of bytes
 
 

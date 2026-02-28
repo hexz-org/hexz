@@ -29,10 +29,11 @@ impl Printer {
         }
         println!();
 
-        let mut archive_cmds = Vec::new();
+        let mut create_cmds = Vec::new();
+        let mut inspect_cmds = Vec::new();
+        let mut restore_cmds = Vec::new();
         let mut vm_cmds = Vec::new();
-        let mut sys_cmds = Vec::new();
-        let mut other_cmds = Vec::new();
+        let mut infra_cmds = Vec::new();
 
         let subcommands: Vec<Command> = self.cmd.get_subcommands().cloned().collect();
 
@@ -46,22 +47,20 @@ impl Printer {
             let item = (name.clone(), about);
 
             match name.as_str() {
-                "pack" | "inspect" | "diff" | "ls" | "build" | "convert" | "predict" => {
-                    archive_cmds.push(item)
-                }
-                "boot" | "install" | "snap" | "commit" | "mount" | "unmount" => vm_cmds.push(item),
-                "doctor" | "serve" | "keygen" | "sign" | "verify" => sys_cmds.push(item),
-                _ => other_cmds.push(item),
+                "pack" | "import" | "build" | "convert" => create_cmds.push(item),
+                "show" | "diff" | "log" | "predict" => inspect_cmds.push(item),
+                "export" | "mount" | "unmount" => restore_cmds.push(item),
+                "boot" | "install" | "snap" | "commit" => vm_cmds.push(item),
+                "serve" | "keygen" | "sign" | "verify" | "doctor" => infra_cmds.push(item),
+                _ => {}
             }
         }
 
-        self.print_section("Archive Operations", archive_cmds);
-        self.print_section("Virtual Machine Operations", vm_cmds);
-        self.print_section("System & Diagnostics", sys_cmds);
-
-        if !other_cmds.is_empty() {
-            self.print_section("Other Commands", other_cmds);
-        }
+        self.print_section("create and store snapshots", create_cmds);
+        self.print_section("inspect and compare", inspect_cmds);
+        self.print_section("restore and extract", restore_cmds);
+        self.print_section("virtual machines", vm_cmds);
+        self.print_section("signing and infrastructure", infra_cmds);
 
         println!("{}Options:{}", BOLD, RESET);
         println!("  {}{:<15}{} Print help", GREEN, "-h, --help", RESET);

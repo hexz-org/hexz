@@ -1,9 +1,9 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-/// Hexz - High-performance snapshot and streaming engine
+/// Compressed, deduplicated snapshots
 #[derive(Parser)]
-#[command(name = "hexz", version, about, long_about = None)]
+#[command(name = "hexz", version, about = "Compressed, deduplicated snapshots", long_about = None)]
 #[command(disable_help_flag = true)] // We handle help manually
 #[command(styles = get_styles())]
 pub struct Cli {
@@ -29,7 +29,7 @@ pub enum Commands {
     // ------------------------------------------------------------------------
     // Archive Operations
     // ------------------------------------------------------------------------
-    /// Pack data into a Hexz archive
+    /// Pack files into a snapshot
     #[command(display_order = 1)]
     #[command(
         long_about = "Creates a highly compressed, encrypted, and deduplicated archive from a disk image or memory dump.\n\nIt uses Content-Defined Chunking (CDC) to ensure that only changed weights are stored when archiving multiple versions of a model. This is the primary way to ingest data into Hexz."
@@ -89,13 +89,64 @@ pub enum Commands {
         silent: bool,
     },
 
-    /// Inspect archive metadata
+    /// Import safetensors as a snapshot
     #[command(display_order = 2)]
+    #[command(alias = "store")]
+    #[command(
+        long_about = "Converts a .safetensors file to a .hxz archive.\n\nNo PyTorch required — tensor bytes are copied directly from the source file. If --base is given, only changed blocks are stored; frozen tensors are referenced from the parent archive."
+    )]
+    #[command(after_help = "hexz import model.safetensors model.hxz --compression zstd")]
+    Import {
+        /// Input .safetensors file
+        input: PathBuf,
+
+        /// Output .hxz archive
+        output: PathBuf,
+
+        /// Parent .hxz archive for delta deduplication
+        #[arg(long)]
+        base: Option<PathBuf>,
+
+        /// Compression algorithm (lz4, zstd)
+        #[arg(long, default_value = "zstd")]
+        compression: String,
+
+        /// Block size in bytes
+        #[arg(long, default_value_t = 65536, value_parser = clap::value_parser!(u32).range(1..))]
+        block_size: u32,
+
+        /// Suppress progress output
+        #[arg(long, short)]
+        silent: bool,
+    },
+
+    /// Export safetensors from a snapshot
+    #[command(display_order = 3)]
+    #[command(alias = "extract")]
+    #[command(
+        long_about = "Extracts a .hxz archive back to a .safetensors file.\n\nIf --tensor is given, only the raw bytes for that tensor are written (no file header)."
+    )]
+    #[command(after_help = "hexz export model.hxz model-out.safetensors")]
+    Export {
+        /// Input .hxz archive
+        input: PathBuf,
+
+        /// Output .safetensors file (default: <input stem>.safetensors)
+        output: Option<PathBuf>,
+
+        /// Extract a single tensor by name (raw bytes, no header)
+        #[arg(long)]
+        tensor: Option<String>,
+    },
+
+    /// Show snapshot details
+    #[command(display_order = 4)]
+    #[command(alias = "inspect")]
     #[command(
         long_about = "Reads the header and index of a Hexz archive without decompressing the full body.\n\nUse this to verify archive integrity, check compression ratios, or view metadata about the stored snapshot."
     )]
-    #[command(after_help = "hexz inspect ./model.hxz --json")]
-    Inspect {
+    #[command(after_help = "hexz show ./model.hxz --json")]
+    Show {
         /// Path to archive
         snap: PathBuf,
 
@@ -104,7 +155,7 @@ pub enum Commands {
         json: bool,
     },
 
-    /// Compare block hashes between two archives
+    /// Compare two snapshots
     #[command(display_order = 3)]
     #[command(
         long_about = "Compares the BLAKE3 block hashes of two Hexz archives.\n\nReports how much data is shared between them, unique to each, and the storage savings achieved through deduplication. Useful for understanding how much a fine-tuned checkpoint differs from its base."
@@ -118,18 +169,19 @@ pub enum Commands {
         b: PathBuf,
     },
 
-    /// List archives in a directory as a lineage tree
+    /// Show snapshot lineage tree
     #[command(display_order = 4)]
+    #[command(alias = "ls")]
     #[command(
         long_about = "Scans a directory for .hxz archives and renders their parent-child relationships as a tree.\n\nParent links are read from each archive's header. Archives whose declared parent lives outside the scanned directory are annotated as external."
     )]
-    #[command(after_help = "hexz ls ./checkpoints/")]
-    Ls {
+    #[command(after_help = "hexz log ./checkpoints/")]
+    Log {
         /// Directory to scan
         dir: PathBuf,
     },
 
-    /// Pack with profile-based presets
+    /// Pack with profile presets
     #[command(display_order = 4)]
     #[command(
         long_about = "Creates a Hexz archive using a named build profile.\n\nProfiles automatically select compression, block size, and dictionary training settings optimized for different workloads (ML, EDA, embedded, generic)."
@@ -155,7 +207,7 @@ pub enum Commands {
         encrypt: bool,
     },
 
-    /// Convert external formats to Hexz snapshot
+    /// Convert external formats to snapshot
     #[command(display_order = 6)]
     #[command(
         long_about = "Ingests external formats like tar, HDF5, or WebDataset into a Hexz snapshot.\n\nThis allows legacy datasets to benefit from Hexz's random access and deduplication features."
@@ -188,7 +240,7 @@ pub enum Commands {
         silent: bool,
     },
 
-    /// Estimate space savings before packing
+    /// Estimate compression savings
     #[command(display_order = 7)]
     #[command(
         long_about = "Quickly estimates the compression and deduplication savings if a raw data file\nwere packed into the Hexz format. Samples blocks without reading the whole file,\nso it completes in seconds even on multi-GB inputs."
@@ -222,7 +274,7 @@ pub enum Commands {
     // ------------------------------------------------------------------------
     // Virtual Machine Operations
     // ------------------------------------------------------------------------
-    /// Boot a virtual machine from snapshot
+    /// Boot a VM from snapshot
     #[cfg(feature = "fuse")]
     #[command(display_order = 10)]
     #[command(
@@ -297,7 +349,7 @@ pub enum Commands {
         vnc: bool,
     },
 
-    /// Create snapshot via QMP
+    /// Take a live VM snapshot
     #[cfg(unix)]
     #[command(display_order = 12)]
     #[command(
@@ -318,7 +370,7 @@ pub enum Commands {
         output: PathBuf,
     },
 
-    /// Commit overlay changes to new snapshot
+    /// Commit overlay to new snapshot
     #[command(display_order = 13)]
     #[command(
         long_about = "Finalizes a writable overlay into a new immutable snapshot.\n\nSupports 'thin' snapshots which only store the deltas referencing the parent, ideal for iterative model fine-tuning."
@@ -406,7 +458,7 @@ pub enum Commands {
         prefetch: Option<u32>,
     },
 
-    /// Unmount filesystem
+    /// Unmount snapshot filesystem
     #[cfg(feature = "fuse")]
     #[command(display_order = 15)]
     #[command(long_about = "Unmounts a previously mounted Hexz filesystem.")]
@@ -419,7 +471,7 @@ pub enum Commands {
     // ------------------------------------------------------------------------
     // System & Diagnostics
     // ------------------------------------------------------------------------
-    /// Run system diagnostics
+    /// Check system requirements
     #[cfg(feature = "diagnostics")]
     #[command(display_order = 20)]
     #[command(
@@ -428,7 +480,7 @@ pub enum Commands {
     #[command(after_help = "hexz doctor")]
     Doctor,
 
-    /// Serve archive over network
+    /// Serve snapshot over network
     #[cfg(feature = "server")]
     #[command(display_order = 22)]
     #[command(
@@ -456,7 +508,7 @@ pub enum Commands {
         nbd: bool,
     },
 
-    /// Generate signing keys
+    /// Generate signing keypair
     #[cfg(feature = "signing")]
     #[command(display_order = 23)]
     #[command(long_about = "Generates an Ed25519 keypair for signing Hexz archives.")]
@@ -467,7 +519,7 @@ pub enum Commands {
         output_dir: Option<PathBuf>,
     },
 
-    /// Sign archive
+    /// Sign a snapshot
     #[cfg(feature = "signing")]
     #[command(display_order = 24)]
     #[command(long_about = "Cryptographically signs a Hexz archive using a private key.")]
@@ -480,7 +532,7 @@ pub enum Commands {
         image: PathBuf,
     },
 
-    /// Verify archive signature
+    /// Verify snapshot signature
     #[cfg(feature = "signing")]
     #[command(display_order = 25)]
     #[command(

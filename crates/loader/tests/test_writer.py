@@ -46,12 +46,12 @@ def test_writer_bytes_written(test_dir):
 
 
 def test_writer_dedup_cdc(test_dir):
-    """CDC is always-on; verify dedup handles shifted data."""
+    """CDC dedup handles shifted data when cdc=True."""
     chunk = os.urandom(1024 * 1024)  # 1MB random
     data_shifted = chunk + b"insertion" + chunk
 
     path = os.path.join(test_dir, "cdc_dedup.hxz")
-    with hexz.Writer(path, dedup=True, compression="lz4") as w:
+    with hexz.Writer(path, dedup=True, compression="lz4", cdc=True) as w:
         w.add_bytes(data_shifted)
         size = w.bytes_written
 

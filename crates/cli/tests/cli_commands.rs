@@ -152,7 +152,7 @@ fn test_data_info() {
         .arg(&env.snapshot_path)
         .assert()
         .success()
-        .stdout(predicate::str::contains("Archive").or(predicate::str::contains("Snapshot")));
+        .stdout(predicate::str::contains("format:").and(predicate::str::contains("size:")));
 }
 
 #[test]
@@ -361,16 +361,13 @@ fn test_data_pack_with_train_dict() {
     assert!(env.snapshot_path.exists());
 }
 
-// Encryption test is ignored because it requires interactive password input via /dev/tty,
-// which is not available in non-interactive test environments (fails with ENXIO).
-// TODO: Add support for HEXZ_PASSWORD env var to enable non-interactive encryption
 #[test]
-#[ignore = "requires interactive password input"]
 fn test_data_pack_with_encryption() {
     let env = TestEnv::new();
     let input_file = env.create_test_file("encrypted.bin", 8192);
 
     hexz()
+        .env("HEXZ_PASSWORD", "test-password")
         .arg("pack")
         .arg("--disk")
         .arg(&input_file)

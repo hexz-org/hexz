@@ -932,16 +932,14 @@ impl<R: Read> StreamChunker<R> {
 
             if let Some(chunk) = chunker.into_iter().next() {
                 chunk.length
+            } else if available >= self.max_size {
+                self.max_size
+            } else if self.eof {
+                available
+            } else if self.filled == self.buffer.len() {
+                self.max_size
             } else {
-                if available >= self.max_size {
-                    self.max_size
-                } else if self.eof {
-                    available
-                } else if self.filled == self.buffer.len() {
-                    self.max_size
-                } else {
-                    available
-                }
+                available
             }
         };
 

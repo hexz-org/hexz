@@ -116,11 +116,26 @@ fn main() -> anyhow::Result<()> {
             silent,
         ),
 
-        Commands::Inspect { snap, json } => hexz_cli::cmd::data::inspect::run(snap, json),
+        Commands::Import {
+            input,
+            output,
+            base,
+            compression,
+            block_size,
+            silent,
+        } => hexz_cli::cmd::data::store::run(input, output, base, compression, block_size, silent),
+
+        Commands::Export {
+            input,
+            output,
+            tensor,
+        } => hexz_cli::cmd::data::extract::run(input, output, tensor),
+
+        Commands::Show { snap, json } => hexz_cli::cmd::data::inspect::run(snap, json),
 
         Commands::Diff { a, b } => hexz_cli::cmd::data::diff::run(a, b),
 
-        Commands::Ls { dir } => hexz_cli::cmd::data::ls::run(dir),
+        Commands::Log { dir } => hexz_cli::cmd::data::ls::run(dir),
 
         Commands::Build {
             source,

@@ -302,7 +302,7 @@ fn test_vm_commit_output_is_valid_snapshot() {
         .arg(&output)
         .assert()
         .success()
-        .stdout(predicate::str::contains("Block Size"));
+        .stdout(predicate::str::contains("format:").and(predicate::str::contains("size:")));
 }
 
 #[test]
@@ -331,7 +331,7 @@ fn test_vm_commit_thick_info_shows_disk() {
         .arg(&output)
         .assert()
         .success()
-        .stdout(predicate::str::contains("Block Size"));
+        .stdout(predicate::str::contains("format:").and(predicate::str::contains("size:")));
 
     // Verify file size is reasonable (has real data)
     let output_size = output.metadata().unwrap().len();

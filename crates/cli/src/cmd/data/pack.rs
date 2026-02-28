@@ -100,7 +100,8 @@ use std::sync::{Arc, Mutex};
 ///     None,   // avg chunk (auto-detected)
 ///     None,   // max chunk (auto-detected)
 ///     None,   // workers (auto)
-///     false,  // show progress
+///     false,  // dcam
+///     false,  // silent
 /// );
 /// ```
 #[allow(clippy::too_many_arguments)]
@@ -119,9 +120,12 @@ pub fn run(
     dcam: bool,
     silent: bool,
 ) -> Result<()> {
-    // Get password if encryption is enabled
+    // Get password if encryption is enabled (env var for non-interactive use)
     let password = if encrypt {
-        Some(rpassword::prompt_password("Enter encryption password: ")?)
+        Some(match std::env::var("HEXZ_PASSWORD") {
+            Ok(p) => p,
+            Err(_) => rpassword::prompt_password("Enter encryption password: ")?,
+        })
     } else {
         None
     };
