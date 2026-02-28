@@ -3,7 +3,7 @@
 import os
 import pytest
 from unittest.mock import patch
-from hexz.mount import _MountPoint, mount
+from hexz.mount import MountContext as _MountPoint, mount
 
 
 class TestMountFunction:

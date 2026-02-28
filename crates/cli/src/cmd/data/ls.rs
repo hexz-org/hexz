@@ -45,6 +45,10 @@ struct ArchiveInfo {
     message: Option<String>,
     /// Pre-formatted scalar summary like "step=8, loss=2.2702".
     scalars_summary: Option<String>,
+    /// Number of tensors stored as XOR deltas (0 = not a delta checkpoint).
+    xor_delta_count: usize,
+    /// Sum of `base_length` for XOR delta tensors (uncompressed base bytes in parent).
+    xor_base_bytes: u64,
 }
 
 fn read_archive_info(path: &Path) -> Result<ArchiveInfo> {
@@ -72,9 +76,11 @@ fn read_archive_info(path: &Path) -> Result<ArchiveInfo> {
         }
     }
 
-    // Read metadata JSON for message / scalars.
+    // Read metadata JSON for message / scalars / XOR delta info.
     let mut message = None;
     let mut scalars_summary = None;
+    let mut xor_delta_count = 0usize;
+    let mut xor_base_bytes = 0u64;
     if let (Some(meta_off), Some(meta_len)) = (header.metadata_offset, header.metadata_length) {
         if meta_len > 0 {
             f.seek(SeekFrom::Start(meta_off))?;
@@ -90,6 +96,22 @@ fn read_archive_info(path: &Path) -> Result<ArchiveInfo> {
                         scalars_summary = Some(super::inspect::format_scalars_summary(scalars));
                     }
                 }
+                // Detect XOR delta checkpoint tensors.
+                if let Some(tensors) = obj.get("tensors").and_then(|v| v.as_object()) {
+                    for (_, tensor) in tensors {
+                        let storage = tensor
+                            .get("storage")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("raw");
+                        if storage == "xor_delta" {
+                            xor_delta_count += 1;
+                            xor_base_bytes += tensor
+                                .get("base_length")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0);
+                        }
+                    }
+                }
             }
         }
     }
@@ -101,6 +123,8 @@ fn read_archive_info(path: &Path) -> Result<ArchiveInfo> {
         data_blocks,
         message,
         scalars_summary,
+        xor_delta_count,
+        xor_base_bytes,
     })
 }
 
@@ -117,6 +141,18 @@ fn print_tree(
     let connector = if is_last { "└──" } else { "├──" };
     let name = a.path.file_name().unwrap_or_default().to_string_lossy();
 
+    // Build the annotation text.  XOR delta archives replace "+N new blocks"
+    // with a compression ratio; message / scalars are surfaced on top of that.
+    let xor_tag = if a.xor_delta_count > 0 {
+        let ratio = a.xor_base_bytes as f64 / a.file_size.max(1) as f64;
+        format!(
+            "  {}[XOR δ  {}t  {:.1}×]{}",
+            p.dim, a.xor_delta_count, ratio, p.reset
+        )
+    } else {
+        String::new()
+    };
+
     let (ann_text, ann_color) = if let Some(ext) = external_parent[idx] {
         let parent_name = Path::new(ext)
             .file_name()
@@ -125,11 +161,18 @@ fn print_tree(
             .into_owned();
         (format!("← {} (external)", parent_name), p.gray)
     } else if let Some(msg) = &a.message {
-        (msg.clone(), p.yellow)
+        (format!("{}{}", msg, xor_tag), p.yellow)
     } else if let Some(scalars) = &a.scalars_summary {
-        (scalars.clone(), p.dim)
+        (format!("{}{}", scalars, xor_tag), p.dim)
     } else if a.parent.is_none() {
         ("standalone".to_string(), p.gray)
+    } else if a.xor_delta_count > 0 {
+        // No message/scalars but IS a delta checkpoint — just show the ratio.
+        let ratio = a.xor_base_bytes as f64 / a.file_size.max(1) as f64;
+        (
+            format!("XOR delta  {} tensors  {:.1}×", a.xor_delta_count, ratio),
+            p.yellow,
+        )
     } else {
         (format!("+{} new blocks", a.data_blocks), p.dim)
     };
@@ -283,6 +326,49 @@ pub fn run(dir: PathBuf) -> Result<()> {
         HumanBytes(total_size),
         p.reset,
     );
+
+    // If any archives are XOR delta checkpoints, show chain storage context.
+    let delta_count = entries.iter().filter(|a| a.xor_delta_count > 0).count();
+    if delta_count > 0 {
+        // Total uncompressed base bytes referenced by all delta archives.
+        let total_base: u64 = entries.iter().map(|a| a.xor_base_bytes).sum();
+        // Standalone size: rough estimate — assume each delta would be as large as
+        // the largest non-delta archive in the set (the base checkpoint).
+        let base_size = entries
+            .iter()
+            .filter(|a| a.xor_delta_count == 0 && a.parent.is_none())
+            .map(|a| a.file_size)
+            .max()
+            .unwrap_or(0);
+        let standalone_estimate = base_size * delta_count as u64;
+        let saved = standalone_estimate.saturating_sub(
+            entries
+                .iter()
+                .filter(|a| a.xor_delta_count > 0)
+                .map(|a| a.file_size)
+                .sum::<u64>(),
+        );
+        println!(
+            "  {}{} XOR delta checkpoint{}{}  ({}{}{} base data referenced)",
+            p.dim,
+            delta_count,
+            if delta_count == 1 { "" } else { "s" },
+            p.reset,
+            p.green,
+            HumanBytes(total_base),
+            p.reset,
+        );
+        if saved > 0 && standalone_estimate > 0 {
+            println!(
+                "  {}~{} saved vs {} standalone copies{}",
+                p.dim,
+                HumanBytes(saved),
+                delta_count,
+                p.reset,
+            );
+        }
+    }
+
     println!();
 
     Ok(())

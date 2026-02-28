@@ -6,7 +6,7 @@ import tempfile
 import shutil
 import subprocess
 import hexz
-from hexz.mount import _MountPoint
+from hexz.mount import MountContext as _MountPoint
 from hexz.exceptions import MountError
 
 

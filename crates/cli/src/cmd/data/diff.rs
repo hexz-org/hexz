@@ -61,7 +61,11 @@ fn scan(path: &Path) -> Result<BlockSummary> {
         }
     }
 
-    Ok(BlockSummary { data, parent_ref_bytes, parent_ref_blocks })
+    Ok(BlockSummary {
+        data,
+        parent_ref_bytes,
+        parent_ref_blocks,
+    })
 }
 
 /// XOR-delta checkpoint statistics parsed from archive B's manifest.
@@ -93,8 +97,14 @@ fn parse_checkpoint_delta(
     let mut xor_base_bytes = 0u64;
 
     for (_, tensor) in tensors {
-        let storage = tensor.get("storage").and_then(|v| v.as_str()).unwrap_or("raw");
-        let base_length = tensor.get("base_length").and_then(|v| v.as_u64()).unwrap_or(0);
+        let storage = tensor
+            .get("storage")
+            .and_then(|v| v.as_str())
+            .unwrap_or("raw");
+        let base_length = tensor
+            .get("base_length")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
 
         if storage == "xor_delta" {
             xor_delta_count += 1;
@@ -234,7 +244,10 @@ pub fn run(a: PathBuf, b: PathBuf) -> Result<()> {
     //   • plain / thin: bytes already in A that B doesn't need to re-store
     //   • XOR delta: how much smaller B is on disk vs A (proxy for delta compression saving)
     let (saved_label, saved_bytes) = if is_xor_delta {
-        ("Delta saving:", info_a.file_size.saturating_sub(info_b.file_size))
+        (
+            "Delta saving:",
+            info_a.file_size.saturating_sub(info_b.file_size),
+        )
     } else {
         ("Storage saved:", shared_bytes)
     };
@@ -269,10 +282,16 @@ pub fn run(a: PathBuf, b: PathBuf) -> Result<()> {
         // Block-level comparison rows (plain / thin archives only).
         println!(
             "  {}{}{}  {}{}{}  {} blocks  {}({:.0}%){}{}",
-            p.cyan, shared_lbl, p.reset,
-            p.green, shared_size_col, p.reset,
+            p.cyan,
+            shared_lbl,
+            p.reset,
+            p.green,
+            shared_size_col,
+            p.reset,
             shared_blk_col,
-            p.bold, pct(shared_bytes), p.reset,
+            p.bold,
+            pct(shared_bytes),
+            p.reset,
             thin_note,
         );
         println!(
@@ -290,12 +309,19 @@ pub fn run(a: PathBuf, b: PathBuf) -> Result<()> {
 
     // Checkpoint delta section (only when B has XOR-delta tensors).
     if let Some(ref d) = cp_delta {
-        let base_name = if d.parent_is_a { &name_a_str } else { &d.parent_name };
+        let base_name = if d.parent_is_a {
+            &name_a_str
+        } else {
+            &d.parent_name
+        };
         let base_tag = if d.parent_is_a {
             format!("{}{}{}", p.yellow, base_name, p.reset)
         } else {
             // B derives from someone else, not A — flag it clearly.
-            format!("{}{}{} {}(not {}){}", p.yellow, base_name, p.reset, p.gray, name_a_str, p.reset)
+            format!(
+                "{}{}{} {}(not {}){}",
+                p.yellow, base_name, p.reset, p.gray, name_a_str, p.reset
+            )
         };
 
         let compression_ratio = d.xor_base_bytes as f64 / info_b.file_size as f64;
@@ -306,14 +332,19 @@ pub fn run(a: PathBuf, b: PathBuf) -> Result<()> {
         );
         println!(
             "    {}{}{} base  →  {}{}{} on disk  {}({:.1}×  compression){}",
-            p.green, HumanBytes(d.xor_base_bytes), p.reset,
-            p.yellow, HumanBytes(info_b.file_size), p.reset,
-            p.dim, compression_ratio, p.reset,
+            p.green,
+            HumanBytes(d.xor_base_bytes),
+            p.reset,
+            p.yellow,
+            HumanBytes(info_b.file_size),
+            p.reset,
+            p.dim,
+            compression_ratio,
+            p.reset,
         );
         println!(
             "    {}{}{} {}required for reconstruction{}",
-            p.yellow, base_name, p.reset,
-            p.dim, p.reset,
+            p.yellow, base_name, p.reset, p.dim, p.reset,
         );
         println!();
     }

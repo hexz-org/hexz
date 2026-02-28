@@ -4,7 +4,7 @@ This module provides the high-level Reader and AsyncReader classes that wrap
 the Rust-implemented Reader with a more pythonic interface.
 """
 
-from typing import TYPE_CHECKING, Optional, Any, Dict, Union, Iterator
+from typing import TYPE_CHECKING, Optional, Any, Dict, List, Union, Iterator
 
 from . import hexz_loader
 from .typing import PathLike
@@ -186,6 +186,60 @@ class Reader:
         file_size = os.path.getsize(self._path)
         raw_report["total_bytes"] = float(file_size)
         return AnalysisReport(raw_report)
+
+    def list_arrays(self) -> List[Dict[str, Any]]:
+        """Return the array manifest stored in this snapshot.
+
+        Each entry is a dict with keys:
+        ``name``, ``offset``, ``length``, ``shape``, ``dtype``, ``element_size``.
+
+        Returns an empty list if the snapshot has no named arrays.
+
+        Example:
+            >>> with hexz.Reader("arrays.hxz") as reader:
+            ...     for info in reader.list_arrays():
+            ...         print(info["name"], info["shape"], info["dtype"])
+        """
+        # The Rust metadata() call JSON-decodes user metadata and merges it
+        # into the returned dict, so "arrays" is available as a direct key.
+        return list(self._reader.metadata().get("arrays", []))
+
+    def read_array(self, name: str) -> Any:
+        """Read a named array from the snapshot.
+
+        Looks up ``name`` in the array manifest written by
+        :meth:`Writer.add_array`, reads the raw bytes at the recorded offset,
+        and reconstructs a NumPy array with the original shape and dtype.
+
+        Args:
+            name: Name passed to ``Writer.add_array(name=...)`` at write time.
+
+        Returns:
+            A NumPy ndarray with the original shape and dtype.
+
+        Raises:
+            KeyError: If no array with this name exists in the manifest.
+            ImportError: If NumPy is not installed.
+
+        Example:
+            >>> with hexz.Reader("arrays.hxz") as reader:
+            ...     weights = reader.read_array("layer.0.weight")
+            ...     print(weights.shape, weights.dtype)
+        """
+        try:
+            import numpy as np
+        except ImportError:
+            raise ImportError("NumPy is required for read_array()")
+
+        manifest = self.list_arrays()
+        entry = next((e for e in manifest if e["name"] == name), None)
+        if entry is None:
+            available = [e["name"] for e in manifest]
+            raise KeyError(f"Array {name!r} not found. Available arrays: {available}")
+
+        raw = self.read(entry["length"], offset=entry["offset"])
+        arr = np.frombuffer(raw, dtype=np.dtype(entry["dtype"]))
+        return arr.reshape(entry["shape"])
 
     def iter_chunks(self, chunk_size: int = 1024 * 1024) -> Iterator[memoryview]:
         """Iterate over the snapshot in fixed-size chunks using a single reused buffer.

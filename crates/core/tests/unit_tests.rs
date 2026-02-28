@@ -27,14 +27,9 @@ mod format_tests;
 #[path = "unit/dedup/cdc_tests.rs"]
 mod cdc_tests;
 
-// TODO: Fix API imports
-// #[path = "unit/dedup/dcam_tests.rs"]
-// mod dcam_tests;
+// DCAM tests live in integration tests (require a full file for analysis).
 
-// TODO: Fix API imports
-// #[path = "unit/writer_tests.rs"]
-// mod writer_tests;
+// Writer tests live in hexz-ops (SnapshotWriter is defined there).
 
-// TODO: Fix API imports
-// #[path = "unit/header_tests.rs"]
-// mod header_tests;
+#[path = "unit/header_tests.rs"]
+mod header_tests;

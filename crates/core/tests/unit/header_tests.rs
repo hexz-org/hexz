@@ -1,153 +1,197 @@
-/// Unit tests for format header serialization
-use hexz_core::format::header::Header;
-use hexz_core::format::{CompressionType, FeatureFlags};
+/// Unit tests for Header::read_from() and format-level roundtrips.
+///
+/// The inline tests in `format/header.rs` cover field access and bincode
+/// serialize/deserialize directly.  These tests exercise the public
+/// `Header::read_from()` path — the same code path used by every reader in
+/// production — and boundary conditions that are easier to express here than
+/// in a `#[cfg(test)]` block inside the module.
+use hexz_core::format::header::{CompressionType, FeatureFlags, Header};
+use hexz_core::format::magic::{HEADER_SIZE, MAGIC_BYTES};
 use std::io::Cursor;
 
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+/// Serialize `header` into a zero-padded `HEADER_SIZE`-byte buffer, then
+/// deserialize it back via `Header::read_from()`.
+fn roundtrip(header: &Header) -> Header {
+    let serialized = bincode::serialize(header).unwrap();
+    assert!(
+        serialized.len() <= HEADER_SIZE,
+        "serialized header ({} bytes) exceeds HEADER_SIZE ({})",
+        serialized.len(),
+        HEADER_SIZE
+    );
+    let mut buf = vec![0u8; HEADER_SIZE];
+    buf[..serialized.len()].copy_from_slice(&serialized);
+    let mut cursor = Cursor::new(buf);
+    Header::read_from(&mut cursor).expect("read_from failed on valid header")
+}
+
+// ── read_from roundtrips ──────────────────────────────────────────────────────
+
 #[test]
-fn test_header_new() {
-    let header = Header::new();
-    assert_eq!(header.version(), 1, "Default version should be 1");
+fn test_read_from_default() {
+    let original = Header::default();
+    let decoded = roundtrip(&original);
+    assert_eq!(original, decoded);
 }
 
 #[test]
-fn test_header_with_compression() {
-    let header = Header::new().with_compression(CompressionType::Lz4);
-    assert_eq!(header.compression(), CompressionType::Lz4);
+fn test_read_from_lz4_compression() {
+    let mut h = Header::default();
+    h.compression = CompressionType::Lz4;
+    let decoded = roundtrip(&h);
+    assert_eq!(decoded.compression, CompressionType::Lz4);
 }
 
 #[test]
-fn test_header_with_encryption() {
-    let mut header = Header::new();
-    header.set_encrypted(true);
-    assert!(header.is_encrypted());
+fn test_read_from_zstd_compression() {
+    let mut h = Header::default();
+    h.compression = CompressionType::Zstd;
+    let decoded = roundtrip(&h);
+    assert_eq!(decoded.compression, CompressionType::Zstd);
 }
 
 #[test]
-fn test_header_serialization_roundtrip() {
-    let original = Header::new()
-        .with_compression(CompressionType::Zstd)
-        .with_block_size(131072);
-
-    // Serialize
-    let mut buffer = Vec::new();
-    original.write_to(&mut buffer).expect("Serialization should succeed");
-
-    // Deserialize
-    let mut cursor = Cursor::new(buffer);
-    let deserialized = Header::read_from(&mut cursor).expect("Deserialization should succeed");
-
-    assert_eq!(original.compression(), deserialized.compression());
-    assert_eq!(original.block_size(), deserialized.block_size());
+fn test_read_from_custom_block_size() {
+    let mut h = Header::default();
+    h.block_size = 131_072;
+    let decoded = roundtrip(&h);
+    assert_eq!(decoded.block_size, 131_072);
 }
 
 #[test]
-fn test_header_magic_bytes() {
-    let header = Header::new();
-    let mut buffer = Vec::new();
-    header.write_to(&mut buffer).unwrap();
-
-    // Check magic bytes at start
-    assert!(buffer.len() >= 4, "Header should have magic bytes");
-    // Magic bytes should be "STRA" or similar
+fn test_read_from_with_parent_path() {
+    let mut h = Header::default();
+    h.parent_paths = vec!["/snapshots/base.hxz".to_string()];
+    let decoded = roundtrip(&h);
+    assert_eq!(decoded.parent_paths, vec!["/snapshots/base.hxz"]);
 }
 
 #[test]
-fn test_header_version_check() {
-    let header = Header::new();
-    assert!(header.version() > 0, "Version should be positive");
-    assert!(header.version() <= 100, "Version should be reasonable");
+fn test_read_from_with_multiple_parent_paths() {
+    let mut h = Header::default();
+    h.parent_paths = vec!["a.hxz".to_string(), "b.hxz".to_string()];
+    let decoded = roundtrip(&h);
+    assert_eq!(decoded.parent_paths.len(), 2);
+    assert_eq!(decoded.parent_paths[0], "a.hxz");
+    assert_eq!(decoded.parent_paths[1], "b.hxz");
 }
 
 #[test]
-fn test_header_feature_flags() {
-    let mut header = Header::new();
-
-    // Set various feature flags
-    let flags = FeatureFlags::COMPRESSION | FeatureFlags::ENCRYPTION;
-    header.set_features(flags);
-
-    assert!(header.has_feature(FeatureFlags::COMPRESSION));
-    assert!(header.has_feature(FeatureFlags::ENCRYPTION));
+fn test_read_from_with_metadata_location() {
+    let mut h = Header::default();
+    h.metadata_offset = Some(1_048_576);
+    h.metadata_length = Some(4096);
+    let decoded = roundtrip(&h);
+    assert_eq!(decoded.metadata_offset, Some(1_048_576));
+    assert_eq!(decoded.metadata_length, Some(4096));
 }
 
 #[test]
-fn test_header_block_size_validation() {
-    let small = Header::new().with_block_size(4096);
-    assert_eq!(small.block_size(), 4096);
-
-    let large = Header::new().with_block_size(1048576); // 1MB
-    assert_eq!(large.block_size(), 1048576);
+fn test_read_from_with_signature_location() {
+    let mut h = Header::default();
+    h.signature_offset = Some(2_000_000);
+    h.signature_length = Some(64);
+    let decoded = roundtrip(&h);
+    assert_eq!(decoded.signature_offset, Some(2_000_000));
+    assert_eq!(decoded.signature_length, Some(64));
 }
 
 #[test]
-fn test_header_corruption_detection() {
-    let header = Header::new();
-    let mut buffer = Vec::new();
-    header.write_to(&mut buffer).unwrap();
-
-    // Corrupt a byte in the middle
-    if buffer.len() > 10 {
-        buffer[10] ^= 0xFF;
-    }
-
-    // Try to deserialize corrupted header
-    let mut cursor = Cursor::new(buffer);
-    let result = Header::read_from(&mut cursor);
-
-    // Should detect corruption (depends on checksumming implementation)
-    if result.is_err() {
-        println!("Corruption detected correctly");
-    }
+fn test_read_from_feature_flags() {
+    let mut h = Header::default();
+    h.features = FeatureFlags {
+        has_disk: true,
+        has_memory: true,
+        variable_blocks: false,
+    };
+    let decoded = roundtrip(&h);
+    assert!(decoded.features.has_disk);
+    assert!(decoded.features.has_memory);
+    assert!(!decoded.features.variable_blocks);
 }
 
 #[test]
-fn test_header_size_constant() {
-    let header = Header::new();
-    let mut buffer1 = Vec::new();
-    header.write_to(&mut buffer1).unwrap();
+fn test_read_from_variable_blocks_flag() {
+    let mut h = Header::default();
+    h.features.variable_blocks = true;
+    let decoded = roundtrip(&h);
+    assert!(decoded.features.variable_blocks);
+}
 
-    let header2 = Header::new()
-        .with_compression(CompressionType::Zstd)
-        .with_block_size(262144);
-    let mut buffer2 = Vec::new();
-    header2.write_to(&mut buffer2).unwrap();
+#[test]
+fn test_read_from_magic_bytes_preserved() {
+    let h = Header::default();
+    let decoded = roundtrip(&h);
+    assert_eq!(decoded.magic, *MAGIC_BYTES);
+}
 
-    // Headers should have consistent size
-    assert_eq!(
-        buffer1.len(),
-        buffer2.len(),
-        "Header size should be constant"
+#[test]
+fn test_read_from_version_preserved() {
+    let h = Header::default();
+    let decoded = roundtrip(&h);
+    assert!(decoded.version > 0);
+}
+
+#[test]
+fn test_read_from_index_offset_preserved() {
+    let mut h = Header::default();
+    h.index_offset = 4096;
+    let decoded = roundtrip(&h);
+    assert_eq!(decoded.index_offset, 4096);
+}
+
+// ── error paths ───────────────────────────────────────────────────────────────
+
+#[test]
+fn test_read_from_empty_input_fails() {
+    let mut cursor = Cursor::new(vec![]);
+    assert!(
+        Header::read_from(&mut cursor).is_err(),
+        "reading from empty input should fail"
     );
 }
 
 #[test]
-fn test_header_all_compression_types() {
-    for compression in &[CompressionType::None, CompressionType::Lz4, CompressionType::Zstd] {
-        let header = Header::new().with_compression(*compression);
-        let mut buffer = Vec::new();
-        header.write_to(&mut buffer).unwrap();
-
-        let mut cursor = Cursor::new(buffer);
-        let deserialized = Header::read_from(&mut cursor).unwrap();
-
-        assert_eq!(deserialized.compression(), *compression);
-    }
+fn test_read_from_truncated_input_fails() {
+    // Only 512 bytes — too short for a valid HEADER_SIZE-byte read.
+    let short = vec![0u8; 512];
+    let mut cursor = Cursor::new(short);
+    assert!(
+        Header::read_from(&mut cursor).is_err(),
+        "reading truncated input should fail"
+    );
 }
 
 #[test]
-fn test_header_with_parent_snapshot() {
-    let mut header = Header::new();
-    header.set_parent("parent_snapshot_id");
-
-    assert!(header.has_parent());
-    assert_eq!(header.parent(), Some("parent_snapshot_id"));
-}
-
-#[test]
-fn test_header_creation_timestamp() {
-    let header = Header::new();
-
-    // Should have a timestamp
-    let timestamp = header.created_at();
-    assert!(timestamp > 0, "Should have creation timestamp");
+fn test_serialized_size_fits_in_header() {
+    // Ensures a fully-populated header still fits in the fixed HEADER_SIZE slot.
+    let h = Header {
+        magic: *MAGIC_BYTES,
+        version: 1,
+        block_size: 65536,
+        index_offset: 999_999_999,
+        parent_paths: vec!["a/very/long/parent/path/to/a/snapshot.hxz".to_string()],
+        dictionary_offset: Some(1_234_567),
+        dictionary_length: Some(32768),
+        metadata_offset: Some(9_999_999),
+        metadata_length: Some(8192),
+        signature_offset: Some(10_000_000),
+        signature_length: Some(64),
+        encryption: None,
+        compression: CompressionType::Zstd,
+        features: FeatureFlags {
+            has_disk: true,
+            has_memory: true,
+            variable_blocks: true,
+        },
+    };
+    let bytes = bincode::serialize(&h).unwrap();
+    assert!(
+        bytes.len() <= HEADER_SIZE,
+        "header serialization ({} bytes) must fit in HEADER_SIZE ({} bytes)",
+        bytes.len(),
+        HEADER_SIZE
+    );
 }

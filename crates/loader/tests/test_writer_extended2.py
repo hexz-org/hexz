@@ -4,7 +4,8 @@ import os
 import warnings
 
 import pytest
-from hexz.writer import Writer, COMPRESSION_LEVELS
+from hexz.writer import Writer
+from hexz._internal import _COMPRESSION_LEVELS as COMPRESSION_LEVELS
 from hexz.exceptions import ValidationError
 
 

@@ -125,6 +125,9 @@ class Writer:
 
         self._finalized = False
         self._bytes_written = 0
+        # Array manifest: list of dicts recording named arrays.
+        # Each entry: {name, offset, length, shape, dtype, element_size}
+        self._array_manifest: List[Dict] = []
 
     def add(self, source: Any, *, kind: Optional[str] = None) -> "Writer":
         """Add any source to the snapshot (fluent API).
@@ -202,26 +205,26 @@ class Writer:
     ) -> "Writer":
         """Add a NumPy array to the snapshot.
 
+        When a ``name`` is provided the array is recorded in an internal
+        manifest so it can later be retrieved by name via
+        :meth:`Reader.read_array`.  The manifest is embedded in the archive
+        metadata on :meth:`finalize`.
+
         Args:
             array: NumPy array to add
-            offset: Optional byte offset (currently ignored)
-            name: Optional name for the array (currently ignored)
-            **kwargs: Extra arguments - currently ignored
+            offset: Optional byte offset (ignored — arrays are always appended)
+            name: Optional name for the array.  Must be unique within this
+                  snapshot.  If omitted the array is stored anonymously.
+            **kwargs: Extra arguments — currently ignored
 
         Returns:
             Self for method chaining
-
-        Note:
-            Current implementation converts array to bytes.
-            Named arrays and metadata require Rust support (TODO).
         """
-        # Check if numpy is available
         try:
             import numpy as np
         except ImportError:
             raise ImportError("NumPy is required for add_array()")
 
-        # Ensure contiguous array
         if not array.flags["C_CONTIGUOUS"]:
             warnings.warn(
                 "Array is not C-contiguous, making a copy.",
@@ -229,8 +232,27 @@ class Writer:
             )
             array = np.ascontiguousarray(array)
 
+        byte_offset = self._builder.get_bytes_written()
+        byte_length = array.nbytes
+
         # Zero-copy: pass memoryview directly to Rust (buffer protocol)
         self._builder.add_disk_bytes(memoryview(array))
+
+        if name is not None:
+            # Element size for byte-shuffle (used by XOR delta paths, stored for
+            # future use when reconstructing the array).
+            element_size = array.itemsize
+            self._array_manifest.append(
+                {
+                    "name": name,
+                    "offset": byte_offset,
+                    "length": byte_length,
+                    "shape": list(array.shape),
+                    "dtype": str(array.dtype),
+                    "element_size": element_size,
+                }
+            )
+
         return self
 
     def add_xor_delta(
@@ -351,9 +373,13 @@ class Writer:
         - Flushes all buffers
         """
         if not self._finalized:
-            if self._metadata:
+            combined = dict(self._metadata)
+            if self._array_manifest:
+                combined["arrays"] = self._array_manifest
+
+            if combined:
                 try:
-                    json_bytes = json.dumps(self._metadata).encode("utf-8")
+                    json_bytes = json.dumps(combined).encode("utf-8")
                     self._builder.set_metadata(json_bytes)
                 except (TypeError, ValueError) as e:
                     warnings.warn(

@@ -30,5 +30,8 @@ mod crash_safety_tests;
 #[path = "integration/parallel_pack_tests.rs"]
 mod parallel_pack_tests;
 
+#[path = "integration/snapshot_writer_tests.rs"]
+mod snapshot_writer_tests;
+
 #[path = "unit/file_tests.rs"]
 mod file_tests;
