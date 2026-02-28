@@ -60,7 +60,8 @@ TRAIN_DEVICE = "cuda" if _vram >= _MODEL_BYTES * 1.5 else "cpu"
 # ---------------------------------------------------------------------------
 
 MODEL_ID = "mistralai/Mistral-7B-v0.1"
-CKPT_DIR = os.path.join(os.path.dirname(__file__), ".ckpts")
+_EXAMPLES_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CKPT_DIR = os.path.join(_EXAMPLES_DIR, ".data", "mistral")
 
 BATCH_SIZE = 1
 GRAD_ACCUM = 8
@@ -251,7 +252,12 @@ def main():
         sz1 = os.path.getsize(v1_path)
     else:
         t0 = time.time()
-        ckpt.save(model.state_dict(), v1_path, progress=True)
+        ckpt.save(
+            model.state_dict(),
+            v1_path,
+            progress=True,
+            message="pretrained mistral-7b base",
+        )
         t_save1 = time.time() - t0
         sz1 = os.path.getsize(v1_path)
         print(f"Saved → {v1_path}")
@@ -300,7 +306,13 @@ def main():
                     p.data = p.data.to(TORCH_DTYPE)
 
         t0 = time.time()
-        ckpt.save(model.state_dict(), v2_path, parent=v1_path, progress=True)
+        ckpt.save(
+            model.state_dict(),
+            v2_path,
+            parent=v1_path,
+            progress=True,
+            message="lm_head fine-tune",
+        )
         t_save2 = time.time() - t0
         sz2 = os.path.getsize(v2_path)
         print(f"Saved → {v2_path}")
@@ -364,7 +376,13 @@ def main():
                     p.data = p.data.to(TORCH_DTYPE)
 
         t0 = time.time()
-        ckpt.save(model.state_dict(), v3_path, parent=v2_path, progress=True)
+        ckpt.save(
+            model.state_dict(),
+            v3_path,
+            parent=v2_path,
+            progress=True,
+            message="last 2 blocks + lm_head fine-tune",
+        )
         t_save3 = time.time() - t0
         sz3 = os.path.getsize(v3_path)
         print(f"Saved → {v3_path}")

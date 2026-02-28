@@ -41,8 +41,9 @@ import hexz.checkpoint as ckpt
 # ---------------------------------------------------------------------------
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-DATA_DIR = os.path.join(os.path.dirname(__file__), ".cifar10_data")
-CKPT_DIR = os.path.join(os.path.dirname(__file__), ".ckpts")
+_EXAMPLES_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(_EXAMPLES_DIR, ".data", "cifar10")
+CKPT_DIR = os.path.join(_EXAMPLES_DIR, ".data", "resnet")
 BATCH_SIZE = 128
 NUM_STEPS = 10
 NUM_WORKERS = 4

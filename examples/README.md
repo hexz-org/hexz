@@ -76,6 +76,8 @@ Zero-copy array I/O using `hexz.write_array`, `hexz.read_array`, and `hexz.Array
 
 ## Notes
 
+- Generated data (checkpoints, downloaded datasets) is written to `examples/.data/` and
+  gitignored. Delete it with `rm -rf examples/.data/` to reclaim disk space.
 - Examples that require optional features (`fuse`, `signing`) check for availability at
   runtime and skip gracefully if not compiled in.
 - ML examples (`checkpoint/`) require `torch`; some also need `torchvision`,

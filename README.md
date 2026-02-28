@@ -30,14 +30,19 @@ hexz extract finetuned.hxz finetuned-out.safetensors
 # Extract a single tensor
 hexz extract finetuned.hxz --tensor lm_head.weight
 
-# Inspect: tensor list, shapes, storage stats
+# Inspect: format, compression, checkpoint metadata, scalars, message
 hexz inspect finetuned.hxz
+#   checkpoint: v1.0, 122 tensors
+#   scalars:    loss=2.2702, step=8
+#   message:    switched to cosine annealing lr schedule
 
 # Compare two archives — which tensors changed
 hexz diff base-model.hxz finetuned.hxz
 
-# List archives in a directory with chain info and unique bytes on disk
+# List archives with messages and scalars inline
 hexz ls ./checkpoints/
+#   └── step_00.hxz   39.61 MiB  pretrained resnet-18 base
+#       └── step_01.hxz   14.04 MiB  loss=2.3993, step=1
 
 # Sign and verify
 hexz keygen
@@ -75,7 +80,8 @@ ckpt.extract("finetuned.hxz", tensor="lm_head.weight")
 import hexz.checkpoint as ckpt
 
 # Save — stores XOR delta against parent
-ckpt.save(model.state_dict(), "finetuned.hxz", parent="base-model.hxz")
+ckpt.save(model.state_dict(), "finetuned.hxz", parent="base-model.hxz",
+          message="lm_head fine-tune, lr=2e-4")
 
 # Load all tensors
 state = ckpt.load("finetuned.hxz", device="cuda")
