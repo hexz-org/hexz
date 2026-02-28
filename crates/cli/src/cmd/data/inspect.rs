@@ -65,11 +65,55 @@ use hexz_ops::inspect::inspect_snapshot;
 use indicatif::HumanBytes;
 use std::path::PathBuf;
 
-/// Summarize metadata JSON into a compact human-readable string.
+/// Format a scalar value for inline display.
 ///
-/// If the metadata contains `hexz_checkpoint`, show checkpoint version,
-/// tensor count, and scalar count. Otherwise show the byte length.
-fn summarize_metadata(raw: &str) -> String {
+/// Floats → 4 decimal places, ints as-is, strings quoted, bools lowercase.
+fn format_scalar_value(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::Number(n) => {
+            if let Some(f) = n.as_f64() {
+                if n.is_f64() {
+                    format!("{:.4}", f)
+                } else {
+                    // Integer stored as Number
+                    format!("{}", n)
+                }
+            } else {
+                format!("{}", n)
+            }
+        }
+        serde_json::Value::Bool(b) => format!("{}", b),
+        serde_json::Value::String(s) => format!("\"{}\"", s),
+        _ => format!("{}", v),
+    }
+}
+
+/// Format a scalars map into an inline summary like `step=8, loss=2.2702`.
+pub fn format_scalars_summary(scalars: &serde_json::Map<String, serde_json::Value>) -> String {
+    let mut parts: Vec<String> = scalars
+        .iter()
+        .map(|(k, v)| {
+            let display_val = if let Some(obj) = v.as_object() {
+                // Checkpoint format: {"type": "...", "value": ...}
+                if let Some(val) = obj.get("value") {
+                    format_scalar_value(val)
+                } else {
+                    format_scalar_value(v)
+                }
+            } else {
+                format_scalar_value(v)
+            };
+            format!("{}={}", k, display_val)
+        })
+        .collect();
+    parts.sort();
+    parts.join(", ")
+}
+
+/// Print metadata lines for a checkpoint: checkpoint info, scalars, message.
+///
+/// For non-checkpoint metadata, falls back to showing the byte length.
+fn print_metadata_lines(raw: &str) {
     if let Ok(obj) = serde_json::from_str::<serde_json::Value>(raw) {
         if let Some(ver) = obj.get("hexz_checkpoint").and_then(|v| v.as_str()) {
             let tensors = obj
@@ -77,18 +121,22 @@ fn summarize_metadata(raw: &str) -> String {
                 .and_then(|v| v.as_object())
                 .map(|m| m.len())
                 .unwrap_or(0);
-            let scalars = obj
-                .get("scalars")
-                .and_then(|v| v.as_object())
-                .map(|m| m.len())
-                .unwrap_or(0);
-            return format!(
-                "checkpoint v{}, {} tensors, {} scalars",
-                ver, tensors, scalars
-            );
+            println!("  checkpoint: v{}, {} tensors", ver, tensors);
+
+            if let Some(scalars) = obj.get("scalars").and_then(|v| v.as_object()) {
+                if !scalars.is_empty() {
+                    println!("  scalars:    {}", format_scalars_summary(scalars));
+                }
+            }
+
+            if let Some(msg) = obj.get("message").and_then(|v| v.as_str()) {
+                println!("  message:    {}", msg);
+            }
+
+            return;
         }
     }
-    format!("{} bytes", raw.len())
+    println!("  metadata:   {} bytes", raw.len());
 }
 
 /// Executes the info command to display snapshot metadata.
@@ -234,8 +282,7 @@ pub fn run(snap: PathBuf, json: bool) -> Result<()> {
 
         // Metadata summary
         if let Some(meta) = &info.metadata {
-            let summary = summarize_metadata(meta);
-            println!("  metadata:   {}", summary);
+            print_metadata_lines(meta);
         }
     }
 

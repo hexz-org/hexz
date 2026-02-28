@@ -205,6 +205,7 @@ def save(
     base: Optional[Dict[str, Any]] = None,
     num_workers: int = 0,
     progress: bool = False,
+    message: Optional[str] = None,
 ) -> Metadata:
     """Save a PyTorch state_dict as a Hexz checkpoint.
 
@@ -219,6 +220,8 @@ def save(
             Pass the previous step's state_dict here in training loops.
             Important: tensors must be independent copies (use .clone()),
             not views sharing storage with model parameters.
+        message: Optional human-readable message stored in the checkpoint
+            metadata (e.g. "switched to cosine annealing lr schedule").
 
     Returns:
         Metadata for the created checkpoint.
@@ -230,7 +233,7 @@ def save(
     Example:
         >>> import torch, hexz.checkpoint as ckpt
         >>> sd = {"w": torch.randn(1024, 1024), "step": 100}
-        >>> meta = ckpt.save(sd, "ckpt.hxz")
+        >>> meta = ckpt.save(sd, "ckpt.hxz", message="initial run")
 
         >>> # Training loop with chained checkpoints:
         >>> prev_sd = {k: v.clone() for k, v in model.state_dict().items()}
@@ -376,6 +379,8 @@ def save(
             "tensors": tensors_manifest,
             "scalars": scalars_dict,
         }
+        if message is not None:
+            manifest_data["message"] = message
         writer.add_metadata(manifest_data)
 
     return inspect(path)

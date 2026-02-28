@@ -39,6 +39,10 @@ struct ArchiveInfo {
     parent: Option<String>,
     /// Number of data blocks (not parent-refs, not sparse).
     data_blocks: usize,
+    /// Human-readable message from checkpoint metadata.
+    message: Option<String>,
+    /// Pre-formatted scalar summary like "step=8, loss=2.2702".
+    scalars_summary: Option<String>,
 }
 
 fn read_archive_info(path: &Path) -> Result<ArchiveInfo> {
@@ -66,11 +70,35 @@ fn read_archive_info(path: &Path) -> Result<ArchiveInfo> {
         }
     }
 
+    // Read metadata JSON for message / scalars.
+    let mut message = None;
+    let mut scalars_summary = None;
+    if let (Some(meta_off), Some(meta_len)) = (header.metadata_offset, header.metadata_length) {
+        if meta_len > 0 {
+            f.seek(SeekFrom::Start(meta_off))?;
+            let mut meta_buf = vec![0u8; meta_len as usize];
+            f.read_exact(&mut meta_buf)?;
+            if let Ok(obj) = serde_json::from_slice::<serde_json::Value>(&meta_buf) {
+                message = obj
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                if let Some(scalars) = obj.get("scalars").and_then(|v| v.as_object()) {
+                    if !scalars.is_empty() {
+                        scalars_summary = Some(super::inspect::format_scalars_summary(scalars));
+                    }
+                }
+            }
+        }
+    }
+
     Ok(ArchiveInfo {
         path: path.to_path_buf(),
         file_size,
         parent,
         data_blocks,
+        message,
+        scalars_summary,
     })
 }
 
@@ -179,6 +207,10 @@ pub fn run(dir: PathBuf) -> Result<()> {
                 .to_string_lossy()
                 .into_owned();
             format!("← {} (external)", parent_name)
+        } else if let Some(msg) = &a.message {
+            msg.clone()
+        } else if let Some(scalars) = &a.scalars_summary {
+            scalars.clone()
         } else if a.parent.is_none() {
             "standalone".to_string()
         } else {

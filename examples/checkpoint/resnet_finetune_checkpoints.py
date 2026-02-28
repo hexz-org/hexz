@@ -158,7 +158,7 @@ def main():
     }
     prev_state["step"] = 0
     t0 = time.time()
-    ckpt.save(prev_state, step0_path)
+    ckpt.save(prev_state, step0_path, message="pretrained resnet-18 base")
     save_time = time.time() - t0
     sz = os.path.getsize(step0_path)
     paths.append(step0_path)
