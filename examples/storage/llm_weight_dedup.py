@@ -5,9 +5,14 @@ storing multiple versions of a Large Language Model (e.g., base model
 vs. multiple fine-tuned variants) by using content-defined chunking (CDC).
 """
 
+import os
 import numpy as np
 import hexz
 from pathlib import Path
+
+_DATA_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".data", "storage"
+)
 
 
 def create_model_weights(size_mb, noise_scale=0.0):
@@ -22,9 +27,11 @@ def create_model_weights(size_mb, noise_scale=0.0):
 
 
 def run_example():
+    os.makedirs(_DATA_DIR, exist_ok=True)
+
     # 1. Setup paths
-    base_path = "model_base.hxz"
-    variant_path = "model_finetuned.hxz"
+    base_path = os.path.join(_DATA_DIR, "model_base.hxz")
+    variant_path = os.path.join(_DATA_DIR, "model_finetuned.hxz")
 
     # Simulate a small 10MB model for the example
     model_size_mb = 10
@@ -50,7 +57,7 @@ def run_example():
     print("Saving fine-tuned model as a thin snapshot...")
 
     # We write the delta to a temporary overlay file
-    overlay_path = "model_delta.bin"
+    overlay_path = os.path.join(_DATA_DIR, "model_delta.bin")
     with open(overlay_path, "wb") as f:
         f.write(finetuned_weights)
 
@@ -73,8 +80,9 @@ def run_example():
     Path(base_path).unlink()
     Path(variant_path).unlink()
     Path(overlay_path).unlink()
-    if Path("model_delta.meta").exists():
-        Path("model_delta.meta").unlink()
+    meta_path = Path(os.path.join(_DATA_DIR, "model_delta.meta"))
+    if meta_path.exists():
+        meta_path.unlink()
 
 
 if __name__ == "__main__":

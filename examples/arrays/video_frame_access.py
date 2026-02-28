@@ -5,20 +5,27 @@ access specific frames or sequences instantly without decompressing
 the entire file.
 """
 
+import os
 import numpy as np
 import hexz
 import time
 from pathlib import Path
 
+_DATA_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".data", "arrays"
+)
+
 
 def run_example():
+    os.makedirs(_DATA_DIR, exist_ok=True)
+
     # 1. Setup synthetic video data
     # 100 frames, 224x224 RGB (standard for many CV models)
     num_frames = 100
     height, width = 224, 224
     frame_size = height * width * 3
 
-    snapshot_path = "video_dataset.hxz"
+    snapshot_path = os.path.join(_DATA_DIR, "video_dataset.hxz")
 
     print(f"Creating synthetic video: {num_frames} frames of {height}x{width} RGB")
 

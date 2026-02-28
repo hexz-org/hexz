@@ -5,21 +5,28 @@ large arrays, demonstrating the performance benefits of zero-copy
 buffer protocol integration.
 """
 
+import os
 import numpy as np
 import hexz
 import pickle
 import time
 from pathlib import Path
 
+_DATA_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".data", "arrays"
+)
+
 
 def run_example():
+    os.makedirs(_DATA_DIR, exist_ok=True)
+
     # 1. Create a large array (100MB)
     size_mb = 100
     print(f"Generating {size_mb}MB test array...")
     data = np.random.randn(size_mb * 1024 * 1024 // 8).astype(np.float64)
 
-    hexz_path = "bench.hxz"
-    pickle_path = "bench.pkl"
+    hexz_path = os.path.join(_DATA_DIR, "bench.hxz")
+    pickle_path = os.path.join(_DATA_DIR, "bench.pkl")
 
     # 2. Save both
     print("Saving data...")

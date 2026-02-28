@@ -10,14 +10,20 @@ import os
 import subprocess
 import time
 
+_DATA_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".data", "vm"
+)
+
 
 def run_example():
     if not hasattr(hexz, "mount") or hexz.mount is None:
         print("FUSE mounting is not supported on this platform or not enabled.")
         return
 
-    snapshot_path = "virtual_disk.hxz"
-    mount_dir = "mnt_point"
+    os.makedirs(_DATA_DIR, exist_ok=True)
+
+    snapshot_path = os.path.join(_DATA_DIR, "virtual_disk.hxz")
+    mount_dir = os.path.join(_DATA_DIR, "mnt_point")
     os.makedirs(mount_dir, exist_ok=True)
 
     # 1. Create a snapshot with some files

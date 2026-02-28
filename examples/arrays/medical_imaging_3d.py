@@ -5,13 +5,20 @@ and efficiently extract 2D slices along any axis using Hexz's random
 access and ArrayView.
 """
 
+import os
 import numpy as np
 import hexz
 import time
 from pathlib import Path
 
+_DATA_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".data", "arrays"
+)
+
 
 def run_example():
+    os.makedirs(_DATA_DIR, exist_ok=True)
+
     # 1. Create a larger synthetic 3D volume (512 x 256 x 256)
     # 128MB of float32 data. We add some noise to prevent
     # perfect compression from masking the random access benefit.
@@ -24,7 +31,7 @@ def run_example():
     dist_from_center = np.sqrt((x - 128) ** 2 + (y - 128) ** 2 + (z - 256) ** 2)
     volume += (dist_from_center <= 100).astype(np.float32)
 
-    snapshot_path = "medical_scan.hxz"
+    snapshot_path = os.path.join(_DATA_DIR, "medical_scan.hxz")
 
     # 2. Save the 3D volume as an array
     print("Saving 3D volume to Hexz...")

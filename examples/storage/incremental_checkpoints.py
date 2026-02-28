@@ -14,6 +14,10 @@ import numpy as np
 
 import hexz
 
+_DATA_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".data", "storage"
+)
+
 
 def create_fake_weights(size_mb: int, pattern: float = 0.0):
     """Create synthetic weights with some structure."""
@@ -24,11 +28,13 @@ def create_fake_weights(size_mb: int, pattern: float = 0.0):
 
 
 def main():
+    os.makedirs(_DATA_DIR, exist_ok=True)
+
     print("Hexz Checkpoint Deduplication Demo")
     print("-" * 40)
 
-    base_path = "base_model.hxz"
-    ft_path = "finetuned_model.hxz"
+    base_path = os.path.join(_DATA_DIR, "base_model.hxz")
+    ft_path = os.path.join(_DATA_DIR, "finetuned_model.hxz")
 
     # 1. Create a Base Model (e.g., 100MB of weights)
     print("Phase 1: Saving Base Model (100MB)...")

@@ -125,9 +125,12 @@ class DedupDeepDive:
 
 
 if __name__ == "__main__":
+    _examples_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _default_dir = os.path.join(_examples_dir, ".data", "storage", "dedup_test")
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--size-mb", type=int, default=100)
     parser.add_argument("--no-clean", action="store_true")
-    parser.add_argument("--dir", type=str, default="dedup_test")
+    parser.add_argument("--dir", type=str, default=_default_dir)
     args = parser.parse_args()
     DedupDeepDive(args.dir, args.size_mb, args.no_clean).run_all()

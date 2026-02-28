@@ -8,15 +8,21 @@ critical for secure model distribution in production.
 import hexz
 import os
 
+_DATA_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".data", "storage"
+)
+
 
 def run_example():
     if not hasattr(hexz, "crypto") or hexz.crypto is None:
         print("Cryptographic signing feature is not enabled in this build.")
         return
 
-    snapshot_path = "secure_model.hxz"
-    priv_key = "admin_private.key"
-    pub_key = "admin_public.key"
+    os.makedirs(_DATA_DIR, exist_ok=True)
+
+    snapshot_path = os.path.join(_DATA_DIR, "secure_model.hxz")
+    priv_key = os.path.join(_DATA_DIR, "admin_private.key")
+    pub_key = os.path.join(_DATA_DIR, "admin_public.key")
 
     # 1. Create a snapshot
     print("Packing model...")

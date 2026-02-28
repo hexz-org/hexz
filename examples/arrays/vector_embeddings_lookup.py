@@ -5,17 +5,24 @@ vector store. We store 100,000 embeddings and pull specific vectors
 instantly by ID.
 """
 
+import os
 import numpy as np
 import hexz
 import time
 from pathlib import Path
 
+_DATA_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".data", "arrays"
+)
+
 
 def run_example():
+    os.makedirs(_DATA_DIR, exist_ok=True)
+
     num_vectors = 100_000
     dims = 768  # Standard dimension for many BERT/Transformer models
 
-    path = "embeddings.hxz"
+    path = os.path.join(_DATA_DIR, "embeddings.hxz")
     print(f"Creating vector store: {num_vectors} vectors, {dims} dimensions...")
 
     # 1. Create and save embeddings

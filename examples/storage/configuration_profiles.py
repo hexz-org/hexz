@@ -2,14 +2,22 @@
 Demonstrate advanced build options with Hexz.
 """
 
+import os
+
 import hexz
 from pathlib import Path
 
 
+_DATA_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".data", "storage"
+)
+
+
 def advanced_build_demo(source_dir: str):
+    os.makedirs(_DATA_DIR, exist_ok=True)
     print(f"Building advanced snapshot from {source_dir}...")
 
-    output_file = "advanced.hxz"
+    output_file = os.path.join(_DATA_DIR, "advanced.hxz")
 
     # Custom profile:
     # Use 'tight' packing but override block size for sequential read optimization
@@ -61,8 +69,6 @@ def advanced_build_demo(source_dir: str):
     # verify(output_file)
 
     # Cleanup
-    import os
-
     os.remove(output_file)
 
 
@@ -76,7 +82,7 @@ if __name__ == "__main__":
     created_dummy = False
     if not source_dir.exists():
         print(f"Source directory {source_dir} not found. generating dummy data...")
-        source_dir = Path("dummy_data")
+        source_dir = Path(os.path.join(_DATA_DIR, "dummy_data"))
         source_dir.mkdir(exist_ok=True)
         created_dummy = True
 

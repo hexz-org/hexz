@@ -6,9 +6,14 @@ a multiprocessing pool for high-performance parallel data loading.
 """
 
 import multiprocessing as mp
+import os
 import numpy as np
 import hexz
 from pathlib import Path
+
+_DATA_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".data", "storage"
+)
 
 
 def worker_task(reader, start_offset, size):
@@ -20,8 +25,10 @@ def worker_task(reader, start_offset, size):
 
 
 def run_example():
+    os.makedirs(_DATA_DIR, exist_ok=True)
+
     # 1. Create a 40MB dataset
-    path = "multiprocess_data.hxz"
+    path = os.path.join(_DATA_DIR, "multiprocess_data.hxz")
     print(f"Creating test dataset: {path}")
     data = np.random.bytes(40 * 1024 * 1024)
     with hexz.Writer(path) as writer:

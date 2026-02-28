@@ -15,6 +15,10 @@ import numpy as np
 
 import hexz
 
+_DATA_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".data", "storage"
+)
+
 
 def create_weights(size_mb, seed):
     """Create deterministic weights based on a seed."""
@@ -24,14 +28,16 @@ def create_weights(size_mb, seed):
 
 
 def main():
+    os.makedirs(_DATA_DIR, exist_ok=True)
+
     print("Hexz Multi-Parent Deduplication Demo")
     print("-" * 40)
 
     # 1. Create two different foundation models
     # Model A: 50MB, Seed 1
     # Model B: 50MB, Seed 2
-    path_a = "model_a.hxz"
-    path_b = "model_b.hxz"
+    path_a = os.path.join(_DATA_DIR, "model_a.hxz")
+    path_b = os.path.join(_DATA_DIR, "model_b.hxz")
 
     print("\nCreating two foundation models...")
     weights_a = create_weights(50, seed=1)
@@ -60,7 +66,7 @@ def main():
         + create_weights(10, seed=3)
         + weights_b[25 * 1024 * 1024 :]
     )
-    path_hybrid = "model_hybrid.hxz"
+    path_hybrid = os.path.join(_DATA_DIR, "model_hybrid.hxz")
 
     # 3. Save with MULTIPLE parents
     print("Saving Hybrid model with [Model A, Model B] as parents...")
