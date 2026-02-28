@@ -1,109 +1,106 @@
 # Why Hexz for Machine Learning
 
-This document explains what Hexz actually solves in ML workflows, where it helps, and where it does not.
+This document explains what Hexz solves in ML workflows, where it genuinely helps, and where it does not. It avoids inflated claims — unvalidated numbers are marked `[UNTESTED]`.
 
 ---
 
 ## What Hexz is
 
-Hexz is a block-compressed archive format with random access and content deduplication. In ML contexts this matters in two places:
-
-1. **Checkpoint versioning** — storing many iterations of the same model without paying full storage cost for each one
-2. **Dataset access** — reading arbitrary samples from a compressed archive without extracting it
-
-These are different problems and Hexz solves them to different degrees.
+Hexz is a block-compressed archive format with content deduplication and random access. For ML workflows it focuses on one thing: storing many versions of large model checkpoint files without paying full storage cost for each one, while keeping individual tensors accessible by name without reading the whole file.
 
 ---
 
-## Checkpoint versioning
+## The problem: checkpoint versioning at scale
 
-This is where Hexz has the clearest advantage over existing tools.
+Fine-tuning a 7B model produces a ~14 GB file. If you fine-tune 50 times:
 
-A fine-tuned 7B model is ~14GB. Fine-tune it 50 times with different hyperparameters and you have 700GB of nearly-identical files. The standard approaches:
+- **Raw copies:** 700 GB. No dedup.
+- **git-lfs:** 700 GB. Tracks which blob corresponds to which commit, does not deduplicate content inside blobs.
+- **DVC + S3:** Same as git-lfs — a pointer tracker, not a content store.
+- **Hexz (block dedup via parent chain):** Only blocks that differ from the parent are stored. How much this saves depends on how much the weights change per run and which storage algorithm is used.
 
-- **Raw file copies**: 700GB. No dedup. Pay for every byte every time.
-- **git-lfs**: Tracks which blob corresponds to which version. Does not deduplicate content. Still 700GB.
-- **DVC**: Same as git-lfs — a pointer tracker, not a content store. Still 700GB.
-- **Hexz thin snapshots**: Store the base model once. Each fine-tune stores only changed blocks. With CDC dedup and small per-run weight changes, 50 checkpoints can cost significantly less than 50 full copies — actual savings depend on how much changes per run.
+### CDC block dedup (current, validated)
 
-**Validated:** The dedup benchmark shows 92.4% deduplication on shifted data (two 50MB versions with 1KB insertion). Fixed-size block dedup breaks to 0% on the same data. See `cargo bench --bench dedup_efficiency`.
+The existing dedup benchmark (`cargo bench --bench dedup_efficiency`) shows 92.4% deduplication on shifted data — two 50 MB versions where the second has 1 KB inserted at the start. Fixed-size block dedup produces 0% savings on the same data.
 
-**Not yet implemented:** A shared external dedup index across unrelated `.hxz` files. Cross-file dedup currently requires using the thin snapshot parent chain (`hexz build ... --parent v1.hxz`) or packing multiple versions into one archive in a single operation.
+This result reflects a synthetic benchmark. Real checkpoint savings depend on:
+- How many tensors changed per fine-tune
+- How much each changed tensor's raw bytes differ from the parent
+- Whether tensor boundaries align with block boundaries (they do, with tensor-level chunking)
+
+### XOR delta compression (Phase 3, in development)
+
+The CDC benchmark measures block-level dedup: a block is either identical to the parent or it isn't. For fine-tuned weights where every tensor changed slightly, most blocks differ and don't dedup.
+
+XOR delta addresses this: for each tensor that exists in both the base and fine-tune, Hexz XORs the raw bytes. Fine-tuning perturbs weights across all parameters without inserting or deleting bytes, so the XOR result has the same size but lower entropy — zstd handles low-entropy data well. The theoretical basis is established (Hachiuma et al., "ZipLLM," 2024); empirical savings on real models with Hexz will be benchmarked as part of Phase 3.
+
+**[UNTESTED: storage cost of fine-tune chains with XOR delta on real models]**
+
+---
+
+## Random access: loading individual tensors
+
+The tensor manifest (stored in the archive header) maps tensor name → (offset, length, dtype, shape). `hexz.checkpoint.load("model.hxz", keys=["lm_head.weight"])` fetches only the byte ranges for those tensors, from local disk or over S3 byte-range requests. The rest of the file is not read.
+
+This matters when:
+- Doing inference on a single layer during evaluation
+- Loading adapter weights while keeping the base model in VRAM
+- Auditing specific tensors without downloading a 14 GB file
+
+**[UNTESTED: latency and throughput of selective tensor loading at scale]**
 
 ---
 
 ## Dataset access
 
-Hexz stores training data as a single compressed archive with a two-level index. Any sample can be read in O(log N) index lookups plus one block decompression.
+Hexz stores data as a single compressed archive with a two-level index. Any byte range can be read in O(log N) index lookups plus one block decompression.
 
-**Validated benchmarks** (Python, real image datasets on i7-14700K):
+**Validated benchmarks** (Python, real image datasets, i7-14700K, NVMe):
 
-| | Sequential Read | Random Access | Shuffled Epoch |
+| Format | Sequential Read | Random Access | Shuffled Epoch |
 |---|---|---|---|
 | Local files | 387 MB/s | 6.2 µs | 360 MB/s |
 | HDF5 (LZF) | 56 MB/s | 40.8 µs | 55 MB/s |
 | **Hexz (LZ4)** | **1,218 MB/s** | **3.4 µs** | **525 MB/s** |
 
-These are on CIFAR-10 (108MB), STL-10 (28MB), CIFAR-100 (18MB). Small datasets that fit entirely in RAM on a fast machine. The numbers show that the Rust I/O path is significantly faster than HDF5's Python path, and faster than the OS file cache path for sequential reads.
+These are on CIFAR-10 (108 MB), a small dataset that fits in RAM. The numbers reflect Rust I/O vs Python I/O overhead, not raw decompression speed. At TB scale from S3, the bottleneck is network bandwidth — these numbers do not predict S3 performance.
 
-**What these numbers do not show:**
-
-- Performance at TB scale from S3. At that scale the bottleneck is network bandwidth (~1-10 Gbps), not decompression. Hexz's sequential throughput is irrelevant when you're waiting on the network.
-- Comparison against WebDataset. Those benchmarks are not yet run. Do not assume Hexz beats WebDataset on sequential streaming throughput — WebDataset has a deeply optimized prefetch pipeline tuned for PyTorch's DataLoader.
-
----
-
-## Why block compression (not file compression)
-
-File-level compression (gzip, zstd over a tar) gives better ratios but zero random access. To read sample #500,000 from a gzip'd tar you decompress from byte 0.
-
-Block-level compression (Hexz) compresses each 64KB block independently. To read sample #500,000 you read and decompress the ~1-2 blocks that contain it. Index lookup: ~174ns warm, ~6.6µs cold.
-
-The tradeoff: ~15-20% worse compression ratio for 1000× better random access latency. For ML training with shuffling this is the right tradeoff.
-
----
-
-## Why CDC for dataset versioning
-
-Fixed-size block dedup works fine for append-only datasets (new samples added to the end). It breaks when data shifts — when samples are inserted, removed, or modified anywhere in the middle. A 1-byte insertion shifts every subsequent block boundary, making all subsequent blocks appear as new content.
-
-FastCDC computes chunk boundaries based on content, not byte offsets. After an insertion, boundaries re-sync a few blocks later. The validated benchmark: 92.4% of shifted data deduplicated vs 0% with fixed-size. See `cargo bench --bench dedup_efficiency`.
-
-Tradeoff: CDC packing is 2.6× slower (4.9 GB/s → 1.9 GB/s). This is a one-time write cost. Reading CDC-packed archives is the same speed as fixed-size.
+WebDataset comparison has not been benchmarked. Do not treat the throughput column as a win over WebDataset until that comparison is run.
 
 ---
 
 ## Where Hexz does not help
 
-**Sequential streaming at maximum throughput.** WebDataset and MosaicML StreamingDataset have tuned their DataLoader integration for maximum sequential throughput with prefetching. For pure sequential streaming of a dataset you never shuffle, they may match or exceed Hexz.
+**Single checkpoint, no versioning.** If you save one checkpoint and never compare versions, safetensors is simpler, faster to write (no compression overhead), and universally supported. Hexz adds no value here.
 
-**Small datasets.** For datasets under 1GB, just use folders. The packing step and index overhead are not worth it.
+**Need full `torch.load` compatibility.** Hexz cannot load arbitrary pickled Python objects. It's a byte-range store, not a Python serializer.
 
-**Purely tabular data.** Parquet and DuckDB are better for structured data with column queries.
+**Purely sequential streaming of training data.** WebDataset and MosaicML StreamingDataset have optimized DataLoader integration for maximum sequential throughput. Hexz doesn't target this use case.
 
-**Single checkpoint, no versioning.** If you save one checkpoint and never compare versions, safetensors is simpler, faster to write (no compression), and universally supported.
+**Small models or datasets.** For files under 1 GB, the index overhead and packing time are not worth it.
+
+**Team access controls and audit UI.** Weights & Biases Artifacts and MLflow are full platforms with authentication, history UIs, and team features. Hexz is a format.
+
+**Windows.** The mmap and byte-range paths need validation on Windows. Don't deploy it there yet.
 
 ---
 
-## Comparison with other formats
+## Comparison table
 
-| | Random Access | Dedup Across Versions | Single File | No Daemon | S3 Streaming |
-|---|---|---|---|---|---|
-| Raw files | Yes | No | No | Yes | Slow (per-file requests) |
-| tar.gz | No | No | Yes | Yes | No |
-| WebDataset | Shard-only | No | No | Yes | Yes |
-| HDF5 | Yes (slow) | No | Yes | Yes | Partial |
-| safetensors | Yes | No | Yes | Yes | No |
-| git-lfs / DVC | No | No (pointer only) | No | No | Yes |
-| **Hexz** | **Yes** | **Yes (CDC + thin snapshots)** | **Yes** | **Yes** | **Yes** |
-
-WebDataset comparison is listed but not benchmarked — do not treat the throughput column as validated until those benchmarks are run.
+| | Random access | Named tensor load | Dedup across versions | XOR delta | Single file | No daemon | S3 streaming |
+|---|---|---|---|---|---|---|---|
+| Raw files | Yes | No | No | No | No | Yes | Slow |
+| git-lfs / DVC | No | No | No | No | No | No | Yes |
+| safetensors | Yes | Yes (mmap) | No | No | Yes | Yes | No |
+| GGUF | Yes | Yes (mmap) | No | No | Yes | Yes | No |
+| **Hexz** | **Yes** | **Yes** | **Yes (parent chain)** | **In dev** | **Yes** | **Yes** | **Yes** |
 
 ---
 
 ## See also
 
-- [Architecture explanation](architecture.md)
-- [Content-defined chunking deep dive](content-defined-chunking.md)
+- [XOR Delta Compression](xor-delta-compression.md)
+- [Architecture](architecture.md)
+- [Deduplication Deep Dive](deduplication-deep-dive.md)
+- [Competitive Comparison](../project-docs/COMPETITIVE_COMPARISON.md)
 - [Benchmarks](../project-docs/BENCHMARKS.md)
-- [Competitive comparison](../project-docs/COMPETITIVE_COMPARISON.md)

@@ -803,6 +803,8 @@ pub fn snapshot_vm(
             None, // avg_chunk (LBFS baseline)
             None, // max_chunk (LBFS baseline)
             None, // parent
+            true, // cdc=true for VM disk images
+            0,    // num_workers (auto)
         )?;
         builder.merge_overlay(py, base_path, overlay_path, false)?;
         builder.add_memory_file(py, mem_path)?;

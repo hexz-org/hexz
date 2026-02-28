@@ -145,3 +145,4 @@ pub mod exceptions;
 pub mod ops;
 pub mod pack;
 pub mod reader;
+pub mod safetensors;

@@ -1,6 +1,6 @@
-# Setup S3 Streaming for ML Workflows
+# Remote Model Access via S3
 
-**Goal**: Stream training data directly from S3 to GPU without downloading entire datasets to local disk.
+**Goal**: Load model tensors directly from S3 without downloading the full checkpoint.
 
 **Prerequisites**:
 - AWS account with S3 access
@@ -9,11 +9,11 @@
 
 ## Problem
 
-Downloading large ML datasets (ImageNet, COCO, custom datasets) to local storage is slow, expensive, and wastes disk space. A 500GB dataset takes hours to download and requires 500GB of NVMe.
+A 14 GB model checkpoint on S3 takes minutes to download before you can load a single tensor. Hexz's random access architecture lets you download only the bytes for the specific tensors you need.
 
 ## Solution
 
-Hexz streams compressed snapshots directly from S3, decompressing blocks on-demand as the DataLoader requests them. Only active blocks are cached locally (default 256MB cache).
+Hexz fetches only the index on open (~KB), then uses S3 byte-range requests to retrieve the specific blocks for each tensor you access. A 256 MB LRU cache prevents redundant fetches within a session.
 
 ## Step 1: Configure AWS Credentials
 
@@ -46,46 +46,43 @@ No configuration needed. Hexz automatically uses instance metadata service (IMDS
 aws s3 ls s3://your-bucket/
 ```
 
-## Step 2: Upload Snapshot to S3
+## Step 2: Upload models to S3
 
-Pack your dataset and upload it:
+Pack locally and upload:
 
 ```bash
-# Pack dataset locally
-hexz data pack \\
-  --disk /data/imagenet-train \\
-  --output imagenet-train.hxz \\
-  --compression zstd \\
-  --cdc
+# Pack base model
+hexz store base-model.safetensors base-model.hxz --compression zstd
 
-# Upload to S3
-aws s3 cp imagenet-train.hxz s3://my-ml-datasets/imagenet-train.hxz
+# Pack fine-tune as delta against base
+hexz store finetuned.safetensors finetuned.hxz --base base-model.hxz
 
-# Verify upload
-aws s3 ls s3://my-ml-datasets/imagenet-train.hxz
+# Upload both to S3
+aws s3 cp base-model.hxz s3://my-bucket/models/base-model.hxz
+aws s3 cp finetuned.hxz s3://my-bucket/models/finetuned.hxz
 ```
 
 **Tip**: Use `aws s3 cp --storage-class INTELLIGENT_TIERING` to automatically optimize storage costs.
 
-## Step 3: Stream from S3 in Python
-
-Open the snapshot using the S3 URL:
+## Step 3: Load from S3 in Python
 
 ```python
-import hexz
-import torch
-from torch.utils.data import DataLoader
+import hexz.checkpoint as ckpt
 
-# Open snapshot from S3 (downloads index only, ~1MB)
-dataset = hexz.open("s3://my-ml-datasets/imagenet-train.hxz")
+# Load all tensors — fetches only the blocks it needs
+state = ckpt.load("s3://my-bucket/models/finetuned.hxz", device="cuda")
 
-print(f"Dataset size: {dataset.size()} bytes")
-print(f"Index downloaded, data will stream on-demand")
+# Load specific tensors — even fewer bytes downloaded
+state = ckpt.load(
+    "s3://my-bucket/models/finetuned.hxz",
+    keys=["lm_head.weight", "embed_tokens.weight"],
+)
 
-# Read sample
-sample = dataset.read(4096, offset=0)
-print(f"Read {len(sample)} bytes")
+# Inspect manifest without downloading any data blocks
+manifest = ckpt.manifest("s3://my-bucket/models/finetuned.hxz")
 ```
+
+When loading a delta archive (`finetuned.hxz` with parent `base-model.hxz`), Hexz automatically fetches the required blocks from the parent via S3 as well.
 
 **What Happens**:
 1. Hexz downloads the snapshot index (~1MB for 1TB dataset)

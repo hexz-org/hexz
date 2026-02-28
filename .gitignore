@@ -74,7 +74,7 @@ mnt_large_test/
 *.raw
 raw_data/
 *.hexz
-examples/.cifar10_data/
+examples/checkpoint/.cifar10_data/
 
 # Benchmarking and profiling
 flamegraph.svg

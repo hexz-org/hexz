@@ -1,26 +1,16 @@
 # Hexz Documentation
 
-**Hexz** is a seekable, block-compressed archive format with content deduplication, written in Rust with Python bindings (PyO3). It stores large binary data compressed, and supports reading any byte range without decompressing the whole file.
+**Hexz** is a seekable, deduplicated archive format for ML model checkpoints. It reads safetensors and GGUF natively, chunks data at tensor boundaries, and stores fine-tuned models as XOR deltas against their base — so only what changed is written to disk.
 
-## Quick Navigation by Role
+## Quick Navigation
 
 ### I'm an ML Engineer
-**Goal**: Store and load model checkpoints cheaply
+**Goal**: Store and load model checkpoints efficiently
 
-1. Start: [Getting Started Tutorial](tutorials/getting-started.md) (10 min)
-2. Explore: [Deduplication Deep Dive](explanation/deduplication-deep-dive.md)
-3. Optimize: [Fine-tuning Workflows](how-to/ml-workflows/streaming-best-practices.md)
-4. Reference: [Python API](reference/python-api.md)
-
-**Why Hexz?** [Understand the storage savings](explanation/why-hexz-for-ml.md)
-
-### I'm a Systems Engineer / VM User
-**Goal**: Manage VM images and snapshots efficiently
-
-1. Start: [Getting Started Tutorial](tutorials/getting-started.md) (10 min)
-2. Boot: [Booting Your First VM](tutorials/booting-your-first-vm.md) (15 min)
-3. Manage: [Create VM Snapshots](how-to/vm-management/create-vm-snapshots.md)
-4. Reference: [CLI Commands](reference/cli-reference.md)
+1. Start: [Getting Started](tutorials/getting-started.md) (10 min)
+2. Understand: [Why Hexz for ML](explanation/why-hexz-for-ml.md)
+3. Deep dive: [XOR Delta Compression](explanation/xor-delta-compression.md)
+4. Reference: [Python API](reference/python-api.md) · [CLI Reference](reference/cli-reference.md)
 
 ### I'm a Contributor
 **Goal**: Understand architecture and contribute
@@ -28,120 +18,98 @@
 1. Setup: [CONTRIBUTING.md](project-docs/CONTRIBUTING.md)
 2. Architecture: [System Architecture](explanation/architecture.md)
 3. Roadmap: [Development Roadmap](project-docs/ROADMAP.md)
-4. Code: [GitHub Repository](https://github.com/Alethic-Systems/hexz)
+4. Format: [File Format Spec](reference/file-format-spec.md)
 
 ---
 
 ## Documentation Structure
 
-This documentation follows the [Diátaxis framework](https://diataxis.fr/), organizing content into four quadrants:
+This documentation follows the [Diátaxis framework](https://diataxis.fr/):
 
-### Tutorials (Learning-Oriented)
-*Learn by doing — step-by-step lessons for beginners*
+| Quadrant | Purpose |
+|---|---|
+| **[Tutorials](tutorials/)** | Learn by doing — step-by-step from zero |
+| **[How-To Guides](how-to/)** | Solve specific problems — practical recipes |
+| **[Reference](reference/)** | Look up details — API and command specs |
+| **[Explanation](explanation/)** | Understand concepts — design and rationale |
 
-- [Getting Started with Hexz](tutorials/getting-started.md) — Your first snapshot in 10 minutes
-- [Model Checkpoint Dedup](examples/checkpoint_pivot.py) — (Example Script) Thin snapshots for fine-tuned models
-- [Booting Your First VM](tutorials/booting-your-first-vm.md) — Boot an OS from a snapshot
+---
 
-### How-To Guides (Goal-Oriented)
-*Solve specific problems — practical recipes for common tasks*
+## Tutorials
+
+- [Getting Started](tutorials/getting-started.md) — Pack your first model and load it back in 10 minutes
+
+## How-To Guides
 
 **ML Workflows**:
-- [Checkpoint Storage](how-to/ml-workflows/streaming-best-practices.md) — Optimizing storage for model versions
-- [Setup S3 Streaming](how-to/ml-workflows/setup-s3-streaming.md) — Remote checkpoint access
+- [Store Fine-tuned Models](how-to/ml-workflows/store-finetuned-models.md) — Checkpoint chains, delta storage, parent references
+- [Remote Access via S3](how-to/ml-workflows/setup-s3-streaming.md) — Load tensors on demand from object storage
+- [Performance Tuning](how-to/performance-tuning.md) — Block size, compression level, CDC vs fixed chunking
 
-**VM Management**:
-- [Create VM Snapshots](how-to/vm-management/create-vm-snapshots.md)
-- [Boot VM from Snapshot](how-to/vm-management/boot-vm-from-snapshot.md)
-- [Commit Overlay Changes](how-to/vm-management/commit-overlay-changes.md)
+## Reference
 
-### Reference (Information-Oriented)
-*Look up details — technical specifications and API docs*
+- [Python API Reference](reference/python-api.md) — Complete Python API (`hexz.checkpoint`, `hexz.open`, etc.)
+- [CLI Command Reference](reference/cli-reference.md) — `hexz store`, `hexz extract`, `hexz diff`, etc.
+- [Tensor Format Support](reference/tensor-formats.md) — Safetensors and GGUF format details
+- [File Format Specification](reference/file-format-spec.md) — `.hxz` binary format
+- [Compression Algorithms](reference/compression-algorithms.md) — lz4, zstd, XOR delta
+- [Version Compatibility](reference/version-compatibility.md) — Python/PyTorch version matrix
 
-- [Python API Reference](reference/python-api.md) — Complete Python API
-- [CLI Command Reference](reference/cli-reference.md) — All CLI commands and flags
-- [File Format Specification](reference/file-format-spec.md) — `.hxz` file format details
-- [Version Compatibility](reference/version-compatibility.md) — Python/PyTorch versions
-
-### Explanation (Understanding-Oriented)
-*Understand concepts — design rationale and deep dives*
+## Explanation
 
 - [System Architecture](explanation/architecture.md) — How Hexz works internally
-- [Why Hexz for ML](explanation/why-hexz-for-ml.md) — Problem/solution explanation
-- [Deduplication Deep Dive](explanation/deduplication-deep-dive.md) — FastCDC and BLAKE3
-- [Zero-Copy I/O](explanation/zero-copy-io.md) — Performance internals
+- [Why Hexz for ML](explanation/why-hexz-for-ml.md) — Problem, solution, honest tradeoffs
+- [XOR Delta Compression](explanation/xor-delta-compression.md) — The delta algorithm explained
+- [Deduplication Deep Dive](explanation/deduplication-deep-dive.md) — BLAKE3, FastCDC, block dedup
+- [Block vs File Compression](explanation/block-vs-file-compression.md) — Why block-level compression enables random access
+- [Zero-Copy I/O](explanation/zero-copy-io.md) — Buffer protocol and memoryview paths
+
+## ADRs
+
+- [ADR-0001: Rust for Core Engine](adr/0001-rust-for-core-engine.md)
+- [ADR-0002: Block-Level Compression](adr/0002-block-level-compression.md)
+- [ADR-0003: BLAKE3 + FastCDC Deduplication](adr/0003-blake3-fastcdc-deduplication.md)
+- [ADR-0004: Storage Backend Abstraction](adr/0004-storage-backend-abstraction.md)
+- [ADR-0005: PyO3 Python Bindings](adr/0005-pyo3-python-bindings.md)
 
 ---
 
 ## Key Concepts
 
-### What is a Snapshot?
+### .hxz archive
 
-A **snapshot** (`.hxz` file) is an immutable, compressed archive with:
-- **Block-level compression**: Random access without full decompression
-- **Content-defined chunking**: Deduplication across versions and files
-- **Seekable index**: O(log N) lookup for any offset
-- **Multiple backends**: Works on local disk, S3, or HTTP
+A `.hxz` file is an immutable, compressed archive with:
+- **Block-level compression** — random access without full decompression
+- **BLAKE3 deduplication** — identical blocks stored once, even across parent/child archives
+- **Seekable 2-level index** — O(log N) lookup for any byte offset
+- **Tensor manifest** — embedded map of tensor name → (offset, length, dtype, shape) for named-tensor access
+- **Multiple backends** — local disk, S3, or HTTP with byte-range requests
 
-### Core Features
+### Tensor-level chunking
 
-- **Deduplication**: CDC-based dedup across checkpoint chains — only changed blocks are stored.
-- **Random Access**: Read any byte range without downloading or decompressing the whole file.
-- **Buffer protocol**: Direct loading into NumPy and PyTorch buffers via Python's buffer protocol.
-- **Remote backends**: Byte-range fetching from S3 or HTTP — only the blocks you need.
+For safetensors and GGUF files, Hexz chunks at tensor boundaries rather than using content-defined chunking (CDC). The file header tells Hexz exactly where each tensor starts and ends — this is simpler than CDC, avoids the rolling-hash overhead, and means tensor-level deduplication is exact.
+
+### XOR delta compression
+
+When storing a fine-tuned model against its base, Hexz aligns tensors by name and XORs corresponding raw byte buffers. The result is sparse low-magnitude data that zstd compresses well. See [XOR Delta Compression](explanation/xor-delta-compression.md) for details.
+
+> **Implementation status:** Tensor-level chunking (Phase 2) is complete. XOR delta compression (Phase 3) is in development. See [ROADMAP.md](project-docs/ROADMAP.md).
 
 ---
 
 ## Installation
 
-### Python Package (Recommended)
-
 ```bash
-pip install hexz
+pip install hexz           # Python package
+cargo install hexz-cli     # CLI tool
 ```
-
-### CLI Tool
-
-```bash
-cargo install hexz-cli
-```
-
----
-
-## Quick Examples
-
-### Store a Fine-tuned Model
-
-```python
-import hexz
-
-# Save model while deduplicating against base version
-with hexz.Writer("finetuned-v2.hxz", parent="base-model.hxz", cdc=True) as writer:
-    writer.add_bytes(model_weights)
-```
-
-### Fetch One Layer from S3
-
-```python
-import hexz
-import torch
-
-# Random access over S3 - only download the requested bytes
-with hexz.open("s3://bucket/llama-70b.hxz") as reader:
-    layer_raw = reader.read(length, offset=layer_offset)
-    layer = torch.frombuffer(layer_raw, dtype=torch.float32)
-```
-
----
 
 ## Community & Support
 
-- **GitHub**: [Alethic-Systems/hexz](https://github.com/Alethic-Systems/hexz)
-- **Issues**: [Report bugs or request features](https://github.com/Alethic-Systems/hexz/issues)
+- **GitHub**: [hexz-org/hexz](https://github.com/hexz-org/hexz)
+- **Issues**: [Report bugs or request features](https://github.com/hexz-org/hexz/issues)
 - **Contributing**: See [CONTRIBUTING.md](project-docs/CONTRIBUTING.md)
-
----
 
 ## License
 
-Apache License 2.0 — See [LICENSE](https://github.com/Alethic-Systems/hexz/blob/main/LICENSE)
+Apache License 2.0 — See [LICENSE](https://github.com/hexz-org/hexz/blob/main/LICENSE)

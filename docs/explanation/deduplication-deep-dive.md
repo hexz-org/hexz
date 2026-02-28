@@ -1,39 +1,24 @@
 # Deduplication Deep Dive
 
-Technical deep dive into Hexz's deduplication system.
+Technical deep dive into Hexz's deduplication systems: block-level BLAKE3 dedup, content-defined chunking, tensor-boundary chunking, and XOR delta compression (Phase 3).
 
-## Deduplication Overview
+---
 
-Deduplication eliminates redundant data by storing identical content once and referencing it multiple times.
+## Overview
 
-**Key components**:
-1. **Chunking**: Divide data into deduplicatable units
-2. **Hashing**: Generate fingerprint for each chunk
-3. **Lookup**: Check if chunk already exists
-4. **Reference**: Point to existing chunk or write new one
+Hexz has three layers of deduplication, applied depending on the storage mode:
 
-## Architecture
+1. **Block dedup (all modes)** — BLAKE3 hash of each compressed block. If the hash matches any block already written (or present in the parent), the block is referenced, not re-written. Cost: zero bytes on disk for identical blocks.
 
-### During Packing
+2. **Tensor-boundary chunking (safetensors/GGUF)** — instead of rolling-hash CDC, chunk at the tensor boundaries declared in the file header. Gives stable, predictable block identities for tensor-level dedup.
 
-```
-Input Stream
-    ↓
-FastCDC Chunker → Variable-sized chunks (16-256KB)
-    ↓
-Compressor → Compressed chunks
-    ↓
-BLAKE3 Hasher → 256-bit hash per chunk
-    ↓
-Dedup Table Lookup → HashMap<Hash, Offset>
-    ↓
-If hash exists: Add index entry pointing to existing offset
-If hash new: Write chunk, add to HashMap, add index entry
-```
+3. **XOR delta compression (Phase 3, in development)** — for tensors that exist in both base and fine-tune with matching shapes, store the XOR of their bytes instead of the raw bytes. Low-entropy XOR output compresses well with zstd.
 
-### Dedup Table Structure
+---
 
-In-memory hash table during packing:
+## Block dedup
+
+### Data structure
 
 ```rust
 struct DedupTable {
@@ -42,278 +27,131 @@ struct DedupTable {
 }
 
 struct ChunkInfo {
-    offset: u64,           // Physical offset in file
-    compressed_size: u32,  // Size of compressed chunk
-    refcount: u32,         // How many times referenced
+    offset: u64,           // Physical offset in file (or parent file)
+    compressed_size: u32,
+    refcount: u32,
 }
 ```
 
-**Memory usage**: Hash (32 bytes) + ChunkInfo (16 bytes) = 48 bytes per unique chunk
+**Memory usage:** 48 bytes per unique block (32-byte hash + 16-byte `ChunkInfo`).
 
-For 1 million unique chunks: 48MB memory
+For a 14 GB model file with 65 KB blocks: ~215,000 blocks → ~10 MB dedup table.
 
-### Index Entries
+### Dedup scope
 
-Each block gets an index entry regardless of deduplication:
+**Within a single pack operation:** blocks are deduped against each other as they are written.
 
-```rust
-struct BlockInfo {
-    virtual_offset: u64,      // Logical offset in snapshot
-    physical_offset: u64,     // Actual offset in file (may be shared)
-    compressed_size: u32,     // Size on disk
-    uncompressed_size: u32,   // Size after decompression
-    hash: [u8; 32],          // BLAKE3 hash
-}
+**Against a parent archive:** when `--base parent.hxz` is specified, the parent's block index is loaded into the dedup table at pack start. Blocks in the child that hash-match a block in the parent are recorded as `DedupRef` entries pointing to the parent file. The child `.hxz` file stores no bytes for those blocks.
+
+**Cross-archive without parent chain:** not currently supported. Two independently-packed archives of the same model do not share blocks. Use the parent chain (`--base`) for checkpoint versioning.
+
+### BLAKE3
+
+BLAKE3 is used because it is fast (faster than compression in most cases), parallel (tree-based hashing), and produces 256-bit output with strong collision resistance.
+
+Collision probability at 1 million unique blocks: P ≈ 10⁻⁶⁰. Negligible.
+
+### Validated benchmark: CDC dedup on shifted data
+
+```bash
+cargo bench --bench dedup_efficiency
 ```
 
-**Deduplication indicator**: Multiple BlockInfo entries with same physical_offset
+| Method | Base only | Base + shifted version | Dedup of shifted version |
+|---|---|---|---|
+| Fixed-size blocks | 50.2 MB | 100.4 MB | **0%** |
+| CDC blocks | 50.2 MB | 54.0 MB | **92.4%** |
 
-## Hash Function: BLAKE3
+**Benchmark conditions:** two 50 MB synthetic files; second file has 1 KB inserted at the start. Both packed into one archive with shared dedup map.
 
-BLAKE3 chosen for deduplication because:
+Fixed-size block dedup fails entirely because a 1-byte insertion shifts every subsequent block boundary. CDC computes boundaries from content, so they re-sync after the insertion.
 
-**Speed**: Very fast hashing (faster than compression)
+**Note:** this benchmark measures CDC dedup on shifted generic data, not tensor-boundary chunking on model files. For model files, tensor boundaries don't shift at all between base and fine-tune (same architecture), making the dedup even more effective for identical tensors.
 
-**Security**: Cryptographic hash prevents collision attacks
+---
 
-**Parallelism**: Tree-based hashing enables multi-core usage
+## Content-defined chunking (CDC)
 
-**Output size**: 256 bits provides strong collision resistance
+CDC is used when packing generic files with `hexz pack --cdc`. It is **not** used when packing safetensors or GGUF files — tensor-boundary chunking is used instead.
 
-### Collision Resistance
+FastCDC with a Gear rolling hash scans the input and cuts at positions where the low N bits of the rolling hash equal a target value. This produces variable-size chunks whose boundaries depend on the data content, not the byte offset.
 
-Probability of collision with N unique chunks:
+**Chunk sizes (hexz pack default):**
+- Minimum: 16 KiB
+- Average: 64 KiB
+- Maximum: 256 KiB
 
-- N = 1 million: P(collision) ≈ 10^-60 (effectively zero)
-- N = 1 billion: P(collision) ≈ 10^-54 (still effectively zero)
-- N = 1 trillion: P(collision) ≈ 10^-48 (negligible)
+**DCAM (`--dcam`):** runs an analysis pass over the file first to fit CDC parameters to the data's actual entropy structure. Useful for heterogeneous data (binary + text + compressed sections). Slow on large files; opt-in only.
 
-**Practical impact**: Collision probability so low it's ignored. More likely: cosmic ray bit flip, hardware failure, software bug.
+**CDC packing speed tradeoff:** `cargo bench --bench throughput`
+- Fixed chunking: ~4.9 GB/s
+- CDC chunking: ~1.9 GB/s (2.6× slower — one-time write cost, read speed is identical)
 
-### Verification
+---
 
-Paranoid mode (not currently implemented but possible):
-1. On hash match, read both chunks
-2. Byte-by-byte comparison
-3. Only deduplicate if truly identical
+## Tensor-boundary chunking
 
-Trade-off: Eliminates collision risk but requires reading existing chunks (slower, more I/O).
+For safetensors and GGUF files, Hexz does not run CDC. The file header provides a complete manifest of tensor names, shapes, dtypes, and byte offsets. Hexz uses this directly:
 
-## Deduplication Scope
+1. Sort tensors by `data_start` (natural file order).
+2. For each tensor, write its bytes in `block_size` chunks.
+3. Pad to `block_size` boundary with zeros after each tensor. Zero blocks cost 8 bytes of metadata (zero-block optimization), not data.
 
-### Within Single Snapshot
+Benefits over CDC for model files:
+- No rolling-hash scan overhead (was the dominant cost in the 177s Mistral-7B save time)
+- Tensor blocks have stable identities across base and fine-tune — shape hasn't changed, so the block layout is the same. BLAKE3 dedup immediately identifies identical tensors.
+- Padding zeros are free. Each block boundary is predictable.
 
-**Current implementation**: Deduplication within one packing operation
+---
 
-**Process**:
-1. Start with empty dedup table
-2. Process chunks sequentially
-3. Deduplicate against previously seen chunks in same snapshot
-4. Discard dedup table after packing completes
+## XOR delta compression (Phase 3)
 
-**Benefit**: Simple, no persistent state
+> **Status:** in development. The algorithm is specified and partially implemented. Empirical compression ratios are `[UNTESTED]`.
 
-**Limitation**: Cannot deduplicate across multiple snapshots
-
-### Cross-Snapshot Deduplication (Future)
-
-**Planned enhancement**: Deduplicate across multiple .hxz files
-
-**Approach**:
-1. Maintain persistent dedup index (database or index file)
-2. When packing, check both in-memory and persistent index
-3. Reference blocks from other snapshots
-4. Requires careful lifetime management (don't delete referenced snapshots)
-
-**Challenge**: Dependency management (snapshot A references snapshot B, must keep B)
-
-## Deduplication Ratio
-
-Factors affecting deduplication ratio:
-
-### Data Characteristics
-
-**High dedup potential**:
-- OS images (shared system files)
-- VM snapshots (incremental changes)
-- Dataset versions (minor updates)
-- Repeated patterns (logs, generated data)
-
-**Low dedup potential**:
-- Random data
-- Encrypted data
-- Highly compressed data (JPEGs, videos)
-- Unique content
-
-### Chunking Strategy
-
-**Fixed-size chunking**: Poor dedup after insertions
-
-**CDC (FastCDC)**: Good dedup even after insertions
-
-**Example**: Insert 1KB at start of 100MB file
-- Fixed: 0% dedup (all boundaries shift)
-- CDC: 99% dedup (only first chunk affected)
-
-### Compression Timing
-
-**Hash before compression**: Lower dedup ratio (uncompressed data has less redundancy)
-
-**Hash after compression** (Hexz's approach): Better dedup ratio (compressed data eliminates local redundancy, finds global duplicates)
-
-## Performance Considerations
-
-### CPU Impact
-
-CDC + hashing adds computational cost:
-
-**Components**:
-- Rolling hash for CDC (every byte processed)
-- BLAKE3 hash (every chunk hashed)
-- HashMap lookup (every chunk queried)
-
-**Mitigation**:
-- BLAKE3 is very fast
-- HashMap lookups are O(1) average
-- Rolling hash is simple gear hash (fast)
-
-**Overall impact**: Acceptable overhead for significant storage savings
-
-### Memory Impact
-
-Dedup table grows with unique chunk count:
-
-**Memory usage** = Unique chunks × 48 bytes
-
-**Examples**:
-- 10GB with 64KB avg chunks = 160K chunks = 7.7MB
-- 100GB with 64KB avg chunks = 1.6M chunks = 77MB
-- 1TB with 64KB avg chunks = 16M chunks = 768MB
-
-**Mitigation**: Large datasets may need substantial RAM for dedup table
-
-### I/O Impact
-
-Deduplication reduces I/O:
-
-**Write**: Only write unique chunks (less disk I/O)
-
-**Read**: Same as non-deduped (index points to correct offset)
-
-**Net benefit**: Less data written, same read performance
-
-## Memory Expectations
-
-The dedup hash table consumes approximately **48 bytes per unique block** (32-byte BLAKE3 hash + 16-byte `ChunkInfo`). The formula:
+For each tensor that exists in both the parent and child archives with the same shape and dtype:
 
 ```
-dedup_map_bytes ≈ (input_size / avg_block_size) × 48
+delta_bytes[i] = parent_tensor[i] XOR child_tensor[i]  for all i
+compressed_delta = zstd.compress(delta_bytes)
 ```
 
-### Expected memory for common dataset sizes
+The compressed delta is stored as a data block. The block is tagged with `StorageMode::XorDelta` in the index. On read, the reader fetches both the compressed delta and the parent tensor, decompresses the delta, and XORs to reconstruct.
 
-| Dataset size | Avg block size | Unique blocks | Dedup map memory |
-|-------------|---------------|--------------|-----------------|
-| 1 GB        | 64 KB         | 16,384       | ~0.75 MB        |
-| 10 GB       | 64 KB         | 163,840      | ~7.5 MB         |
-| 100 GB      | 64 KB         | 1,638,400    | ~75 MB          |
-| 1 TB        | 64 KB         | 16,384,000   | ~750 MB         |
+**Why zstd handles XOR deltas well:** fine-tuning perturbs each weight by a small amount relative to its full dynamic range. In float16 (2 bytes/weight), a small weight change produces XOR bytes that are near zero — the high-order bits of the mantissa and all exponent bits are often identical. zstd's entropy coding assigns short codes to frequent values (near-zero), achieving high compression.
 
-These are worst-case estimates (zero duplication). With typical dedup ratios of 2-4x, actual memory will be proportionally lower since only unique blocks occupy table entries.
+**[UNTESTED: actual compression ratios on fine-tuned models with Hexz's implementation.]**
 
-> **Note**: Issue #116 tracks capping the dedup hash table memory for very large packs to prevent unbounded growth at TB+ scale. The `pack_memory` benchmark measures RSS to validate any future capping strategy.
+---
+
+## Memory usage
+
+Dedup table memory ≈ `(input_size / avg_block_size) × 48 bytes`.
+
+| Input size | Avg block | Unique blocks | Memory |
+|---|---|---|---|
+| 1 GB | 64 KB | 16,384 | ~0.75 MB |
+| 14 GB | 64 KB | 215,040 | ~10 MB |
+| 100 GB | 64 KB | 1,638,400 | ~75 MB |
+
+These are worst-case (no dedup). With a parent chain, only blocks not in the parent enter the dedup table.
+
+Issue [#116](https://github.com/hexz-org/hexz/issues/116) tracks capping dedup map memory for very large packs.
+
+---
 
 ## Limitations
 
-### No Cross-File Dedup (Currently)
+**Encryption defeats dedup.** AES-GCM encryption produces ciphertext that looks random, breaking content-based matching. Encrypt at the filesystem level if you need both dedup and encryption.
 
-Packing multiple files separately creates separate snapshots:
+**Parent chain is linear.** The parent path in the header is a single path. Branching checkpoint graphs (multiple fine-tunes from the same base) dedup correctly against the base, but two siblings do not dedup against each other unless one specifies the other as parent.
 
-```bash
-hexz data pack --disk file1.bin --output snapshot1.hxz --cdc
-hexz data pack --disk file2.bin --output snapshot2.hxz --cdc
-```
+**Cross-archive dedup without parent.** Two separately-packed archives of the same model do not share blocks. This requires either using the parent chain, or a future shared external dedup index (unscheduled).
 
-Even if file1 and file2 have identical content, no deduplication between snapshot1.hxz and snapshot2.hxz
+---
 
-**Workaround**: Pack files together:
+## See also
 
-```bash
-# Put files in directory
-mkdir /tmp/combined
-cp file1.bin file2.bin /tmp/combined/
-
-# Pack directory (dedup within snapshot)
-hexz data pack --disk /tmp/combined/ --output snapshot.hxz --cdc
-```
-
-### Thin Snapshots
-
-Thin snapshots reference parent snapshot:
-
-```bash
-hexz data pack --disk v2/ --output v2.hxz --parent v1.hxz --cdc
-```
-
-**Limitation**: v2.hxz depends on v1.hxz existing at same path
-
-**Trade-off**: Space savings vs dependency management complexity
-
-### Encryption Breaks Dedup
-
-Encrypted blocks appear random, defeating content-based deduplication.
-
-**Conflict**: Security (encryption) vs efficiency (dedup)
-
-**Workaround**: Encrypt at rest (filesystem or disk level) rather than per-snapshot
-
-## Statistics and Monitoring
-
-Track deduplication effectiveness:
-
-**Metrics**:
-- Total chunks processed
-- Unique chunks (written to disk)
-- Duplicate chunks (referenced existing)
-- Dedup ratio = Processed / Unique
-
-**Example output** (hypothetical):
-```
-Packing complete:
-  Chunks processed: 1,600,000
-  Unique chunks: 500,000
-  Duplicate chunks: 1,100,000
-  Deduplication ratio: 3.2x
-  Space saved: 68.7%
-```
-
-## Best Practices
-
-1. **Enable CDC for version-like data**: Multiple versions of datasets, incremental VM snapshots
-
-2. **Disable CDC for unique data**: Random data, encrypted data, highly compressed data (wastes CPU)
-
-3. **Pack related data together**: Put files that might have duplicates in same snapshot
-
-4. **Consider chunk size**: Smaller = more dedup opportunities but more overhead
-
-5. **Monitor dedup ratio**: If ratio is low (<1.1x), consider disabling CDC
-
-## Future Enhancements
-
-**Planned**:
-- Cross-snapshot deduplication with persistent index
-- Dedup statistics in info command
-- Configurable paranoid mode (byte-compare on hash match)
-
-**Under consideration**:
-- Compression-aware chunking (CDC on decompressed data)
-- Hierarchical dedup (coarse + fine-grained)
-- Distributed dedup (shared index across machines)
-
-## See Also
-
-- [ADR-0003: BLAKE3 and FastCDC Deduplication](../adr/0003-blake3-fastcdc-deduplication.md) - Design rationale
-- [Explanation: Content-Defined Chunking](content-defined-chunking.md) - CDC details
-- [Tutorial: Understanding Compression](../tutorials/understanding-compression.md) - Hands-on examples
-- [Reference: Compression Algorithms](../reference/compression-algorithms.md) - Technical specs
+- [XOR Delta Compression](xor-delta-compression.md) — the delta algorithm in detail
+- [Content-Defined Chunking](content-defined-chunking.md) — CDC internals
+- [Architecture](architecture.md) — write path and storage modes
+- [ADR-0003: BLAKE3 and FastCDC](../adr/0003-blake3-fastcdc-deduplication.md)

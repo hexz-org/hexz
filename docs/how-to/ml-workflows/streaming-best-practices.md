@@ -1,12 +1,12 @@
-# Streaming Best Practices
+# Remote Model Access Best Practices
 
-**Goal**: Optimize Hexz for production ML data streaming workflows.
+**Goal**: Optimize Hexz for loading model checkpoints from S3 in production.
 
 ## Prerequisites
 
 - Hexz Python package installed
-- Experience with PyTorch DataLoader
-- Production ML training environment
+- AWS credentials configured
+- Model archives on S3 (see [Remote Access via S3](setup-s3-streaming.md))
 
 ## Best Practices
 
@@ -158,21 +158,14 @@ dataset = hexz.open(
 
 ### 9. Compression Selection
 
-**Use Zstd for S3, LZ4 for local**.
+**Use zstd for S3 (better ratio = less bandwidth), lz4 for local NVMe (faster decompression)**.
 
 ```bash
-# For S3 streaming (save bandwidth)
-hexz data pack \
-  --disk data/ \
-  --output dataset.hxz \
-  --compression zstd \
-  --compression-level 9
+# For S3 (save bandwidth, compression outweighs decompression cost)
+hexz store model.safetensors model.hxz --compression zstd --compression-level 9
 
 # For local NVMe (fast decompression)
-hexz data pack \
-  --disk data/ \
-  --output dataset.hxz \
-  --compression lz4
+hexz store model.safetensors model.hxz --compression lz4
 ```
 
 ### 10. Retry Configuration
@@ -190,9 +183,9 @@ dataset = hexz.open(
 
 ## Production Checklist
 
-- [ ] Dataset packed with deduplication (`--cdc`)
-- [ ] Compression algorithm selected (Zstd for S3)
-- [ ] S3 bucket region matches training region
+- [ ] Model packed with `--compression zstd` for S3 or `--compression lz4` for local
+- [ ] Fine-tunes packed with `--base parent.hxz`
+- [ ] S3 bucket region matches the region where you load
 - [ ] Cache size tuned to working set
 - [ ] Disk cache enabled for multi-epoch
 - [ ] Worker count optimized (4-8 typically)

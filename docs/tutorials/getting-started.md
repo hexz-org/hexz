@@ -1,108 +1,140 @@
 # Getting Started with Hexz
 
 **Time:** ~10 minutes
-**What you'll build:** A compressed archive, then read back from it with random access.
+**What you'll do:** Pack a safetensors model, inspect it, store a fine-tune as a delta, and load tensors selectively.
 
 ---
 
 ## Prerequisites
 
-- Linux or macOS (Windows: core I/O works but not all features are validated)
+- Linux or macOS
 - Python 3.8+
-- Rust toolchain (for building from source)
+- A `.safetensors` file (any HuggingFace model works)
 
 ---
 
 ## Install
 
-**From PyPI (prebuilt):**
 ```bash
 pip install hexz
-```
-
-**From source:**
-```bash
-git clone https://github.com/hexz-org/hexz.git
-cd hexz
-make develop   # builds Rust core and installs Python bindings
+cargo install hexz-cli   # CLI tool
 ```
 
 Verify:
 ```bash
 python -c "import hexz; print(hexz.__version__)"
+hexz --version
 ```
 
 ---
 
-## Create and read an archive
+## Step 1 — Pack a model
+
+```bash
+hexz store base-model.safetensors base-model.hxz
+```
+
+```
+Packing base-model.safetensors → base-model.hxz
+  Tensors: 362
+  Total:   13.8 GB
+Done.
+```
+
+Inspect it:
+```bash
+hexz inspect base-model.hxz
+```
+
+```
+Archive:     base-model.hxz
+Compression: zstd (level 3)
+Tensors (362):
+  embed_tokens.weight    BF16  [32000, 4096]  256.0 MB
+  layers.0.self_attn.q_proj.weight  BF16  [4096, 4096]  32.0 MB
+  ...
+```
+
+---
+
+## Step 2 — Store a fine-tune as a delta
+
+```bash
+hexz store finetuned.safetensors finetuned.hxz --base base-model.hxz
+```
+
+Hexz aligns tensors by name between the base and fine-tune. Byte-identical blocks are referenced from the parent and not re-stored. Changed blocks are compressed independently.
+
+> **Note:** XOR delta compression (Phase 3) is in development. The current build stores changed blocks as-is; the storage savings shown will improve significantly once XOR delta lands. See [ROADMAP.md](../project-docs/ROADMAP.md).
+
+Compare the two:
+```bash
+hexz diff base-model.hxz finetuned.hxz
+```
+
+---
+
+## Step 3 — Load tensors in Python
 
 ```python
-import hexz
-import os
+import hexz.checkpoint as ckpt
 
-# 1. Write some data
-with open("/tmp/hello.bin", "wb") as f:
-    f.write(b"Hello, Hexz! " * 64)  # 960 bytes, repetitive
+# Inspect without loading
+manifest = ckpt.manifest("finetuned.hxz")
+for name, info in manifest.items():
+    print(name, info["shape"], info["dtype"])
 
-# 2. Pack into a Hexz archive
-with hexz.open("/tmp/hello.hxz", mode="w", compression="lz4") as writer:
-    writer.add_file("/tmp/hello.bin")
+# Load all tensors
+state = ckpt.load("finetuned.hxz")
 
-print(f"Original: 960 bytes")
-print(f"Compressed: {os.path.getsize('/tmp/hello.hxz')} bytes")
-
-# 3. Read back with random access
-with hexz.open("/tmp/hello.hxz") as reader:
-    data = reader.read(64)            # first 64 bytes
-    reader.seek(100)
-    data_at_100 = reader.read(30)     # 30 bytes at offset 100
-    print(f"First 64 bytes: {data}")
-    print(f"At offset 100: {data_at_100}")
+# Load only specific tensors — reads only those blocks
+state = ckpt.load("finetuned.hxz", keys=["lm_head.weight", "embed_tokens.weight"])
 ```
 
-The key property: `seek()` and `read()` do not decompress the whole file. Hexz decompresses only the blocks covering your requested byte range.
+The `keys=` parameter uses the tensor manifest to find the exact byte range for each tensor. Only those blocks are read and decompressed — the rest of the file is not touched.
 
 ---
 
-## CLI
+## Step 4 — Convert from safetensors (no PyTorch needed)
 
-```bash
-# Build the CLI
-make rust
+```python
+import hexz.checkpoint as ckpt
 
-# Pack a file
-./target/release/hexz data pack \
-    --disk /tmp/hello.bin \
-    --output /tmp/hello.hxz \
-    --compression lz4
+# Convert — reads tensor bytes directly from the safetensors file
+ckpt.convert("base-model.safetensors", "base-model.hxz")
 
-# Inspect the archive
-./target/release/hexz data info /tmp/hello.hxz
+# Convert a fine-tune with delta against the base
+ckpt.convert("finetuned.safetensors", "finetuned.hxz", base="base-model.hxz")
+
+# Export back to safetensors
+ckpt.extract("finetuned.hxz", "finetuned-out.safetensors")
 ```
+
+`ckpt.convert()` does not require PyTorch — it reads raw bytes from the safetensors file using Hexz's native parser.
 
 ---
 
-## Thin snapshots (dedup across versions)
+## Step 5 — Save a PyTorch state dict directly
 
-If you have two versions of a large file:
+```python
+import torch
+import hexz.checkpoint as ckpt
 
-```bash
-# Pack v1
-hexz data pack --disk v1.bin --output v1.hxz
+model = ...  # your model
 
-# Pack v2, referencing v1 as parent
-# Only blocks not already in v1 are written to v2.hxz
-hexz data pack --disk v2.bin --output v2.hxz --parent v1.hxz
+# Save
+ckpt.save(model.state_dict(), "finetuned.hxz", parent="base-model.hxz")
+
+# Load back
+state = ckpt.load("finetuned.hxz", device="cuda")
+model.load_state_dict(state)
 ```
-
-Reading `v2.hxz` is transparent — blocks that are in the parent are fetched from `v1.hxz` automatically. `v2.hxz` only stores the diff.
 
 ---
 
 ## What to read next
 
-- [Explanation: why CDC vs fixed-size blocks](../explanation/content-defined-chunking.md)
-- [Explanation: storage backends](../explanation/storage-backend-design.md)
-- [Reference: Python API](../reference/python-api.md)
-- [Reference: CLI](../reference/cli-reference.md)
-- [Benchmarks](../project-docs/BENCHMARKS.md)
+- [Store Fine-tuned Models](../how-to/ml-workflows/store-finetuned-models.md) — checkpoint chains, S3, metadata
+- [XOR Delta Compression](../explanation/xor-delta-compression.md) — how the delta algorithm works
+- [Python API Reference](../reference/python-api.md)
+- [CLI Reference](../reference/cli-reference.md)

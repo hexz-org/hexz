@@ -93,3 +93,9 @@ pub mod index;
 /// Provides version range checking and graceful degradation for reading
 /// files created with different format versions.
 pub mod version;
+
+/// Safetensors file format parser and writer.
+///
+/// Implements zero-copy reading of safetensors files for ingestion into
+/// Hexz archives, and reconstruction of safetensors files from Hexz archives.
+pub mod safetensors;

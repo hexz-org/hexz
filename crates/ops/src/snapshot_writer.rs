@@ -341,6 +341,96 @@ impl SnapshotWriter {
         Ok(())
     }
 
+    /// Compress and write all blocks in `data` using a rayon thread pool.
+    ///
+    /// Compression and BLAKE3 hashing happen in parallel across `num_workers`
+    /// threads (0 = use the global rayon pool, i.e. all logical CPUs).  Block
+    /// ordering is preserved — rayon collects results in-order before the
+    /// sequential write loop.  Only the write loop itself is single-threaded
+    /// (the `SnapshotWriter` is not `Sync`).
+    ///
+    /// This is the fast path for checkpoint saving where tensors are already
+    /// in CPU memory and the stream consists of many independent 64 KiB blocks.
+    pub fn write_stream_parallel(
+        &mut self,
+        data: &[u8],
+        is_disk: bool,
+        num_workers: usize,
+    ) -> hexz_common::Result<()> {
+        use rayon::prelude::*;
+
+        let block_size = self.block_size as usize;
+        let total_len = data.len() as u64;
+        self.begin_stream(is_disk, total_len);
+
+        // Split into fixed-size blocks — same chunking as the serial path.
+        let chunks: Vec<&[u8]> = data.chunks(block_size).collect();
+
+        // Borrow compressor/hasher so the closure is Fn (both are Sync).
+        let compressor: &dyn Compressor = self.compressor.as_ref();
+        let hasher = &self.hasher;
+
+        enum Compressed {
+            Zero(u32),
+            Data {
+                bytes: Vec<u8>,
+                hash: [u8; 32],
+                logical_len: u32,
+            },
+        }
+
+        let compress = |chunk: &&[u8]| -> hexz_common::Result<Compressed> {
+            let len = chunk.len() as u32;
+            if is_zero_chunk(chunk) {
+                Ok(Compressed::Zero(len))
+            } else {
+                // Hash the UNCOMPRESSED bytes — matches write_block semantics.
+                let hash = hasher.hash_fixed(chunk);
+                let bytes = compressor.compress(chunk)?;
+                Ok(Compressed::Data {
+                    bytes,
+                    hash,
+                    logical_len: len,
+                })
+            }
+        };
+
+        // Run compression in parallel, collecting results in original order.
+        let results: hexz_common::Result<Vec<Compressed>> = if num_workers > 0 {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(num_workers)
+                .build()
+                .map_err(|e| hexz_common::Error::Format(e.to_string()))?
+                .install(|| chunks.par_iter().map(compress).collect())
+        } else {
+            chunks.par_iter().map(compress).collect()
+        };
+
+        // Write sequentially — SnapshotWriter is not Sync.
+        for block in results? {
+            match block {
+                Compressed::Zero(len) => {
+                    self.page.blocks.push(create_zero_block(len));
+                    self.global_block_idx += 1;
+                    self.current_logical_pos += len as u64;
+                    if self.page.blocks.len() >= ENTRIES_PER_PAGE {
+                        self.flush_page()?;
+                    }
+                }
+                Compressed::Data {
+                    bytes,
+                    hash,
+                    logical_len,
+                } => {
+                    self.write_precompressed_block(&bytes, &hash, logical_len)?;
+                }
+            }
+        }
+
+        self.end_stream()?;
+        Ok(())
+    }
+
     /// Writes a pre-compressed block: dedup → write → index.
     ///
     /// Used by the parallel packing pipeline where compression happens

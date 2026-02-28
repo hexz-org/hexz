@@ -129,8 +129,8 @@ class TestManifest:
 
         assert info["weight"]["dtype"] == "float32"
         assert info["weight"]["shape"] == [64, 32]
-        # weight offset = bias length
-        assert info["weight"]["offset"] == 32 * 4
+        # weight offset = bias length padded to block boundary (128 KiB default)
+        assert info["weight"]["offset"] == 128 * 1024
         assert info["weight"]["length"] == 64 * 32 * 4
 
 
@@ -305,3 +305,189 @@ class TestErrors:
 
         with pytest.raises(hexz.ValidationError, match="unsupported type"):
             save(state, path)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  XOR delta compression
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestXorDelta:
+    def test_xor_delta_roundtrip(self, test_dir):
+        """Save base, save fine-tuned with parent -> load -> torch.allclose."""
+        base_state = {
+            "weight": torch.randn(128, 128),
+            "bias": torch.randn(128),
+        }
+        v1 = os.path.join(test_dir, "xor_v1.hxz")
+        save(base_state, v1)
+
+        # Fine-tune: small perturbation
+        ft_state = {
+            "weight": base_state["weight"] + torch.randn(128, 128) * 1e-4,
+            "bias": base_state["bias"] + torch.randn(128) * 1e-4,
+        }
+        v2 = os.path.join(test_dir, "xor_v2.hxz")
+        save(ft_state, v2, parent=v1)
+
+        restored = load(v2)
+        assert set(restored.keys()) == {"weight", "bias"}
+        assert torch.allclose(ft_state["weight"], restored["weight"])
+        assert torch.allclose(ft_state["bias"], restored["bias"])
+
+    def test_xor_delta_file_smaller(self, test_dir):
+        """v2 with tiny perturbation should be much smaller than v1."""
+        big = torch.randn(256, 256)  # ~256 KB
+        v1_state = {"big": big}
+        v1 = os.path.join(test_dir, "xor_size_v1.hxz")
+        save(v1_state, v1)
+
+        # Tiny perturbation: XOR delta should compress very well
+        v2_state = {"big": big + torch.randn(256, 256) * 1e-6}
+        v2 = os.path.join(test_dir, "xor_size_v2.hxz")
+        save(v2_state, v2, parent=v1)
+
+        v1_size = os.path.getsize(v1)
+        v2_size = os.path.getsize(v2)
+        assert v2_size < v1_size * 0.5, (
+            f"v2 ({v2_size}) should be < 50% of v1 ({v1_size}) with tiny perturbation"
+        )
+
+    def test_xor_delta_new_tensor_raw(self, test_dir):
+        """Tensor not in parent should be stored as raw."""
+        v1_state = {"old": torch.randn(64)}
+        v1 = os.path.join(test_dir, "xor_new_v1.hxz")
+        save(v1_state, v1)
+
+        v2_state = {"old": torch.randn(64), "new_tensor": torch.randn(64)}
+        v2 = os.path.join(test_dir, "xor_new_v2.hxz")
+        save(v2_state, v2, parent=v1)
+
+        info = manifest(v2)
+        assert info["new_tensor"]["storage"] == "raw"
+
+        # Verify roundtrip
+        restored = load(v2)
+        assert torch.allclose(v2_state["new_tensor"], restored["new_tensor"])
+
+    def test_xor_delta_resized_tensor_raw(self, test_dir):
+        """Tensor with different shape/size falls back to raw."""
+        v1_state = {"w": torch.randn(64, 64)}
+        v1 = os.path.join(test_dir, "xor_resize_v1.hxz")
+        save(v1_state, v1)
+
+        v2_state = {"w": torch.randn(128, 64)}  # different shape
+        v2 = os.path.join(test_dir, "xor_resize_v2.hxz")
+        save(v2_state, v2, parent=v1)
+
+        info = manifest(v2)
+        assert info["w"]["storage"] == "raw"
+
+        restored = load(v2)
+        assert torch.allclose(v2_state["w"], restored["w"])
+
+    def test_xor_delta_manifest_fields(self, test_dir):
+        """Manifest should have storage, base_offset, base_length for xor_delta."""
+        v1_state = {"a": torch.randn(128)}
+        v1 = os.path.join(test_dir, "xor_manifest_v1.hxz")
+        save(v1_state, v1)
+
+        v2_state = {"a": torch.randn(128)}
+        v2 = os.path.join(test_dir, "xor_manifest_v2.hxz")
+        save(v2_state, v2, parent=v1)
+
+        info = manifest(v2)
+        a_info = info["a"]
+        assert a_info["storage"] == "xor_delta"
+        assert "base_offset" in a_info
+        assert "base_length" in a_info
+        assert a_info["base_length"] == a_info["length"]
+
+    def test_xor_delta_parallel_load(self, test_dir):
+        """XOR delta works with num_workers=2."""
+        v1_state = {
+            "a": torch.randn(128, 128),
+            "b": torch.randn(128, 128),
+        }
+        v1 = os.path.join(test_dir, "xor_parallel_v1.hxz")
+        save(v1_state, v1)
+
+        v2_state = {
+            "a": v1_state["a"] + torch.randn(128, 128) * 1e-4,
+            "b": v1_state["b"] + torch.randn(128, 128) * 1e-4,
+        }
+        v2 = os.path.join(test_dir, "xor_parallel_v2.hxz")
+        save(v2_state, v2, parent=v1)
+
+        restored = load(v2, num_workers=2)
+        assert torch.allclose(v2_state["a"], restored["a"])
+        assert torch.allclose(v2_state["b"], restored["b"])
+
+    def test_xor_delta_chained(self, test_dir):
+        """Chain v1 -> v2 -> v3: each parent is itself a delta checkpoint."""
+        v1_state = {"w": torch.randn(128, 128)}
+        v1 = os.path.join(test_dir, "chain_v1.hxz")
+        save(v1_state, v1)
+
+        v2_state = {"w": v1_state["w"] + torch.randn(128, 128) * 1e-4}
+        v2 = os.path.join(test_dir, "chain_v2.hxz")
+        save(v2_state, v2, parent=v1)
+
+        # v3's parent is v2, which stores xor_delta — tests the
+        # add_xor_delta_from_buffers path (parent reconstruction).
+        v3_state = {"w": v2_state["w"] + torch.randn(128, 128) * 1e-4}
+        v3 = os.path.join(test_dir, "chain_v3.hxz")
+        save(v3_state, v3, parent=v2)
+
+        restored = load(v3)
+        assert torch.allclose(v3_state["w"], restored["w"])
+
+        # v3 should be small (single-step delta compresses well)
+        v1_size = os.path.getsize(v1)
+        v3_size = os.path.getsize(v3)
+        assert v3_size < v1_size
+
+    def test_xor_delta_chained_parallel(self, test_dir):
+        """Chained XOR delta works with parallel loading (num_workers=2)."""
+        v1_state = {
+            "a": torch.randn(128, 128),
+            "b": torch.randn(128, 128),
+        }
+        v1 = os.path.join(test_dir, "chain_par_v1.hxz")
+        save(v1_state, v1)
+
+        v2_state = {
+            "a": v1_state["a"] + torch.randn(128, 128) * 1e-4,
+            "b": v1_state["b"] + torch.randn(128, 128) * 1e-4,
+        }
+        v2 = os.path.join(test_dir, "chain_par_v2.hxz")
+        save(v2_state, v2, parent=v1)
+
+        v3_state = {
+            "a": v2_state["a"] + torch.randn(128, 128) * 1e-4,
+            "b": v2_state["b"] + torch.randn(128, 128) * 1e-4,
+        }
+        v3 = os.path.join(test_dir, "chain_par_v3.hxz")
+        save(v3_state, v3, parent=v2)
+
+        restored = load(v3, num_workers=2)
+        assert torch.allclose(v3_state["a"], restored["a"])
+        assert torch.allclose(v3_state["b"], restored["b"])
+
+    def test_save_with_base(self, test_dir):
+        """Passing base= avoids recursive parent loading."""
+        v1_state = {"w": torch.randn(128, 128)}
+        v1 = os.path.join(test_dir, "base_v1.hxz")
+        save(v1_state, v1)
+
+        v2_state = {"w": v1_state["w"] + torch.randn(128, 128) * 1e-4}
+        v2 = os.path.join(test_dir, "base_v2.hxz")
+        save(v2_state, v2, parent=v1)
+
+        # Save v3 with base= (provides v2's tensors directly)
+        v3_state = {"w": v2_state["w"] + torch.randn(128, 128) * 1e-4}
+        v3 = os.path.join(test_dir, "base_v3.hxz")
+        save(v3_state, v3, parent=v2, base=v2_state)
+
+        restored = load(v3)
+        assert torch.allclose(v3_state["w"], restored["w"])

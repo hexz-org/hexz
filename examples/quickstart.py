@@ -63,7 +63,7 @@ def main():
 
     print("\nDone! You built a snapshot and read from it with hexz.open().")
     print(
-        "Next: try hexz.build() for folders, or check examples/checkpoint_pivot.py for ML."
+        "Next: try hexz.build() for folders, or check examples/checkpoint/ for ML checkpoints."
     )
 
 

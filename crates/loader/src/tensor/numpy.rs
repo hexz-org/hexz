@@ -263,6 +263,10 @@ unsafe extern "C" {
 /// Flag requesting a writable buffer from `PyObject_GetBuffer`.
 const PY_BUF_WRITABLE: c_int = 0x0001;
 
+/// Flag requesting a simple (flat, read-only) buffer from `PyObject_GetBuffer`.
+/// Accepts `bytes`, `bytearray`, `memoryview`, contiguous NumPy arrays, etc.
+const PY_BUF_SIMPLE: c_int = 0;
+
 // ---------------------------------------------------------------------------
 // Safe wrapper types
 // ---------------------------------------------------------------------------
@@ -687,6 +691,59 @@ impl Drop for BufferInfo {
             PyBuffer_Release(&mut self.view);
         });
     }
+}
+
+// ---------------------------------------------------------------------------
+// Read-only buffer support
+// ---------------------------------------------------------------------------
+
+/// RAII wrapper for a read-only Python buffer view.
+///
+/// Analogous to [`BufferInfo`] but acquired with `PyBUF_SIMPLE` (flags=0), which
+/// accepts immutable objects such as `bytes` in addition to `bytearray`, `memoryview`,
+/// and contiguous NumPy arrays.
+pub struct ReadBufferInfo {
+    view: Py_buffer,
+    /// Read-only pointer into the Python object's data.
+    pub ptr: *const u8,
+    /// Length of the buffer in bytes.
+    pub len: usize,
+    _not_send_sync: std::marker::PhantomData<*mut ()>,
+}
+
+impl Drop for ReadBufferInfo {
+    fn drop(&mut self) {
+        Python::with_gil(|_py| unsafe {
+            PyBuffer_Release(&mut self.view);
+        });
+    }
+}
+
+/// Acquire a read-only buffer view from any Python buffer-protocol object.
+///
+/// Uses `PyBUF_SIMPLE` (flags=0), so it accepts `bytes`, `bytearray`, `memoryview`,
+/// and C-contiguous NumPy / PyTorch arrays.  The returned [`ReadBufferInfo`] holds
+/// the buffer view open until dropped.
+pub fn acquire_readable_buffer(obj: &Bound<'_, PyAny>) -> PyResult<ReadBufferInfo> {
+    let mut view = std::mem::MaybeUninit::<Py_buffer>::uninit();
+
+    let res = unsafe { PyObject_GetBuffer(obj.as_ptr(), view.as_mut_ptr(), PY_BUF_SIMPLE) };
+
+    if res != 0 {
+        return Err(PyValueError::new_err(
+            "object does not support the buffer protocol",
+        ));
+    }
+
+    // SAFETY: PyObject_GetBuffer returned 0, so `view` is now fully initialized.
+    let view = unsafe { view.assume_init() };
+
+    Ok(ReadBufferInfo {
+        ptr: view.buf as *const u8,
+        len: view.len as usize,
+        view,
+        _not_send_sync: std::marker::PhantomData,
+    })
 }
 
 #[cfg(test)]

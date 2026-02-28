@@ -52,6 +52,16 @@ fn hexz_loader(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Pack function
     m.add_function(wrap_pyfunction!(py_interface::pack::pack, m)?)?;
 
+    // Safetensors native import/export
+    m.add_function(wrap_pyfunction!(
+        py_interface::safetensors::store_safetensors,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        py_interface::safetensors::extract_safetensors,
+        m
+    )?)?;
+
     // Helper functions
     m.add_function(wrap_pyfunction!(py_interface::ops::inspect, m)?)?;
     m.add_function(wrap_pyfunction!(py_interface::ops::analyze, m)?)?;

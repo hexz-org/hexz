@@ -162,6 +162,18 @@ use hexz_core::api::file::{ParentLoader, SnapshotStream};
 use hexz_store::StorageBackend;
 use std::sync::Arc;
 
+/// Load a local parent snapshot with recursive chaining.
+///
+/// This free function serves as a `ParentLoader` and passes itself when opening
+/// each parent, so chains of arbitrary depth (v1 → v2 → v3 → …) resolve fully.
+fn open_local_parent(parent_path: &str) -> hexz_common::Result<Arc<File>> {
+    let backend: Arc<dyn StorageBackend> = Arc::new(hexz_store::local::MmapBackend::new(
+        std::path::Path::new(parent_path),
+    )?);
+    let loader: ParentLoader = Box::new(open_local_parent);
+    File::open_with_cache_and_loader(backend, None, None, None, Some(&loader))
+}
+
 /// Errors that can occur when opening or reading snapshots.
 ///
 /// This enum encapsulates all failure modes that can occur during snapshot
@@ -527,12 +539,7 @@ pub fn open_snapshot(config: OpenConfig) -> Result<Arc<File>, OpenError> {
         None
     };
 
-    let loader: ParentLoader = Box::new(|parent_path: &str| {
-        let backend: Arc<dyn StorageBackend> = Arc::new(hexz_store::local::MmapBackend::new(
-            std::path::Path::new(parent_path),
-        )?);
-        File::open(backend, None)
-    });
+    let loader: ParentLoader = Box::new(open_local_parent);
 
     File::open_with_cache_and_loader(
         backend,

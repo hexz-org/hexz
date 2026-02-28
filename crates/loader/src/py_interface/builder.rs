@@ -97,11 +97,15 @@ use std::sync::Arc;
 pub struct Builder {
     writer: Option<SnapshotWriter>,
     parent_paths: Vec<String>,
+    parent_snapshots: Vec<Arc<HexzFile>>,
     min_chunk: Option<u32>,
     avg_chunk: Option<u32>,
     max_chunk: Option<u32>,
     metadata: Vec<u8>,
     block_size: u32,
+    cdc: bool,
+    /// Number of rayon worker threads for parallel compression (0 = all CPUs).
+    num_workers: usize,
 }
 
 /// Python interface for building Hexz snapshot files.
@@ -120,7 +124,7 @@ pub struct Builder {
 impl Builder {
     /// Create a new snapshot builder.
     #[new]
-    #[pyo3(signature = (output_path, block_size=65536, compression="lz4", compression_level=None, dedup=true, min_chunk=None, avg_chunk=None, max_chunk=None, parent=None))]
+    #[pyo3(signature = (output_path, block_size=65536, compression="lz4", compression_level=None, dedup=true, min_chunk=None, avg_chunk=None, max_chunk=None, parent=None, cdc=false, num_workers=0))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         output_path: String,
@@ -132,6 +136,8 @@ impl Builder {
         avg_chunk: Option<u32>,
         max_chunk: Option<u32>,
         parent: Option<Bound<'_, PyAny>>,
+        cdc: bool,
+        num_workers: usize,
     ) -> PyResult<Self> {
         let path = PathBuf::from(output_path);
 
@@ -172,9 +178,13 @@ impl Builder {
             parent_snapshots.push(snap);
         }
 
+        // Keep a clone of the Arc<HexzFile>s for XOR delta reads.
+        let parent_snapshots_for_builder: Vec<_> =
+            parent_snapshots.iter().map(Arc::clone).collect();
+
         let mut writer_builder = SnapshotWriter::builder(&path, compressor, comp_type)
             .block_size(block_size)
-            .variable_blocks(true); // CDC always on
+            .variable_blocks(cdc);
 
         if !parent_snapshots.is_empty() {
             writer_builder = writer_builder.parents(parent_snapshots);
@@ -187,11 +197,14 @@ impl Builder {
         Ok(Builder {
             writer: Some(writer),
             parent_paths,
+            parent_snapshots: parent_snapshots_for_builder,
             min_chunk,
             avg_chunk,
             max_chunk,
             metadata: Vec::new(),
             block_size,
+            cdc,
+            num_workers,
         })
     }
 
@@ -216,13 +229,159 @@ impl Builder {
     }
 
     /// Add raw bytes as a primary stream without writing to a temporary file.
-    pub fn add_disk_bytes(&mut self, data: &[u8]) -> PyResult<()> {
-        self.process_bytes_stream(data, true)
+    ///
+    /// Accepts any Python buffer-protocol object: `bytes`, `bytearray`,
+    /// `memoryview`, or a contiguous NumPy / PyTorch array.
+    pub fn add_disk_bytes(&mut self, data: Bound<'_, PyAny>) -> PyResult<()> {
+        self.process_pybuffer(data, true)
     }
 
     /// Add raw bytes as a secondary stream without writing to a temporary file.
-    pub fn add_memory_bytes(&mut self, data: &[u8]) -> PyResult<()> {
-        self.process_bytes_stream(data, false)
+    ///
+    /// Accepts any Python buffer-protocol object: `bytes`, `bytearray`,
+    /// `memoryview`, or a contiguous NumPy / PyTorch array.
+    pub fn add_memory_bytes(&mut self, data: Bound<'_, PyAny>) -> PyResult<()> {
+        self.process_pybuffer(data, false)
+    }
+
+    /// Add XOR delta bytes: XOR input data against the parent's base region,
+    /// byte-shuffle for better compression, and write as a new stream.
+    ///
+    /// The caller must ensure `data.len() == base_length`. The method reads
+    /// the base region from the first parent snapshot, XORs block-by-block,
+    /// byte-shuffles the result, and writes through the SnapshotWriter.
+    ///
+    /// `element_size` is the dtype width (e.g. 2 for f16/bf16, 4 for f32).
+    /// Byte-shuffling groups bytes by position within each element, creating
+    /// long runs of similar values that compress much better.
+    pub fn add_xor_delta_bytes(
+        &mut self,
+        data: Bound<'_, PyAny>,
+        base_offset: u64,
+        base_length: u64,
+        element_size: usize,
+    ) -> PyResult<()> {
+        let buf = crate::tensor::numpy::acquire_readable_buffer(&data)?;
+        let slice = unsafe { std::slice::from_raw_parts(buf.ptr, buf.len) };
+
+        if slice.len() != base_length as usize {
+            return Err(PyValueError::new_err(format!(
+                "data length ({}) != base_length ({})",
+                slice.len(),
+                base_length
+            )));
+        }
+
+        let parent = self
+            .parent_snapshots
+            .first()
+            .ok_or_else(|| PyValueError::new_err("No parent snapshot for XOR delta"))?
+            .clone();
+
+        let block_size = self.block_size as usize;
+        let total_len = slice.len();
+
+        let writer = self
+            .writer
+            .as_mut()
+            .ok_or_else(|| PyValueError::new_err("Writer closed"))?;
+
+        writer.begin_stream(true, total_len as u64);
+
+        // XOR the whole tensor against the base, then byte-shuffle the result.
+        // This must be done on the full tensor (not per-block) so that the reader
+        // can unshuffle the reassembled stream in one pass.
+        let mut xor_buf = vec![0u8; total_len];
+        xor_buf.copy_from_slice(slice);
+
+        let mut base_buf = vec![0u8; total_len];
+        parent
+            .read_at_into_uninit_bytes(SnapshotStream::Primary, base_offset, &mut base_buf)
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+
+        for (x, b) in xor_buf.iter_mut().zip(base_buf.iter()) {
+            *x ^= b;
+        }
+        drop(base_buf);
+
+        // Byte-shuffle the entire XOR delta for better compression
+        let mut shuffle_scratch = Vec::new();
+        byte_shuffle(&mut xor_buf, element_size, &mut shuffle_scratch);
+        drop(shuffle_scratch);
+
+        // Write shuffled XOR delta in blocks
+        for chunk in xor_buf.chunks(block_size) {
+            writer
+                .write_data_block(chunk)
+                .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        }
+
+        writer
+            .end_stream()
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Add XOR delta bytes from two explicit buffers (no parent read).
+    ///
+    /// Used when the parent's tensor is itself an XOR delta — the caller
+    /// must reconstruct the parent's actual tensor bytes and pass them as
+    /// `base_data`. The method XORs `data ^ base_data`, byte-shuffles,
+    /// and writes through the SnapshotWriter.
+    pub fn add_xor_delta_from_buffers(
+        &mut self,
+        data: Bound<'_, PyAny>,
+        base_data: Bound<'_, PyAny>,
+        element_size: usize,
+    ) -> PyResult<()> {
+        let buf = crate::tensor::numpy::acquire_readable_buffer(&data)?;
+        let slice = unsafe { std::slice::from_raw_parts(buf.ptr, buf.len) };
+
+        let base_buf_info = crate::tensor::numpy::acquire_readable_buffer(&base_data)?;
+        let base_slice =
+            unsafe { std::slice::from_raw_parts(base_buf_info.ptr, base_buf_info.len) };
+
+        if slice.len() != base_slice.len() {
+            return Err(PyValueError::new_err(format!(
+                "data length ({}) != base_data length ({})",
+                slice.len(),
+                base_slice.len()
+            )));
+        }
+
+        let block_size = self.block_size as usize;
+        let total_len = slice.len();
+
+        let writer = self
+            .writer
+            .as_mut()
+            .ok_or_else(|| PyValueError::new_err("Writer closed"))?;
+
+        writer.begin_stream(true, total_len as u64);
+
+        let mut xor_buf = vec![0u8; total_len];
+        xor_buf.copy_from_slice(slice);
+
+        for (x, b) in xor_buf.iter_mut().zip(base_slice.iter()) {
+            *x ^= b;
+        }
+
+        let mut shuffle_scratch = Vec::new();
+        byte_shuffle(&mut xor_buf, element_size, &mut shuffle_scratch);
+        drop(shuffle_scratch);
+
+        for chunk in xor_buf.chunks(block_size) {
+            writer
+                .write_data_block(chunk)
+                .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        }
+
+        writer
+            .end_stream()
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+
+        Ok(())
     }
 
     /// Merge an overlay file with a base snapshot to create a new snapshot.
@@ -392,25 +551,49 @@ impl Builder {
 
 impl Builder {
     fn process_bytes_stream(&mut self, data: &[u8], is_disk: bool) -> PyResult<()> {
-        let total_len = data.len() as u64;
-        let params = self.resolve_cdc_params();
+        let block_size = self.block_size as usize;
+        let num_workers = self.num_workers;
+        let cdc = self.cdc;
+        let cdc_params = if cdc {
+            Some(self.resolve_cdc_params())
+        } else {
+            None
+        };
 
         let writer = self
             .writer
             .as_mut()
             .ok_or_else(|| PyValueError::new_err("Writer closed"))?;
 
+        // Parallel path: multi-threaded compression+hashing for large buffers.
+        // CDC mode always uses the serial path (chunk boundaries vary, can't
+        // pre-split); encryption also forces serial (sequential nonces).
+        // The threshold (2 blocks) avoids spawning rayon overhead for tiny writes.
+        if num_workers != 1 && !cdc && data.len() > block_size * 2 {
+            return writer
+                .write_stream_parallel(data, is_disk, num_workers)
+                .map_err(|e| PyIOError::new_err(e.to_string()));
+        }
+
+        let total_len = data.len() as u64;
         writer.begin_stream(is_disk, total_len);
 
-        // CDC chunking over borrowed bytes
-        use std::io::Cursor;
-        let cursor = Cursor::new(data);
-        let chunker = StreamChunker::new(cursor, params);
-        for chunk_res in chunker {
-            let chunk = chunk_res.map_err(|e| PyIOError::new_err(e.to_string()))?;
-            writer
-                .write_data_block(&chunk)
-                .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        if let Some(params) = cdc_params {
+            use std::io::Cursor;
+            let cursor = Cursor::new(data);
+            let chunker = StreamChunker::new(cursor, params);
+            for chunk_res in chunker {
+                let chunk = chunk_res.map_err(|e| PyIOError::new_err(e.to_string()))?;
+                writer
+                    .write_data_block(&chunk)
+                    .map_err(|e| PyIOError::new_err(e.to_string()))?;
+            }
+        } else {
+            for chunk in data.chunks(block_size) {
+                writer
+                    .write_data_block(chunk)
+                    .map_err(|e| PyIOError::new_err(e.to_string()))?;
+            }
         }
 
         writer
@@ -427,7 +610,13 @@ impl Builder {
             .map_err(|e| PyIOError::new_err(e.to_string()))?
             .len();
 
-        let cdc_params = self.resolve_cdc_params();
+        let cdc = self.cdc;
+        let cdc_params = if cdc {
+            Some(self.resolve_cdc_params())
+        } else {
+            None
+        };
+        let block_size = self.block_size as usize;
 
         let mut writer = self
             .writer
@@ -437,13 +626,29 @@ impl Builder {
         let writer = py.allow_threads(move || -> PyResult<SnapshotWriter> {
             writer.begin_stream(is_disk, len);
 
-            let chunker = StreamChunker::new(f_in, cdc_params);
-
-            for chunk_res in chunker {
-                let chunk = chunk_res.map_err(|e| PyIOError::new_err(e.to_string()))?;
-                writer
-                    .write_data_block(&chunk)
-                    .map_err(|e| PyIOError::new_err(e.to_string()))?;
+            if let Some(params) = cdc_params {
+                let chunker = StreamChunker::new(f_in, params);
+                for chunk_res in chunker {
+                    let chunk = chunk_res.map_err(|e| PyIOError::new_err(e.to_string()))?;
+                    writer
+                        .write_data_block(&chunk)
+                        .map_err(|e| PyIOError::new_err(e.to_string()))?;
+                }
+            } else {
+                use std::io::Read;
+                let mut buf = vec![0u8; block_size];
+                let mut reader = f_in;
+                loop {
+                    let n = reader
+                        .read(&mut buf)
+                        .map_err(|e| PyIOError::new_err(e.to_string()))?;
+                    if n == 0 {
+                        break;
+                    }
+                    writer
+                        .write_data_block(&buf[..n])
+                        .map_err(|e| PyIOError::new_err(e.to_string()))?;
+                }
             }
 
             writer
@@ -455,6 +660,15 @@ impl Builder {
 
         self.writer = Some(writer);
         Ok(())
+    }
+
+    /// Write a Python buffer-protocol object as a stream (zero-copy read path).
+    fn process_pybuffer(&mut self, data: Bound<'_, PyAny>, is_disk: bool) -> PyResult<()> {
+        let buf = crate::tensor::numpy::acquire_readable_buffer(&data)?;
+        // SAFETY: buf.ptr is valid for buf.len bytes while `buf` is alive;
+        // we hold the GIL so the Python object cannot be freed under us.
+        let slice = unsafe { std::slice::from_raw_parts(buf.ptr, buf.len) };
+        self.process_bytes_stream(slice, is_disk)
     }
 
     /// Resolve CDC params from user overrides or LBFS baseline fallback.
@@ -483,5 +697,31 @@ impl Builder {
             }
             params
         }
+    }
+}
+
+/// Byte-shuffle: group bytes by position within each element.
+///
+/// For `element_size=4`: `[A0 A1 A2 A3 B0 B1 B2 B3]` → `[A0 B0 A1 B1 A2 B2 A3 B3]`
+///
+/// This creates long runs of similar-valued bytes (e.g. all-zero high bytes
+/// in XOR deltas) that compress dramatically better with zstd/lz4.
+pub(crate) fn byte_shuffle(data: &mut [u8], element_size: usize, scratch: &mut Vec<u8>) {
+    if element_size <= 1 || data.len() < element_size {
+        return;
+    }
+    let n = data.len();
+    scratch.resize(n, 0);
+    scratch.copy_from_slice(data);
+    let count = n / element_size;
+    let tail = n % element_size;
+    for i in 0..count {
+        for j in 0..element_size {
+            data[j * count + i] = scratch[i * element_size + j];
+        }
+    }
+    // Copy tail bytes verbatim
+    if tail > 0 {
+        data[count * element_size..].copy_from_slice(&scratch[count * element_size..]);
     }
 }

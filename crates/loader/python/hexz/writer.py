@@ -46,6 +46,8 @@ class Writer:
         encrypt: bool = False,
         password: Optional[str] = None,
         parent: Optional[Union[PathLike, List[PathLike]]] = None,
+        cdc: bool = False,
+        num_workers: int = 0,
     ):
         """Create a new snapshot writer.
 
@@ -106,6 +108,8 @@ class Writer:
             compression_level=compression_level,
             dedup=dedup,
             parent=self._parent,
+            cdc=cdc,
+            num_workers=num_workers,
         )
 
         # Note: Writer currently supports basic linear writing.
@@ -225,9 +229,47 @@ class Writer:
             )
             array = np.ascontiguousarray(array)
 
-        # Convert to bytes and add
-        data_bytes = array.tobytes()
-        return self.add_bytes(data_bytes)
+        # Zero-copy: pass memoryview directly to Rust (buffer protocol)
+        self._builder.add_disk_bytes(memoryview(array))
+        return self
+
+    def add_xor_delta(
+        self, data, base_offset: int, base_length: int, element_size: int = 1
+    ) -> "Writer":
+        """Add XOR delta bytes against the parent snapshot.
+
+        Args:
+            data: Buffer-protocol object with the new tensor bytes.
+            base_offset: Byte offset of the base tensor in the parent.
+            base_length: Byte length of the base tensor in the parent.
+            element_size: Dtype width in bytes (e.g. 4 for float32).
+                Used for byte-shuffle pre-processing that dramatically
+                improves compression of XOR deltas.
+
+        Returns:
+            Self for method chaining.
+        """
+        self._builder.add_xor_delta_bytes(data, base_offset, base_length, element_size)
+        return self
+
+    def add_xor_delta_from_buffers(
+        self, data, base_data, element_size: int = 1
+    ) -> "Writer":
+        """Add XOR delta from two explicit buffers (no parent file read).
+
+        Used when the parent's tensor is itself stored as an XOR delta,
+        so the caller must reconstruct the actual parent bytes first.
+
+        Args:
+            data: Buffer with the new tensor bytes.
+            base_data: Buffer with the reconstructed parent tensor bytes.
+            element_size: Dtype width in bytes (e.g. 4 for float32).
+
+        Returns:
+            Self for method chaining.
+        """
+        self._builder.add_xor_delta_from_buffers(data, base_data, element_size)
+        return self
 
     def add_metadata(self, metadata: Dict[str, Any]) -> "Writer":
         """Add custom metadata to the snapshot.

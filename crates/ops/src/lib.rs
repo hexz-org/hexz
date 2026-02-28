@@ -10,6 +10,7 @@ pub mod parallel_pack;
 pub mod parent_index;
 pub mod predict;
 pub mod progress;
+pub mod safetensors;
 #[cfg(feature = "signing")]
 pub mod sign;
 pub mod snapshot_writer;

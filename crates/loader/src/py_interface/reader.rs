@@ -678,6 +678,60 @@ impl Reader {
         Err(PyOSError::new_err("Reader is a virtual file stream"))
     }
 
+    /// Read XOR delta: read delta bytes from this snapshot, read base bytes
+    /// from the parent reader, byte-unshuffle, XOR them together, and return.
+    ///
+    /// Both I/O operations release the GIL. The unshuffle and XOR are done
+    /// in-place into the output PyBytes buffer.
+    ///
+    /// `element_size` is the dtype width (e.g. 2 for f16/bf16, 4 for f32).
+    /// Must match the value used during save for correct byte-unshuffle.
+    #[pyo3(name = "read_xor_delta")]
+    fn read_xor_delta<'py>(
+        &self,
+        py: Python<'py>,
+        size: usize,
+        offset: u64,
+        parent: &Reader,
+        base_offset: u64,
+        element_size: usize,
+    ) -> PyResult<Bound<'py, PyBytes>> {
+        let inner = self.inner.clone();
+        let parent_inner = parent.inner.clone();
+
+        let bytes = PyBytes::new_with(py, size, |buf| {
+            let ptr_addr = buf.as_mut_ptr() as usize;
+            let buf_len = buf.len();
+
+            py.allow_threads(move || {
+                let slice = unsafe { std::slice::from_raw_parts_mut(ptr_addr as *mut u8, buf_len) };
+
+                // Read delta into output buffer
+                inner
+                    .read_at_into_uninit_bytes(SnapshotStream::Primary, offset, slice)
+                    .map_err(|e| PyIOError::new_err(e.to_string()))?;
+
+                // Byte-unshuffle the delta before XOR
+                let mut scratch = Vec::new();
+                byte_unshuffle(slice, element_size, &mut scratch);
+
+                // Read base into temporary buffer and XOR in place
+                let mut base_buf = vec![0u8; buf_len];
+                parent_inner
+                    .read_at_into_uninit_bytes(SnapshotStream::Primary, base_offset, &mut base_buf)
+                    .map_err(|e| PyIOError::new_err(e.to_string()))?;
+
+                for (d, b) in slice.iter_mut().zip(base_buf.iter()) {
+                    *d ^= b;
+                }
+
+                Ok(())
+            })
+        })?;
+
+        Ok(bytes)
+    }
+
     /// Get snapshot metadata including format information and statistics.
     ///
     /// Returns a dictionary containing header information, compression settings,
@@ -834,5 +888,28 @@ impl Reader {
     /// - `state`: Cursor position to restore
     fn __setstate__(&self, state: u64) {
         self.cursor.store(state, Ordering::Relaxed);
+    }
+}
+
+/// Byte-unshuffle: inverse of byte_shuffle.
+///
+/// For `element_size=4`: `[A0 B0 A1 B1 A2 B2 A3 B3]` → `[A0 A1 A2 A3 B0 B1 B2 B3]`
+fn byte_unshuffle(data: &mut [u8], element_size: usize, scratch: &mut Vec<u8>) {
+    if element_size <= 1 || data.len() < element_size {
+        return;
+    }
+    let n = data.len();
+    scratch.resize(n, 0);
+    scratch.copy_from_slice(data);
+    let count = n / element_size;
+    let tail = n % element_size;
+    for i in 0..count {
+        for j in 0..element_size {
+            data[i * element_size + j] = scratch[j * count + i];
+        }
+    }
+    // Copy tail bytes verbatim
+    if tail > 0 {
+        data[count * element_size..].copy_from_slice(&scratch[count * element_size..]);
     }
 }

@@ -1,78 +1,95 @@
 # Hexz Roadmap
 
-This is the plan for releases. Actual implementations might be slightly different depending on needs at the time.
+---
+
+## v0.5.0 — Checkpoint API + Tensor Manifest *(in progress)*
+
+Core checkpoint API on top of the existing storage engine.
+
+| Item | Status |
+|---|---|
+| Tensor manifest (name → offset/length/dtype/shape in `metadata_offset`) | In progress |
+| `hexz.checkpoint.save(state_dict, path, parent=None)` | In progress |
+| `hexz.checkpoint.load(path, keys=None, device="cpu")` | In progress |
+| `hexz.checkpoint.manifest(path)` | In progress |
+| Zero-copy tensor writes: replace `.tobytes()` with `memoryview` buffer protocol | In progress |
+| Block-boundary alignment in `save()` — pad each tensor to `block_size` | In progress |
+| `cdc: bool = False` on Builder — default off for tensor workloads | In progress |
+| `hexz diff a.hxz b.hxz` — block-level comparison, shared vs unique bytes | Planned |
+| `hexz ls ./dir/` — list archives with chain structure and unique bytes | Planned |
+| Rename SnapshotStream::Disk/Memory → Primary/Secondary | **Done** |
 
 ---
 
-## v0.5.0 — Checkpoint API + Tensor Manifest
+## v0.6.0 — Safetensors + GGUF Native Support *(next)*
 
-The pivot toward checkpoint versioning as the primary use case. No new format changes — this is Python API work on top of what's already in the format.
+Native tensor format parsing and tensor-boundary chunking.
 
 | Item | Description |
 |---|---|
-| **Tensor manifest** | Write tensor name → (offset, length, dtype, shape) as a msgpack blob into the existing `metadata_offset` slot in the header |
-| **`hexz.checkpoint.save(state_dict, path, parent=None)`** | Python API: writes tensors sequentially, builds manifest, sets `parent_path` if provided |
-| **`hexz.checkpoint.load(path, keys=None)`** | Python API: reads manifest, fetches requested tensors by byte range, returns dict |
-| **`hexz checkpoint diff a.hxz b.hxz`** | CLI: compare block hashes between two files, report shared vs unique bytes and storage savings |
-| **`hexz checkpoint ls ./dir/`** | CLI: list archives, show chain structure and unique bytes on disk |
-| **safetensors import** | `hexz.checkpoint.from_safetensors(path, output, parent=None)` |
-| **Rename SnapshotStream::Disk/Memory** | → Primary/Secondary. VM use case unchanged, removes VM-specific naming from ML-facing API |
+| Safetensors parser (`crates/core/src/format/safetensors.rs`) | Parse 8-byte header length + JSON + tensor data; `IndexMap` for order preservation |
+| GGUF parser (`crates/core/src/format/gguf.rs`) | Parse magic, version, metadata KV pairs, tensor info array |
+| `store_safetensors` op (`crates/ops/src/safetensors.rs`) | Chunk at tensor boundaries, pad to block_size, write manifest |
+| `extract_safetensors` op | Reconstruct safetensors header from manifest, write tensor bytes in order |
+| `hexz store` CLI command | `hexz store INPUT OUTPUT [--base BASE] [--compression zstd]` |
+| `hexz extract` CLI command | `hexz extract INPUT [OUTPUT] [--tensor NAME]` |
+| `hexz.checkpoint.convert(src, dst, *, base=None)` Python API | No PyTorch required |
+| `hexz.checkpoint.extract(src, dst=None, *, tensor=None)` Python API | Round-trip to safetensors |
+| `hexz inspect` updated | Show tensor manifest (names, shapes, dtypes, storage mode) |
+| `indexmap` workspace dep | Add to `Cargo.toml` |
 
 ---
 
-## v0.6.0 — Read Path Performance
+## v0.7.0 — XOR Delta Compression
 
-Known bottlenecks in the read path:
-
-| Issue | Description | Status |
-|---|---|---|
-| [#115](https://github.com/hexz-org/hexz/issues/115) | Replace `Mutex<u64>` cursor with `AtomicU64` in Python Reader | **Done** |
-| [#122](https://github.com/hexz-org/hexz/issues/122) | Reusable buffer pool for decompression + raise parallel threshold | **Done** |
-| [#113](https://github.com/hexz-org/hexz/issues/113) | Replace `block_on` in S3/HTTP backends with proper async runtime | |
-| [#114](https://github.com/hexz-org/hexz/issues/114) | Shard the page cache Mutex (currently a single global lock) | |
-| [#56](https://github.com/hexz-org/hexz/issues/56) | `Writer.add_bytes()` without temporary file | |
-| — | Prefetch: replace `thread::spawn` per prefetch with a dedicated thread or rayon task | |
-| — | Mmap backend: zero-copy `Bytes` from mmap instead of `copy_from_slice` per block | |
-| — | FileBackend: pool or reuse `BytesMut` allocations in `read_exact` | |
-| — | S3 backend: avoid `Bytes::copy_from_slice` — take ownership of response bytes directly | |
-
----
-
-## v0.7.0 — Write Path Performance
-
-Buffer reuse and zero-copy write APIs:
+The core algorithm that makes checkpoint chains dramatically more efficient.
 
 | Item | Description |
 |---|---|
-| **compress_into / encrypt_into** | Zero-copy compression/encryption APIs writing into caller-owned buffers |
-| **Chunker buffer reuse** | FixedChunker and StreamChunker reuse internal buffers instead of allocating per chunk |
-| **Monomorphized chunker dispatch** | Enum dispatch replacing `Box<dyn Chunker>` |
-| **Pre-sized dedup map** | Use file size hint to pre-allocate the dedup hash table |
-| **Zstd encoder pooling** | Reusable compressor/decompressor to avoid per-call setup |
+| XOR delta write path | Align tensors by name, XOR raw bytes, zstd-compress result, tag as `XorDelta` in index |
+| XOR delta read path | Decompress delta, read parent tensor, XOR to reconstruct |
+| SIMD XOR acceleration | `portable_simd` or AVX2 intrinsics for ~memory-bandwidth-speed XOR |
+| `--no-xor-delta` flag | Opt-out; falls back to raw block storage with BLAKE3 dedup |
+| Shape mismatch handling | Warn and fall back to raw storage when shapes or dtypes differ |
+| Benchmark: XOR delta vs CDC vs naive zstd on real fine-tuned models | Publish results |
 
 ---
 
-## v0.8.0 — Reliability
+## v0.8.0 — Read Path Performance
+
+Known bottlenecks in the read path.
+
+| Issue | Description |
+|---|---|
+| [#113](https://github.com/hexz-org/hexz/issues/113) | Replace `block_on` in S3/HTTP backends with proper async runtime |
+| [#114](https://github.com/hexz-org/hexz/issues/114) | Shard the page cache Mutex (currently a single global lock) |
+| [#56](https://github.com/hexz-org/hexz/issues/56) | `Writer.add_bytes()` without temporary file |
+| — | Mmap backend: zero-copy `Bytes` from mmap instead of `copy_from_slice` per block |
+| — | S3 backend: take ownership of response bytes directly, avoid `copy_from_slice` |
+| — | FileBackend: pool `BytesMut` allocations in `read_exact` |
+
+---
+
+## v0.9.0 — Write Path Performance
+
+| Item | Description |
+|---|---|
+| `compress_into / encrypt_into` | Zero-copy compression/encryption into caller-owned buffers |
+| Chunker buffer reuse | `FixedChunker` and `StreamChunker` reuse internal buffers |
+| Zstd encoder pooling | Reusable compressor/decompressor, avoid per-call setup cost |
+| Pre-sized dedup map | Use file size hint to pre-allocate the hash table |
+
+---
+
+## v0.10.0 — Reliability
 
 | Issue | Description |
 |---|---|
 | [#86](https://github.com/hexz-org/hexz/issues/86) | Error recovery: retry with exponential backoff, circuit breaker |
-| [#101](https://github.com/hexz-org/hexz/issues/101) | Fuzz testing for parsers and format |
+| [#101](https://github.com/hexz-org/hexz/issues/101) | Fuzz testing for format parsers (safetensors, GGUF, hxz) |
 | [#102](https://github.com/hexz-org/hexz/issues/102) | Security audit and dependency review |
-| [#127](https://github.com/hexz-org/hexz/issues/127) | SLA/reliability testing suite |
 | [#69](https://github.com/hexz-org/hexz/issues/69) | Edge case tests: empty archive, single block, very large file |
 | [#68](https://github.com/hexz-org/hexz/issues/68) | Integration tests: concurrent access patterns |
-
----
-
-## v0.9.0 — Snapshot Management
-
-| Issue | Description |
-|---|---|
-| [#95](https://github.com/hexz-org/hexz/issues/95) | `hexz data merge` — merge two archives |
-| [#96](https://github.com/hexz-org/hexz/issues/96) | `hexz data repair` — repair corrupted archives |
-| [#135](https://github.com/hexz-org/hexz/issues/135) | Streaming writer / append mode |
-| [#136](https://github.com/hexz-org/hexz/issues/136) | Snapshot versioning and lineage tracking |
 
 ---
 
@@ -80,9 +97,8 @@ Buffer reuse and zero-copy write APIs:
 
 | Item | Description |
 |---|---|
-| Stable public API with semver guarantees | No breaking changes after 1.0 |
-| [#129](https://github.com/hexz-org/hexz/issues/129) | Access control and audit logging |
-| [#84](https://github.com/hexz-org/hexz/issues/84) | Key rotation and keychain integration |
+| Stable `hexz.checkpoint.*` API with semver guarantees | No breaking changes after 1.0 |
+| `hexz.lock` file | JSON file tracking `{version, root_hash, size}` for reproducible model pinning |
 | [#128](https://github.com/hexz-org/hexz/issues/128) | Performance regression testing in CI |
 | [#116](https://github.com/hexz-org/hexz/issues/116) | Cap dedup map memory for very large packs |
 
@@ -90,42 +106,22 @@ Buffer reuse and zero-copy write APIs:
 
 ## Backlog (unscheduled)
 
-### Features
-
-| Issue | Description |
+| Item | Description |
 |---|---|
-| [#97](https://github.com/hexz-org/hexz/issues/97) | Named streams (multi-stream in one archive) |
-| [#98](https://github.com/hexz-org/hexz/issues/98) | Virtual concatenation of multiple archives |
-| [#99](https://github.com/hexz-org/hexz/issues/99) | Delta encoding / binary diff between archives |
-| [#83](https://github.com/hexz-org/hexz/issues/83) | Per-block compression algorithm selection |
-| [#87](https://github.com/hexz-org/hexz/issues/87) | Structured logging and Prometheus metrics |
-| [#45](https://github.com/hexz-org/hexz/issues/45) | Handle parent encryption in thin snapshots |
-| [#81](https://github.com/hexz-org/hexz/issues/81) | Dedup statistics in inspect output |
-| Cross-file external dedup index | Shared dedup index for unrelated archives — required for the full checkpoint dedup story |
+| HuggingFace Hub integration | `hexz push` / `hexz pull` directly to HF Hub |
 | Azure Blob Storage backend | |
 | Google Cloud Storage backend | |
-| HuggingFace Datasets integration | |
-| TensorFlow `tf.data.Dataset` wrapper | |
-| JAX / grain dataset support | |
-
-### Testing
-
-| Issue | Description |
-|---|---|
-| [#107](https://github.com/hexz-org/hexz/issues/107) | Large-scale tests: 1TB+ archive, 100M+ samples |
-| [#64](https://github.com/hexz-org/hexz/issues/64) | End-to-end PyTorch training loop integration test |
-| WebDataset benchmark | Run the pending WebDataset comparison before publishing competitive claims |
-
-### Research
-
-- GPU-accelerated decompression (nvCOMP / CUDA kernels for LZ4/Zstd)
-- Distributed multi-writer coordination and global deduplication
-- **Krapivin et al. (2025)** — Optimal Bounds for Open Addressing Without Reordering: Evaluated for the dedup hash table. Standard HashMap with identity hasher (leveraging BLAKE3's uniform distribution) outperformed the elastic hash table by 3-6× on lookup-heavy workloads. Identity hasher approach adopted in v0.4.0.
+| Distributed checkpoint storage | Shared dedup index across machines |
+| GPU-accelerated XOR | CUDA kernels for XOR delta on VRAM tensors |
+| Training loop callback | PyTorch callback: `hexz.checkpoint.save` every N steps with auto parent chaining |
+| GGUF round-trip | Export `.hxz` back to GGUF |
 
 ---
 
 ## What's not on the roadmap
 
-- A managed SaaS / hosted service — possible future direction but no concrete plan
-- GPU training pipeline features competing with WebDataset/StreamingDataset — not the target
+- FUSE mounting — deprioritized; useful for VM disk images but not core to the model checkpoint use case
+- VM management (boot, install, snap, commit) — removed
 - Windows FUSE support — not prioritized
+- Managed SaaS / hosted service — possible future direction, no concrete plan
+- Competing with WebDataset/StreamingDataset on sequential training data throughput — not the target use case

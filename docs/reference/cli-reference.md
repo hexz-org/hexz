@@ -5,295 +5,253 @@ Complete reference for the `hexz` command-line tool.
 ## Installation
 
 ```bash
-# Build from source
-git clone https://github.com/Alethic-Systems/hexz.git
-cd hexz
-make rust
+cargo install hexz-cli
+```
 
-# Binary location
+Or build from source:
+```bash
+git clone https://github.com/hexz-org/hexz.git
+cd hexz && make rust
 ./target/release/hexz
 ```
+
+---
 
 ## Command Structure
 
 ```
-hexz <CATEGORY> <COMMAND> [OPTIONS]
+hexz <COMMAND> [OPTIONS] [ARGS]
 ```
-
-**Categories**:
-- `data` — Dataset and snapshot operations
-- `vm` — Virtual machine management
-- `sys` — System utilities and diagnostics
 
 ---
 
-## Data Commands
+## `hexz store`
 
-### `hexz data pack`
+Pack a safetensors or GGUF file into a Hexz archive. Chunks at tensor boundaries rather than using CDC.
 
-Pack files or directories into a compressed snapshot.
-
-**Synopsis**:
+**Synopsis:**
 ```bash
-hexz data pack --disk <INPUT> --output <OUTPUT> [OPTIONS]
+hexz store <INPUT> <OUTPUT> [OPTIONS]
 ```
 
-**Options**:
+**Arguments:**
+- `<INPUT>` — Source file (`.safetensors` or `.gguf`). Format inferred from extension.
+- `<OUTPUT>` — Output `.hxz` archive path.
+
+**Options:**
+- `--base <PATH>` — Parent `.hxz` archive for delta storage. Byte-identical blocks are referenced; changed tensors are stored compressed.
+- `--compression <ALGO>` — `lz4` or `zstd` (default: `zstd`)
+- `--compression-level <N>` — Zstd level 1–22 (default: 3)
+- `--block-size <BYTES>` — Block alignment size (default: 65536)
+- `-s, --silent` — Suppress progress output
+
+**Example:**
+```bash
+# Pack a base model
+hexz store llama-3-8b.safetensors llama-3-8b.hxz
+
+# Pack a fine-tune against the base — only diffs stored
+hexz store llama-3-8b-ft.safetensors llama-3-8b-ft.hxz --base llama-3-8b.hxz
+
+# Pack a GGUF model
+hexz store model-q4_K_M.gguf model-q4_K_M.hxz --compression zstd
+```
+
+---
+
+## `hexz extract`
+
+Reconstruct a safetensors file from a Hexz archive, or extract a single tensor.
+
+**Synopsis:**
+```bash
+hexz extract <INPUT> [OUTPUT] [OPTIONS]
+```
+
+**Arguments:**
+- `<INPUT>` — Source `.hxz` archive.
+- `[OUTPUT]` — Output path (default: `<INPUT stem>.safetensors`).
+
+**Options:**
+- `--tensor <NAME>` — Extract only the named tensor. Writes raw tensor bytes (no safetensors header).
+
+**Example:**
+```bash
+# Full round-trip
+hexz extract llama-3-8b-ft.hxz llama-3-8b-ft-out.safetensors
+
+# Single tensor
+hexz extract llama-3-8b-ft.hxz --tensor lm_head.weight
+```
+
+---
+
+## `hexz inspect`
+
+Display the tensor manifest and archive metadata without decompressing data blocks.
+
+**Synopsis:**
+```bash
+hexz inspect <ARCHIVE>
+```
+
+**Example output:**
+```
+Archive:        llama-3-8b-ft.hxz
+Format version: 1
+Compression:    zstd (level 3)
+Block size:     65536
+Uncompressed:   13.8 GB
+Stored:         [UNTESTED — will be shown once XOR delta lands]
+Parent:         llama-3-8b.hxz
+
+Tensors (362):
+  embed_tokens.weight              BF16  [32000, 4096]  256.0 MB
+  layers.0.self_attn.q_proj.weight BF16  [4096, 4096]    32.0 MB
+  ...
+  lm_head.weight                   BF16  [32000, 4096]  256.0 MB
+```
+
+---
+
+## `hexz diff`
+
+Compare two archives and report shared vs changed blocks.
+
+**Synopsis:**
+```bash
+hexz diff <ARCHIVE_A> <ARCHIVE_B>
+```
+
+**Example output:**
+```
+Comparing:
+  A: llama-3-8b.hxz     (13.8 GB)
+  B: llama-3-8b-ft.hxz  (13.8 GB)
+
+Block analysis (65KB blocks):
+  Total blocks:   [UNTESTED]
+  Shared blocks:  [UNTESTED]  — referenced from A, not re-stored
+  New blocks:     [UNTESTED]
+
+Storage cost of B without dedup:  13.8 GB
+Storage cost of B with dedup:     [UNTESTED]
+```
+
+---
+
+## `hexz ls`
+
+List all `.hxz` files in a directory, showing the parent chain and unique bytes on disk.
+
+**Synopsis:**
+```bash
+hexz ls <DIR>
+```
+
+**Example output:**
+```
+./checkpoints/
+  llama-3-8b.hxz         13.8 GB   (base)
+  llama-3-8b-ft-v1.hxz   [UNTESTED] GB  (parent: llama-3-8b.hxz)
+  llama-3-8b-ft-v2.hxz   [UNTESTED] GB  (parent: llama-3-8b-ft-v1.hxz)
+
+Total unique bytes on disk: [UNTESTED]
+```
+
+---
+
+## `hexz pack`
+
+Pack a generic file or directory into a Hexz archive. For model files prefer `hexz store`, which understands tensor structure.
+
+**Synopsis:**
+```bash
+hexz pack --disk <INPUT> --output <OUTPUT> [OPTIONS]
+```
+
+**Options:**
 - `--disk <PATH>` — Input file or directory (required)
-- `--output <PATH>` — Output snapshot path (required)
-- `--compression <ALGO>` — Compression algorithm: `lz4` (default) or `zstd`
-- `--compression-level <N>` — Zstd compression level (1-22, default: 3)
+- `--output <PATH>` — Output path (required)
+- `--compression <ALGO>` — `lz4` (default) or `zstd`
+- `--compression-level <N>` — Zstd level 1–22
 - `--block-size <BYTES>` — Block size (default: 65536)
-- `--cdc` — Enable content-defined chunking for deduplication
-- `--parent <PATH>` — Parent snapshot for incremental packing
+- `--cdc` — Enable content-defined chunking (FastCDC)
+- `--dcam` — Enable DCAM analysis before packing
+- `--parent <PATH>` — Parent archive for cross-file dedup
 - `--encrypt` — Enable AES-256-GCM encryption
 - `--key <PATH>` — Encryption key file
 
-**Example**:
+---
+
+## `hexz keygen`
+
+Generate an Ed25519 signing keypair.
+
+**Synopsis:**
 ```bash
-hexz data pack \\
-  --disk /data/imagenet \\
-  --output imagenet.hxz \\
-  --compression zstd \\
-  --compression-level 9 \\
-  --cdc
+hexz keygen [--output-dir <DIR>]
 ```
 
-### `hexz data info`
-
-Display snapshot metadata.
-
-**Synopsis**:
-```bash
-hexz data info <SNAPSHOT>
-```
-
-**Output**:
-```
-Snapshot: dataset.hxz
-Format Version: 1
-Compression: Zstandard (Level 9)
-Block Size: 65536
-Uncompressed Size: 1.2 GB
-Compressed Size: 456 MB
-Compression Ratio: 2.63×
-Block Count: 18750
-Deduplication: Enabled
-Encrypted: No
-Signed: Yes
-```
-
-### `hexz data diff`
-
-Compare two snapshots.
-
-**Synopsis**:
-```bash
-hexz data diff <SNAPSHOT1> <SNAPSHOT2>
-```
-
-**Output**: List of changed blocks with offsets.
+Creates `private.key` and `public.key` in the specified directory (default: current directory).
 
 ---
 
-## VM Commands
+## `hexz sign`
 
-### `hexz vm boot`
+Sign an archive with an Ed25519 private key.
 
-Boot a virtual machine from a snapshot.
-
-**Synopsis**:
+**Synopsis:**
 ```bash
-hexz vm boot <SNAPSHOT> [OPTIONS]
-```
-
-**Resource Options**:
-- `--ram <SIZE>` — RAM allocation (e.g., `4G`, default: `2G`)
-- `--cpus <N>` — Number of virtual CPUs (default: 2)
-
-**Network Options**:
-- `--net` — Enable user-mode networking
-- `--forward <HOST:GUEST>` — Port forwarding (e.g., `8080:80`)
-
-**Display Options**:
-- `--vnc` — Enable VNC server on port 5900
-- `--headless` — No display output
-
-**Advanced**:
-- `--snapshot` — Ephemeral mode (discard changes on exit)
-- `--kernel-mode` — Boot in kernel development mode
-
-**Example**:
-```bash
-hexz vm boot ubuntu.hxz \\
-  --ram 4G \\
-  --cpus 4 \\
-  --net \\
-  --forward 2222:22 \\
-  --forward 8080:80
-```
-
-### `hexz vm install`
-
-Install OS from ISO and save as snapshot.
-
-**Synopsis**:
-```bash
-hexz vm install --iso <ISO> --output <SNAPSHOT> [OPTIONS]
-```
-
-**Options**:
-- `--iso <PATH>` — Installation ISO (required)
-- `--output <PATH>` — Output snapshot path (required)
-- `--disk-size <SIZE>` — Virtual disk size (default: `20G`)
-- `--ram <SIZE>` — RAM allocation (default: `2G`)
-- `--vnc` — Enable VNC for interactive installation
-
-**Example**:
-```bash
-hexz vm install \\
-  --iso ubuntu-22.04.iso \\
-  --output ubuntu.hxz \\
-  --disk-size 40G \\
-  --ram 4G \\
-  --vnc
-```
-
-### `hexz vm mount`
-
-Mount snapshot as FUSE filesystem.
-
-**Synopsis**:
-```bash
-hexz vm mount <SNAPSHOT> <MOUNTPOINT> [OPTIONS]
-```
-
-**Options**:
-- `--overlay <PATH>` — Enable write support with overlay file
-- `--readonly` — Mount read-only (default)
-
-**Example**:
-```bash
-# Read-only mount
-hexz vm mount dataset.hxz /mnt/hexz --readonly
-
-# Read-write with overlay
-hexz vm mount base.hxz /mnt/hexz --overlay changes.img
-```
-
-### `hexz vm commit`
-
-Commit overlay changes to new snapshot.
-
-**Synopsis**:
-```bash
-hexz vm commit --base <BASE> --overlay <OVERLAY> --output <OUTPUT>
-```
-
-**Example**:
-```bash
-hexz vm commit \\
-  --base ubuntu-base.hxz \\
-  --overlay changes.img \\
-  --output ubuntu-updated.hxz
+hexz sign --key <PRIVATE_KEY> <ARCHIVE>
 ```
 
 ---
 
-## System Commands
+## `hexz verify`
 
-### `hexz sys doctor`
+Verify an archive signature.
 
-Diagnose system configuration.
-
-**Synopsis**:
+**Synopsis:**
 ```bash
-hexz sys doctor
+hexz verify --key <PUBLIC_KEY> <ARCHIVE>
 ```
 
-**Checks**:
-- QEMU installation and version
-- KVM support and permissions
-- FUSE support
-- Library versions
-- File system capabilities
+**Exit codes:** `0` = valid, `1` = invalid or missing signature
 
-### `hexz sys bench`
+---
 
-Run performance benchmarks.
+## `hexz bench`
 
-**Synopsis**:
+Run compression and I/O benchmarks.
+
+**Synopsis:**
 ```bash
-hexz sys bench [OPTIONS]
+hexz bench [OPTIONS]
 ```
 
-**Options**:
-- `--compression <ALGO>` — Test specific algorithm (lz4, zstd, or all)
+**Options:**
+- `--compression <ALGO>` — `lz4`, `zstd`, or `all`
 - `--block-size <BYTES>` — Block size for tests
-- `--threads <N>` — Number of threads
-
-**Example**:
-```bash
-hexz sys bench --compression all --threads 8
-```
-
-### `hexz sys keygen`
-
-Generate Ed25519 signing keypair.
-
-**Synopsis**:
-```bash
-hexz sys keygen [--output-dir <DIR>]
-```
-
-**Output**: Creates `private.key` and `public.key` in specified directory (default: current directory).
-
-### `hexz sys sign`
-
-Sign a snapshot.
-
-**Synopsis**:
-```bash
-hexz sys sign --key <PRIVATE_KEY> <SNAPSHOT>
-```
-
-**Example**:
-```bash
-hexz sys sign --key private.key dataset.hxz
-```
-
-### `hexz sys verify`
-
-Verify snapshot signature.
-
-**Synopsis**:
-```bash
-hexz sys verify --key <PUBLIC_KEY> <SNAPSHOT>
-```
-
-**Exit Codes**:
-- `0`: Signature valid
-- `1`: Signature invalid or missing
+- `--threads <N>` — Thread count
 
 ---
 
 ## Global Options
 
-These options work with all commands:
-
-- `-h, --help` — Show help message
+- `-h, --help` — Show help
 - `-V, --version` — Show version
-- `-v, --verbose` — Increase logging verbosity (can be repeated: `-vv`, `-vvv`)
+- `-v` — Increase verbosity (repeatable: `-vv`, `-vvv`)
 - `--quiet` — Suppress non-error output
 
 ---
 
 ## Environment Variables
 
-- `HEXZ_CACHE_DIR` — Default cache directory for remote snapshots
-- `HEXZ_CACHE_SIZE` — Default cache size in bytes
+- `HEXZ_CACHE_DIR` — Cache directory for remote archives
+- `HEXZ_CACHE_SIZE` — Cache size in bytes
 - `AWS_PROFILE` — AWS profile for S3 access
-- `AWS_DEFAULT_REGION` — AWS region for S3
+- `AWS_DEFAULT_REGION` — AWS region
 
 ---
 
@@ -310,6 +268,6 @@ These options work with all commands:
 
 ## See Also
 
-- [How-To: Pack Datasets](../how-to/cli-usage/pack-datasets.md)
-- [How-To: Install Hexz](../how-to/cli-usage/install-hexz.md)
-- [Tutorial: Getting Started](../tutorials/getting-started.md)
+- [Getting Started](../tutorials/getting-started.md)
+- [Python API Reference](python-api.md)
+- [Tensor Format Support](tensor-formats.md)
