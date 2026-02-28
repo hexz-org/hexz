@@ -15,10 +15,10 @@ from .exceptions import MountError
 from .typing import PathLike
 
 
-class _MountPoint:
-    """Internal context manager to mount a Hexz snapshot.
+class MountContext:
+    """Context manager for a mounted Hexz snapshot.
 
-    Users should use the :func:`mount` function instead of instantiating this directly.
+    Use the :func:`mount` function to create instances.
 
     Usage:
         with hexz.mount("my_snap.hxz") as mp:
@@ -145,7 +145,7 @@ def mount(
     *,
     mount_point: Optional[PathLike] = None,
     binary: str = "hexz",
-) -> _MountPoint:
+) -> MountContext:
     """Mount a Hexz snapshot as a filesystem.
 
     The snapshot is automatically unmounted when exiting the context manager.
@@ -164,11 +164,11 @@ def mount(
         ...     print(files)
         ... # Automatically unmounted here
     """
-    return _MountPoint(
+    return MountContext(
         str(snapshot),
         mount_point=str(mount_point) if mount_point else None,
         binary=binary,
     )
 
 
-__all__ = ["mount"]
+__all__ = ["mount", "MountContext"]

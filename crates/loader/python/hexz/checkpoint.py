@@ -23,176 +23,18 @@ from .exceptions import FormatError, ValidationError
 from .typing import PathLike
 from .utils import Metadata, inspect
 from .writer import Writer
-
-_CHECKPOINT_VERSION = "1.0"
-
-# Dtype string <-> torch dtype mapping. Populated lazily on first use.
-_DTYPE_MAP: Optional[Dict[str, Any]] = None
-_DTYPE_REVERSE: Optional[Dict[Any, str]] = None
-
-# Dtype -> element size in bytes (for byte-shuffle). Populated lazily.
-_DTYPE_SIZES: Optional[Dict[Any, int]] = None
-
-
-def _ensure_torch():
-    """Lazy-import torch, raising a helpful error if missing."""
-    try:
-        import torch
-
-        return torch
-    except ImportError:
-        raise ImportError(
-            "PyTorch is required for hexz.checkpoint. Install with: pip install torch"
-        )
-
-
-def _build_dtype_maps():
-    """Build dtype string <-> torch.dtype mappings (once)."""
-    global _DTYPE_MAP, _DTYPE_REVERSE, _DTYPE_SIZES
-    if _DTYPE_MAP is not None:
-        return
-
-    torch = _ensure_torch()
-    _DTYPE_MAP = {
-        "float16": torch.float16,
-        "float32": torch.float32,
-        "float64": torch.float64,
-        "bfloat16": torch.bfloat16,
-        "int8": torch.int8,
-        "int16": torch.int16,
-        "int32": torch.int32,
-        "int64": torch.int64,
-        "uint8": torch.uint8,
-        "bool": torch.bool,
-    }
-    _DTYPE_REVERSE = {v: k for k, v in _DTYPE_MAP.items()}
-    _DTYPE_SIZES = {
-        torch.float16: 2,
-        torch.bfloat16: 2,
-        torch.float32: 4,
-        torch.float64: 8,
-        torch.int8: 1,
-        torch.uint8: 1,
-        torch.int16: 2,
-        torch.int32: 4,
-        torch.int64: 8,
-        torch.bool: 1,
-    }
-
-
-def _dtype_to_str(dtype) -> str:
-    """Convert a torch dtype to its manifest string."""
-    _build_dtype_maps()
-    assert _DTYPE_REVERSE is not None
-    name = _DTYPE_REVERSE.get(dtype)
-    if name is None:
-        raise ValidationError(f"Unsupported tensor dtype: {dtype}")
-    return name
-
-
-def _str_to_torch_dtype(name: str):
-    """Convert a manifest dtype string to a torch dtype."""
-    _build_dtype_maps()
-    assert _DTYPE_MAP is not None
-    dtype = _DTYPE_MAP.get(name)
-    if dtype is None:
-        raise FormatError(f"Unknown dtype in checkpoint manifest: {name!r}")
-    return dtype
-
-
-def _tensor_to_buffer(tensor):
-    """Return a zero-copy memoryview of tensor memory (no Python-side copy)."""
-    torch = _ensure_torch()
-
-    t = tensor.detach().cpu().contiguous()
-    if t.dtype == torch.bfloat16:
-        return memoryview(t.view(torch.uint16).numpy())
-    return memoryview(t.numpy())
-
-
-def _bytes_to_tensor(data: bytes, dtype_str: str, shape: List[int], device: str):
-    """Reconstruct a tensor from raw bytes."""
-    import numpy as np
-
-    torch = _ensure_torch()
-
-    # Validate dtype string
-    _str_to_torch_dtype(dtype_str)
-
-    if dtype_str == "bfloat16":
-        t = torch.frombuffer(bytearray(data), dtype=torch.bfloat16)
-        return (t.reshape(shape) if shape else t.reshape(())).to(device)
-
-    # Map torch dtype name to numpy dtype
-    _np_dtype_map = {
-        "float16": np.float16,
-        "float32": np.float32,
-        "float64": np.float64,
-        "int8": np.int8,
-        "int16": np.int16,
-        "int32": np.int32,
-        "int64": np.int64,
-        "uint8": np.uint8,
-        "bool": np.bool_,
-    }
-    np_dtype = _np_dtype_map[dtype_str]
-    arr = np.frombuffer(data, dtype=np_dtype)
-    arr = arr.reshape(shape) if shape else arr.reshape(())
-    return torch.from_numpy(arr.copy()).to(device)
-
-
-def _byte_unshuffle(data: bytes, element_size: int) -> bytes:
-    """Byte-unshuffle: inverse of byte_shuffle used during save."""
-    if element_size <= 1 or len(data) < element_size:
-        return data
-    import numpy as np
-
-    n = len(data)
-    count = n // element_size
-    tail = n % element_size
-    main_len = count * element_size
-    arr = np.frombuffer(data, dtype=np.uint8, count=main_len)
-    unshuffled = arr.reshape(element_size, count).T.ravel()
-    if tail > 0:
-        tail_arr = np.frombuffer(data, dtype=np.uint8, offset=main_len)
-        return unshuffled.tobytes() + tail_arr.tobytes()
-    return unshuffled.tobytes()
-
-
-def _xor_bytes(a: bytes, b: bytes) -> bytes:
-    """XOR two byte strings of equal length."""
-    import numpy as np
-
-    return np.bitwise_xor(
-        np.frombuffer(a, dtype=np.uint8),
-        np.frombuffer(b, dtype=np.uint8),
-    ).tobytes()
-
-
-def _classify_value(key: str, value) -> str:
-    """Classify a state_dict value as 'tensor', 'scalar', or raise."""
-    torch = _ensure_torch()
-    if isinstance(value, torch.Tensor):
-        return "tensor"
-    if isinstance(value, (int, float, bool, str)):
-        return "scalar"
-    raise ValidationError(
-        f"state_dict key {key!r}: unsupported type {type(value).__name__}. "
-        f"Expected Tensor, int, float, bool, or str."
-    )
-
-
-def _scalar_type_name(value) -> str:
-    """Return the manifest type name for a scalar value."""
-    if isinstance(value, bool):
-        return "bool"
-    if isinstance(value, int):
-        return "int"
-    if isinstance(value, float):
-        return "float"
-    if isinstance(value, str):
-        return "str"
-    raise ValidationError(f"Not a scalar: {type(value).__name__}")
+from ._internal import (
+    _CHECKPOINT_VERSION,
+    _DTYPE_SIZES,
+    _ensure_torch,
+    _dtype_to_str,
+    _tensor_to_buffer,
+    _bytes_to_tensor,
+    _byte_unshuffle,
+    _xor_bytes,
+    _classify_value,
+    _scalar_type_name,
+)
 
 
 def save(
@@ -728,3 +570,7 @@ def extract(
 
 
 __all__ = ["save", "load", "manifest", "convert", "extract"]
+
+
+def __dir__():
+    return __all__

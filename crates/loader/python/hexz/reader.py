@@ -5,67 +5,14 @@ the Rust-implemented Reader with a more pythonic interface.
 """
 
 from typing import TYPE_CHECKING, Optional, Any, Dict, Union, Iterator
-import re
 
 from . import hexz_loader
 from .typing import PathLike
 from .utils import Metadata
+from ._internal import _parse_cache_size
 
 if TYPE_CHECKING:
     from .utils import AnalysisReport
-
-
-def _parse_cache_size(size_str: str) -> int:
-    """Parse a cache size string like '512M', '1G', '2GB' into bytes.
-
-    Args:
-        size_str: Cache size string (e.g., "512M", "1G", "2GB", "1024")
-
-    Returns:
-        Size in bytes
-
-    Raises:
-        ValueError: If the string format is invalid
-
-    Examples:
-        >>> _parse_cache_size("512M")
-        536870912
-        >>> _parse_cache_size("1G")
-        1073741824
-        >>> _parse_cache_size("2GB")
-        2147483648
-        >>> _parse_cache_size("1024")
-        1024
-    """
-    size_str = size_str.strip().upper()
-
-    # Match number followed by optional unit
-    match = re.match(r"^(\d+(?:\.\d+)?)\s*([KMGT]I?B?)?$", size_str)
-    if not match:
-        raise ValueError(f"Invalid cache size format: {size_str}")
-
-    number_str, unit = match.groups()
-    number = float(number_str)
-
-    # Parse unit
-    if not unit:
-        # No unit means bytes
-        return int(number)
-
-    # Normalize unit (remove 'I' and 'B' variations)
-    unit = unit.replace("I", "").replace("B", "")
-
-    multipliers = {
-        "K": 1024,
-        "M": 1024**2,
-        "G": 1024**3,
-        "T": 1024**4,
-    }
-
-    if unit not in multipliers:
-        raise ValueError(f"Unknown unit in cache size: {unit}")
-
-    return int(number * multipliers[unit])
 
 
 class Reader:
@@ -304,6 +251,10 @@ class Reader:
         self._reader = hexz_loader.Reader(self._path)
         self._reader.seek(state.get("position", 0), 0)
 
+    def __len__(self) -> int:
+        """Total size of the snapshot in bytes."""
+        return self.size
+
     def __repr__(self) -> str:
         return f"Reader({self._path!r})"
 
@@ -404,3 +355,10 @@ class AsyncReader:
 
     def __repr__(self) -> str:
         return f"AsyncReader({self._path!r})"
+
+
+__all__ = ["Reader", "AsyncReader"]
+
+
+def __dir__():
+    return __all__

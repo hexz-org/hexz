@@ -152,3 +152,22 @@ class VersionError(FormatError):
         super().__init__(message)
         self.file_version = file_version
         self.supported_version = supported_version
+
+
+__all__ = [
+    "Error",
+    "IOError",
+    "NetworkError",
+    "MountError",
+    "CompressionError",
+    "ValidationError",
+    "FormatError",
+    "EncryptionError",
+    "SignatureError",
+    "CacheError",
+    "VersionError",
+]
+
+
+def __dir__():
+    return __all__

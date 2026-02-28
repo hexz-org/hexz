@@ -22,35 +22,35 @@ from .writer import Writer
 PROFILES: Dict[BuildProfile, Dict[str, Any]] = {
     # Machine Learning: Fast writes, good compression, optimized for sequential access
     "ml": {
-        "mode": "fast",
+        "packing": "fast",
         "block_size": 128 * 1024,  # Large blocks for sequential reads
         "dedup": True,  # Enable deduplication
         "compression": "lz4",  # Fast compression/decompression
     },
     # Exploratory Data Analysis: Balanced, good for notebooks and experiments
     "eda": {
-        "mode": "balanced",
+        "packing": "balanced",
         "block_size": 64 * 1024,
         "dedup": True,
         "compression": "lz4",
     },
     # Embedded: Maximum compression for resource-constrained environments
     "embedded": {
-        "mode": "tight",
+        "packing": "tight",
         "block_size": 32 * 1024,  # Smaller blocks
         "dedup": True,  # Full dedup
         "compression": "zstd",
     },
     # Generic: Balanced defaults for general use
     "generic": {
-        "mode": "balanced",
+        "packing": "balanced",
         "block_size": 64 * 1024,
         "dedup": True,
         "compression": "lz4",
     },
     # Archival: Maximum compression and dedup for long-term storage
     "archival": {
-        "mode": "tight",
+        "packing": "tight",
         "block_size": 256 * 1024,  # Very large blocks
         "dedup": True,
         "compression": "zstd",

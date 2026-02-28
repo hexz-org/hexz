@@ -42,18 +42,21 @@ class WritableBuffer(Protocol):
     def __buffer__(self, flags: int) -> memoryview: ...
 
 
-class ProgressCallback(Protocol):
-    """Protocol for progress callback functions."""
-
-    def __call__(self, current: int, total: int) -> None:
-        """Called with (current_bytes, total_bytes) during operations.
-
-        Args:
-            current: Number of bytes processed so far
-            total: Total number of bytes to process
-        """
-        ...
-
-
 # Metadata dictionary type
 MetadataDict = Dict[str, Any]
+
+__all__ = [
+    "PathLike",
+    "Shape",
+    "CompressionAlgorithm",
+    "BuildProfile",
+    "PackingMode",
+    "DeduplicationMode",
+    "ReadableBuffer",
+    "WritableBuffer",
+    "MetadataDict",
+]
+
+
+def __dir__():
+    return __all__

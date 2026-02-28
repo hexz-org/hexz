@@ -54,6 +54,7 @@ from .exceptions import (
     IOError,
     MountError,
     NetworkError,
+    SignatureError,
     ValidationError,
     VersionError,
 )
@@ -182,7 +183,7 @@ __all__ = [
     "FORMAT_VERSION",
     "MIN_SUPPORTED_VERSION",
     "MAX_SUPPORTED_VERSION",
-    # === Exceptions (10) ===
+    # === Exceptions (11) ===
     "Error",
     "IOError",
     "NetworkError",
@@ -191,6 +192,7 @@ __all__ = [
     "CompressionError",
     "EncryptionError",
     "MountError",
+    "SignatureError",
     "CacheError",
     "VersionError",
 ]
@@ -201,3 +203,7 @@ if _HAS_CRYPTO:
 
 if _HAS_MOUNT:
     __all__.append("mount")
+
+
+def __dir__():
+    return __all__

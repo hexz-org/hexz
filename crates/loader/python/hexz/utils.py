@@ -118,6 +118,23 @@ class Metadata:
         """Dict-like access for any metadata key (e.g. parent_path for thin snapshots)."""
         return self._data[key]
 
+    def __contains__(self, key: str) -> bool:
+        """Support ``'version' in meta``."""
+        return key in self._data
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Dict-like get with default (e.g. ``meta.get('parent_path')``).
+
+        Args:
+            key: Metadata key to look up.
+            default: Value to return if key is missing.
+        """
+        return self._data.get(key, default)
+
+    def keys(self):
+        """Return available metadata keys."""
+        return self._data.keys()
+
     def __repr__(self) -> str:
         return f"Metadata(version={self.version}, compression={self.compression!r})"
 
@@ -353,3 +370,20 @@ def verify(
         return False
 
     return True
+
+
+__all__ = [
+    "Metadata",
+    "AnalysisReport",
+    "inspect",
+    "verify",
+    "analyze",
+    "merge_overlay",
+    "FORMAT_VERSION",
+    "MIN_SUPPORTED_VERSION",
+    "MAX_SUPPORTED_VERSION",
+]
+
+
+def __dir__():
+    return __all__

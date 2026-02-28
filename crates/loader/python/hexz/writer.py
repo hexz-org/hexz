@@ -12,13 +12,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from . import hexz_loader
 from .exceptions import ValidationError
 from .typing import PackingMode, PathLike
-
-# Compression level mappings for different modes
-COMPRESSION_LEVELS = {
-    "fast": {"lz4": None, "zstd": 1},  # Fast compression
-    "balanced": {"lz4": None, "zstd": 3},  # Balanced (default)
-    "tight": {"lz4": None, "zstd": 9},  # Maximum compression
-}
+from ._internal import _COMPRESSION_LEVELS
 
 
 class Writer:
@@ -76,6 +70,12 @@ class Writer:
         self._compression = compression
 
         # Determine packing mode (prefer 'packing' over 'mode')
+        if mode is not None and packing is None:
+            warnings.warn(
+                "The 'mode' parameter is deprecated, use 'packing' instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         resolved_mode = packing or mode or "balanced"
         self._mode = resolved_mode
         self._dedup = dedup
@@ -92,13 +92,13 @@ class Writer:
             self._parent = [str(p) for p in parent]
 
         # Map packing mode to compression level
-        if resolved_mode not in COMPRESSION_LEVELS:
+        if resolved_mode not in _COMPRESSION_LEVELS:
             raise ValidationError(
                 f"Invalid packing mode: {resolved_mode}. "
-                f"Choose from: {list(COMPRESSION_LEVELS.keys())}"
+                f"Choose from: {list(_COMPRESSION_LEVELS.keys())}"
             )
 
-        compression_level = COMPRESSION_LEVELS[resolved_mode].get(compression)
+        compression_level = _COMPRESSION_LEVELS[resolved_mode].get(compression)
 
         # Create underlying builder
         self._builder = hexz_loader.Builder(
@@ -376,3 +376,10 @@ class Writer:
 
     def __repr__(self) -> str:
         return f"Writer({self._path!r}, compression={self._compression!r})"
+
+
+__all__ = ["Writer"]
+
+
+def __dir__():
+    return __all__
