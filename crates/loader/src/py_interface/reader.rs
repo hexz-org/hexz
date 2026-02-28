@@ -713,7 +713,7 @@ impl Reader {
 
                 // Byte-unshuffle the delta before XOR
                 let mut scratch = Vec::new();
-                byte_unshuffle(slice, element_size, &mut scratch);
+                hexz_core::algo::transform::byte_unshuffle(slice, element_size, &mut scratch);
 
                 // Read base into temporary buffer and XOR in place
                 let mut base_buf = vec![0u8; buf_len];
@@ -721,9 +721,7 @@ impl Reader {
                     .read_at_into_uninit_bytes(SnapshotStream::Primary, base_offset, &mut base_buf)
                     .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
-                for (d, b) in slice.iter_mut().zip(base_buf.iter()) {
-                    *d ^= b;
-                }
+                hexz_core::algo::transform::xor_in_place(slice, &base_buf);
 
                 Ok(())
             })
@@ -888,28 +886,5 @@ impl Reader {
     /// - `state`: Cursor position to restore
     fn __setstate__(&self, state: u64) {
         self.cursor.store(state, Ordering::Relaxed);
-    }
-}
-
-/// Byte-unshuffle: inverse of byte_shuffle.
-///
-/// For `element_size=4`: `[A0 B0 A1 B1 A2 B2 A3 B3]` → `[A0 A1 A2 A3 B0 B1 B2 B3]`
-fn byte_unshuffle(data: &mut [u8], element_size: usize, scratch: &mut Vec<u8>) {
-    if element_size <= 1 || data.len() < element_size {
-        return;
-    }
-    let n = data.len();
-    scratch.resize(n, 0);
-    scratch.copy_from_slice(data);
-    let count = n / element_size;
-    let tail = n % element_size;
-    for i in 0..count {
-        for j in 0..element_size {
-            data[i * element_size + j] = scratch[j * count + i];
-        }
-    }
-    // Copy tail bytes verbatim
-    if tail > 0 {
-        data[count * element_size..].copy_from_slice(&scratch[count * element_size..]);
     }
 }

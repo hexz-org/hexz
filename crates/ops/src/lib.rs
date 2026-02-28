@@ -4,6 +4,7 @@
 //! and signing. It depends on `hexz-core` (format + algo + read API) and
 //! `hexz-store` (I/O backends) but is not required for read-only consumers.
 
+pub mod checkpoint;
 pub mod inspect;
 pub mod pack;
 pub mod parallel_pack;

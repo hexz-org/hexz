@@ -141,6 +141,7 @@
 
 pub mod async_reader;
 pub mod builder;
+pub mod checkpoint;
 pub mod exceptions;
 pub mod ops;
 pub mod pack;

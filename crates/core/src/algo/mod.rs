@@ -78,3 +78,6 @@ pub mod hashing;
 
 /// Deduplication algorithms (CDC, DCAM).
 pub mod dedup;
+
+/// Byte-level transforms (shuffle/unshuffle, XOR).
+pub mod transform;

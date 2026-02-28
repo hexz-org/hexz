@@ -453,7 +453,8 @@ fn open_hexz(path: &Path) -> Result<Arc<HexzFile>> {
 }
 
 /// Read the raw manifest bytes from a hexz file's embedded metadata.
-fn read_manifest(path: &Path) -> Result<Vec<u8>> {
+/// Read the embedded JSON manifest from a hexz file's metadata region.
+pub fn read_manifest(path: &Path) -> Result<Vec<u8>> {
     let mut f = File::open(path)?;
     let header = Header::read_from(&mut f)?;
     let (meta_offset, meta_len) = match (header.metadata_offset, header.metadata_length) {

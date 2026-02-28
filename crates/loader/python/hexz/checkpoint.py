@@ -30,8 +30,6 @@ from ._internal import (
     _dtype_to_str,
     _tensor_to_buffer,
     _bytes_to_tensor,
-    _byte_unshuffle,
-    _xor_bytes,
     _classify_value,
     _scalar_type_name,
 )
@@ -238,14 +236,16 @@ def load(
 ) -> Dict[str, Any]:
     """Load tensors and scalars from a Hexz checkpoint.
 
+    All I/O, decompression, XOR delta reconstruction, and parent chain
+    resolution are performed in Rust with the GIL released.
+
     Args:
         path: Path to .hxz checkpoint file.
         keys: If provided, only load these keys (tensors and/or scalars).
             Loads all keys if None.
         device: Target device for tensors (e.g. "cpu", "cuda:0").
-        num_workers: Number of parallel reader threads (default: 1 = sequential).
-            Set to 4+ for faster loading from NVMe SSD; each worker opens its
-            own file handle and reads+decompresses an independent tensor.
+        progress: Reserved for future use.
+        num_workers: Reserved for future use (Rust uses rayon internally).
 
     Returns:
         Dictionary mapping names to tensors and scalar values.
@@ -258,204 +258,38 @@ def load(
     Example:
         >>> sd = ckpt.load("ckpt.hxz")
         >>> sd = ckpt.load("ckpt.hxz", keys=["model.weight"], device="cuda:0")
-        >>> sd = ckpt.load("ckpt.hxz", num_workers=4)  # parallel reads
     """
     _ensure_torch()
 
-    meta = inspect(path)
+    from . import hexz_loader
+
+    # All heavy lifting in Rust (I/O, decompress, XOR delta, unshuffle, rayon parallel)
     try:
-        meta["hexz_checkpoint"]
-    except KeyError:
-        raise FormatError(
-            "Not a Hexz checkpoint (missing 'hexz_checkpoint' marker). "
-            "Use hexz.Reader for regular snapshots."
+        result = hexz_loader.load_checkpoint(str(path), keys=keys)
+    except OSError as e:
+        msg = str(e)
+        if "not found in checkpoint" in msg:
+            raise ValidationError(msg) from None
+        if "Invalid Format" in msg or "checkpoint" in msg.lower():
+            raise FormatError(
+                "Not a Hexz checkpoint (missing 'hexz_checkpoint' marker). "
+                "Use hexz.Reader for regular snapshots."
+            ) from None
+        raise
+
+    state_dict: Dict[str, Any] = {}
+
+    # Wrap raw bytes as torch tensors
+    for name, raw_bytes in result["tensors"].items():
+        meta = result["tensor_meta"][name]
+        state_dict[name] = _bytes_to_tensor(
+            raw_bytes, meta["dtype"], meta["shape"], device
         )
 
-    tensors_info = meta["tensors"]
-    try:
-        scalars_info = meta["scalars"]
-    except KeyError:
-        scalars_info = {}
-    all_keys = set(tensors_info.keys()) | set(scalars_info.keys())
-
-    # Determine which keys to load
-    if keys is not None:
-        for k in keys:
-            if k not in all_keys:
-                raise ValidationError(
-                    f"Key {k!r} not found in checkpoint. "
-                    f"Available keys: {sorted(all_keys)}"
-                )
-        load_keys = set(keys)
-    else:
-        load_keys = all_keys
-
-    result: Dict[str, Any] = {}
-
-    # Load tensors via random-access reads
-    tensor_keys_to_load = [k for k in sorted(tensors_info.keys()) if k in load_keys]
-    if tensor_keys_to_load:
-        _tqdm = None
-        if progress:
-            try:
-                from tqdm import tqdm as _tqdm
-            except ImportError:
-                pass
-
-        total_bytes = sum(tensors_info[k]["length"] for k in tensor_keys_to_load)
-        pbar = (
-            _tqdm(
-                total=total_bytes,
-                unit="B",
-                unit_scale=True,
-                unit_divisor=1024,
-                desc="loading",
-                leave=False,
-            )
-            if _tqdm is not None
-            else None
-        )
-
-        path_str = str(path)
-
-        # Check if any tensor needs XOR delta decoding
-        needs_xor = any(
-            tensors_info[k].get("storage") == "xor_delta" for k in tensor_keys_to_load
-        )
-        parent_path = None
-        if needs_xor:
-            try:
-                parent_paths = meta["parent_path"]
-            except KeyError:
-                parent_paths = []
-            if parent_paths:
-                parent_path = parent_paths[0]
-
-        # Check parent manifest for chained XOR deltas
-        parent_manifest_data = None
-        _parent_reconstructed = None
-        if parent_path is not None:
-            try:
-                parent_manifest_data = manifest(parent_path)
-            except Exception:
-                pass
-
-        # Eagerly reconstruct parent if any tensor is a chained delta
-        if parent_manifest_data is not None:
-            for _k in tensor_keys_to_load:
-                _info = tensors_info[_k]
-                if (
-                    _info.get("storage") == "xor_delta"
-                    and _k in parent_manifest_data
-                    and parent_manifest_data[_k].get("storage") == "xor_delta"
-                ):
-                    _parent_reconstructed = load(parent_path, device="cpu")
-                    break
-
-        from . import hexz_loader as _loader
-
-        if num_workers > 1:
-            # Each worker opens its own Reader (independent file handle + decompressor).
-            # Random-access offsets mean reads are fully independent — no locking needed.
-            from concurrent.futures import ThreadPoolExecutor, as_completed
-
-            def _read_tensor(name: str):
-                info = tensors_info[name]
-                r = _loader.Reader(path_str)
-                if info.get("storage") == "xor_delta":
-                    parent_is_chained = (
-                        parent_manifest_data is not None
-                        and name in parent_manifest_data
-                        and parent_manifest_data[name].get("storage") == "xor_delta"
-                    )
-                    if parent_is_chained and _parent_reconstructed is not None:
-                        delta = r.read(info["length"], offset=info["offset"])
-                        delta = _byte_unshuffle(delta, info.get("element_size", 1))
-                        parent_buf = bytes(
-                            _tensor_to_buffer(_parent_reconstructed[name])
-                        )
-                        data = _xor_bytes(delta, parent_buf)
-                    elif parent_path is not None:
-                        pr = _loader.Reader(parent_path)
-                        data = r.read_xor_delta(
-                            info["length"],
-                            info["offset"],
-                            pr,
-                            info["base_offset"],
-                            info.get("element_size", 1),
-                        )
-                    else:
-                        data = r.read(info["length"], offset=info["offset"])
-                else:
-                    data = r.read(info["length"], offset=info["offset"])
-                return name, _bytes_to_tensor(
-                    data, info["dtype"], info["shape"], device
-                )
-
-            with ThreadPoolExecutor(max_workers=num_workers) as pool:
-                futures = {pool.submit(_read_tensor, n): n for n in tensor_keys_to_load}
-                for fut in as_completed(futures):
-                    name, tensor = fut.result()
-                    result[name] = tensor
-                    if pbar is not None:
-                        pbar.set_postfix_str(
-                            name.split(".")[-2] if "." in name else name, refresh=False
-                        )
-                        pbar.update(tensors_info[name]["length"])
-        else:
-            rust_reader = _loader.Reader(path_str)
-            parent_reader = (
-                _loader.Reader(parent_path) if parent_path is not None else None
-            )
-            for name in tensor_keys_to_load:
-                info = tensors_info[name]
-                if info.get("storage") == "xor_delta":
-                    parent_is_chained = (
-                        parent_manifest_data is not None
-                        and name in parent_manifest_data
-                        and parent_manifest_data[name].get("storage") == "xor_delta"
-                    )
-                    if parent_is_chained and _parent_reconstructed is not None:
-                        delta: bytes = rust_reader.read(
-                            info["length"], offset=info["offset"]
-                        )  # type: ignore[assignment]
-                        delta = _byte_unshuffle(delta, info.get("element_size", 1))
-                        parent_buf = bytes(
-                            _tensor_to_buffer(_parent_reconstructed[name])
-                        )
-                        data: bytes = _xor_bytes(delta, parent_buf)  # type: ignore[assignment]
-                    elif parent_reader is not None:
-                        data = rust_reader.read_xor_delta(  # type: ignore[assignment]
-                            info["length"],
-                            info["offset"],
-                            parent_reader,
-                            info["base_offset"],
-                            info.get("element_size", 1),
-                        )
-                    else:
-                        data = rust_reader.read(info["length"], offset=info["offset"])  # type: ignore[assignment]
-                else:
-                    data = rust_reader.read(info["length"], offset=info["offset"])  # type: ignore[assignment]
-                result[name] = _bytes_to_tensor(
-                    data, info["dtype"], info["shape"], device
-                )
-                if pbar is not None:
-                    pbar.set_postfix_str(
-                        name.split(".")[-2] if "." in name else name, refresh=False
-                    )
-                    pbar.update(info["length"])
-
-        if pbar is not None:
-            pbar.close()
-
-    # Load scalars
-    for name in sorted(scalars_info.keys()):
-        if name not in load_keys:
-            continue
-        scalar = scalars_info[name]
+    # Restore scalars with proper Python types
+    for name, scalar in result["scalars"].items():
         value = scalar["value"]
         stype = scalar["type"]
-        # Reconstruct Python type (JSON may have coerced bool→int, etc.)
         if stype == "bool":
             value = bool(value)
         elif stype == "int":
@@ -464,9 +298,9 @@ def load(
             value = float(value)
         elif stype == "str":
             value = str(value)
-        result[name] = value
+        state_dict[name] = value
 
-    return result
+    return state_dict
 
 
 def manifest(path: PathLike) -> Dict[str, Dict[str, Any]]:
