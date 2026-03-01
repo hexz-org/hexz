@@ -105,6 +105,42 @@ with hexz.open("s3://my-bucket/finetuned.hxz") as r:
 
 ---
 
+## Storage Architecture
+
+```mermaid
+flowchart TD
+    subgraph Write["Write Path"]
+        SRC["safetensors / GGUF input"]
+        CHUNK["Tensor-boundary chunking<br/>no rolling-hash needed —<br/>safetensors header gives exact offsets"]
+        COMPRESS["LZ4 or Zstd compression<br/>per-block · independently decompressible"]
+        BLAKE["BLAKE3 hash<br/>block dedup against parent chain"]
+        IDX["Two-level B-tree index<br/>master index → index pages → BlockInfo"]
+        HXZ[".hxz archive<br/>header · blocks · index"]
+    end
+
+    subgraph Read["Read Path (O(log P + log B))"]
+        REQ["read_at(offset, length)"]
+        MS["Binary search master index<br/>find page containing offset"]
+        PG["Load index page (LRU cached)<br/>binary search → BlockInfo"]
+        BLK["Fetch block<br/>local · HTTP range · S3 byte-range"]
+        DECOMP["Decompress + return slice"]
+    end
+
+    subgraph Delta["Delta Storage (fine-tune)"]
+        BASE["base.hxz<br/>all tensors stored raw"]
+        FINETUNE["finetuned.hxz<br/>parent_path = base.hxz"]
+        SAME["Identical tensors<br/>→ BLOCK_OFFSET_PARENT (8 bytes)"]
+        DIFF["Changed tensors<br/>delta = base XOR fine<br/>byte-shuffled + zstd compressed"]
+    end
+
+    SRC --> CHUNK --> COMPRESS --> BLAKE --> IDX --> HXZ
+    REQ --> MS --> PG --> BLK --> DECOMP
+    BASE --> SAME --> FINETUNE
+    BASE --> DIFF --> FINETUNE
+```
+
+---
+
 ## How delta storage works
 
 When you pass `--base base.hxz` (CLI) or `base=` (Python):
@@ -118,21 +154,6 @@ When you pass `--base base.hxz` (CLI) or `base=` (Python):
 On load, Hexz reads the base tensor, decompresses the XOR delta, and XORs again to reconstruct. This is transparent to `ckpt.load()`.
 
 > **Note:** XOR delta compression ratios on real model fine-tunes have not yet been benchmarked. The theoretical basis (ZipLLM, Hachiuma et al.) predicts significant savings; empirical numbers will be added once Phase 3 is complete. See [ROADMAP.md](docs/project-docs/ROADMAP.md).
-
----
-
-## Storage comparison
-
-50 fine-tunes of a 7B model (~14 GB each), stored against the same base:
-
-| Approach | Storage |
-|---|---|
-| Raw file copies | ~700 GB |
-| git-lfs | ~700 GB — tracks blobs, does not deduplicate content |
-| DVC + S3 | ~700 GB — pointer tracking, not a content store |
-| Hexz (XOR delta) | [UNTESTED — benchmark in progress] |
-
-The CDC block dedup benchmark (validated) shows 92.4% deduplication on shifted data vs 0% for fixed-size blocks. See [COMPETITIVE_COMPARISON.md](docs/project-docs/COMPETITIVE_COMPARISON.md) for full benchmark details.
 
 ---
 
