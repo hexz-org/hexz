@@ -20,7 +20,7 @@ hexz-core/
 ├── cache/        # LRU cache with prefetching
 │   └── lru.rs          # Block and index page caching
 ├── format/       # File format handling
-│   ├── header.rs       # Snapshot metadata (512 bytes)
+│   ├── header.rs       # Archive metadata (512 bytes)
 │   ├── index.rs        # Hierarchical index structures
 │   └── block.rs        # Compressed block format
 ├── store/        # Storage backends (local, HTTP, S3)
@@ -30,27 +30,27 @@ hexz-core/
 ├── api/          # Public API surface
 │   └── file.rs   # Main entry point: File
 └── ops/          # High-level operations
-    └── pack/           # Create snapshots from raw data
+    └── pack/           # Create archives from raw data
 ```
 
 ## Quick Example
 
-### Reading a Local Snapshot
+### Reading a Local Archive
 
 ```rust
-use hexz_core::{File, SnapshotStream};
+use hexz_core::{File, ArchiveStream};
 use hexz_core::store::local::FileBackend;
 use hexz_core::algo::compression::lz4::Lz4Compressor;
 use std::sync::Arc;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Open a local snapshot file
-    let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
+    // Open a local archive file
+    let backend = Arc::new(FileBackend::new("archive.hxz".as_ref())?);
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = File::new(backend, compressor, None)?;
+    let archive = File::new(backend, compressor, None)?;
 
-    // Read 4KB from primary stream at offset 1MB
-    let data = snapshot.read_at(SnapshotStream::Primary, 1024 * 1024, 4096)?;
+    // Read 4KB from main stream at offset 1MB
+    let data = archive.read_at(ArchiveStream::Main, 1024 * 1024, 4096)?;
     assert_eq!(data.len(), 4096);
 
     Ok(())
@@ -71,10 +71,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         false // don't allow restricted IPs
     )?);
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = File::new(backend, compressor, None)?;
+    let archive = File::new(backend, compressor, None)?;
 
     // Stream data without downloading entire file
-    let data = snapshot.read_at(hexz_core::SnapshotStream::Primary, 0, 1024)?;
+    let data = archive.read_at(hexz_core::ArchiveStream::Main, 0, 1024)?;
 
     Ok(())
 }
@@ -87,14 +87,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - **Content-Defined Deduplication**: FastCDC chunking automatically eliminates duplicate blocks
 - **Remote Streaming**: Stream from HTTP/S3 with intelligent block prefetching
 - **Encryption**: Optional AES-256-GCM block-level encryption
-- **Thin Snapshots**: Parent references for incremental backups
+- **Thin Archives**: Parent references for incremental backups
 - **Thread-Safe**: `File` is `Send + Sync` with concurrent read support
 - **Low Latency**: ~1ms cold cache, ~0.08ms warm cache random access
 - **Pluggable Backends**: Uniform API for local files, memory-mapped files, HTTP, and S3
 
 ## File Format
 
-Hexz snapshots consist of:
+Hexz archives consist of:
 
 1. **Header** (512 bytes): Metadata, compression algorithm, encryption info, parent path
 2. **Data Blocks**: Variable-size compressed blocks (typically 64KB-256KB)
@@ -218,14 +218,14 @@ Pluggable algorithms via traits:
 use std::sync::Arc;
 use std::thread;
 
-let snapshot = Arc::new(snapshot);
+let archive = Arc::new(archive);
 
 let handles: Vec<_> = (0..4)
     .map(|i| {
-        let snapshot = Arc::clone(&snapshot);
+        let archive = Arc::clone(&archive);
         thread::spawn(move || {
             // Each thread can read independently with its own cache hits
-            snapshot.read_at(SnapshotStream::Primary, i * 4096, 4096)
+            archive.read_at(ArchiveStream::Main, i * 4096, 4096)
         })
     })
     .collect();
@@ -308,6 +308,6 @@ See `make help` for all available commands.
 
 - **[User Documentation](../../docs/)** - Tutorials, how-to guides, explanations
 - **[API Documentation](https://docs.rs/hexz-core)** - Full API reference on docs.rs
-- **[CLI Tool](../cli/)** - Command-line interface for creating snapshots
+- **[CLI Tool](../cli/)** - Command-line interface for creating archives
 - **[Python Bindings](../loader/)** - PyTorch integration for ML workflows
 - **[Project README](../../README.md)** - Main project overview

@@ -3,7 +3,7 @@
 //! Tests verify cache hit/miss behavior, eviction policy, and thread safety.
 
 use bytes::Bytes;
-use hexz_core::SnapshotStream;
+use hexz_core::ArchiveStream;
 use hexz_core::cache::lru::BlockCache;
 use std::sync::Arc;
 use std::thread;
@@ -14,9 +14,9 @@ fn test_cache_insert_and_get() {
     let cache = BlockCache::with_capacity(10);
     let data = Bytes::from(vec![1, 2, 3, 4]);
 
-    cache.insert(SnapshotStream::Primary, 0, data.clone());
+    cache.insert(ArchiveStream::Main, 0, data.clone());
 
-    let retrieved = cache.get(SnapshotStream::Primary, 0);
+    let retrieved = cache.get(ArchiveStream::Main, 0);
     assert!(retrieved.is_some());
     assert_eq!(retrieved.unwrap(), data);
 }
@@ -26,7 +26,7 @@ fn test_cache_insert_and_get() {
 fn test_cache_miss() {
     let cache = BlockCache::with_capacity(10);
 
-    let result = cache.get(SnapshotStream::Primary, 999);
+    let result = cache.get(ArchiveStream::Main, 999);
     assert!(result.is_none());
 }
 
@@ -36,23 +36,23 @@ fn test_cache_lru_eviction() {
     let cache = BlockCache::with_capacity(3);
 
     // Insert 3 blocks
-    cache.insert(SnapshotStream::Primary, 0, Bytes::from(vec![0]));
-    cache.insert(SnapshotStream::Primary, 1, Bytes::from(vec![1]));
-    cache.insert(SnapshotStream::Primary, 2, Bytes::from(vec![2]));
+    cache.insert(ArchiveStream::Main, 0, Bytes::from(vec![0]));
+    cache.insert(ArchiveStream::Main, 1, Bytes::from(vec![1]));
+    cache.insert(ArchiveStream::Main, 2, Bytes::from(vec![2]));
 
     // All should be present
-    assert!(cache.get(SnapshotStream::Primary, 0).is_some());
-    assert!(cache.get(SnapshotStream::Primary, 1).is_some());
-    assert!(cache.get(SnapshotStream::Primary, 2).is_some());
+    assert!(cache.get(ArchiveStream::Main, 0).is_some());
+    assert!(cache.get(ArchiveStream::Main, 1).is_some());
+    assert!(cache.get(ArchiveStream::Main, 2).is_some());
 
     // Insert a 4th block, should evict LRU (block 0)
-    cache.insert(SnapshotStream::Primary, 3, Bytes::from(vec![3]));
+    cache.insert(ArchiveStream::Main, 3, Bytes::from(vec![3]));
 
     // Block 0 should be evicted
-    assert!(cache.get(SnapshotStream::Primary, 0).is_none());
-    assert!(cache.get(SnapshotStream::Primary, 1).is_some());
-    assert!(cache.get(SnapshotStream::Primary, 2).is_some());
-    assert!(cache.get(SnapshotStream::Primary, 3).is_some());
+    assert!(cache.get(ArchiveStream::Main, 0).is_none());
+    assert!(cache.get(ArchiveStream::Main, 1).is_some());
+    assert!(cache.get(ArchiveStream::Main, 2).is_some());
+    assert!(cache.get(ArchiveStream::Main, 3).is_some());
 }
 
 /// Test that accessing a block updates its LRU position.
@@ -61,23 +61,23 @@ fn test_cache_lru_access_updates() {
     let cache = BlockCache::with_capacity(3);
 
     // Insert 3 blocks
-    cache.insert(SnapshotStream::Primary, 0, Bytes::from(vec![0]));
-    cache.insert(SnapshotStream::Primary, 1, Bytes::from(vec![1]));
-    cache.insert(SnapshotStream::Primary, 2, Bytes::from(vec![2]));
+    cache.insert(ArchiveStream::Main, 0, Bytes::from(vec![0]));
+    cache.insert(ArchiveStream::Main, 1, Bytes::from(vec![1]));
+    cache.insert(ArchiveStream::Main, 2, Bytes::from(vec![2]));
 
     // Access block 0 to make it recently used
-    let _ = cache.get(SnapshotStream::Primary, 0);
+    let _ = cache.get(ArchiveStream::Main, 0);
 
     // Insert new block, should evict block 1 (not 0)
-    cache.insert(SnapshotStream::Primary, 3, Bytes::from(vec![3]));
+    cache.insert(ArchiveStream::Main, 3, Bytes::from(vec![3]));
 
-    assert!(cache.get(SnapshotStream::Primary, 0).is_some());
-    assert!(cache.get(SnapshotStream::Primary, 1).is_none()); // Evicted
-    assert!(cache.get(SnapshotStream::Primary, 2).is_some());
-    assert!(cache.get(SnapshotStream::Primary, 3).is_some());
+    assert!(cache.get(ArchiveStream::Main, 0).is_some());
+    assert!(cache.get(ArchiveStream::Main, 1).is_none()); // Evicted
+    assert!(cache.get(ArchiveStream::Main, 2).is_some());
+    assert!(cache.get(ArchiveStream::Main, 3).is_some());
 }
 
-/// Test separate caching for disk and secondary streams.
+/// Test separate caching for disk and auxiliary streams.
 #[test]
 fn test_cache_separate_streams() {
     let cache = BlockCache::with_capacity(10);
@@ -86,12 +86,12 @@ fn test_cache_separate_streams() {
     let mem_data = Bytes::from(vec![4, 5, 6]);
 
     // Insert same block index for different streams
-    cache.insert(SnapshotStream::Primary, 0, disk_data.clone());
-    cache.insert(SnapshotStream::Secondary, 0, mem_data.clone());
+    cache.insert(ArchiveStream::Main, 0, disk_data.clone());
+    cache.insert(ArchiveStream::Auxiliary, 0, mem_data.clone());
 
     // Both should be retrievable independently
-    assert_eq!(cache.get(SnapshotStream::Primary, 0).unwrap(), disk_data);
-    assert_eq!(cache.get(SnapshotStream::Secondary, 0).unwrap(), mem_data);
+    assert_eq!(cache.get(ArchiveStream::Main, 0).unwrap(), disk_data);
+    assert_eq!(cache.get(ArchiveStream::Auxiliary, 0).unwrap(), mem_data);
 }
 
 /// Test cache with zero capacity (edge case).
@@ -99,10 +99,10 @@ fn test_cache_separate_streams() {
 fn test_cache_zero_capacity() {
     let cache = BlockCache::with_capacity(0);
 
-    cache.insert(SnapshotStream::Primary, 0, Bytes::from(vec![1]));
+    cache.insert(ArchiveStream::Main, 0, Bytes::from(vec![1]));
 
     // With zero capacity, nothing should be cached
-    assert!(cache.get(SnapshotStream::Primary, 0).is_none());
+    assert!(cache.get(ArchiveStream::Main, 0).is_none());
 }
 
 /// Test cache with single entry capacity.
@@ -110,12 +110,12 @@ fn test_cache_zero_capacity() {
 fn test_cache_single_capacity() {
     let cache = BlockCache::with_capacity(1);
 
-    cache.insert(SnapshotStream::Primary, 0, Bytes::from(vec![0]));
-    assert!(cache.get(SnapshotStream::Primary, 0).is_some());
+    cache.insert(ArchiveStream::Main, 0, Bytes::from(vec![0]));
+    assert!(cache.get(ArchiveStream::Main, 0).is_some());
 
-    cache.insert(SnapshotStream::Primary, 1, Bytes::from(vec![1]));
-    assert!(cache.get(SnapshotStream::Primary, 0).is_none());
-    assert!(cache.get(SnapshotStream::Primary, 1).is_some());
+    cache.insert(ArchiveStream::Main, 1, Bytes::from(vec![1]));
+    assert!(cache.get(ArchiveStream::Main, 0).is_none());
+    assert!(cache.get(ArchiveStream::Main, 1).is_some());
 }
 
 /// Test cache with large capacity.
@@ -125,12 +125,12 @@ fn test_cache_large_capacity() {
 
     // Insert many blocks
     for i in 0..1000 {
-        cache.insert(SnapshotStream::Primary, i, Bytes::from(vec![i as u8]));
+        cache.insert(ArchiveStream::Main, i, Bytes::from(vec![i as u8]));
     }
 
     // All should be present (under capacity)
     for i in 0..1000 {
-        assert!(cache.get(SnapshotStream::Primary, i).is_some());
+        assert!(cache.get(ArchiveStream::Main, i).is_some());
     }
 }
 
@@ -141,7 +141,7 @@ fn test_cache_concurrent_reads() {
 
     // Pre-populate cache
     for i in 0..10 {
-        cache.insert(SnapshotStream::Primary, i, Bytes::from(vec![i as u8]));
+        cache.insert(ArchiveStream::Main, i, Bytes::from(vec![i as u8]));
     }
 
     let mut handles = vec![];
@@ -151,7 +151,7 @@ fn test_cache_concurrent_reads() {
         let cache_clone = cache.clone();
         let handle = thread::spawn(move || {
             for i in 0..10 {
-                let result = cache_clone.get(SnapshotStream::Primary, i);
+                let result = cache_clone.get(ArchiveStream::Main, i);
                 assert!(result.is_some());
             }
         });
@@ -176,7 +176,7 @@ fn test_cache_concurrent_writes() {
             for i in 0..10 {
                 let block_idx = thread_id * 10 + i;
                 cache_clone.insert(
-                    SnapshotStream::Primary,
+                    ArchiveStream::Main,
                     block_idx,
                     Bytes::from(vec![block_idx as u8]),
                 );
@@ -191,7 +191,7 @@ fn test_cache_concurrent_writes() {
 
     // Verify all blocks were inserted
     for i in 0..100 {
-        assert!(cache.get(SnapshotStream::Primary, i).is_some());
+        assert!(cache.get(ArchiveStream::Main, i).is_some());
     }
 }
 
@@ -202,7 +202,7 @@ fn test_cache_concurrent_mixed() {
 
     // Pre-populate
     for i in 0..10 {
-        cache.insert(SnapshotStream::Primary, i, Bytes::from(vec![i as u8]));
+        cache.insert(ArchiveStream::Main, i, Bytes::from(vec![i as u8]));
     }
 
     let mut handles = vec![];
@@ -212,7 +212,7 @@ fn test_cache_concurrent_mixed() {
         let cache_clone = cache.clone();
         let handle = thread::spawn(move || {
             for i in 0..10 {
-                let _ = cache_clone.get(SnapshotStream::Primary, i);
+                let _ = cache_clone.get(ArchiveStream::Main, i);
             }
         });
         handles.push(handle);
@@ -225,7 +225,7 @@ fn test_cache_concurrent_mixed() {
             for i in 10..20 {
                 let block_idx = thread_id * 10 + i;
                 cache_clone.insert(
-                    SnapshotStream::Primary,
+                    ArchiveStream::Main,
                     block_idx,
                     Bytes::from(vec![block_idx as u8]),
                 );
@@ -244,13 +244,13 @@ fn test_cache_concurrent_mixed() {
 fn test_cache_overwrite() {
     let cache = BlockCache::with_capacity(10);
 
-    cache.insert(SnapshotStream::Primary, 0, Bytes::from(vec![1, 2, 3]));
-    let first = cache.get(SnapshotStream::Primary, 0).unwrap();
+    cache.insert(ArchiveStream::Main, 0, Bytes::from(vec![1, 2, 3]));
+    let first = cache.get(ArchiveStream::Main, 0).unwrap();
     assert_eq!(first, Bytes::from(vec![1, 2, 3]));
 
     // Overwrite with new data
-    cache.insert(SnapshotStream::Primary, 0, Bytes::from(vec![4, 5, 6]));
-    let second = cache.get(SnapshotStream::Primary, 0).unwrap();
+    cache.insert(ArchiveStream::Main, 0, Bytes::from(vec![4, 5, 6]));
+    let second = cache.get(ArchiveStream::Main, 0).unwrap();
     assert_eq!(second, Bytes::from(vec![4, 5, 6]));
 }
 
@@ -260,17 +260,17 @@ fn test_cache_various_data_sizes() {
     let cache = BlockCache::with_capacity(100);
 
     // Small block
-    cache.insert(SnapshotStream::Primary, 0, Bytes::from(vec![1; 128]));
+    cache.insert(ArchiveStream::Main, 0, Bytes::from(vec![1; 128]));
 
     // Medium block
-    cache.insert(SnapshotStream::Primary, 1, Bytes::from(vec![2; 4096]));
+    cache.insert(ArchiveStream::Main, 1, Bytes::from(vec![2; 4096]));
 
     // Large block
-    cache.insert(SnapshotStream::Primary, 2, Bytes::from(vec![3; 65536]));
+    cache.insert(ArchiveStream::Main, 2, Bytes::from(vec![3; 65536]));
 
-    assert_eq!(cache.get(SnapshotStream::Primary, 0).unwrap().len(), 128);
-    assert_eq!(cache.get(SnapshotStream::Primary, 1).unwrap().len(), 4096);
-    assert_eq!(cache.get(SnapshotStream::Primary, 2).unwrap().len(), 65536);
+    assert_eq!(cache.get(ArchiveStream::Main, 0).unwrap().len(), 128);
+    assert_eq!(cache.get(ArchiveStream::Main, 1).unwrap().len(), 4096);
+    assert_eq!(cache.get(ArchiveStream::Main, 2).unwrap().len(), 65536);
 }
 
 /// Test cache key generation for different streams and indices.
@@ -279,16 +279,16 @@ fn test_cache_key_uniqueness() {
     let cache = BlockCache::with_capacity(10);
 
     // Insert blocks with same index but different streams
-    cache.insert(SnapshotStream::Primary, 5, Bytes::from(vec![1]));
-    cache.insert(SnapshotStream::Secondary, 5, Bytes::from(vec![2]));
+    cache.insert(ArchiveStream::Main, 5, Bytes::from(vec![1]));
+    cache.insert(ArchiveStream::Auxiliary, 5, Bytes::from(vec![2]));
 
     // Insert blocks with different indices same stream
-    cache.insert(SnapshotStream::Primary, 6, Bytes::from(vec![3]));
-    cache.insert(SnapshotStream::Primary, 7, Bytes::from(vec![4]));
+    cache.insert(ArchiveStream::Main, 6, Bytes::from(vec![3]));
+    cache.insert(ArchiveStream::Main, 7, Bytes::from(vec![4]));
 
     // All should be independently retrievable
-    assert_eq!(cache.get(SnapshotStream::Primary, 5).unwrap()[0], 1);
-    assert_eq!(cache.get(SnapshotStream::Secondary, 5).unwrap()[0], 2);
-    assert_eq!(cache.get(SnapshotStream::Primary, 6).unwrap()[0], 3);
-    assert_eq!(cache.get(SnapshotStream::Primary, 7).unwrap()[0], 4);
+    assert_eq!(cache.get(ArchiveStream::Main, 5).unwrap()[0], 1);
+    assert_eq!(cache.get(ArchiveStream::Auxiliary, 5).unwrap()[0], 2);
+    assert_eq!(cache.get(ArchiveStream::Main, 6).unwrap()[0], 3);
+    assert_eq!(cache.get(ArchiveStream::Main, 7).unwrap()[0], 4);
 }

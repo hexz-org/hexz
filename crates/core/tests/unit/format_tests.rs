@@ -43,9 +43,10 @@ fn test_header_serialization_minimal() {
         signature_length: None,
         encryption: None,
         compression: CompressionType::Lz4,
+            cdc_params: None,
         features: FeatureFlags {
-            has_disk: true,
-            has_memory: false,
+            has_main: true,
+            has_auxiliary: false,
             variable_blocks: false,
         },
     };
@@ -59,8 +60,8 @@ fn test_header_serialization_minimal() {
     assert_eq!(deserialized.block_size, 65536);
     assert_eq!(deserialized.index_offset, 1024);
     assert!(matches!(deserialized.compression, CompressionType::Lz4));
-    assert!(deserialized.features.has_disk);
-    assert!(!deserialized.features.has_memory);
+    assert!(deserialized.features.has_main);
+    assert!(!deserialized.features.has_auxiliary);
 }
 
 /// Test header with all optional fields populated.
@@ -83,9 +84,10 @@ fn test_header_serialization_full() {
             iterations: 100000,
         }),
         compression: CompressionType::Zstd,
+            cdc_params: None,
         features: FeatureFlags {
-            has_disk: true,
-            has_memory: true,
+            has_main: true,
+            has_auxiliary: true,
             variable_blocks: true,
         },
     };
@@ -206,15 +208,15 @@ fn test_page_entry() {
 #[test]
 fn test_master_index_multi_page() {
     let mut master = MasterIndex {
-        primary_size: 10737418240,  // 10 GB
-        secondary_size: 4294967296, // 4 GB
-        primary_pages: vec![],
-        secondary_pages: vec![],
+        main_size: 10737418240,  // 10 GB
+        auxiliary_size: 4294967296, // 4 GB
+        main_pages: vec![],
+        auxiliary_pages: vec![],
     };
 
     // Add 10 disk pages
     for i in 0..10 {
-        master.primary_pages.push(PageEntry {
+        master.main_pages.push(PageEntry {
             offset: i * 100000,
             length: 24576,
             start_block: i * 1024,
@@ -224,7 +226,7 @@ fn test_master_index_multi_page() {
 
     // Add 5 memory pages
     for i in 0..5 {
-        master.secondary_pages.push(PageEntry {
+        master.auxiliary_pages.push(PageEntry {
             offset: 2000000 + i * 50000,
             length: 20480,
             start_block: i * 1024,
@@ -235,28 +237,28 @@ fn test_master_index_multi_page() {
     let serialized = bincode::serialize(&master).unwrap();
     let deserialized: MasterIndex = bincode::deserialize(&serialized).unwrap();
 
-    assert_eq!(deserialized.primary_size, 10737418240);
-    assert_eq!(deserialized.secondary_size, 4294967296);
-    assert_eq!(deserialized.primary_pages.len(), 10);
-    assert_eq!(deserialized.secondary_pages.len(), 5);
+    assert_eq!(deserialized.main_size, 10737418240);
+    assert_eq!(deserialized.auxiliary_size, 4294967296);
+    assert_eq!(deserialized.main_pages.len(), 10);
+    assert_eq!(deserialized.auxiliary_pages.len(), 5);
 }
 
 /// Test MasterIndex with empty pages (edge case).
 #[test]
 fn test_master_index_empty() {
     let master = MasterIndex {
-        primary_size: 0,
-        secondary_size: 0,
-        primary_pages: vec![],
-        secondary_pages: vec![],
+        main_size: 0,
+        auxiliary_size: 0,
+        main_pages: vec![],
+        auxiliary_pages: vec![],
     };
 
     let serialized = bincode::serialize(&master).unwrap();
     let deserialized: MasterIndex = bincode::deserialize(&serialized).unwrap();
 
-    assert_eq!(deserialized.primary_size, 0);
-    assert!(deserialized.primary_pages.is_empty());
-    assert!(deserialized.secondary_pages.is_empty());
+    assert_eq!(deserialized.main_size, 0);
+    assert!(deserialized.main_pages.is_empty());
+    assert!(deserialized.auxiliary_pages.is_empty());
 }
 
 /// Test compression type enum.
@@ -286,18 +288,18 @@ fn test_feature_flags_combinations() {
         (false, false, false),
     ];
 
-    for (has_disk, has_memory, variable_blocks) in test_cases {
+    for (has_main, has_auxiliary, variable_blocks) in test_cases {
         let flags = FeatureFlags {
-            has_disk,
-            has_memory,
+            has_main,
+            has_auxiliary,
             variable_blocks,
         };
 
         let serialized = bincode::serialize(&flags).unwrap();
         let deserialized: FeatureFlags = bincode::deserialize(&serialized).unwrap();
 
-        assert_eq!(deserialized.has_disk, has_disk);
-        assert_eq!(deserialized.has_memory, has_memory);
+        assert_eq!(deserialized.has_main, has_main);
+        assert_eq!(deserialized.has_auxiliary, has_auxiliary);
         assert_eq!(deserialized.variable_blocks, variable_blocks);
     }
 }
@@ -334,9 +336,10 @@ fn test_invalid_magic_bytes() {
         signature_length: None,
         encryption: None,
         compression: CompressionType::Lz4,
+            cdc_params: None,
         features: FeatureFlags {
-            has_disk: true,
-            has_memory: false,
+            has_main: true,
+            has_auxiliary: false,
             variable_blocks: false,
         },
     };
@@ -371,10 +374,10 @@ fn test_large_block_sizes() {
             signature_length: None,
             encryption: None,
             compression: CompressionType::Lz4,
+            cdc_params: None,
             features: FeatureFlags {
-                has_disk: true,
-                has_memory: false,
-                variable_blocks: false,
+                has_main: true,
+                has_auxiliary: false,                variable_blocks: false,
             },
         };
 
@@ -389,15 +392,15 @@ fn test_large_block_sizes() {
 #[test]
 fn test_master_index_large_scale() {
     let mut master = MasterIndex {
-        primary_size: 1099511627776, // 1 TB
-        secondary_size: 0,
-        primary_pages: vec![],
-        secondary_pages: vec![],
+        main_size: 1099511627776, // 1 TB
+        auxiliary_size: 0,
+        main_pages: vec![],
+        auxiliary_pages: vec![],
     };
 
-    // Add 10,000 pages (simulating 1TB snapshot)
+    // Add 10,000 pages (simulating 1TB archive)
     for i in 0..10000 {
-        master.primary_pages.push(PageEntry {
+        master.main_pages.push(PageEntry {
             offset: i * 1000000,
             length: 24576,
             start_block: i * 1024,
@@ -408,6 +411,6 @@ fn test_master_index_large_scale() {
     let serialized = bincode::serialize(&master).unwrap();
     let deserialized: MasterIndex = bincode::deserialize(&serialized).unwrap();
 
-    assert_eq!(deserialized.primary_pages.len(), 10000);
-    assert_eq!(deserialized.primary_pages[9999].start_block, 9999 * 1024);
+    assert_eq!(deserialized.main_pages.len(), 10000);
+    assert_eq!(deserialized.main_pages[9999].start_block, 9999 * 1024);
 }

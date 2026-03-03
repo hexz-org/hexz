@@ -29,7 +29,7 @@ mod cdc_tests;
 
 // DCAM tests live in integration tests (require a full file for analysis).
 
-// Writer tests live in hexz-ops (SnapshotWriter is defined there).
+// Writer tests live in hexz-ops (ArchiveWriter is defined there).
 
 #[path = "unit/header_tests.rs"]
 mod header_tests;

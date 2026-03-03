@@ -1,8 +1,8 @@
-//! AES-256-GCM authenticated encryption for snapshot blocks.
+//! AES-256-GCM authenticated encryption for archive blocks.
 //!
-//! This module provides block-level encryption for Hexz snapshots using the AES-256-GCM
+//! This module provides block-level encryption for Hexz archives using the AES-256-GCM
 //! (Galois/Counter Mode) authenticated encryption algorithm. It implements the `Encryptor`
-//! trait to provide transparent encryption and decryption of individual snapshot blocks with
+//! trait to provide transparent encryption and decryption of individual archive blocks with
 //! cryptographic authentication to detect tampering or corruption.
 //!
 //! # Algorithm Overview
@@ -41,7 +41,7 @@
 //! - **Iterations**: Default 600,000 iterations (per OWASP 2023 recommendations) slows
 //!   brute-force attacks to ~500ms per guess on modern CPUs
 //! - **Determinism**: Same (password, salt, iterations) triple always produces the same key,
-//!   enabling snapshot decryption without storing the key
+//!   enabling archive decryption without storing the key
 //!
 //! # Performance Characteristics
 //!
@@ -50,7 +50,7 @@
 //! On modern x86-64 CPUs with AES-NI hardware acceleration:
 //! - **Encryption**: ~3-5 GB/s per core for large blocks (>64 KiB)
 //! - **Decryption**: ~3-5 GB/s per core (symmetric with encryption)
-//! - **Key Derivation**: ~500 ms for 600,000 PBKDF2 iterations (one-time cost per snapshot)
+//! - **Key Derivation**: ~500 ms for 600,000 PBKDF2 iterations (one-time cost per archive)
 //!
 //! ## Overhead
 //!
@@ -82,10 +82,10 @@
 //!
 //! ## Use Encryption When:
 //!
-//! - **Storing snapshots on untrusted media** (cloud storage, external drives, backups)
+//! - **Storing archives on untrusted media** (cloud storage, external drives, backups)
 //! - **Regulatory/compliance requirements** mandate encryption at rest (GDPR, HIPAA, PCI-DSS)
 //! - **Protecting sensitive VM data** (databases, application secrets, user data)
-//! - **Multi-tenant environments** where snapshots may be accessible to untrusted parties
+//! - **Multi-tenant environments** where archives may be accessible to untrusted parties
 //!
 //! ## Do NOT Use Encryption When:
 //!
@@ -112,9 +112,9 @@
 //! Bytes: 0-3 (zeros)  4-11 (block_idx)
 //! ```
 //!
-//! **Uniqueness Guarantee**: Each block in a snapshot has a unique index (0 to 2^64-1), ensuring
+//! **Uniqueness Guarantee**: Each block in a archive has a unique index (0 to 2^64-1), ensuring
 //! unique nonces under a given key. The 32-bit reserved field allows future extensions (e.g.,
-//! snapshot versioning) while maintaining backward compatibility.
+//! archive versioning) while maintaining backward compatibility.
 //!
 //! **Determinism**: The same block index always produces the same nonce, enabling stateless
 //! decryption without storing nonces in metadata.
@@ -181,9 +181,9 @@
 //!   or key files to resist brute-force attacks
 //! - **Password Storage**: Never store passwords in plaintext; use secure key management systems
 //!   (hardware tokens, password managers, environment variables with restricted access)
-//! - **Salt Storage**: Salt is stored in the snapshot header and must be preserved; losing the
+//! - **Salt Storage**: Salt is stored in the archive header and must be preserved; losing the
 //!   salt makes decryption impossible even with the correct password
-//! - **Key Rotation**: Re-encrypting snapshots with new keys requires full rewrite (no in-place
+//! - **Key Rotation**: Re-encrypting archives with new keys requires full rewrite (no in-place
 //!   key rotation)
 //!
 //! ## Nonce Reuse Dangers and Mitigation
@@ -194,15 +194,15 @@
 //! - Leaks plaintext XOR for messages encrypted with the same nonce
 //!
 //! **Mitigation**: Block-index-based nonces ensure uniqueness as long as:
-//! - Each block index is used at most once per snapshot
-//! - The same snapshot is never encrypted with the same key but different data
-//!   (snapshots are immutable after creation)
+//! - Each block index is used at most once per archive
+//! - The same archive is never encrypted with the same key but different data
+//!   (archives are immutable after creation)
 //!
 //! ## Performance Impact of Encryption
 //!
 //! - **Throughput**: 10-20% reduction in read/write speeds on fast NVMe storage
 //! - **Latency**: Negligible for large blocks (>16 KiB); ~1-2 µs overhead for small blocks
-//! - **Key Derivation**: One-time ~500ms cost when opening encrypted snapshots
+//! - **Key Derivation**: One-time ~500ms cost when opening encrypted archives
 //! - **CPU Utilization**: Encryption is CPU-bound; benefits from AES-NI hardware acceleration
 //!
 //! ## Limitations and Attack Surfaces
@@ -210,10 +210,10 @@
 //! ### Known Limitations
 //!
 //! - **No Forward Secrecy**: Compromising the password allows decryption of all historical data
-//! - **Metadata Leakage**: Snapshot size, block count, and compression ratios are not encrypted
+//! - **Metadata Leakage**: Archive size, block count, and compression ratios are not encrypted
 //! - **Side Channels**: Implementation does not protect against cache-timing or power analysis
 //!   attacks (assumes trusted execution environment)
-//! - **Block Index Limit**: Maximum 2^64 blocks per snapshot (impractical limitation: ~1 ZB at
+//! - **Block Index Limit**: Maximum 2^64 blocks per archive (impractical limitation: ~1 ZB at
 //!   64 KiB blocks)
 //!
 //! ### Attack Surfaces
@@ -248,7 +248,7 @@
 //! ## Block Index Constraints and Alignment
 //!
 //! - **Index Range**: Block indices must be in `0..=u64::MAX-1` (u64::MAX may be reserved for
-//!   sentinel values in the snapshot format)
+//!   sentinel values in the archive format)
 //! - **Uniqueness**: Each index must correspond to a unique logical block position
 //! - **No Alignment**: Block indices need not be contiguous or sequential; sparse indices are
 //!   supported
@@ -257,7 +257,7 @@
 //!
 //! ## Encryption and Compression Interaction
 //!
-//! Encryption integrates into the snapshot write pipeline as:
+//! Encryption integrates into the archive write pipeline as:
 //!
 //! ```text
 //! write_block(chunk, compressor, encryptor):
@@ -300,7 +300,7 @@
 //! use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
 //!
 //! # fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! // Derive key from password and salt (stored in snapshot header)
+//! // Derive key from password and salt (stored in archive header)
 //! let password = b"correct_horse_battery_staple";
 //! let salt = b"random_16byte_sa";  // 16 bytes, cryptographically random
 //! let iterations = 100_000;
@@ -322,7 +322,7 @@
 //! # }
 //! ```
 //!
-//! ## Secure Snapshot Encryption
+//! ## Secure Archive Encryption
 //!
 //! ```rust
 //! use hexz_core::algo::encryption::{Encryptor, AesGcmEncryptor};
@@ -350,7 +350,7 @@
 //!     encrypted_blocks.push(ciphertext);
 //! }
 //!
-//! // Store salt in snapshot header for later decryption
+//! // Store salt in archive header for later decryption
 //! // (salt is not secret, but must be preserved exactly)
 //! # Ok(())
 //! # }
@@ -435,7 +435,7 @@ use std::fmt;
 ///
 /// This struct wraps an AES-256-GCM cipher instance with a key derived from a password using
 /// PBKDF2-HMAC-SHA256. It provides stateless, thread-safe encryption and decryption of
-/// snapshot blocks using deterministic nonces based on block indices.
+/// archive blocks using deterministic nonces based on block indices.
 ///
 /// # Structure
 ///
@@ -604,7 +604,7 @@ impl AesGcmEncryptor {
     ///
     /// This constructor uses PBKDF2-HMAC-SHA256 to derive a 256-bit AES key from the provided
     /// password and salt, then initializes an AES-256-GCM cipher with the derived key. The
-    /// resulting encryptor can be used to encrypt and decrypt snapshot blocks.
+    /// resulting encryptor can be used to encrypt and decrypt archive blocks.
     ///
     /// # Parameters
     ///
@@ -615,8 +615,8 @@ impl AesGcmEncryptor {
     /// - `salt`: Byte slice containing the cryptographic salt (recommended: 16 bytes / 128 bits).
     ///   **Critical**: The salt must be:
     ///   - Randomly generated using a CSPRNG (e.g., `rand::thread_rng()`)
-    ///   - Stored in the snapshot header for later decryption
-    ///   - Unique per snapshot (prevents rainbow table attacks and key reuse)
+    ///   - Stored in the archive header for later decryption
+    ///   - Unique per archive (prevents rainbow table attacks and key reuse)
     ///     The salt is **not secret** but must be preserved exactly; losing it makes decryption
     ///     impossible even with the correct password.
     ///
@@ -625,7 +625,7 @@ impl AesGcmEncryptor {
     ///   - 100,000 iterations: ~100ms, weak against GPU attacks
     ///   - 600,000 iterations: ~500ms, current recommended minimum
     ///   - 1,000,000 iterations: ~1s, strong protection
-    ///     **Note**: Iteration count is stored in the snapshot header; decryption must use the
+    ///     **Note**: Iteration count is stored in the archive header; decryption must use the
     ///     same count.
     ///
     /// # Returns
@@ -647,13 +647,13 @@ impl AesGcmEncryptor {
     /// ## Determinism
     ///
     /// PBKDF2 is deterministic: the same `(password, salt, iterations)` always produces the
-    /// same key. This is intentional and required for decrypting snapshots, but means:
+    /// same key. This is intentional and required for decrypting archives, but means:
     /// - Key material is reproducible from the password (password compromise = key compromise)
-    /// - No forward secrecy: old snapshots remain decryptable if password is disclosed
+    /// - No forward secrecy: old archives remain decryptable if password is disclosed
     ///
     /// ## Parameter Storage
     ///
-    /// The snapshot header must store:
+    /// The archive header must store:
     /// - `salt`: Required for key derivation (not secret, but must be exact)
     /// - `iterations`: Required for key derivation (not secret)
     /// - Password: **NEVER** stored; must be provided by user on decryption
@@ -662,7 +662,7 @@ impl AesGcmEncryptor {
     ///
     /// - **Low iterations** (<100,000): Vulnerable to brute-force on GPUs/ASICs
     /// - **Weak password** (dictionary words, short, low entropy): Negates PBKDF2 protection
-    /// - **Reused salt**: Allows rainbow table attacks across snapshots
+    /// - **Reused salt**: Allows rainbow table attacks across archives
     ///
     /// # Panics
     ///
@@ -693,7 +693,7 @@ impl AesGcmEncryptor {
     ///     100_000  // OWASP 2023 recommendation
     /// )?;
     ///
-    /// // Store salt in snapshot header for later use
+    /// // Store salt in archive header for later use
     /// // (iterations count should also be stored)
     /// # Ok::<(), hexz_common::Error>(())
     /// ```
@@ -703,7 +703,7 @@ impl AesGcmEncryptor {
     /// ```rust
     /// use hexz_core::algo::encryption::AesGcmEncryptor;
     ///
-    /// // Read parameters from snapshot header
+    /// // Read parameters from archive header
     /// let stored_salt: [u8; 16] = [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0,
     ///                              0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
     /// let stored_iterations: u32 = 100_000;  // From header
@@ -718,7 +718,7 @@ impl AesGcmEncryptor {
     ///     stored_iterations
     /// )?;
     ///
-    /// // Encryptor can now decrypt blocks from the snapshot
+    /// // Encryptor can now decrypt blocks from the archive
     /// # Ok::<(), hexz_common::Error>(())
     /// ```
     ///
@@ -789,15 +789,15 @@ impl AesGcmEncryptor {
     /// ```
     ///
     /// - **Bytes 0-3**: Reserved field (all zeros). Available for future extensions such as
-    ///   snapshot versioning, algorithm identifiers, or secondary indices while maintaining
+    ///   archive versioning, algorithm identifiers, or auxiliary indices while maintaining
     ///   backward compatibility.
     /// - **Bytes 4-11**: 64-bit block index in big-endian byte order. Supports 2^64 unique
     ///   blocks (impractical limit: ~1 ZB at 64 KiB blocks).
     ///
     /// # Parameters
     ///
-    /// - `block_idx`: The logical block index within the snapshot (0 to u64::MAX-1). Each
-    ///   index must be unique within a snapshot to ensure nonce uniqueness.
+    /// - `block_idx`: The logical block index within the archive (0 to u64::MAX-1). Each
+    ///   index must be unique within a archive to ensure nonce uniqueness.
     ///
     /// # Returns
     ///
@@ -809,19 +809,19 @@ impl AesGcmEncryptor {
     /// ## Why Deterministic Nonces?
     ///
     /// Unlike random nonces, deterministic nonces based on block indices:
-    /// - **Eliminate nonce storage**: No need to store nonces in snapshot metadata
+    /// - **Eliminate nonce storage**: No need to store nonces in archive metadata
     /// - **Enable stateless decryption**: Decryption only requires the block index, not stored
     ///   nonce values
-    /// - **Guarantee uniqueness**: Block indices are inherently unique within a snapshot,
+    /// - **Guarantee uniqueness**: Block indices are inherently unique within a archive,
     ///   ensuring nonce uniqueness as long as blocks are not rewritten
     ///
     /// ## Security Requirements
     ///
     /// GCM security critically depends on **never reusing a (key, nonce) pair**. This
     /// implementation ensures uniqueness by:
-    /// 1. Each block index is unique within a snapshot
-    /// 2. Each snapshot uses a unique (password, salt) combination, deriving a unique key
-    /// 3. Snapshots are immutable after creation (blocks are not rewritten with the same index)
+    /// 1. Each block index is unique within a archive
+    /// 2. Each archive uses a unique (password, salt) combination, deriving a unique key
+    /// 3. Archives are immutable after creation (blocks are not rewritten with the same index)
     ///
     /// **Nonce Reuse Catastrophe**: Encrypting two different plaintexts with the same (key, nonce)
     /// allows attackers to:
@@ -876,7 +876,7 @@ impl Encryptor for AesGcmEncryptor {
     ///   length from 0 bytes to several megabytes. Empty input is valid and produces a
     ///   ciphertext containing only the 16-byte authentication tag.
     ///
-    /// - `block_idx`: The logical block index within the snapshot (0 to 2^64-1). This index is
+    /// - `block_idx`: The logical block index within the archive (0 to 2^64-1). This index is
     ///   encoded into the nonce to ensure each block uses a unique (key, nonce) pair.
     ///   **Critical**: Each index must be used at most once per key; reusing an index with
     ///   different plaintext catastrophically breaks GCM security.
@@ -936,9 +936,9 @@ impl Encryptor for AesGcmEncryptor {
     /// - Compute plaintext XOR for messages encrypted with the same nonce
     ///
     /// This implementation ensures uniqueness by:
-    /// - Using unique block indices within each snapshot
-    /// - Deriving unique keys per snapshot (via different salts or passwords)
-    /// - Snapshot immutability (blocks are not rewritten after creation)
+    /// - Using unique block indices within each archive
+    /// - Deriving unique keys per archive (via different salts or passwords)
+    /// - Archive immutability (blocks are not rewritten after creation)
     ///
     /// # Ciphertext Format
     ///
@@ -1033,7 +1033,7 @@ impl Encryptor for AesGcmEncryptor {
     ///   authentication tag appended to the encrypted data. Minimum length is 16 bytes (empty
     ///   plaintext + tag); shorter inputs will fail authentication.
     ///
-    /// - `block_idx`: The logical block index within the snapshot, **exactly matching** the
+    /// - `block_idx`: The logical block index within the archive, **exactly matching** the
     ///   index used during encryption. Using a different index will cause authentication
     ///   failure even if the key and ciphertext are correct.
     ///

@@ -1,6 +1,6 @@
-//! Ed25519 signing and verification for Hexz snapshot integrity.
+//! Ed25519 signing and verification for Hexz archive integrity.
 //!
-//! Signs and verifies the master index digest to authenticate that a snapshot
+//! Signs and verifies the master index digest to authenticate that a archive
 //! has not been tampered with and was created by a holder of the private key.
 
 use crate::Result;
@@ -139,7 +139,7 @@ mod tests {
 
         generate_keypair(&private_key, &public_key).unwrap();
 
-        let digest = Sha256::digest(b"Important snapshot data");
+        let digest = Sha256::digest(b"Important archive data");
         let signature = sign_digest(&private_key, &digest).unwrap();
         assert_eq!(signature.len(), 64);
 

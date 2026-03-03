@@ -1,22 +1,22 @@
-//! HTTP, NBD, and S3 gateway server implementations for exposing Hexz snapshots.
+//! HTTP, NBD, and S3 gateway server implementations for exposing Hexz archives.
 //!
 //! This module provides network-facing interfaces for accessing compressed Hexz
-//! snapshot data over standard protocols. It supports three distinct serving modes:
+//! archive data over standard protocols. It supports three distinct serving modes:
 //!
-//! 1. **HTTP Range Server** (`serve_http`): Exposes disk and secondary streams via
+//! 1. **HTTP Range Server** (`serve_http`): Exposes disk and auxiliary streams via
 //!    HTTP 1.1 range requests with DoS protection and partial content support.
-//! 2. **NBD (Network Block Device) Server** (`serve_nbd`): Allows mounting snapshots
+//! 2. **NBD (Network Block Device) Server** (`serve_nbd`): Allows mounting archives
 //!    as Linux block devices using the standard NBD protocol.
 //! 3. **S3 Gateway** (`serve_s3_gateway`): Planned S3-compatible API for cloud
 //!    integration (currently unimplemented).
 //!
 //! # Architecture Overview
 //!
-//! All servers expose the same underlying `File` API, which provides:
+//! All servers expose the same underlying `Archive` API, which provides:
 //! - Block-level decompression with LRU caching
-//! - Dual-stream access (disk and memory snapshots)
+//! - Dual-stream access (disk and memory archives)
 //! - Random access with minimal I/O overhead
-//! - Thread-safe concurrent reads via `Arc<File>`
+//! - Thread-safe concurrent reads via `Arc<Archive>`
 //!
 //! The servers differ in protocol semantics and use cases:
 //!
@@ -44,7 +44,7 @@
 //!
 //! The Network Block Device protocol allows mounting remote storage as a local block
 //! device on Linux systems. This enables:
-//! - Transparent filesystem access (mount snapshot, browse files)
+//! - Transparent filesystem access (mount archive, browse files)
 //! - Use of standard Linux tools (`dd`, `fsck`, `mount`)
 //! - Zero application changes (existing software works unmodified)
 //!
@@ -61,7 +61,7 @@
 //! All servers bind to `127.0.0.1` (loopback) by default, preventing network exposure.
 //! This is appropriate for:
 //! - Local development and testing
-//! - Forensics workstations accessing local snapshots
+//! - Forensics workstations accessing local archives
 //! - Scenarios where network access is provided via SSH tunnels or VPNs
 //!
 //! ### Attack Surface
@@ -97,7 +97,7 @@
 //!
 //! ## Bottlenecks
 //!
-//! For local (localhost) connections, the primary bottleneck is:
+//! For local (localhost) connections, the main bottleneck is:
 //! 1. **Decompression CPU time** (80% of latency for LZ4, more for ZSTD)
 //! 2. **Block cache misses** (requires backend I/O)
 //! 3. **Memory allocation** for large reads (mitigated by clamping)
@@ -110,16 +110,16 @@
 //!
 //! ```no_run
 //! use std::sync::Arc;
-//! use hexz_core::File;
-//! use hexz_store::local::FileBackend;
+//! use hexz_core::Archive;
+//! use hexz_store::local::ArchiveBackend;
 //! use hexz_core::algo::compression::lz4::Lz4Compressor;
 //! use hexz_server::serve_http;
 //!
 //! # #[tokio::main]
 //! # async fn main() -> anyhow::Result<()> {
-//! let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
+//! let backend = Arc::new(ArchiveBackend::new("archive.hxz".as_ref())?);
 //! let compressor = Box::new(Lz4Compressor::new());
-//! let snap = File::new(backend, compressor, None)?;
+//! let snap = Archive::new(backend, compressor, None)?;
 //!
 //! // Start HTTP server on port 8080
 //! serve_http(snap, 8080, "127.0.0.1").await?;
@@ -131,16 +131,16 @@
 //!
 //! ```no_run
 //! use std::sync::Arc;
-//! use hexz_core::File;
-//! use hexz_store::local::FileBackend;
+//! use hexz_core::Archive;
+//! use hexz_store::local::ArchiveBackend;
 //! use hexz_core::algo::compression::lz4::Lz4Compressor;
 //! use hexz_server::serve_nbd;
 //!
 //! # #[tokio::main]
 //! # async fn main() -> anyhow::Result<()> {
-//! let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
+//! let backend = Arc::new(ArchiveBackend::new("archive.hxz".as_ref())?);
 //! let compressor = Box::new(Lz4Compressor::new());
-//! let snap = File::new(backend, compressor, None)?;
+//! let snap = Archive::new(backend, compressor, None)?;
 //!
 //! // Start NBD server on port 10809
 //! serve_nbd(snap, 10809, "127.0.0.1").await?;
@@ -153,7 +153,7 @@
 //! ### HTTP Client (curl)
 //!
 //! ```bash
-//! # Fetch the first 4KB of the primary stream
+//! # Fetch the first 4KB of the main stream
 //! curl -H "Range: bytes=0-4095" http://localhost:8080/disk -o chunk.bin
 //!
 //! # Fetch 1MB starting at offset 1MB
@@ -170,14 +170,14 @@
 //! sudo nbd-client localhost 10809 /dev/nbd0
 //!
 //! # Mount the block device (read-only)
-//! sudo mount -o ro /dev/nbd0 /mnt/snapshot
+//! sudo mount -o ro /dev/nbd0 /mnt/archive
 //!
 //! # Access files normally
-//! ls -la /mnt/snapshot
-//! cat /mnt/snapshot/important.log
+//! ls -la /mnt/archive
+//! cat /mnt/archive/important.log
 //!
 //! # Disconnect when done
-//! sudo umount /mnt/snapshot
+//! sudo umount /mnt/archive
 //! sudo nbd-client -d /dev/nbd0
 //! ```
 //!
@@ -196,7 +196,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use hexz_core::{File, SnapshotStream};
+use hexz_core::{Archive, ArchiveStream};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -206,8 +206,8 @@ use tokio::net::TcpListener;
 /// # Security Rationale
 ///
 /// This constant defaults to the loopback address (`127.0.0.1`) to prevent
-/// accidental exposure of snapshot data to the local network or internet.
-/// Snapshots may contain sensitive information (credentials, personal data,
+/// accidental exposure of archive data to the local network or internet.
+/// Archives may contain sensitive information (credentials, personal data,
 /// proprietary code), so network exposure must be an explicit, informed decision.
 ///
 /// ## Current Behavior
@@ -225,7 +225,7 @@ use tokio::net::TcpListener;
 ///
 /// ```bash
 /// # Proposed CLI syntax (not yet implemented)
-/// hexz-server --bind 0.0.0.0:8080 --auth-token mytoken123 snapshot.st
+/// hexz-server --bind 0.0.0.0:8080 --auth-token mytoken123 archive.st
 /// ```
 ///
 /// Network exposure will require authentication to be enabled (enforced by the CLI).
@@ -263,7 +263,7 @@ const RANGE_PREFIX_LEN: usize = 6;
 ///
 /// # DoS Protection Rationale
 ///
-/// Without a limit, a malicious client could request the entire snapshot in a single
+/// Without a limit, a malicious client could request the entire archive in a single
 /// HTTP request (e.g., `Range: bytes=0-`), forcing the server to:
 ///
 /// 1. Decompress gigabytes of data
@@ -315,28 +315,28 @@ const MAX_CHUNK_SIZE: u64 = 32 * 1024 * 1024;
 ///
 /// # Thread Safety
 ///
-/// `AppState` is `Send + Sync` because `File` is `Send + Sync`. The underlying
+/// `AppState` is `Send + Sync` because `Archive` is `Send + Sync`. The underlying
 /// block cache uses `Mutex` for interior mutability, so multiple concurrent requests
-/// can safely read from the same snapshot.
+/// can safely read from the same archive.
 ///
 /// # Memory Overhead
 ///
 /// Each `AppState` clone adds ~16 bytes (one `Arc` pointer). With 1000 concurrent
 /// connections, this overhead is negligible (~16 KB).
 struct AppState {
-    /// The opened Hexz snapshot file being served via HTTP.
+    /// The opened Hexz archive file being served via HTTP.
     ///
-    /// This is the same `File` instance for all requests. It contains:
+    /// This is the same `Archive` instance for all requests. It contains:
     /// - The storage backend (local file, S3, etc.)
     /// - Block cache (shared across all requests)
     /// - Decompressor instances (thread-local via pooling)
-    snap: Arc<File>,
+    snap: Arc<Archive>,
 }
 
-/// Exposes a `File` over NBD (Network Block Device) protocol.
+/// Exposes a `Archive` over NBD (Network Block Device) protocol.
 ///
 /// Starts a TCP listener on `127.0.0.1:<port>` that implements the NBD protocol,
-/// allowing Linux clients to mount the Hexz snapshot as a local block device
+/// allowing Linux clients to mount the Hexz archive as a local block device
 /// using standard tools like `nbd-client`.
 ///
 /// This function runs indefinitely, accepting connections in a loop. Each client
@@ -344,7 +344,7 @@ struct AppState {
 ///
 /// # Arguments
 ///
-/// - `snap`: The Hexz snapshot file to expose. Must be wrapped in `Arc` for sharing
+/// - `snap`: The Hexz archive file to expose. Must be wrapped in `Arc` for sharing
 ///   across multiple client connections.
 /// - `port`: TCP port to bind to on the loopback interface (e.g., `10809`).
 ///
@@ -367,16 +367,16 @@ struct AppState {
 ///
 /// ```no_run
 /// use std::sync::Arc;
-/// use hexz_core::File;
-/// use hexz_store::local::FileBackend;
+/// use hexz_core::Archive;
+/// use hexz_store::local::ArchiveBackend;
 /// use hexz_core::algo::compression::lz4::Lz4Compressor;
 /// use hexz_server::serve_nbd;
 ///
 /// # #[tokio::main]
 /// # async fn main() -> anyhow::Result<()> {
-/// let backend = Arc::new(FileBackend::new("vm_snapshot.hxz".as_ref())?);
+/// let backend = Arc::new(ArchiveBackend::new("vm_archive.hxz".as_ref())?);
 /// let compressor = Box::new(Lz4Compressor::new());
-/// let snap = File::new(backend, compressor, None)?;
+/// let snap = Archive::new(backend, compressor, None)?;
 ///
 /// // Start NBD server (runs forever)
 /// serve_nbd(snap, 10809, "127.0.0.1").await?;
@@ -391,14 +391,14 @@ struct AppState {
 /// sudo nbd-client localhost 10809 /dev/nbd0
 ///
 /// # Mount the block device (read-only, automatically detected filesystem)
-/// sudo mount -o ro /dev/nbd0 /mnt/snapshot
+/// sudo mount -o ro /dev/nbd0 /mnt/archive
 ///
 /// # Browse files normally
-/// ls -la /mnt/snapshot
-/// sudo cat /mnt/snapshot/var/log/syslog
+/// ls -la /mnt/archive
+/// sudo cat /mnt/archive/var/log/syslog
 ///
 /// # Unmount and disconnect
-/// sudo umount /mnt/snapshot
+/// sudo umount /mnt/archive
 /// sudo nbd-client -d /dev/nbd0
 /// ```
 ///
@@ -421,7 +421,7 @@ struct AppState {
 ///
 /// ## Read-Only Enforcement
 ///
-/// The NBD server always exports snapshots as read-only (NBD flag `NBD_FLAG_READ_ONLY`).
+/// The NBD server always exports archives as read-only (NBD flag `NBD_FLAG_READ_ONLY`).
 /// Write attempts return `EPERM` (operation not permitted). However, a malicious
 /// NBD client could theoretically attempt to crash the server via protocol abuse.
 ///
@@ -437,7 +437,7 @@ struct AppState {
 ///
 /// This function does not panic under normal operation. Client errors are logged
 /// and handled gracefully.
-pub async fn serve_nbd(snap: Arc<File>, port: u16, bind: &str) -> anyhow::Result<()> {
+pub async fn serve_nbd(snap: Arc<Archive>, port: u16, bind: &str) -> anyhow::Result<()> {
     let addr: SocketAddr = format!("{}:{}", bind, port).parse()?;
     let listener = TcpListener::bind(addr).await?;
 
@@ -467,7 +467,7 @@ pub async fn serve_nbd(snap: Arc<File>, port: u16, bind: &str) -> anyhow::Result
     }
 }
 
-/// Exposes a `File` as an S3-compatible object storage gateway.
+/// Exposes a `Archive` as an S3-compatible object storage gateway.
 ///
 /// # Implementation Status: NOT IMPLEMENTED
 ///
@@ -481,25 +481,25 @@ pub async fn serve_nbd(snap: Arc<File>, port: u16, bind: &str) -> anyhow::Result
 ///
 /// ## Supported Operations (Planned)
 ///
-/// - `GET /<bucket>/<key>`: Retrieve snapshot data as an S3 object
+/// - `GET /<bucket>/<key>`: Retrieve archive data as an S3 object
 /// - `HEAD /<bucket>/<key>`: Get object metadata (size, ETag)
 /// - `GET /<bucket>/<key>?range=bytes=<start>-<end>`: Partial object retrieval
-/// - `GET /<bucket>?list-type=2`: List objects (future: multi-snapshot support)
+/// - `GET /<bucket>?list-type=2`: List objects (future: multi-archive support)
 ///
 /// ## S3 API Compatibility Goals
 ///
 /// - **Authentication**: AWS Signature Version 4 (SigV4) for production use
 /// - **Authorization**: IAM-style policies (read-only by default)
 /// - **Error responses**: Standard S3 XML error responses
-/// - **Metadata**: ETag (CRC32 of snapshot header), Content-Type, Last-Modified
+/// - **Metadata**: ETag (CRC32 of archive header), Content-Type, Last-Modified
 ///
 /// ## Mapping Hexz Concepts to S3
 ///
 /// | Hexz Concept | S3 Equivalent | Mapping Strategy |
 /// |----------------|---------------|------------------|
-/// | Snapshot file | Bucket | One bucket per snapshot |
-/// | Primary stream | Object `disk.img` | Virtual object, synthesized from snapshot |
-/// | Secondary stream | Object `memory.img` | Virtual object, synthesized from snapshot |
+/// | Archive file | Bucket | One bucket per archive |
+/// | Main stream | Object `disk.img` | Virtual object, synthesized from archive |
+/// | Auxiliary stream | Object `memory.img` | Virtual object, synthesized from archive |
 /// | Block index | N/A | Transparent to S3 clients |
 ///
 /// ## Example S3 API Usage (Planned)
@@ -510,17 +510,17 @@ pub async fn serve_nbd(snap: Arc<File>, port: u16, bind: &str) -> anyhow::Result
 /// export AWS_SECRET_ACCESS_KEY=minioadmin
 /// export AWS_ENDPOINT_URL=http://localhost:9000
 ///
-/// # List buckets (snapshots)
+/// # List buckets (archives)
 /// aws s3 ls
 ///
-/// # List objects in a snapshot
-/// aws s3 ls s3://my-snapshot/
+/// # List objects in a archive
+/// aws s3 ls s3://my-archive/
 ///
-/// # Download the primary stream
-/// aws s3 cp s3://my-snapshot/disk.img disk_copy.img
+/// # Download the main stream
+/// aws s3 cp s3://my-archive/disk.img disk_copy.img
 ///
 /// # Download a range (100 MB starting at offset 1 GB)
-/// aws s3api get-object --bucket my-snapshot --key disk.img \
+/// aws s3api get-object --bucket my-archive --key disk.img \
 ///   --range bytes=1073741824-1178599423 chunk.bin
 /// ```
 ///
@@ -530,7 +530,7 @@ pub async fn serve_nbd(snap: Arc<File>, port: u16, bind: &str) -> anyhow::Result
 ///
 /// - **Bind address**: CLI flag `--s3-bind 0.0.0.0:9000` (default: `127.0.0.1`)
 /// - **Authentication**: `--s3-access-key` and `--s3-secret-key` for SigV4
-/// - **Bucket name**: `--s3-bucket-name <name>` (default: derived from snapshot filename)
+/// - **Bucket name**: `--s3-bucket-name <name>` (default: derived from archive filename)
 /// - **Anonymous access**: `--s3-allow-anonymous` flag (dangerous, for testing only)
 ///
 /// # Why S3 Compatibility?
@@ -540,7 +540,7 @@ pub async fn serve_nbd(snap: Arc<File>, port: u16, bind: &str) -> anyhow::Result
 /// 1. **Cloud integration**: Use Hexz with existing cloud infrastructure (AWS, MinIO, etc.)
 /// 2. **Tool compatibility**: Any S3-compatible tool (s3cmd, rclone, boto3) works with Hexz
 /// 3. **Caching CDNs**: Front the gateway with CloudFront or similar for caching
-/// 4. **Lifecycle policies**: Future support for automated snapshot expiration
+/// 4. **Lifecycle policies**: Future support for automated archive expiration
 ///
 /// # Security Considerations (Planned)
 ///
@@ -561,15 +561,15 @@ pub async fn serve_nbd(snap: Arc<File>, port: u16, bind: &str) -> anyhow::Result
 ///
 /// The S3 gateway will NOT support:
 ///
-/// - **Write operations**: No PUT, POST, DELETE (snapshots are read-only)
+/// - **Write operations**: No PUT, POST, DELETE (archives are read-only)
 /// - **Multipart uploads**: N/A for read-only gateway
 /// - **Bucket policies**: Simplified IAM-like policies only
-/// - **Versioning**: Snapshots are immutable, no object versioning needed
+/// - **Versioning**: Archives are immutable, no object versioning needed
 /// - **Server-side encryption**: Use TLS for transport encryption instead
 ///
 /// # Arguments
 ///
-/// - `_snap`: The Hexz snapshot to expose (currently unused).
+/// - `_snap`: The Hexz archive to expose (currently unused).
 /// - `port`: TCP port to bind to on the loopback interface (e.g., `9000`).
 ///
 /// # Returns
@@ -590,16 +590,16 @@ pub async fn serve_nbd(snap: Arc<File>, port: u16, bind: &str) -> anyhow::Result
 ///
 /// ```no_run
 /// use std::sync::Arc;
-/// use hexz_core::File;
-/// use hexz_store::local::FileBackend;
+/// use hexz_core::Archive;
+/// use hexz_store::local::ArchiveBackend;
 /// use hexz_core::algo::compression::lz4::Lz4Compressor;
 /// use hexz_server::serve_s3_gateway;
 ///
 /// # #[tokio::main]
 /// # async fn main() -> anyhow::Result<()> {
-/// let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
+/// let backend = Arc::new(ArchiveBackend::new("archive.hxz".as_ref())?);
 /// let compressor = Box::new(Lz4Compressor::new());
-/// let snap = File::new(backend, compressor, None)?;
+/// let snap = Archive::new(backend, compressor, None)?;
 ///
 /// // WARNING: This will block forever without serving requests
 /// serve_s3_gateway(snap, 9000).await?;
@@ -611,7 +611,7 @@ pub async fn serve_nbd(snap: Arc<File>, port: u16, bind: &str) -> anyhow::Result
 ///
 /// 1. **Phase 1**: Basic GET/HEAD operations with no authentication (localhost-only)
 /// 2. **Phase 2**: AWS SigV4 authentication and bucket listing
-/// 3. **Phase 3**: Multi-snapshot support (multiple buckets)
+/// 3. **Phase 3**: Multi-archive support (multiple buckets)
 /// 4. **Phase 4**: TLS support and network binding options
 /// 5. **Phase 5**: IAM-style policies and access control
 ///
@@ -621,7 +621,7 @@ pub async fn serve_nbd(snap: Arc<File>, port: u16, bind: &str) -> anyhow::Result
 /// in contributing, see `docs/s3_gateway_design.md` (to be created) for the design
 /// specification and implementation plan.
 #[deprecated(note = "Not implemented. Blocks indefinitely without serving requests.")]
-pub async fn serve_s3_gateway(_snap: Arc<File>, port: u16) -> anyhow::Result<()> {
+pub async fn serve_s3_gateway(_snap: Arc<Archive>, port: u16) -> anyhow::Result<()> {
     tracing::info!("Starting S3 Gateway on port {}", port);
     println!(
         "S3 Gateway started on port {} (Not fully implemented)",
@@ -631,13 +631,13 @@ pub async fn serve_s3_gateway(_snap: Arc<File>, port: u16) -> anyhow::Result<()>
     unreachable!();
 }
 
-/// Exposes a `File` over HTTP with range request support.
+/// Exposes a `Archive` over HTTP with range request support.
 ///
-/// Starts an HTTP 1.1 server on `127.0.0.1:<port>` that exposes snapshot data via
+/// Starts an HTTP 1.1 server on `127.0.0.1:<port>` that exposes archive data via
 /// two endpoints:
 ///
-/// - `GET /disk`: Serves the primary stream (persistent storage snapshot)
-/// - `GET /memory`: Serves the secondary stream (RAM snapshot)
+/// - `GET /disk`: Serves the main stream (persistent storage archive)
+/// - `GET /memory`: Serves the auxiliary stream (RAM archive)
 ///
 /// Both endpoints support HTTP range requests (RFC 7233) for partial content retrieval.
 ///
@@ -741,7 +741,7 @@ pub async fn serve_s3_gateway(_snap: Arc<File>, port: u16) -> anyhow::Result<()>
 ///
 /// # Arguments
 ///
-/// - `snap`: The Hexz snapshot file to expose. Must be wrapped in `Arc` for sharing
+/// - `snap`: The Hexz archive file to expose. Must be wrapped in `Arc` for sharing
 ///   across request handlers.
 /// - `port`: TCP port to bind to on the loopback interface (e.g., `8080`, `3000`).
 ///
@@ -767,16 +767,16 @@ pub async fn serve_s3_gateway(_snap: Arc<File>, port: u16) -> anyhow::Result<()>
 ///
 /// ```no_run
 /// use std::sync::Arc;
-/// use hexz_core::File;
-/// use hexz_store::local::FileBackend;
+/// use hexz_core::Archive;
+/// use hexz_store::local::ArchiveBackend;
 /// use hexz_core::algo::compression::lz4::Lz4Compressor;
 /// use hexz_server::serve_http;
 ///
 /// # #[tokio::main]
 /// # async fn main() -> anyhow::Result<()> {
-/// let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
+/// let backend = Arc::new(ArchiveBackend::new("archive.hxz".as_ref())?);
 /// let compressor = Box::new(Lz4Compressor::new());
-/// let snap = File::new(backend, compressor, None)?;
+/// let snap = Archive::new(backend, compressor, None)?;
 ///
 /// // Start HTTP server on port 8080 (runs forever)
 /// serve_http(snap, 8080, "127.0.0.1").await?;
@@ -787,7 +787,7 @@ pub async fn serve_s3_gateway(_snap: Arc<File>, port: u16) -> anyhow::Result<()>
 /// ## Client Usage (curl)
 ///
 /// ```bash
-/// # Fetch first 4KB of primary stream
+/// # Fetch first 4KB of main stream
 /// curl -H "Range: bytes=0-4095" http://localhost:8080/disk -o chunk.bin
 ///
 /// # Fetch 1MB starting at 1MB offset
@@ -846,7 +846,7 @@ pub async fn serve_s3_gateway(_snap: Arc<File>, port: u16) -> anyhow::Result<()>
 /// ## Current Security Posture
 ///
 /// - **Localhost-only**: Binds to `127.0.0.1`, not accessible from network
-/// - **No authentication**: Anyone with local access can read snapshot data
+/// - **No authentication**: Anyone with local access can read archive data
 /// - **No TLS**: Plaintext HTTP (acceptable for loopback)
 /// - **DoS protection**: Request size clamping, but no rate limiting
 ///
@@ -856,7 +856,7 @@ pub async fn serve_s3_gateway(_snap: Arc<File>, port: u16) -> anyhow::Result<()>
 ///
 /// 1. **Trusted local environment**: All local users are trusted (or isolated via OS permissions)
 /// 2. **No remote attackers**: Firewall prevents external access
-/// 3. **Process isolation**: Snapshot data is not more sensitive than other local files
+/// 3. **Process isolation**: Archive data is not more sensitive than other local files
 ///
 /// ## Future Security Enhancements (Planned)
 ///
@@ -869,7 +869,7 @@ pub async fn serve_s3_gateway(_snap: Arc<File>, port: u16) -> anyhow::Result<()>
 ///
 /// This function does not panic under normal operation. Request handling errors
 /// are converted to HTTP error responses.
-pub async fn serve_http(snap: Arc<File>, port: u16, bind: &str) -> anyhow::Result<()> {
+pub async fn serve_http(snap: Arc<Archive>, port: u16, bind: &str) -> anyhow::Result<()> {
     let addr: SocketAddr = format!("{}:{}", bind, port).parse()?;
     let listener = TcpListener::bind(addr).await?;
     tracing::info!("HTTP server listening on {}", addr);
@@ -882,7 +882,7 @@ pub async fn serve_http(snap: Arc<File>, port: u16, bind: &str) -> anyhow::Resul
 /// (bind to port 0) and then pass the listener directly instead of
 /// re-binding by port number.
 pub async fn serve_http_with_listener(
-    snap: Arc<File>,
+    snap: Arc<Archive>,
     listener: TcpListener,
 ) -> anyhow::Result<()> {
     let state = Arc::new(AppState { snap });
@@ -898,8 +898,8 @@ pub async fn serve_http_with_listener(
 
 /// HTTP handler for the `/disk` endpoint.
 ///
-/// Serves the primary stream (persistent storage snapshot) from the Hexz file.
-/// Delegates to `handle_request` with `SnapshotStream::Primary`.
+/// Serves the main stream (persistent storage archive) from the Hexz file.
+/// Delegates to `handle_request` with `ArchiveStream::Main`.
 ///
 /// # Route
 ///
@@ -919,19 +919,19 @@ pub async fn serve_http_with_listener(
 ///
 /// - **206 Partial Content**: Successful range request
 /// - **416 Range Not Satisfiable**: Invalid or out-of-bounds range
-/// - **500 Internal Server Error**: Snapshot read failure
+/// - **500 Internal Server Error**: Archive read failure
 ///
 /// # Examples
 ///
 /// See `serve_http` for client usage examples.
 async fn get_disk(headers: HeaderMap, State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    handle_request(headers, &state.snap, SnapshotStream::Primary)
+    handle_request(headers, &state.snap, ArchiveStream::Main)
 }
 
 /// HTTP handler for the `/memory` endpoint.
 ///
-/// Serves the secondary stream (RAM snapshot) from the Hexz file.
-/// Delegates to `handle_request` with `SnapshotStream::Secondary`.
+/// Serves the auxiliary stream (RAM archive) from the Hexz file.
+/// Delegates to `handle_request` with `ArchiveStream::Auxiliary`.
 ///
 /// # Route
 ///
@@ -951,29 +951,29 @@ async fn get_disk(headers: HeaderMap, State(state): State<Arc<AppState>>) -> imp
 ///
 /// - **206 Partial Content**: Successful range request
 /// - **416 Range Not Satisfiable**: Invalid or out-of-bounds range
-/// - **500 Internal Server Error**: Snapshot read failure
+/// - **500 Internal Server Error**: Archive read failure
 ///
 /// # Examples
 ///
 /// See `serve_http` for client usage examples.
 async fn get_memory(headers: HeaderMap, State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    handle_request(headers, &state.snap, SnapshotStream::Secondary)
+    handle_request(headers, &state.snap, ArchiveStream::Auxiliary)
 }
 
-/// Core HTTP request handler that translates `Range` headers into snapshot reads.
+/// Core HTTP request handler that translates `Range` headers into archive reads.
 ///
 /// This function implements the HTTP range request logic for both `/disk` and `/memory`
 /// endpoints. It performs the following steps:
 ///
 /// 1. Parse the `Range` header (if present) or default to full stream access
 /// 2. Clamp the requested range to `MAX_CHUNK_SIZE` to prevent DoS
-/// 3. Read the data from the snapshot via `File::read_at`
+/// 3. Read the data from the archive via `Archive::read_at`
 /// 4. Return HTTP 206 with `Content-Range` header, or error status codes
 ///
 /// # Arguments
 ///
 /// - `headers`: HTTP request headers from the client (parsed by Axum)
-/// - `snap`: The Hexz snapshot file to read from
+/// - `snap`: The Hexz archive file to read from
 /// - `stream`: Which logical stream to read (`Disk` or `Memory`)
 ///
 /// # Returns
@@ -982,7 +982,7 @@ async fn get_memory(headers: HeaderMap, State(state): State<Arc<AppState>>) -> i
 ///
 /// - **206 Partial Content**: Successful read (even for full stream requests)
 /// - **416 Range Not Satisfiable**: Invalid range syntax or out-of-bounds offset
-/// - **500 Internal Server Error**: Snapshot read failure (decompression error, I/O error)
+/// - **500 Internal Server Error**: Archive read failure (decompression error, I/O error)
 ///
 /// # HTTP Range Request Parsing
 ///
@@ -1054,7 +1054,7 @@ async fn get_memory(headers: HeaderMap, State(state): State<Arc<AppState>>) -> i
 /// - The start offset is greater than the end offset
 /// - The end offset is beyond the stream size
 ///
-/// ## Snapshot Read Errors
+/// ## Archive Read Errors
 ///
 /// If `snap.read_at` returns `Err(_)`, the handler returns HTTP 500 (Internal
 /// Server Error). This occurs when:
@@ -1076,7 +1076,7 @@ async fn get_memory(headers: HeaderMap, State(state): State<Arc<AppState>>) -> i
 ///
 /// ## Zero-Sized Stream
 ///
-/// If the snapshot stream size is 0 (empty disk or memory snapshot), any range
+/// If the archive stream size is 0 (empty disk or memory archive), any range
 /// request returns HTTP 416 because no valid offsets exist.
 ///
 /// ## Single-Byte Range
@@ -1088,7 +1088,7 @@ async fn get_memory(headers: HeaderMap, State(state): State<Arc<AppState>>) -> i
 ///
 /// - **No Range Header**: Clamps to `MAX_CHUNK_SIZE`, then performs one `read_at` call
 /// - **Valid Range**: One `read_at` call (may hit block cache or require decompression)
-/// - **Invalid Range**: Immediate return (no snapshot I/O)
+/// - **Invalid Range**: Immediate return (no archive I/O)
 ///
 /// For cache hits, latency is ~80μs. For cache misses, latency is ~1-5 ms depending
 /// on backend speed and compression algorithm.
@@ -1104,7 +1104,7 @@ async fn get_memory(headers: HeaderMap, State(state): State<Arc<AppState>>) -> i
 /// # Examples
 ///
 /// See `serve_http`, `get_disk`, and `get_memory` for usage context.
-fn handle_request(headers: HeaderMap, snap: &Arc<File>, stream: SnapshotStream) -> Response {
+fn handle_request(headers: HeaderMap, snap: &Arc<Archive>, stream: ArchiveStream) -> Response {
     let total_size = snap.size(stream);
 
     let (start, mut end) = if let Some(range) = headers.get(header::RANGE) {
@@ -1256,7 +1256,7 @@ fn handle_request(headers: HeaderMap, snap: &Arc<File>, stream: SnapshotStream) 
 ///
 /// - **Time complexity**: O(n) where n is the length of the range string (typically <20 chars)
 /// - **Allocation**: One heap allocation for the `split('-')` iterator's internal state
-/// - **Typical latency**: <1 μs (negligible compared to snapshot read latency)
+/// - **Typical latency**: <1 μs (negligible compared to archive read latency)
 ///
 /// # Security
 ///

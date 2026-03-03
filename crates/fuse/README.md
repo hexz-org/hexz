@@ -1,21 +1,21 @@
 # hexz-fuse
 
-FUSE filesystem adapter for mounting Hexz snapshots as block device files.
+FUSE filesystem adapter for mounting Hexz archives as block device files.
 
 ## Overview
 
-`hexz-fuse` provides a FUSE (Filesystem in Userspace) implementation that mounts Hexz snapshots as accessible filesystems. This enables standard tools (dd, qemu, parted, mount) to interact with compressed snapshots as if they were regular files or block devices.
+`hexz-fuse` provides a FUSE (Filesystem in Userspace) implementation that mounts Hexz archives as accessible filesystems. This enables standard tools (dd, qemu, parted, mount) to interact with compressed archives as if they were regular files or block devices.
 
 The FUSE adapter is primarily used for **VM operations** where QEMU needs to access disk images stored in Hexz format.
 
 ## How It Works
 
-When mounted, a Hexz snapshot appears as a minimal filesystem:
+When mounted, a Hexz archive appears as a minimal filesystem:
 
 ```
-/mnt/snapshot/
-├── disk       # Block device file (size = snapshot disk size)
-└── memory     # Optional secondary stream (if present in snapshot)
+/mnt/archive/
+├── disk       # Block device file (size = archive disk size)
+└── memory     # Optional auxiliary stream (if present in archive)
 ```
 
 Reads from these files transparently decompress blocks on-the-fly. Optional overlay support enables copy-on-write semantics.
@@ -34,17 +34,17 @@ Reads from these files transparently decompress blocks on-the-fly. Optional over
 ### Command-Line Usage
 
 ```bash
-# Mount a snapshot (requires hexz CLI with fuse feature)
-hexz vm mount snapshot.hxz /mnt/snapshot
+# Mount a archive (requires hexz CLI with fuse feature)
+hexz vm mount archive.hxz /mnt/archive
 
 # Access the disk image
-sudo dd if=/mnt/snapshot/disk of=output.raw bs=1M count=100
+sudo dd if=/mnt/archive/disk of=output.raw bs=1M count=100
 
 # Boot a VM using the mounted disk
-qemu-system-x86_64 -drive file=/mnt/snapshot/disk,format=raw
+qemu-system-x86_64 -drive file=/mnt/archive/disk,format=raw
 
 # Unmount
-fusermount -u /mnt/snapshot
+fusermount -u /mnt/archive
 ```
 
 ### Programmatic Usage
@@ -58,15 +58,15 @@ use std::sync::Arc;
 use std::path::Path;
 
 fn main() -> anyhow::Result<()> {
-    // Open snapshot
-    let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
+    // Open archive
+    let backend = Arc::new(FileBackend::new("archive.hxz".as_ref())?);
     let compressor = Box::new(Lz4Compressor::new());
     let snap = Arc::new(File::new(backend, compressor, None)?);
 
-    // Mount at /mnt/snapshot with overlay
+    // Mount at /mnt/archive with overlay
     mount_fs(
         snap,
-        Path::new("/mnt/snapshot"),
+        Path::new("/mnt/archive"),
         Some(Path::new("overlay.bin")), // Copy-on-write overlay
         1000,  // UID
         1000   // GID
@@ -95,9 +95,9 @@ hexz-fuse/
 
 When mounted with an overlay file, the FUSE filesystem provides copy-on-write semantics:
 
-- **Reads**: Check overlay first; if not present, read from base snapshot
-- **Writes**: Store in overlay file; base snapshot remains immutable
-- **Commit**: Use `hexz vm commit` to merge overlay into a new snapshot
+- **Reads**: Check overlay first; if not present, read from base archive
+- **Writes**: Store in overlay file; base archive remains immutable
+- **Commit**: Use `hexz vm commit` to merge overlay into a new archive
 
 ```bash
 # Mount with overlay
@@ -106,12 +106,12 @@ hexz vm mount base.hxz /mnt/vm --overlay changes.bin
 # Make modifications (e.g., install software in VM)
 # All writes go to changes.bin
 
-# Commit overlay to new snapshot
+# Commit overlay to new archive
 hexz vm commit --overlay changes.bin --base base.hxz --output updated.hxz
 ```
 
 This is useful for:
-- VM snapshotting and rollback
+- VM archiveting and rollback
 - Testing changes without modifying originals
 - Incremental backups
 
@@ -119,10 +119,10 @@ This is useful for:
 
 ### VM Boot
 
-Boot a virtual machine from a Hexz snapshot:
+Boot a virtual machine from a Hexz archive:
 
 ```bash
-# Mount snapshot
+# Mount archive
 hexz vm mount ubuntu.hxz /mnt/ubuntu
 
 # Boot with QEMU
@@ -137,10 +137,10 @@ hexz vm boot ubuntu.hxz --ram 4G
 
 ### Disk Image Manipulation
 
-Use standard tools on compressed snapshots:
+Use standard tools on compressed archives:
 
 ```bash
-# Mount snapshot
+# Mount archive
 hexz vm mount disk.hxz /mnt/disk
 
 # Partition with parted
@@ -158,8 +158,8 @@ sudo mount -o loop,offset=1048576 /mnt/disk/disk /mnt/partition
 Access individual files without full decompression:
 
 ```bash
-# Mount snapshot
-hexz vm mount snapshot.hxz /mnt/snap
+# Mount archive
+hexz vm mount archive.hxz /mnt/snap
 
 # Mount the disk's filesystem (assuming ext4 at offset 0)
 sudo mount -o loop /mnt/snap/disk /mnt/contents

@@ -1,4 +1,4 @@
-//! Snapshot inspection and metadata extraction.
+//! Archive inspection and metadata extraction.
 
 use hexz_common::Result;
 use hexz_core::format::header::{CompressionType, Header};
@@ -28,22 +28,22 @@ pub struct BlockStats {
     pub compressed_data_bytes: u64,
 }
 
-/// Metadata extracted from a snapshot file.
-pub struct SnapshotInfo {
+/// Metadata extracted from a archive file.
+pub struct ArchiveInfo {
     pub version: u32,
     pub block_size: u32,
     pub compression: CompressionType,
     pub encrypted: bool,
     pub parent_paths: Vec<String>,
-    pub has_primary: bool,
-    pub has_secondary: bool,
+    pub has_main: bool,
+    pub has_auxiliary: bool,
     pub variable_blocks: bool,
-    pub primary_size: u64,
-    pub secondary_size: u64,
+    pub main_size: u64,
+    pub auxiliary_size: u64,
     pub file_size: u64,
     pub index_offset: u64,
-    pub primary_pages: usize,
-    pub secondary_pages: usize,
+    pub main_pages: usize,
+    pub auxiliary_pages: usize,
     pub signature_present: bool,
     pub dictionary_present: bool,
     pub metadata_offset: Option<u64>,
@@ -52,13 +52,11 @@ pub struct SnapshotInfo {
     pub block_stats: Option<BlockStats>,
 }
 
-impl SnapshotInfo {
-    /// Total uncompressed size (primary + secondary).
+impl ArchiveInfo {
     pub fn total_uncompressed(&self) -> u64 {
-        self.primary_size + self.secondary_size
+        self.main_size + self.auxiliary_size
     }
 
-    /// Compression ratio (uncompressed / file size).
     pub fn compression_ratio(&self) -> f64 {
         if self.file_size > 0 {
             self.total_uncompressed() as f64 / self.file_size as f64
@@ -68,35 +66,30 @@ impl SnapshotInfo {
     }
 }
 
-/// Inspect a snapshot and extract all metadata, including block-level deduplication stats.
-pub fn inspect_snapshot(path: impl AsRef<Path>) -> Result<SnapshotInfo> {
+pub fn inspect_archive(path: impl AsRef<Path>) -> Result<ArchiveInfo> {
     let mut f = File::open(path.as_ref())?;
     let file_size = f.metadata()?.len();
 
     let header = Header::read_from(&mut f)?;
     let master = MasterIndex::read_from(&mut f, header.index_offset)?;
 
-    // 1. Extract Custom Metadata (e.g., file manifests, commit messages)
     let metadata = if let (Some(off), Some(len)) = (header.metadata_offset, header.metadata_length)
     {
         let mut buf = vec![0u8; len as usize];
         f.seek(SeekFrom::Start(off))?;
         f.read_exact(&mut buf)?;
-
-        // Convert to UTF-8 string, ignoring invalid sequences
         Some(String::from_utf8_lossy(&buf).to_string())
     } else {
         None
     };
 
-    // 2. Tally Deduplication Block Stats for the primary stream
     let mut stats = BlockStats {
         min_block_size: u32::MAX,
         ..Default::default()
     };
     let mut seen_offsets: HashSet<u64> = HashSet::new();
 
-    for page_meta in &master.primary_pages {
+    for page_meta in &master.main_pages {
         f.seek(SeekFrom::Start(page_meta.offset))?;
         let mut page_bytes = vec![0u8; page_meta.length as usize];
         f.read_exact(&mut page_bytes)?;
@@ -132,28 +125,27 @@ pub fn inspect_snapshot(path: impl AsRef<Path>) -> Result<SnapshotInfo> {
         }
     }
 
-    // Finalize averages; fix min when no data blocks exist
     if stats.data_blocks > 0 {
         stats.avg_block_size = (stats.data_bytes / stats.data_blocks as u64) as u32;
     } else {
         stats.min_block_size = 0;
     }
 
-    Ok(SnapshotInfo {
+    Ok(ArchiveInfo {
         version: header.version,
         block_size: header.block_size,
         compression: header.compression,
         encrypted: header.encryption.is_some(),
         parent_paths: header.parent_paths,
-        has_primary: header.features.has_disk,
-        has_secondary: header.features.has_memory,
+        has_main: header.features.has_main,
+        has_auxiliary: header.features.has_auxiliary,
         variable_blocks: header.features.variable_blocks,
-        primary_size: master.primary_size,
-        secondary_size: master.secondary_size,
+        main_size: master.main_size,
+        auxiliary_size: master.auxiliary_size,
         file_size,
         index_offset: header.index_offset,
-        primary_pages: master.primary_pages.len(),
-        secondary_pages: master.secondary_pages.len(),
+        main_pages: master.main_pages.len(),
+        auxiliary_pages: master.auxiliary_pages.len(),
         signature_present: header.signature_offset.is_some(),
         dictionary_present: header.dictionary_offset.is_some(),
         metadata_offset: header.metadata_offset,

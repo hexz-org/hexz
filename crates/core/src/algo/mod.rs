@@ -1,6 +1,6 @@
 //! Algorithms for compression, encryption, hashing, and deduplication.
 //!
-//! This module provides the algorithmic foundation for Hexz's snapshot format,
+//! This module provides the algorithmic foundation for Hexz's archive format,
 //! organizing all cryptographic and data reduction primitives behind pluggable
 //! traits. Each submodule defines an abstract interface and concrete implementations
 //! that can be swapped independently without affecting higher layers.

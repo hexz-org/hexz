@@ -3,7 +3,7 @@
 //! This module provides a high-performance implementation of the Zstandard compression
 //! algorithm for Hexz's block-oriented storage system. Zstandard offers significantly
 //! better compression ratios than LZ4 while maintaining reasonable decompression speeds,
-//! making it ideal for snapshot storage where disk space efficiency is prioritized over
+//! making it ideal for archive storage where disk space efficiency is prioritized over
 //! raw throughput.
 //!
 //! # Zstandard Overview
@@ -96,7 +96,7 @@
 //! ## Recommended Settings by Data Type
 //!
 //! ### VM Disk Images (Mixed Content)
-//! - **Level 3**: Good balance for general disk snapshots
+//! - **Level 3**: Good balance for general disk archives
 //! - **Dictionary**: Strongly recommended, +40-60% ratio improvement
 //! - **Rationale**: Mixed content benefits from adaptive compression
 //!
@@ -110,7 +110,7 @@
 //! - **Dictionary**: Optional, text is self-describing
 //! - **Rationale**: Diminishing returns at higher levels
 //!
-//! ### Memory Snapshots (Low Entropy)
+//! ### Memory Archives (Low Entropy)
 //! - **Level 3**: Memory pages often contain zeros/patterns
 //! - **Dictionary**: Not beneficial for homogeneous data
 //! - **Rationale**: Fast compression for potentially large datasets
@@ -260,13 +260,13 @@
 //! # Architectural Integration
 //!
 //! In Hexz's architecture:
-//! - **Format layer**: Stores compression type in snapshot header
-//! - **Pack operations**: Optionally trains dictionaries during snapshot creation
+//! - **Format layer**: Stores compression type in archive header
+//! - **Pack operations**: Optionally trains dictionaries during archive creation
 //! - **Read operations**: Instantiates compressor with stored dictionary
 //! - **CLI**: Provides `--compression=zstd` flag and `--train-dict` option
 //!
 //! The same dictionary bytes must be available for both compression and decompression,
-//! so Hexz embeds trained dictionaries in the snapshot file header.
+//! so Hexz embeds trained dictionaries in the archive file header.
 
 use crate::algo::compression::Compressor;
 use hexz_common::{Error, Result};
@@ -288,8 +288,8 @@ use zstd::dict::{DecoderDictionary, EncoderDictionary};
 /// 4. Multiple compressor instances can share the same dictionary bytes
 ///
 /// This design trades memory (leaked dictionary) for simplicity and safety. In typical
-/// Hexz usage, one compressor instance exists per snapshot file, so the overhead is
-/// ~450 KB per open snapshot (110 KB dict × ~4x internal structures).
+/// Hexz usage, one compressor instance exists per archive file, so the overhead is
+/// ~450 KB per open archive (110 KB dict × ~4x internal structures).
 ///
 /// # Thread Safety
 ///
@@ -442,7 +442,7 @@ impl ZstdCompressor {
     /// 5. **Returns** the trained dictionary as a byte vector
     ///
     /// This is a CPU-intensive operation (O(n log n) where n is total sample bytes) and
-    /// should be done once during snapshot creation, not per-block.
+    /// should be done once during archive creation, not per-block.
     ///
     /// # Parameters
     ///
@@ -854,7 +854,7 @@ impl Compressor for ZstdCompressor {
     ///
     /// To determine the required size:
     /// - If you compressed the data, you know the original size
-    /// - If reading from Hexz snapshots, the block size is in the index
+    /// - If reading from Hexz archives, the block size is in the index
     /// - The zstd frame header contains the content size (can be parsed)
     ///
     /// # Performance

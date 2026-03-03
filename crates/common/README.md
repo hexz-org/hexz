@@ -113,7 +113,7 @@ let key = crypto::derive_key(password, &salt)?;
 
 ### Signing (`sign.rs`) - Optional Feature
 
-Ed25519 signing for snapshot integrity (requires `signing` feature):
+Ed25519 signing for archive integrity (requires `signing` feature):
 
 ```rust
 use hexz_common::sign::{Keypair, sign, verify};
@@ -122,10 +122,10 @@ use hexz_common::sign::{Keypair, sign, verify};
 let keypair = Keypair::generate();
 
 // Sign data
-let signature = sign(&keypair, b"snapshot data");
+let signature = sign(&keypair, b"archive data");
 
 // Verify signature
-verify(&keypair.public, b"snapshot data", &signature)?;
+verify(&keypair.public, b"archive data", &signature)?;
 ```
 
 ## Usage in Other Crates

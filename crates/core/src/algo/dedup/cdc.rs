@@ -154,7 +154,7 @@
 //!
 //! # Usage Patterns
 //!
-//! This module provides two primary APIs:
+//! This module provides two main APIs:
 //!
 //! ## 1. Analysis Mode: `analyze_stream()`
 //!
@@ -168,13 +168,13 @@
 //!
 //! ## 2. Streaming Mode: `StreamChunker`
 //!
-//! Iterator that yields chunks on-demand during snapshot creation. Integrates
+//! Iterator that yields chunks on-demand during archive creation. Integrates
 //! with the packing pipeline for compression and encryption.
 //!
 //! - **Input**: Reader + parameters
 //! - **Output**: Iterator of `Vec<u8>` chunks
 //! - **Memory**: O(1) - fixed buffer size
-//! - **Use case**: Actual snapshot packing
+//! - **Use case**: Actual archive packing
 //!
 //! # Examples
 //!
@@ -251,7 +251,7 @@
 //!
 //! # Integration with Hexz
 //!
-//! CDC is integrated into the snapshot packing pipeline with multiple stages:
+//! CDC is integrated into the archive packing pipeline with multiple stages:
 //!
 //! ## Analysis Phase
 //!
@@ -267,15 +267,15 @@
 //! 4. **Streaming Chunking**: `StreamChunker` feeds variable-sized chunks to the
 //!    compression pipeline (typically zstd or lz4)
 //! 5. **Deduplication Tracking**: Compute cryptographic hash (SHA-256 or BLAKE3)
-//!    of each chunk and check against existing snapshot index
+//!    of each chunk and check against existing archive index
 //! 6. **Storage**: Write unique chunks to pack files; record chunk metadata
-//!    (offset, compressed size, hash) in snapshot index
+//!    (offset, compressed size, hash) in archive index
 //!
 //! ## Unpacking Phase
 //!
-//! 7. **Reconstruction**: Read snapshot index to determine chunk sequence
+//! 7. **Reconstruction**: Read archive index to determine chunk sequence
 //! 8. **Decompression**: Fetch and decompress chunks from pack files
-//! 9. **Assembly**: Concatenate chunks in original order to reconstruct snapshot
+//! 9. **Assembly**: Concatenate chunks in original order to reconstruct archive
 //!
 //! ## Error Handling
 //!
@@ -283,7 +283,7 @@
 //! - **Hash Collisions**: Detected during unpacking (content verification fails),
 //!   triggers integrity error and potential re-read or fallback
 //! - **Corrupted Chunks**: Compression errors detected during decompression,
-//!   logged and may trigger snapshot re-creation if critical
+//!   logged and may trigger archive re-creation if critical
 //!
 //! ## Edge Cases
 //!
@@ -347,7 +347,7 @@
 //!
 //! However, updating the fastcdc library may change internal hash tables or
 //! algorithms, causing chunk boundaries to shift. This breaks cross-version
-//! deduplication. **Mitigation**: Include CDC version in snapshot metadata.
+//! deduplication. **Mitigation**: Include CDC version in archive metadata.
 //!
 //! # References
 //!
@@ -510,7 +510,7 @@ pub struct CdcStats {
 
 /// Streaming iterator that yields content-defined chunks from a reader.
 ///
-/// `StreamChunker` is the primary interface for applying FastCDC to data streams
+/// `StreamChunker` is the main interface for applying FastCDC to data streams
 /// in a memory-efficient manner. It reads data incrementally from any `Read`
 /// source and applies content-defined chunking to produce variable-sized chunks
 /// suitable for compression, deduplication, and storage.
@@ -1087,7 +1087,7 @@ impl<R: Read> Iterator for StreamChunker<R> {
 /// This function applies FastCDC chunking to a data stream and tracks unique chunks
 /// via hash-based deduplication. It is designed as a lightweight analysis pass for
 /// the DCAM model to estimate deduplication potential before committing to full
-/// snapshot packing.
+/// archive packing.
 ///
 /// # Algorithm
 ///
@@ -1201,7 +1201,7 @@ impl<R: Read> Iterator for StreamChunker<R> {
 /// use std::fs::File;
 ///
 /// # fn main() -> std::io::Result<()> {
-/// let file = File::open("snapshot.raw")?;
+/// let file = File::open("archive.raw")?;
 /// let params = DedupeParams::default();
 /// let stats = analyze_stream(file, &params)?;
 ///
@@ -1255,7 +1255,7 @@ impl<R: Read> Iterator for StreamChunker<R> {
 /// # Relationship to `StreamChunker`
 ///
 /// This function is a convenience wrapper around `StreamChunker` that adds
-/// deduplication tracking via a hash set. For actual snapshot packing, use
+/// deduplication tracking via a hash set. For actual archive packing, use
 /// `StreamChunker` directly and handle deduplication in the compression/storage
 /// pipeline. The analysis function is intended as a lightweight dry-run only.
 pub fn analyze_stream<R: Read>(reader: R, params: &DedupeParams) -> io::Result<CdcStats> {

@@ -13,8 +13,8 @@ tests/
 │   └── algo_tests.rs        # Dedup algorithms
 ├── integration/       # Multi-module integration tests
 │   ├── pack_tests.rs        # End-to-end packing
-│   ├── read_tests.rs        # Reading snapshots
-│   ├── thin_snapshot_tests.rs
+│   ├── read_tests.rs        # Reading archives
+│   ├── thin_archive_tests.rs
 │   └── concurrent_tests.rs  # Thread safety
 ├── property/          # Property-based tests (proptest)
 │   ├── format_properties.rs

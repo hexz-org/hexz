@@ -2,7 +2,7 @@
 //!
 //! This module implements the L1 block cache layer that sits between `File` and
 //! the storage backend, serving as a critical performance optimization by caching
-//! decompressed blocks in memory. By avoiding repeated decompression and backend I/O,
+//! decompressed blocks in auxiliary. By avoiding repeated decompression and backend I/O,
 //! the cache can reduce read latency by 10-100× for workloads with temporal locality.
 //!
 //! # Architecture
@@ -29,7 +29,7 @@
 //! The cache uses **16 shards** (`SHARD_COUNT = 16`), a power-of-two-adjacent value
 //! chosen based on:
 //! - **Typical core counts**: Modern CPUs have 4-32 cores; 16 shards provide
-//!   sufficient parallelism without excessive memory overhead
+//!   sufficient parallelism without excessive auxiliary overhead
 //! - **Cache line alignment**: 16 shards fit within typical L1/L2 cache sizes,
 //!   minimizing false sharing
 //! - **Empirical tuning**: Benchmarks show diminishing returns beyond 16 shards
@@ -48,7 +48,7 @@
 //! For capacities ≤ 256 entries (`SINGLE_SHARD_CAPACITY_LIMIT`), the cache uses a
 //! **single shard** to preserve exact LRU semantics and avoid wasting capacity on
 //! per-shard overhead. This is important for:
-//! - **Embedded systems**: Memory-constrained environments where 256 × 64 KiB = 16 MiB
+//! - **Embedded systems**: Auxiliary-constrained environments where 256 × 64 KiB = 16 MiB
 //!   is the entire cache budget
 //! - **Testing**: Predictable LRU behavior simplifies correctness verification
 //! - **Small snapshots**: When total snapshot size < cache capacity, global LRU
@@ -145,7 +145,7 @@
 //! - **Hot/cold split**: 20% of blocks account for 80% of accesses (Pareto principle)
 //! - **Rule of thumb**: Cache capacity = 2× hot set size for ~85% hit rate
 //!
-//! # Memory Overhead
+//! # Auxiliary Overhead
 //!
 //! ## Per-Entry Overhead
 //!
@@ -154,9 +154,9 @@
 //! - **Metadata**: ~96 bytes (LRU node + key + `Bytes` header)
 //! - **Total**: `block_size + 96` bytes
 //!
-//! ## Total Memory Usage
+//! ## Total Auxiliary Usage
 //!
-//! Formula: `memory_usage ≈ capacity × (block_size + 96 bytes)`
+//! Formula: `auxiliary_usage ≈ capacity × (block_size + 96 bytes)`
 //!
 //! Examples:
 //! - 1000 entries × 64 KiB blocks = 64 MB data + 96 KB overhead ≈ **64.1 MB**
@@ -172,15 +172,15 @@
 //!
 //! ## Choosing Cache Size
 //!
-//! **Conservative** (memory-constrained systems):
+//! **Conservative** (auxiliary-constrained systems):
 //! ```text
-//! cache_capacity = (available_memory × 0.1) / block_size
+//! cache_capacity = (available_auxiliary × 0.1) / block_size
 //! ```
 //! Example: 4 GB available, 64 KiB blocks → 6553 entries (420 MB)
 //!
 //! **Aggressive** (performance-critical systems):
 //! ```text
-//! cache_capacity = (available_memory × 0.5) / block_size
+//! cache_capacity = (available_auxiliary × 0.5) / block_size
 //! ```
 //! Example: 16 GB available, 64 KiB blocks → 131072 entries (8 GB)
 //!
@@ -188,7 +188,7 @@
 //!
 //! 1. **Measure baseline**: Run workload with minimal cache (e.g., 100 entries)
 //! 2. **Double capacity**: Rerun and measure hit rate improvement
-//! 3. **Repeat until**: Hit rate improvement < 5% or memory budget exhausted
+//! 3. **Repeat until**: Hit rate improvement < 5% or auxiliary budget exhausted
 //! 4. **Production value**: Use capacity at inflection point (diminishing returns)
 //!
 //! ## Shard Count Tuning
@@ -196,7 +196,7 @@
 //! **When to modify `SHARD_COUNT`**:
 //! - **Increase** (e.g., to 32 or 64): If profiling shows >30% lock contention on
 //!   systems with >16 cores
-//! - **Decrease** (e.g., to 8 or 4): If memory overhead is critical and core count ≤ 8
+//! - **Decrease** (e.g., to 8 or 4): If auxiliary overhead is critical and core count ≤ 8
 //! - **Keep default (16)**: For most workloads and systems
 //!
 //! # Examples
@@ -205,7 +205,7 @@
 //!
 //! ```
 //! use hexz_core::cache::lru::BlockCache;
-//! use hexz_core::api::file::SnapshotStream;
+//! use hexz_core::api::file::ArchiveStream;
 //! use bytes::Bytes;
 //!
 //! // Create cache with 1000-entry capacity
@@ -213,17 +213,17 @@
 //!
 //! // Store decompressed block
 //! let data = Bytes::from(vec![0u8; 65536]); // 64 KiB block
-//! cache.insert(SnapshotStream::Primary, 42, data.clone());
+//! cache.insert(ArchiveStream::Main, 42, data.clone());
 //!
 //! // Retrieve block (cache hit)
-//! let cached = cache.get(SnapshotStream::Primary, 42);
+//! let cached = cache.get(ArchiveStream::Main, 42);
 //! assert_eq!(cached, Some(data));
 //!
 //! // Miss: different block
-//! assert_eq!(cache.get(SnapshotStream::Primary, 99), None);
+//! assert_eq!(cache.get(ArchiveStream::Main, 99), None);
 //! ```
 //!
-//! ## Memory-Constrained Configuration
+//! ## Auxiliary-Constrained Configuration
 //!
 //! ```
 //! use hexz_core::cache::lru::BlockCache;
@@ -250,7 +250,7 @@
 //!     let cache_clone = Arc::clone(&cache);
 //!     std::thread::spawn(move || {
 //!         // Concurrent access (uses sharding for parallelism)
-//!         cache_clone.get(hexz_core::api::file::SnapshotStream::Primary, 0);
+//!         cache_clone.get(hexz_core::api::file::ArchiveStream::Main, 0);
 //!     });
 //! }
 //! ```
@@ -259,15 +259,15 @@
 //!
 //! ```
 //! # use hexz_core::cache::lru::BlockCache;
-//! # use hexz_core::api::file::SnapshotStream;
+//! # use hexz_core::api::file::ArchiveStream;
 //! # use bytes::Bytes;
 //! let cache = BlockCache::with_capacity(1000);
 //!
 //! // Foreground read (cache miss)
-//! if cache.get(SnapshotStream::Primary, 100).is_none() {
+//! if cache.get(ArchiveStream::Main, 100).is_none() {
 //!     // Fetch from backend, decompress, insert
 //!     let block_data = Bytes::from(vec![0u8; 65536]); // Simulated backend read
-//!     cache.insert(SnapshotStream::Primary, 100, block_data);
+//!     cache.insert(ArchiveStream::Main, 100, block_data);
 //!
 //!     // Background prefetch for next 4 blocks
 //!     for offset in 1..=4 {
@@ -277,7 +277,7 @@
 //! }
 //! ```
 
-use crate::api::file::SnapshotStream;
+use crate::api::file::ArchiveStream;
 use crate::format::index::IndexPage;
 use bytes::Bytes;
 use lru::LruCache;
@@ -338,24 +338,25 @@ impl BuildHasher for FxBuildHasher {
 /// Default capacity for the L1 block cache in number of entries (not bytes).
 ///
 /// This value (1000 blocks) is chosen for typical desktop/server workloads:
-/// - **With 64 KiB blocks**: 1000 × 64 KiB ≈ **64 MB** cache memory
-/// - **With 4 KiB blocks**: 1000 × 4 KiB ≈ **4 MB** cache memory
+/// - **With 64 KiB blocks**: 1000 × 64 KiB ≈ **64 MB** cache auxiliary
+/// - **With 4 KiB blocks**: 1000 × 4 KiB ≈ **4 MB** cache auxiliary
 ///
 /// Rationale:
 /// - Large enough to cache hot blocks for most single-snapshot workloads
-/// - Small enough to avoid excessive memory pressure on constrained systems
+/// - Small enough to avoid excessive auxiliary pressure on constrained systems
 /// - Provides ~70-85% hit rate for typical Zipfian access distributions
 ///
 /// Applications should override this via `BlockCache::with_capacity()` or
 /// `File::with_options()` based on available memory and workload characteristics.
-const DEFAULT_L1_CAPACITY: usize = 1000;
+pub const DEFAULT_L1_CAPACITY: usize = 1000;
+
 
 /// Default capacity for the Index Page cache in number of entries.
 ///
 /// Index pages are metadata structures (typically 4-16 KiB each) that map logical
 /// block indices to physical storage locations. This value (128 pages) is sufficient
 /// for snapshots up to ~8 million blocks (assuming 64K blocks per page):
-/// - **Memory usage**: 128 × 8 KiB ≈ **1 MB**
+/// - **Auxiliary usage**: 128 × 8 KiB ≈ **1 MB**
 /// - **Coverage**: 128 pages × 64K blocks/page × 64 KiB/block ≈ **512 GB** logical size
 ///
 /// Increasing this value improves performance for:
@@ -367,16 +368,16 @@ const DEFAULT_PAGE_CACHE_CAPACITY: usize = 128;
 /// Cache key uniquely identifying a block within a snapshot.
 ///
 /// The key is a tuple `(stream_id, block_index)` where:
-/// - **`stream_id` (u8)**: The `SnapshotStream` discriminant (0 = Disk, 1 = Memory).
+/// - **`stream_id` (u8)**: The `ArchiveStream` discriminant (0 = Main, 1 = Auxiliary).
 ///   Using `u8` instead of the enum directly reduces key size and simplifies hashing.
 /// - **`block_index` (u64)**: Zero-based index of the block within the stream.
 ///   For a snapshot with 64 KiB blocks, block 0 = bytes 0-65535, block 1 = bytes 65536-131071, etc.
 ///
 /// # Key Space
 ///
-/// - **Primary stream**: `(0, 0)` to `(0, disk_blocks - 1)`
-/// - **Secondary stream**: `(1, 0)` to `(1, memory_blocks - 1)`
-/// - **Total keys**: `disk_blocks + memory_blocks`
+/// - **Main stream**: `(0, 0)` to `(0, main_blocks - 1)`
+/// - **Auxiliary stream**: `(1, 0)` to `(1, auxiliary_blocks - 1)`
+/// - **Total keys**: `main_blocks + auxiliary_blocks`
 ///
 /// # Hashing
 ///
@@ -387,8 +388,8 @@ const DEFAULT_PAGE_CACHE_CAPACITY: usize = 128;
 /// # Examples
 ///
 /// ```text
-/// Stream: Disk, Block 42      → CacheKey = (0, 42)
-/// Stream: Memory, Block 100   → CacheKey = (1, 100)
+/// Stream: Main, Block 42      → CacheKey = (0, 42)
+/// Stream: Auxiliary, Block 100   → CacheKey = (1, 100)
 /// ```
 type CacheKey = (u8, u64);
 
@@ -396,7 +397,7 @@ type CacheKey = (u8, u64);
 /// Sharded LRU cache for decompressed snapshot blocks.
 ///
 /// **Architectural intent:** Reduces repeated decompression and backend reads
-/// by caching hot blocks in memory, while sharding to minimize lock
+/// by caching hot blocks in auxiliary, while sharding to minimize lock
 /// contention under concurrent access.
 ///
 /// **Constraints:** For capacity > SHARD_COUNT, total capacity is divided
@@ -404,7 +405,7 @@ type CacheKey = (u8, u64);
 /// used so global LRU semantics and exact capacity are preserved.
 ///
 /// **Side effects:** Uses per-shard `Mutex`es, so high write or miss rates can
-/// introduce contention; memory usage grows with the number and size of cached
+/// introduce contention; auxiliary usage grows with the number and size of cached
 /// blocks up to the configured capacity.
 pub struct BlockCache {
     /// None = capacity 0 (no-op cache). Some = one or more shards.
@@ -424,7 +425,7 @@ pub struct BlockCache {
 ///
 /// **Tuning:**
 /// - **Increase to 32-64**: For >16-core systems with >30% measured lock contention
-/// - **Decrease to 8**: For ≤8-core systems or when memory overhead is critical
+/// - **Decrease to 8**: For ≤8-core systems or when auxiliary overhead is critical
 /// - **Keep at 16**: For most workloads (recommended default)
 ///
 /// **Constraints:** Must be a power-of-two-adjacent small integer to keep shard
@@ -455,7 +456,7 @@ impl BlockCache {
     /// Constructs a new block cache with a specified capacity in entries.
     ///
     /// The capacity represents the **total number of blocks** (not bytes) that can be
-    /// cached. Memory usage is approximately `capacity × (block_size + 96 bytes)`.
+    /// cached. Auxiliary usage is approximately `capacity × (block_size + 96 bytes)`.
     ///
     /// # Arguments
     ///
@@ -471,7 +472,7 @@ impl BlockCache {
     /// - **capacity > 256**: Allocates 16 shards with `ceil(capacity / 16)` entries each
     ///   (total capacity may be slightly higher than requested due to rounding)
     ///
-    /// # Memory Allocation
+    /// # Auxiliary Allocation
     ///
     /// This function performs upfront allocation of:
     /// - **Shard metadata**: 16 × 128 bytes ≈ 2 KB (for multi-shard mode)
@@ -484,7 +485,7 @@ impl BlockCache {
     ///
     /// - **Time complexity**: O(num_shards) ≈ O(1) (at most 16 shards)
     /// - **Space complexity**: O(num_shards + capacity)
-    /// - **No I/O**: Purely in-memory allocation
+    /// - **No I/O**: Purely in-auxiliary allocation
     ///
     /// # Examples
     ///
@@ -497,7 +498,7 @@ impl BlockCache {
     /// let cache = BlockCache::with_capacity(1000);
     /// ```
     ///
-    /// ## Memory-Constrained System
+    /// ## Auxiliary-Constrained System
     ///
     /// ```
     /// use hexz_core::cache::lru::BlockCache;
@@ -540,16 +541,16 @@ impl BlockCache {
     /// # Tuning Notes
     ///
     /// Choosing the right capacity involves balancing:
-    /// - **Memory availability**: Don't exceed physical RAM or risk OOM
+    /// - **Auxiliary availability**: Don't exceed physical RAM or risk OOM
     /// - **Hit rate goals**: Larger cache → higher hit rate (diminishing returns)
     /// - **Workload characteristics**: Sequential vs. random, hot set size
     ///
     /// Rule of thumb:
     /// ```text
-    /// capacity = (available_memory × utilization_factor) / block_size
+    /// capacity = (available_auxiliary × utilization_factor) / block_size
     ///
     /// where utilization_factor:
-    ///   0.1-0.2 = Conservative (memory-constrained)
+    ///   0.1-0.2 = Conservative (auxiliary-constrained)
     ///   0.3-0.5 = Moderate (balanced)
     ///   0.5-0.8 = Aggressive (performance-critical)
     /// ```
@@ -606,7 +607,7 @@ impl BlockCache {
     ///
     /// # Arguments
     ///
-    /// * `stream` - The snapshot stream (Disk or Memory) containing the block
+    /// * `stream` - The snapshot stream (Main or Auxiliary) containing the block
     /// * `block` - Zero-based block index within the stream
     ///
     /// # Returns
@@ -665,21 +666,21 @@ impl BlockCache {
     ///
     /// ```
     /// use hexz_core::cache::lru::BlockCache;
-    /// use hexz_core::api::file::SnapshotStream;
+    /// use hexz_core::api::file::ArchiveStream;
     /// use bytes::Bytes;
     ///
     /// let cache = BlockCache::with_capacity(1000);
     ///
     /// // Insert a block
     /// let data = Bytes::from(vec![1, 2, 3, 4]);
-    /// cache.insert(SnapshotStream::Primary, 42, data.clone());
+    /// cache.insert(ArchiveStream::Main, 42, data.clone());
     ///
     /// // Retrieve it (cache hit)
-    /// let cached = cache.get(SnapshotStream::Primary, 42);
+    /// let cached = cache.get(ArchiveStream::Main, 42);
     /// assert_eq!(cached, Some(data));
     ///
     /// // Different block (cache miss)
-    /// let missing = cache.get(SnapshotStream::Primary, 99);
+    /// let missing = cache.get(ArchiveStream::Main, 99);
     /// assert_eq!(missing, None);
     /// ```
     ///
@@ -687,33 +688,33 @@ impl BlockCache {
     ///
     /// ```
     /// # use hexz_core::cache::lru::BlockCache;
-    /// # use hexz_core::api::file::SnapshotStream;
+    /// # use hexz_core::api::file::ArchiveStream;
     /// # use bytes::Bytes;
     /// let cache = BlockCache::with_capacity(1000);
     ///
     /// // Same block index, different streams
-    /// let disk_data = Bytes::from(vec![1, 2, 3]);
+    /// let main_data = Bytes::from(vec![1, 2, 3]);
     /// let mem_data = Bytes::from(vec![4, 5, 6]);
     ///
-    /// cache.insert(SnapshotStream::Primary, 10, disk_data.clone());
-    /// cache.insert(SnapshotStream::Secondary, 10, mem_data.clone());
+    /// cache.insert(ArchiveStream::Main, 10, main_data.clone());
+    /// cache.insert(ArchiveStream::Auxiliary, 10, mem_data.clone());
     ///
     /// // Lookups are stream-specific (no collision)
-    /// assert_eq!(cache.get(SnapshotStream::Primary, 10), Some(disk_data));
-    /// assert_eq!(cache.get(SnapshotStream::Secondary, 10), Some(mem_data));
+    /// assert_eq!(cache.get(ArchiveStream::Main, 10), Some(main_data));
+    /// assert_eq!(cache.get(ArchiveStream::Auxiliary, 10), Some(mem_data));
     /// ```
     ///
     /// ## Disabled Cache
     ///
     /// ```
     /// # use hexz_core::cache::lru::BlockCache;
-    /// # use hexz_core::api::file::SnapshotStream;
+    /// # use hexz_core::api::file::ArchiveStream;
     /// let cache = BlockCache::with_capacity(0);
     ///
     /// // All lookups return None (cache disabled)
-    /// assert_eq!(cache.get(SnapshotStream::Primary, 0), None);
+    /// assert_eq!(cache.get(ArchiveStream::Main, 0), None);
     /// ```
-    pub fn get(&self, stream: SnapshotStream, block: u64) -> Option<Bytes> {
+    pub fn get(&self, stream: ArchiveStream, block: u64) -> Option<Bytes> {
         let key = (stream as u8, block);
         let shard = self.get_shard(&key)?;
         match shard.lock() {
@@ -739,7 +740,7 @@ impl BlockCache {
     ///
     /// # Arguments
     ///
-    /// * `stream` - The snapshot stream (Disk or Memory) containing the block
+    /// * `stream` - The snapshot stream (Main or Auxiliary) containing the block
     /// * `block` - Zero-based block index within the stream
     /// * `data` - The decompressed block data as a `Bytes` buffer. Should match the
     ///   snapshot's `block_size` (typically 4-256 KiB), though this is not enforced.
@@ -803,79 +804,79 @@ impl BlockCache {
     ///
     /// ```
     /// use hexz_core::cache::lru::BlockCache;
-    /// use hexz_core::api::file::SnapshotStream;
+    /// use hexz_core::api::file::ArchiveStream;
     /// use bytes::Bytes;
     ///
     /// let cache = BlockCache::with_capacity(1000);
     ///
     /// // Insert decompressed block
     /// let data = Bytes::from(vec![0xDE, 0xAD, 0xBE, 0xEF]);
-    /// cache.insert(SnapshotStream::Primary, 42, data.clone());
+    /// cache.insert(ArchiveStream::Main, 42, data.clone());
     ///
     /// // Verify insertion
-    /// assert_eq!(cache.get(SnapshotStream::Primary, 42), Some(data));
+    /// assert_eq!(cache.get(ArchiveStream::Main, 42), Some(data));
     /// ```
     ///
     /// ## Update Existing Entry
     ///
     /// ```
     /// # use hexz_core::cache::lru::BlockCache;
-    /// # use hexz_core::api::file::SnapshotStream;
+    /// # use hexz_core::api::file::ArchiveStream;
     /// # use bytes::Bytes;
     /// let cache = BlockCache::with_capacity(1000);
     ///
     /// // Insert original data
     /// let old_data = Bytes::from(vec![1, 2, 3]);
-    /// cache.insert(SnapshotStream::Secondary, 10, old_data);
+    /// cache.insert(ArchiveStream::Auxiliary, 10, old_data);
     ///
     /// // Update with new data (moves to LRU head)
     /// let new_data = Bytes::from(vec![4, 5, 6]);
-    /// cache.insert(SnapshotStream::Secondary, 10, new_data.clone());
+    /// cache.insert(ArchiveStream::Auxiliary, 10, new_data.clone());
     ///
     /// // Retrieves updated data
-    /// assert_eq!(cache.get(SnapshotStream::Secondary, 10), Some(new_data));
+    /// assert_eq!(cache.get(ArchiveStream::Auxiliary, 10), Some(new_data));
     /// ```
     ///
     /// ## Eviction on Full Cache
     ///
     /// ```
     /// # use hexz_core::cache::lru::BlockCache;
-    /// # use hexz_core::api::file::SnapshotStream;
+    /// # use hexz_core::api::file::ArchiveStream;
     /// # use bytes::Bytes;
     /// let cache = BlockCache::with_capacity(2); // Tiny cache (single shard, 2 entries)
     ///
     /// // Fill cache
-    /// cache.insert(SnapshotStream::Primary, 0, Bytes::from(vec![0]));
-    /// cache.insert(SnapshotStream::Primary, 1, Bytes::from(vec![1]));
+    /// cache.insert(ArchiveStream::Main, 0, Bytes::from(vec![0]));
+    /// cache.insert(ArchiveStream::Main, 1, Bytes::from(vec![1]));
     ///
     /// // Access block 0 (makes block 1 the LRU)
-    /// let _ = cache.get(SnapshotStream::Primary, 0);
+    /// let _ = cache.get(ArchiveStream::Main, 0);
     ///
     /// // Insert block 2 (evicts block 1, which is LRU)
-    /// cache.insert(SnapshotStream::Primary, 2, Bytes::from(vec![2]));
+    /// cache.insert(ArchiveStream::Main, 2, Bytes::from(vec![2]));
     ///
     /// // Block 1 was evicted
-    /// assert_eq!(cache.get(SnapshotStream::Primary, 1), None);
+    /// assert_eq!(cache.get(ArchiveStream::Main, 1), None);
     /// // Blocks 0 and 2 remain
-    /// assert!(cache.get(SnapshotStream::Primary, 0).is_some());
-    /// assert!(cache.get(SnapshotStream::Primary, 2).is_some());
+    /// assert!(cache.get(ArchiveStream::Main, 0).is_some());
+    /// assert!(cache.get(ArchiveStream::Main, 2).is_some());
     /// ```
     ///
     /// ## Disabled Cache (No-Op)
     ///
     /// ```
     /// # use hexz_core::cache::lru::BlockCache;
-    /// # use hexz_core::api::file::SnapshotStream;
+    /// # use hexz_core::api::file::ArchiveStream;
     /// # use bytes::Bytes;
     /// let cache = BlockCache::with_capacity(0); // Cache disabled
     ///
     /// // Insert is silently ignored
-    /// cache.insert(SnapshotStream::Primary, 42, Bytes::from(vec![1, 2, 3]));
+    /// cache.insert(ArchiveStream::Main, 42, Bytes::from(vec![1, 2, 3]));
     ///
     /// // Lookup returns None (nothing was cached)
-    /// assert_eq!(cache.get(SnapshotStream::Primary, 42), None);
+    /// assert_eq!(cache.get(ArchiveStream::Main, 42), None);
     /// ```
-    pub fn insert(&self, stream: SnapshotStream, block: u64, data: Bytes) {
+    pub fn insert(&self, stream: ArchiveStream, block: u64, data: Bytes) {
         let key = (stream as u8, block);
         if let Some(shard) = self.get_shard(&key) {
             match shard.lock() {
@@ -899,10 +900,10 @@ impl Default for BlockCache {
     /// Constructs a block cache with the default L1 capacity (1000 entries).
     ///
     /// This provides a sensible default for typical desktop/server workloads without
-    /// requiring the caller to choose a capacity. For memory-constrained or high-performance
+    /// requiring the caller to choose a capacity. For auxiliary-constrained or high-performance
     /// systems, use `BlockCache::with_capacity()` to specify a custom value.
     ///
-    /// # Memory Usage
+    /// # Auxiliary Usage
     ///
     /// With default capacity (1000 entries) and 64 KiB blocks:
     /// - **Data storage**: 1000 × 64 KiB ≈ **64 MB**
@@ -941,7 +942,7 @@ impl Default for BlockCache {
 /// # Capacity Details
 ///
 /// - **Default value**: 128 entries
-/// - **Memory usage**: ~1 MB (128 × ~8 KiB per page)
+/// - **Auxiliary usage**: ~1 MB (128 × ~8 KiB per page)
 /// - **Coverage**: Sufficient for snapshots up to ~512 GB (with 64K blocks per page)
 ///
 /// # Use Cases
@@ -1069,7 +1070,7 @@ impl Default for ShardedPageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::file::SnapshotStream;
+    use crate::api::file::ArchiveStream;
     use crate::format::index::BlockInfo;
 
     #[test]
@@ -1077,10 +1078,10 @@ mod tests {
         let cache = BlockCache::with_capacity(0);
 
         // Insert should be no-op
-        cache.insert(SnapshotStream::Primary, 0, Bytes::from(vec![1, 2, 3]));
+        cache.insert(ArchiveStream::Main, 0, Bytes::from(vec![1, 2, 3]));
 
         // Get should always return None
-        assert_eq!(cache.get(SnapshotStream::Primary, 0), None);
+        assert_eq!(cache.get(ArchiveStream::Main, 0), None);
     }
 
     #[test]
@@ -1088,9 +1089,9 @@ mod tests {
         let cache = BlockCache::with_capacity(10);
 
         let data = Bytes::from(vec![0xDE, 0xAD, 0xBE, 0xEF]);
-        cache.insert(SnapshotStream::Primary, 42, data.clone());
+        cache.insert(ArchiveStream::Main, 42, data.clone());
 
-        let retrieved = cache.get(SnapshotStream::Primary, 42);
+        let retrieved = cache.get(ArchiveStream::Main, 42);
         assert_eq!(retrieved, Some(data));
     }
 
@@ -1099,26 +1100,26 @@ mod tests {
         let cache = BlockCache::with_capacity(10);
 
         // Insert one block
-        cache.insert(SnapshotStream::Primary, 10, Bytes::from(vec![1, 2, 3]));
+        cache.insert(ArchiveStream::Main, 10, Bytes::from(vec![1, 2, 3]));
 
         // Query different block
-        assert_eq!(cache.get(SnapshotStream::Primary, 99), None);
+        assert_eq!(cache.get(ArchiveStream::Main, 99), None);
     }
 
     #[test]
     fn test_stream_isolation() {
         let cache = BlockCache::with_capacity(10);
 
-        let disk_data = Bytes::from(vec![1, 2, 3]);
+        let main_data = Bytes::from(vec![1, 2, 3]);
         let mem_data = Bytes::from(vec![4, 5, 6]);
 
         // Same block index, different streams
-        cache.insert(SnapshotStream::Primary, 5, disk_data.clone());
-        cache.insert(SnapshotStream::Secondary, 5, mem_data.clone());
+        cache.insert(ArchiveStream::Main, 5, main_data.clone());
+        cache.insert(ArchiveStream::Auxiliary, 5, mem_data.clone());
 
         // Verify no collision
-        assert_eq!(cache.get(SnapshotStream::Primary, 5), Some(disk_data));
-        assert_eq!(cache.get(SnapshotStream::Secondary, 5), Some(mem_data));
+        assert_eq!(cache.get(ArchiveStream::Main, 5), Some(main_data));
+        assert_eq!(cache.get(ArchiveStream::Auxiliary, 5), Some(mem_data));
     }
 
     #[test]
@@ -1128,10 +1129,10 @@ mod tests {
         let old_data = Bytes::from(vec![1, 2, 3]);
         let new_data = Bytes::from(vec![4, 5, 6, 7]);
 
-        cache.insert(SnapshotStream::Primary, 0, old_data);
-        cache.insert(SnapshotStream::Primary, 0, new_data.clone());
+        cache.insert(ArchiveStream::Main, 0, old_data);
+        cache.insert(ArchiveStream::Main, 0, new_data.clone());
 
-        assert_eq!(cache.get(SnapshotStream::Primary, 0), Some(new_data));
+        assert_eq!(cache.get(ArchiveStream::Main, 0), Some(new_data));
     }
 
     #[test]
@@ -1140,21 +1141,21 @@ mod tests {
         let cache = BlockCache::with_capacity(2);
 
         // Fill cache
-        cache.insert(SnapshotStream::Primary, 0, Bytes::from(vec![0]));
-        cache.insert(SnapshotStream::Primary, 1, Bytes::from(vec![1]));
+        cache.insert(ArchiveStream::Main, 0, Bytes::from(vec![0]));
+        cache.insert(ArchiveStream::Main, 1, Bytes::from(vec![1]));
 
         // Access block 0 (makes block 1 the LRU)
-        let _ = cache.get(SnapshotStream::Primary, 0);
+        let _ = cache.get(ArchiveStream::Main, 0);
 
         // Insert block 2 (should evict block 1)
-        cache.insert(SnapshotStream::Primary, 2, Bytes::from(vec![2]));
+        cache.insert(ArchiveStream::Main, 2, Bytes::from(vec![2]));
 
         // Block 1 should be evicted
-        assert_eq!(cache.get(SnapshotStream::Primary, 1), None);
+        assert_eq!(cache.get(ArchiveStream::Main, 1), None);
 
         // Blocks 0 and 2 should remain
-        assert!(cache.get(SnapshotStream::Primary, 0).is_some());
-        assert!(cache.get(SnapshotStream::Primary, 2).is_some());
+        assert!(cache.get(ArchiveStream::Main, 0).is_some());
+        assert!(cache.get(ArchiveStream::Main, 2).is_some());
     }
 
     #[test]
@@ -1164,12 +1165,12 @@ mod tests {
         // Insert multiple blocks
         for i in 0..50 {
             let data = Bytes::from(vec![i as u8; 64]);
-            cache.insert(SnapshotStream::Primary, i, data);
+            cache.insert(ArchiveStream::Main, i, data);
         }
 
         // Verify all are cached
         for i in 0..50 {
-            let retrieved = cache.get(SnapshotStream::Primary, i);
+            let retrieved = cache.get(ArchiveStream::Main, i);
             assert!(retrieved.is_some());
             assert_eq!(retrieved.unwrap()[0], i as u8);
         }
@@ -1181,8 +1182,8 @@ mod tests {
         let cache = BlockCache::with_capacity(1000);
 
         // Verify cache is usable
-        cache.insert(SnapshotStream::Primary, 0, Bytes::from(vec![1, 2, 3]));
-        assert!(cache.get(SnapshotStream::Primary, 0).is_some());
+        cache.insert(ArchiveStream::Main, 0, Bytes::from(vec![1, 2, 3]));
+        assert!(cache.get(ArchiveStream::Main, 0).is_some());
     }
 
     #[test]
@@ -1190,9 +1191,9 @@ mod tests {
         let cache = BlockCache::default();
 
         // Should work like normal cache
-        cache.insert(SnapshotStream::Secondary, 10, Bytes::from(vec![5, 6, 7]));
+        cache.insert(ArchiveStream::Auxiliary, 10, Bytes::from(vec![5, 6, 7]));
         assert_eq!(
-            cache.get(SnapshotStream::Secondary, 10),
+            cache.get(ArchiveStream::Auxiliary, 10),
             Some(Bytes::from(vec![5, 6, 7]))
         );
     }
@@ -1208,11 +1209,11 @@ mod tests {
         let cache = BlockCache::with_capacity(10);
 
         let data = Bytes::from(vec![0u8; 65536]); // 64 KiB
-        cache.insert(SnapshotStream::Primary, 0, data.clone());
+        cache.insert(ArchiveStream::Main, 0, data.clone());
 
         // Multiple gets should all return the same data
-        let get1 = cache.get(SnapshotStream::Primary, 0).unwrap();
-        let get2 = cache.get(SnapshotStream::Primary, 0).unwrap();
+        let get1 = cache.get(ArchiveStream::Main, 0).unwrap();
+        let get2 = cache.get(ArchiveStream::Main, 0).unwrap();
 
         // Bytes uses ref-counting, so these should point to same data
         assert_eq!(get1.len(), 65536);
@@ -1224,9 +1225,9 @@ mod tests {
         let cache = BlockCache::with_capacity(10);
 
         let empty = Bytes::new();
-        cache.insert(SnapshotStream::Primary, 0, empty.clone());
+        cache.insert(ArchiveStream::Main, 0, empty.clone());
 
-        assert_eq!(cache.get(SnapshotStream::Primary, 0), Some(empty));
+        assert_eq!(cache.get(ArchiveStream::Main, 0), Some(empty));
     }
 
     #[test]
@@ -1236,8 +1237,8 @@ mod tests {
         let max_block = u64::MAX;
         let data = Bytes::from(vec![1, 2, 3]);
 
-        cache.insert(SnapshotStream::Secondary, max_block, data.clone());
-        assert_eq!(cache.get(SnapshotStream::Secondary, max_block), Some(data));
+        cache.insert(ArchiveStream::Auxiliary, max_block, data.clone());
+        assert_eq!(cache.get(ArchiveStream::Auxiliary, max_block), Some(data));
     }
 
     #[test]
@@ -1256,9 +1257,9 @@ mod tests {
                     let block_idx = thread_id * 25 + i;
                     let data = Bytes::from(vec![thread_id as u8; 64]);
 
-                    cache_clone.insert(SnapshotStream::Primary, block_idx, data.clone());
+                    cache_clone.insert(ArchiveStream::Main, block_idx, data.clone());
 
-                    let retrieved = cache_clone.get(SnapshotStream::Primary, block_idx);
+                    let retrieved = cache_clone.get(ArchiveStream::Main, block_idx);
                     assert_eq!(retrieved, Some(data));
                 }
             });
@@ -1274,7 +1275,7 @@ mod tests {
         for thread_id in 0..4 {
             for i in 0..25 {
                 let block_idx = thread_id * 25 + i;
-                let retrieved = cache.get(SnapshotStream::Primary, block_idx);
+                let retrieved = cache.get(ArchiveStream::Main, block_idx);
                 assert!(retrieved.is_some());
             }
         }
@@ -1285,8 +1286,8 @@ mod tests {
         // Exactly at threshold - should use single shard
         let cache = BlockCache::with_capacity(256);
 
-        cache.insert(SnapshotStream::Primary, 0, Bytes::from(vec![1]));
-        assert!(cache.get(SnapshotStream::Primary, 0).is_some());
+        cache.insert(ArchiveStream::Main, 0, Bytes::from(vec![1]));
+        assert!(cache.get(ArchiveStream::Main, 0).is_some());
     }
 
     #[test]
@@ -1294,20 +1295,20 @@ mod tests {
         // Just above threshold - should use multiple shards
         let cache = BlockCache::with_capacity(257);
 
-        cache.insert(SnapshotStream::Primary, 0, Bytes::from(vec![1]));
-        assert!(cache.get(SnapshotStream::Primary, 0).is_some());
+        cache.insert(ArchiveStream::Main, 0, Bytes::from(vec![1]));
+        assert!(cache.get(ArchiveStream::Main, 0).is_some());
     }
 
     #[test]
     fn test_very_small_capacity() {
         let cache = BlockCache::with_capacity(1);
 
-        cache.insert(SnapshotStream::Primary, 0, Bytes::from(vec![1]));
-        cache.insert(SnapshotStream::Primary, 1, Bytes::from(vec![2]));
+        cache.insert(ArchiveStream::Main, 0, Bytes::from(vec![1]));
+        cache.insert(ArchiveStream::Main, 1, Bytes::from(vec![2]));
 
         // Should have evicted block 0
-        assert_eq!(cache.get(SnapshotStream::Primary, 0), None);
-        assert!(cache.get(SnapshotStream::Primary, 1).is_some());
+        assert_eq!(cache.get(ArchiveStream::Main, 0), None);
+        assert!(cache.get(ArchiveStream::Main, 1).is_some());
     }
 
     #[test]
@@ -1315,13 +1316,13 @@ mod tests {
         let cache = BlockCache::with_capacity(10);
 
         // Insert blocks of different sizes
-        cache.insert(SnapshotStream::Primary, 0, Bytes::from(vec![1]));
-        cache.insert(SnapshotStream::Primary, 1, Bytes::from(vec![2; 1024]));
-        cache.insert(SnapshotStream::Primary, 2, Bytes::from(vec![3; 65536]));
+        cache.insert(ArchiveStream::Main, 0, Bytes::from(vec![1]));
+        cache.insert(ArchiveStream::Main, 1, Bytes::from(vec![2; 1024]));
+        cache.insert(ArchiveStream::Main, 2, Bytes::from(vec![3; 65536]));
 
-        assert_eq!(cache.get(SnapshotStream::Primary, 0).unwrap().len(), 1);
-        assert_eq!(cache.get(SnapshotStream::Primary, 1).unwrap().len(), 1024);
-        assert_eq!(cache.get(SnapshotStream::Primary, 2).unwrap().len(), 65536);
+        assert_eq!(cache.get(ArchiveStream::Main, 0).unwrap().len(), 1);
+        assert_eq!(cache.get(ArchiveStream::Main, 1).unwrap().len(), 1024);
+        assert_eq!(cache.get(ArchiveStream::Main, 2).unwrap().len(), 65536);
     }
 
     #[test]

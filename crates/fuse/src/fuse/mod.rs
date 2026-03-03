@@ -1,251 +1,533 @@
-//! FUSE filesystem implementation for Hexz snapshots.
-//!
-//! This module implements the [`fuser::Filesystem`] trait, translating POSIX
-//! filesystem operations into reads/writes on Hexz snapshots and overlays.
-//!
-//! # Architecture
-//!
-//! The FUSE layer consists of three handler modules:
-//!
-//! - [`lookup`]: Inode lookup, directory listing, attribute queries
-//! - [`read`]: Read operations on disk/memory files
-//! - [`write`]: Write operations (redirected to overlay)
-//!
-//! # Inode Structure
-//!
-//! The filesystem uses a fixed inode layout:
-//!
-//! | Inode | Type      | Name     | Description                |
-//! |-------|-----------|----------|----------------------------|
-//! | 1     | Directory | `.`      | Root directory             |
-//! | 2     | File      | `disk`   | Primary stream (main data)    |
-//! | 3     | File      | `memory` | Secondary stream (if present) |
-//!
-//! # Operation Routing
-//!
-//! ```text
-//! User Operation (read /mnt/snapshot/disk)
-//!         │
-//!         ↓
-//! Kernel FUSE Driver
-//!         │
-//!         ↓
-//! fuser::Filesystem::read()
-//!         │
-//!         ↓
-//! read::handle_read()
-//!         │
-//!    ┌────┴────┐
-//!    ↓         ↓
-//! Overlay  File
-//! (if set) (base snapshot)
-//! ```
-//!
-//! # Thread Safety
-//!
-//! The [`Hexz`] filesystem struct is `!Send` due to FUSE constraints but
-//! uses `Arc<File>` internally, allowing the snapshot to be shared
-//! across threads outside the FUSE context.
+//! FUSE filesystem implementation for Hexz archives.
 
-mod lookup;
 mod read;
-mod write;
 
-use crate::vfs::{InodeMap, InodeType, Overlay};
-use fuser::{FileAttr, Filesystem};
-use hexz_core::File;
-use std::path::Path;
+use crate::vfs::InodeMap;
+use fuser::Filesystem;
+use hexz_core::Archive;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Attribute and entry cache TTL reported to the FUSE kernel module (1 second).
-///
-/// **Architectural intent:** Short TTL allows the kernel to revalidate
-/// attributes and directory entries after overlay or snapshot changes without
-/// requiring manual cache invalidation.
-const TTL: Duration = Duration::from_secs(1);
+pub(crate) const TTL: Duration = Duration::from_secs(1);
 
-use crate::vfs::attr::FUSE_BLOCK_SIZE;
-
-/// FUSE filesystem adapter for Hexz snapshots.
-///
-/// **Architectural intent:** Combines a `File`, inode layout, and overlay
-/// state into a single object that satisfies the `Filesystem` trait.
-///
-/// **Constraints:** The overlay path, if present, is stored for the lifetime
-/// of the mount to allow metadata persistence on drop.
 pub struct Hexz {
-    pub(crate) snap: Arc<File>,
+    pub(crate) snap: Arc<Archive>,
     pub(crate) inodes: InodeMap,
-    pub(crate) overlay: Option<Overlay>,
-    pub(crate) overlay_path: Option<std::path::PathBuf>,
+    pub(crate) write_layer: Option<PathBuf>,
+    pub(crate) metadata_dir: Option<PathBuf>,
 }
 
 impl Hexz {
-    /// Constructs a FUSE filesystem from a `File` and optional overlay.
-    ///
-    /// **Architectural intent:** Encapsulates the logic for opening the
-    /// overlay file and building the inode map so that `mount_fs` remains a
-    /// thin wrapper.
-    ///
-    /// **Constraints:** When an `overlay_path` is supplied it must be
-    /// creatable and writable by the process; failures propagate as
-    /// `anyhow::Error`.
-    ///
-    /// **Side effects:** Opens the overlay file on disk (if configured) and
-    /// clones the snapshot handle, incrementing its reference count.
     pub fn new(
-        snap: Arc<File>,
-        overlay_path: Option<&Path>,
+        snap: Arc<Archive>,
         uid: u32,
         gid: u32,
+        write_layer: Option<PathBuf>,
+        metadata_dir: Option<PathBuf>,
     ) -> anyhow::Result<Self> {
-        let overlay = if let Some(p) = overlay_path {
-            Some(Overlay::new(p)?)
-        } else {
-            None
-        };
+        let mut inodes = InodeMap::new(&snap, uid, gid);
+        if let Some(ref base) = write_layer {
+            inodes.populate_from_overlay(base);
+        }
+        if let Some(ref m_dir) = metadata_dir {
+            inodes.populate_from_metadata_dir(m_dir);
+        }
 
         Ok(Self {
             snap: snap.clone(),
-            inodes: InodeMap::new(&snap, uid, gid),
-            overlay,
-            overlay_path: overlay_path.map(|p| p.to_path_buf()),
+            inodes,
+            write_layer,
+            metadata_dir,
         })
     }
+    fn overlay_path(&self, ino: u64) -> Option<PathBuf> {
+        let base = self.write_layer.as_ref()?;
+        let rel = self.inodes.get_path(ino)?;
+        Some(base.join(rel))
+    }
 
-    /// Returns inode attributes after reconciling base snapshot and overlay.
-    ///
-    /// **Architectural intent:** Ensures that the exported disk file reports a
-    /// size and block count that reflect any appended data stored in the
-    /// overlay rather than the immutable base snapshot.
-    ///
-    /// **Constraints:** Only inode `2` is merged with overlay information; all
-    /// other inodes use attributes derived solely from the snapshot.
-    ///
-    /// **Side effects:** May query overlay file metadata, which incurs a
-    /// filesystem stat operation per call.
-    pub(crate) fn get_merged_attr(&self, ino: u64) -> FileAttr {
-        let mut attr = self.inodes.getattr(ino);
-        if ino == InodeType::Disk as u64 {
-            if let Some(ov) = &self.overlay {
-                let ov_len = ov.len();
-                if ov_len > attr.size {
-                    attr.size = ov_len;
-                    attr.blocks = attr.size.div_ceil(FUSE_BLOCK_SIZE);
-                }
+    fn ensure_cow(&self, ino: u64) -> std::io::Result<()> {
+        let overlay = match self.overlay_path(ino) {
+            Some(p) => p,
+            None => return Ok(()),
+        };
+
+        if overlay.exists() {
+            return Ok(());
+        }
+
+        // Copy from archive
+        if let Some((stream, offset, size)) = self.inodes.file_info(ino) {
+            if let Some(parent) = overlay.parent() {
+                let _ = std::fs::create_dir_all(parent);
             }
+            let data = self
+                .snap
+                .read_at(stream, offset, size as usize)
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
+            std::fs::write(&overlay, data)?;
+        }
+        Ok(())
+    }
+
+    /// Internal getattr that doesn't send a FUSE reply, for internal lookups.
+    fn getattr_internal(&self, ino: u64) -> fuser::FileAttr {
+        // Check if file exists in passthrough paths
+        if let Some(host_path) = self.inodes.passthrough_paths.get(&ino) {
+            if let Ok(meta) = std::fs::metadata(host_path) {
+                use std::os::unix::fs::MetadataExt;
+                let mut attr = fuser::FileAttr {
+                    ino,
+                    size: meta.len(),
+                    blocks: meta.blocks(),
+                    atime: std::time::UNIX_EPOCH + Duration::from_secs(meta.atime() as u64),
+                    mtime: std::time::UNIX_EPOCH + Duration::from_secs(meta.mtime() as u64),
+                    ctime: std::time::SystemTime::UNIX_EPOCH
+                        + Duration::from_secs(meta.ctime() as u64),
+                    crtime: std::time::UNIX_EPOCH,
+                    kind: if meta.is_dir() {
+                        fuser::FileType::Directory
+                    } else {
+                        fuser::FileType::RegularFile
+                    },
+                    perm: (meta.mode() as u16) & 0o777,
+                    nlink: meta.nlink() as u32,
+                    uid: self.inodes.uid(), // Use mount UID
+                    gid: self.inodes.gid(), // Use mount GID
+                    rdev: meta.rdev() as u32,
+                    blksize: meta.blksize() as u32,
+                    flags: 0,
+                };
+                if self.write_layer.is_some() {
+                    attr.perm |= 0o222;
+                }
+                return attr;
+            }
+        }
+
+        // Check if file exists in overlay
+        if let (Some(base), Some(rel_path)) = (&self.write_layer, self.inodes.get_path(ino)) {
+            let full_path = base.join(rel_path);
+            if let Ok(meta) = std::fs::metadata(&full_path) {
+                use std::os::unix::fs::MetadataExt;
+                let mut attr = fuser::FileAttr {
+                    ino,
+                    size: meta.len(),
+                    blocks: meta.blocks(),
+                    atime: std::time::UNIX_EPOCH + Duration::from_secs(meta.atime() as u64),
+                    mtime: std::time::UNIX_EPOCH + Duration::from_secs(meta.mtime() as u64),
+                    ctime: std::time::SystemTime::UNIX_EPOCH
+                        + Duration::from_secs(meta.ctime() as u64),
+                    crtime: std::time::UNIX_EPOCH,
+                    kind: if meta.is_dir() {
+                        fuser::FileType::Directory
+                    } else {
+                        fuser::FileType::RegularFile
+                    },
+                    perm: (meta.mode() as u16) & 0o777,
+                    nlink: meta.nlink() as u32,
+                    uid: self.inodes.uid(), // Use mount UID
+                    gid: self.inodes.gid(), // Use mount GID
+                    rdev: meta.rdev() as u32,
+                    blksize: meta.blksize() as u32,
+                    flags: 0,
+                };
+                if self.write_layer.is_some() {
+                    attr.perm |= 0o222;
+                }
+                return attr;
+            }
+        }
+
+        let mut attr = self.inodes.getattr(ino);
+        if self.write_layer.is_some() {
+            attr.perm |= 0o222; // Add write bit
         }
         attr
     }
 }
 
-impl Drop for Hexz {
-    /// Persists overlay metadata when the filesystem is dropped.
-    ///
-    /// **Architectural intent:** Ensures that the set of modified blocks is
-    /// flushed to disk so that subsequent mounts can reconstruct the same
-    /// overlay view.
-    ///
-    /// **Constraints:** Best-effort only; failures are ignored and reported
-    /// via logs at most, since drop cannot reliably propagate errors.
-    ///
-    /// **Side effects:** May perform synchronous writes to the overlay metadata
-    /// file during drop.
-    fn drop(&mut self) {
-        if let (Some(ov), Some(path)) = (&self.overlay, &self.overlay_path) {
-            let _ = ov.save_metadata(path);
-        }
-    }
-}
-
 impl Filesystem for Hexz {
+    fn access(&mut self, _req: &fuser::Request, _ino: u64, _mask: i32, reply: fuser::ReplyEmpty) {
+        reply.ok();
+    }
+
     fn lookup(
         &mut self,
-        req: &fuser::Request,
+        _req: &fuser::Request,
         parent: u64,
         name: &std::ffi::OsStr,
         reply: fuser::ReplyEntry,
     ) {
-        lookup::handle_lookup(self, req, parent, name, reply);
+        if let Some(parent_path) = self.inodes.get_path(parent) {
+            let rel_path = parent_path.join(name);
+            if let Some(inode) = self.inodes.get_inode(&rel_path) {
+                let attr = self.getattr_internal(inode);
+                reply.entry(&TTL, &attr, 0);
+                return;
+            }
+        }
+
+        reply.error(libc::ENOENT);
     }
 
-    fn getattr(&mut self, req: &fuser::Request, ino: u64, reply: fuser::ReplyAttr) {
-        lookup::handle_getattr(self, req, ino, reply);
+    fn open(&mut self, _req: &fuser::Request, _ino: u64, _flags: i32, reply: fuser::ReplyOpen) {
+        reply.opened(1, 0);
     }
 
-    fn setattr(
+    fn opendir(&mut self, _req: &fuser::Request, _ino: u64, _flags: i32, reply: fuser::ReplyOpen) {
+        reply.opened(1, 0);
+    }
+
+    fn create(
         &mut self,
-        req: &fuser::Request,
-        ino: u64,
-        mode: Option<u32>,
-        uid: Option<u32>,
-        gid: Option<u32>,
-        size: Option<u64>,
-        atime: Option<fuser::TimeOrNow>,
-        mtime: Option<fuser::TimeOrNow>,
-        ctime: Option<std::time::SystemTime>,
-        fh: Option<u64>,
-        crtime: Option<std::time::SystemTime>,
-        chgtime: Option<std::time::SystemTime>,
-        bkuptime: Option<std::time::SystemTime>,
-        flags: Option<u32>,
-        reply: fuser::ReplyAttr,
+        _req: &fuser::Request,
+        parent: u64,
+        name: &std::ffi::OsStr,
+        _mode: u32,
+        _umask: u32,
+        _flags: i32,
+        reply: fuser::ReplyCreate,
     ) {
-        lookup::handle_setattr(
-            self, req, ino, mode, uid, gid, size, atime, mtime, ctime, fh, crtime, chgtime,
-            bkuptime, flags, reply,
-        );
+        if let Some(base) = &self.write_layer {
+            if let Some(parent_path) = self.inodes.get_path(parent) {
+                let rel_path = parent_path.join(name);
+                let full_path = base.join(&rel_path);
+                if let Some(p) = full_path.parent() {
+                    let _ = std::fs::create_dir_all(p);
+                }
+
+                match std::fs::File::create(&full_path) {
+                    Ok(_) => {
+                        let ino = self.inodes.add_file_at_path(&rel_path, false);
+                        let attr = self.getattr_internal(ino);
+                        reply.created(&TTL, &attr, 0, 1, 0);
+                        return;
+                    }
+                    Err(e) => {
+                        reply.error(e.raw_os_error().unwrap_or(libc::EIO));
+                        return;
+                    }
+                }
+            }
+        }
+        reply.error(libc::EROFS);
+    }
+
+    fn mknod(
+        &mut self,
+        _req: &fuser::Request,
+        parent: u64,
+        name: &std::ffi::OsStr,
+        _mode: u32,
+        _umask: u32,
+        _rdev: u32,
+        reply: fuser::ReplyEntry,
+    ) {
+        if let Some(base) = &self.write_layer {
+            if let Some(parent_path) = self.inodes.get_path(parent) {
+                let rel_path = parent_path.join(name);
+                let full_path = base.join(&rel_path);
+                if let Some(p) = full_path.parent() {
+                    let _ = std::fs::create_dir_all(p);
+                }
+
+                match std::fs::File::create(&full_path) {
+                    Ok(_) => {
+                        let ino = self.inodes.add_file_at_path(&rel_path, false);
+                        let attr = self.getattr_internal(ino);
+                        reply.entry(&TTL, &attr, 0);
+                        return;
+                    }
+                    Err(e) => {
+                        reply.error(e.raw_os_error().unwrap_or(libc::EIO));
+                        return;
+                    }
+                }
+            }
+        }
+        reply.error(libc::EROFS);
+    }
+
+    fn mkdir(
+        &mut self,
+        _req: &fuser::Request,
+        parent: u64,
+        name: &std::ffi::OsStr,
+        _mode: u32,
+        _umask: u32,
+        reply: fuser::ReplyEntry,
+    ) {
+        if let Some(base) = &self.write_layer {
+            if let Some(parent_path) = self.inodes.get_path(parent) {
+                let rel_path = parent_path.join(name);
+                let full_path = base.join(&rel_path);
+                match std::fs::create_dir_all(&full_path) {
+                    Ok(_) => {
+                        let ino = self.inodes.add_file_at_path(&rel_path, true);
+                        let attr = self.inodes.getattr(ino);
+                        reply.entry(&TTL, &attr, 0);
+                        return;
+                    }
+                    Err(e) => {
+                        reply.error(e.raw_os_error().unwrap_or(libc::EIO));
+                        return;
+                    }
+                }
+            }
+        }
+        reply.error(libc::EROFS);
+    }
+
+    fn getattr(&mut self, _req: &fuser::Request, ino: u64, reply: fuser::ReplyAttr) {
+        if !self.inodes.is_valid_inode(ino) {
+            reply.error(libc::ENOENT);
+            return;
+        }
+        let attr = self.getattr_internal(ino);
+        reply.attr(&TTL, &attr);
+    }
+
+    fn statfs(&mut self, _req: &fuser::Request, _ino: u64, reply: fuser::ReplyStatfs) {
+        if let Some(ref base) = self.write_layer {
+            use std::ffi::CString;
+            use std::os::unix::ffi::OsStrExt;
+
+            let path = CString::new(base.as_os_str().as_bytes()).unwrap();
+            unsafe {
+                let mut stats = std::mem::zeroed();
+                if libc::statvfs(path.as_ptr(), &mut stats) == 0 {
+                    reply.statfs(
+                        stats.f_blocks as u64,
+                        stats.f_bfree as u64,
+                        stats.f_bavail as u64,
+                        stats.f_files as u64,
+                        stats.f_ffree as u64,
+                        stats.f_bsize as u32,
+                        stats.f_namemax as u32,
+                        stats.f_frsize as u32,
+                    );
+                    return;
+                }
+            }
+        }
+        reply.statfs(1, 0, 0, 1, 0, 4096, 255, 4096);
     }
 
     fn readdir(
         &mut self,
-        req: &fuser::Request,
+        _req: &fuser::Request,
         ino: u64,
-        fh: u64,
+        _fh: u64,
         offset: i64,
-        reply: fuser::ReplyDirectory,
+        mut reply: fuser::ReplyDirectory,
     ) {
-        lookup::handle_readdir(self, req, ino, fh, offset, reply);
+        if !self.inodes.is_valid_inode(ino) {
+            reply.error(libc::ENOENT);
+            return;
+        }
+
+        let entries = self.inodes.readdir(ino);
+        let skip = if offset < 0 { 0usize } else { offset as usize };
+        for (i, entry) in entries.iter().enumerate().skip(skip) {
+            if reply.add(entry.inode, (i + 1) as i64, entry.kind, &entry.name) {
+                break;
+            }
+        }
+        reply.ok();
     }
 
     fn read(
         &mut self,
-        req: &fuser::Request,
+        _req: &fuser::Request,
         ino: u64,
-        fh: u64,
+        _fh: u64,
         offset: i64,
         size: u32,
-        flags: i32,
-        lock: Option<u64>,
+        _flags: i32,
+        _lock: Option<u64>,
         reply: fuser::ReplyData,
     ) {
-        read::handle_read(self, req, ino, fh, offset, size, flags, lock, reply);
+        if let Some(host_path) = self.inodes.passthrough_paths.get(&ino) {
+            use std::io::{Read, Seek};
+            let mut f = match std::fs::File::open(host_path) {
+                Ok(f) => f,
+                Err(_) => {
+                    reply.error(libc::EIO);
+                    return;
+                }
+            };
+            if f.seek(std::io::SeekFrom::Start(offset as u64)).is_err() {
+                reply.error(libc::EIO);
+                return;
+            }
+            let mut buf = vec![0u8; size as usize];
+            let n = match f.read(&mut buf) {
+                Ok(n) => n,
+                Err(_) => {
+                    reply.error(libc::EIO);
+                    return;
+                }
+            };
+            reply.data(&buf[..n]);
+            return;
+        }
+
+        if let (Some(base), Some(rel_path)) = (&self.write_layer, self.inodes.get_path(ino)) {
+            let full_path = base.join(rel_path);
+            if full_path.exists() && !full_path.is_dir() {
+                use std::io::{Read, Seek};
+                let mut f = match std::fs::File::open(full_path) {
+                    Ok(f) => f,
+                    Err(_) => {
+                        reply.error(libc::EIO);
+                        return;
+                    }
+                };
+                if f.seek(std::io::SeekFrom::Start(offset as u64)).is_err() {
+                    reply.error(libc::EIO);
+                    return;
+                }
+                let mut buf = vec![0u8; size as usize];
+                let n = match f.read(&mut buf) {
+                    Ok(n) => n,
+                    Err(_) => {
+                        reply.error(libc::EIO);
+                        return;
+                    }
+                };
+                reply.data(&buf[..n]);
+                return;
+            }
+        }
+        read::handle_read(self, ino, offset, size, reply);
+    }
+
+    fn setattr(
+        &mut self,
+        _req: &fuser::Request,
+        ino: u64,
+        mode: Option<u32>,
+        _uid: Option<u32>,
+        _gid: Option<u32>,
+        size: Option<u64>,
+        _atime: Option<fuser::TimeOrNow>,
+        _mtime: Option<fuser::TimeOrNow>,
+        _ctime: Option<std::time::SystemTime>,
+        _fh: Option<u64>,
+        _crtime: Option<std::time::SystemTime>,
+        _chgtime: Option<std::time::SystemTime>,
+        _bkuptime: Option<std::time::SystemTime>,
+        _flags: Option<u32>,
+        reply: fuser::ReplyAttr,
+    ) {
+        if self.write_layer.is_none() {
+            reply.error(libc::EROFS);
+            return;
+        }
+
+        if let Err(e) = self.ensure_cow(ino) {
+            reply.error(e.raw_os_error().unwrap_or(libc::EIO));
+            return;
+        }
+
+        if let (Some(base), Some(rel_path)) = (&self.write_layer, self.inodes.get_path(ino)) {
+            let full_path = base.join(rel_path);
+            if let Some(s) = size {
+                let _ = std::fs::File::options()
+                    .write(true)
+                    .open(&full_path)
+                    .and_then(|f| f.set_len(s));
+            }
+            if let Some(m) = mode {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&full_path, std::fs::Permissions::from_mode(m));
+            }
+        }
+
+        self.getattr(_req, ino, reply);
     }
 
     fn write(
         &mut self,
-        req: &fuser::Request,
+        _req: &fuser::Request,
         ino: u64,
-        fh: u64,
+        _fh: u64,
         offset: i64,
         data: &[u8],
-        write_flags: u32,
-        flags: i32,
-        lock: Option<u64>,
+        _write_flags: u32,
+        _flags: i32,
+        _lock: Option<u64>,
         reply: fuser::ReplyWrite,
     ) {
-        write::handle_write(
-            self,
-            req,
-            ino,
-            fh,
-            offset,
-            data,
-            write_flags,
-            flags,
-            lock,
-            reply,
-        );
+        if self.write_layer.is_none() {
+            reply.error(libc::EROFS);
+            return;
+        }
+
+        if let Err(e) = self.ensure_cow(ino) {
+            reply.error(e.raw_os_error().unwrap_or(libc::EIO));
+            return;
+        }
+
+        if let (Some(base), Some(rel_path)) = (&self.write_layer, self.inodes.get_path(ino)) {
+            use std::io::{Seek, Write};
+            let full_path = base.join(rel_path);
+            let res: std::io::Result<usize> = (|| {
+                let mut f = std::fs::File::options().write(true).open(full_path)?;
+                f.seek(std::io::SeekFrom::Start(offset as u64))?;
+                f.write(data)
+            })();
+
+            match res {
+                Ok(n) => reply.written(n as u32),
+                Err(e) => reply.error(e.raw_os_error().unwrap_or(libc::EIO)),
+            }
+        } else {
+            reply.error(libc::ENOENT);
+        }
+    }
+
+    fn unlink(
+        &mut self,
+        _req: &fuser::Request,
+        parent: u64,
+        name: &std::ffi::OsStr,
+        reply: fuser::ReplyEmpty,
+    ) {
+        if let Some(base) = &self.write_layer {
+            if let Some(parent_path) = self.inodes.get_path(parent) {
+                let rel_path = parent_path.join(name);
+                let full_path = base.join(&rel_path);
+                if full_path.exists() {
+                    let _ = std::fs::remove_file(full_path);
+                    reply.ok();
+                    return;
+                }
+            }
+        }
+        reply.error(libc::EROFS);
+    }
+
+    fn rmdir(
+        &mut self,
+        _req: &fuser::Request,
+        parent: u64,
+        name: &std::ffi::OsStr,
+        reply: fuser::ReplyEmpty,
+    ) {
+        if let Some(base) = &self.write_layer {
+            if let Some(parent_path) = self.inodes.get_path(parent) {
+                let rel_path = parent_path.join(name);
+                let full_path = base.join(&rel_path);
+                if full_path.exists() {
+                    let _ = std::fs::remove_dir_all(full_path);
+                    reply.ok();
+                    return;
+                }
+            }
+        }
+        reply.error(libc::EROFS);
     }
 }

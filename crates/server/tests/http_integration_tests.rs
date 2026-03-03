@@ -10,8 +10,8 @@
 //! - Concurrent client access
 //! - Data integrity across block boundaries
 
-use hexz_core::File;
-use hexz_ops::pack::{PackConfig, pack_snapshot};
+use hexz_core::Archive;
+use hexz_ops::pack::{PackConfig, pack_archive};
 use hexz_store::local::FileBackend;
 use std::fs;
 use std::sync::Arc;
@@ -21,11 +21,11 @@ use tokio::net::TcpListener;
 /// Maximum chunk size the server will return per request (32 MiB).
 const MAX_CHUNK_SIZE: u64 = 32 * 1024 * 1024;
 
-/// Test fixture that creates a snapshot with disk data only.
+/// Test fixture that creates a archive with disk data only.
 struct DiskOnlyFixture {
     _temp_dir: TempDir,
     disk_data: Vec<u8>,
-    snap: Arc<File>,
+    snap: Arc<Archive>,
 }
 
 impl DiskOnlyFixture {
@@ -35,10 +35,9 @@ impl DiskOnlyFixture {
         let disk_path = temp_dir.path().join("disk.img");
         fs::write(&disk_path, &disk_data).unwrap();
 
-        let snap_path = temp_dir.path().join("snapshot.hxz");
+        let snap_path = temp_dir.path().join("archive.hxz");
         let config = PackConfig {
-            disk: Some(disk_path),
-            memory: None,
+            input: disk_path,
             output: snap_path.clone(),
             compression: "lz4".to_string(),
             encrypt: false,
@@ -50,10 +49,10 @@ impl DiskOnlyFixture {
             max_chunk: Some(131072),
             ..Default::default()
         };
-        pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
+        pack_archive(config, None::<fn(u64, u64)>).unwrap();
 
         let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
-        let snap = File::open(backend, None).unwrap();
+        let snap = Archive::open(backend, None).unwrap();
 
         Self {
             _temp_dir: temp_dir,
@@ -63,29 +62,31 @@ impl DiskOnlyFixture {
     }
 }
 
-/// Test fixture that creates a snapshot with both disk and memory data.
+/// Test fixture that creates a archive with both disk and memory data.
 struct DualStreamFixture {
     _temp_dir: TempDir,
     disk_data: Vec<u8>,
     mem_data: Vec<u8>,
-    snap: Arc<File>,
+    snap: Arc<Archive>,
 }
 
 impl DualStreamFixture {
-    fn new(primary_size: usize, mem_size: usize) -> Self {
+    fn new(main_size: usize, mem_size: usize) -> Self {
         let temp_dir = TempDir::new().unwrap();
-        let disk_data: Vec<u8> = (0..primary_size).map(|i| (i % 256) as u8).collect();
+        let input_dir = temp_dir.path().join("input");
+        fs::create_dir(&input_dir).unwrap();
+
+        let disk_data: Vec<u8> = (0..main_size).map(|i| (i % 256) as u8).collect();
         let mem_data: Vec<u8> = vec![0xBB; mem_size];
 
-        let disk_path = temp_dir.path().join("disk.img");
-        let mem_path = temp_dir.path().join("mem.img");
+        let disk_path = input_dir.join("disk");
+        let mem_path = input_dir.join("memory");
         fs::write(&disk_path, &disk_data).unwrap();
         fs::write(&mem_path, &mem_data).unwrap();
 
-        let snap_path = temp_dir.path().join("snapshot.hxz");
+        let snap_path = temp_dir.path().join("archive.hxz");
         let config = PackConfig {
-            disk: Some(disk_path),
-            memory: Some(mem_path),
+            input: input_dir,
             output: snap_path.clone(),
             compression: "lz4".to_string(),
             encrypt: false,
@@ -97,10 +98,10 @@ impl DualStreamFixture {
             max_chunk: Some(131072),
             ..Default::default()
         };
-        pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
+        pack_archive(config, None::<fn(u64, u64)>).unwrap();
 
         let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
-        let snap = File::open(backend, None).unwrap();
+        let snap = Archive::open(backend, None).unwrap();
 
         Self {
             _temp_dir: temp_dir,
@@ -116,7 +117,7 @@ impl DualStreamFixture {
 /// Binds to port 0 (OS-assigned) and passes the listener directly to
 /// `serve_http_with_listener`, avoiding the TOCTOU race of discovering a
 /// free port and re-binding by number. Returns the assigned port.
-async fn start_server(snap: Arc<File>) -> u16 {
+async fn start_server(snap: Arc<Archive>) -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
 
@@ -501,7 +502,7 @@ async fn test_start_beyond_eof() {
 
 #[tokio::test]
 async fn test_large_range_is_clamped_to_max_chunk_size() {
-    // Create a snapshot larger than MAX_CHUNK_SIZE (32 MiB)
+    // Create a archive larger than MAX_CHUNK_SIZE (32 MiB)
     let size = 48 * 1024 * 1024; // 48 MiB
     let fixture = DiskOnlyFixture::new(size, |i| (i % 256) as u8);
     let port = start_server(fixture.snap.clone()).await;
@@ -1089,8 +1090,8 @@ async fn test_block_aligned_start() {
 }
 
 #[tokio::test]
-async fn test_small_snapshot() {
-    // Snapshot smaller than one block
+async fn test_small_archive() {
+    // Archive smaller than one block
     let size = 1024usize;
     let fixture = DiskOnlyFixture::new(size, |i| (i % 256) as u8);
     let port = start_server(fixture.snap.clone()).await;

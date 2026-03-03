@@ -1,4 +1,4 @@
-//! Encryption primitives for snapshot blocks.
+//! Encryption primitives for archive blocks.
 //!
 //! Provides the `Encryptor` trait and concrete implementations (AES-256-GCM).
 
@@ -17,10 +17,10 @@ pub trait Encryptor: Send + Sync + Debug {
     /// Encrypts and authenticates a logical block.
     ///
     /// **Architectural intent:** Produces a ciphertext that can be stored in
-    /// the snapshot data region and later verified during reads.
+    /// the archive data region and later verified during reads.
     ///
     /// **Constraints:** `block_idx` must uniquely identify the block within
-    /// the snapshot under a given key; reusing indices can break security.
+    /// the archive under a given key; reusing indices can break security.
     fn encrypt(&self, data: &[u8], block_idx: u64) -> Result<Vec<u8>>;
 
     /// Decrypts and verifies a logical block.

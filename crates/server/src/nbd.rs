@@ -1,7 +1,7 @@
 //! Network Block Device (NBD) protocol server implementation.
 //!
 //! This module implements the NBD protocol (version 3.0+, fixed newstyle negotiation)
-//! to expose Hexz snapshots as block devices over TCP. Clients can mount the snapshot
+//! to expose Hexz archives as block devices over TCP. Clients can mount the archive
 //! using standard NBD client tools like `nbd-client` (Linux) or connect directly via
 //! the NBD protocol.
 //!
@@ -23,7 +23,7 @@
 //!
 //! # Security Considerations
 //!
-//! - **Read-only mode**: This implementation always exports snapshots as read-only
+//! - **Read-only mode**: This implementation always exports archives as read-only
 //!   to prevent accidental modification
 //! - **No encryption**: The NBD protocol does not include built-in encryption.
 //!   For secure access over untrusted networks, use an SSH tunnel or VPN.
@@ -32,7 +32,7 @@
 //!
 //! # Performance Characteristics
 //!
-//! - **Throughput**: Typically limited by snapshot decompression (~500-2000 MB/s)
+//! - **Throughput**: Typically limited by archive decompression (~500-2000 MB/s)
 //!   rather than network bandwidth for local connections
 //! - **Latency**: Read latency includes network RTT + decompression time (~1-5 ms total)
 //! - **Concurrency**: Each client connection is handled by a separate Tokio task
@@ -41,15 +41,15 @@
 //!
 //! ```no_run
 //! # use std::sync::Arc;
-//! # use hexz_core::File;
+//! # use hexz_core::Archive;
 //! # use hexz_server::nbd::handle_client;
 //! # use tokio::net::TcpListener;
 //! # #[tokio::main]
 //! # async fn main() -> anyhow::Result<()> {
 //! // Server-side (in hexz-server)
 //! let listener = TcpListener::bind("127.0.0.1:10809").await?;
-//! // ... load snapshot into Arc<File> ...
-//! # let snap: Arc<File> = Arc::new(todo!());
+//! // ... load archive into Arc<Archive> ...
+//! # let snap: Arc<Archive> = Arc::new(todo!());
 //!
 //! loop {
 //!     let (socket, _) = listener.accept().await?;
@@ -71,14 +71,14 @@
 //! sudo nbd-client localhost 10809 /dev/nbd0
 //!
 //! # Mount the block device
-//! sudo mount -o ro /dev/nbd0 /mnt/snapshot
+//! sudo mount -o ro /dev/nbd0 /mnt/archive
 //!
 //! # Disconnect when done
 //! sudo nbd-client -d /dev/nbd0
 //! ```
 
 use anyhow::Result;
-use hexz_core::{File, SnapshotStream};
+use hexz_core::{Archive, ArchiveStream};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -123,8 +123,8 @@ const NBD_MAX_BUFFER_SIZE: u32 = 32 * 1024 * 1024;
 /// 2. Enters the transmission phase to serve read requests
 /// 3. Handles disconnect when the client sends NBD_CMD_DISC
 ///
-/// The connection is read-only and blocks are served directly from the snapshot's
-/// primary stream. Write, flush, and trim commands return error responses.
+/// The connection is read-only and blocks are served directly from the archive's
+/// main stream. Write, flush, and trim commands return error responses.
 ///
 /// # Connection Lifecycle
 ///
@@ -137,7 +137,7 @@ const NBD_MAX_BUFFER_SIZE: u32 = 32 * 1024 * 1024;
 /// # Arguments
 ///
 /// - `socket`: TCP connection to the NBD client
-/// - `snap`: Shared reference to the Hexz snapshot file
+/// - `snap`: Shared reference to the Hexz archive file
 ///
 /// # Returns
 ///
@@ -149,8 +149,8 @@ const NBD_MAX_BUFFER_SIZE: u32 = 32 * 1024 * 1024;
 /// This function returns an error if:
 /// - The client sends invalid magic values or malformed requests
 /// - Socket I/O fails (connection reset, timeout, etc.)
-/// - The snapshot cannot be read (decompression errors, backend failures)
-pub async fn handle_client(mut socket: TcpStream, snap: Arc<File>) -> Result<()> {
+/// - The archive cannot be read (decompression errors, backend failures)
+pub async fn handle_client(mut socket: TcpStream, snap: Arc<Archive>) -> Result<()> {
     // --- Handshake (Fixed Newstyle) ---
 
     // 1. Send Init Pass
@@ -187,7 +187,7 @@ pub async fn handle_client(mut socket: TcpStream, snap: Arc<File>) -> Result<()>
             NBD_OPT_ABORT => return Ok(()),
             NBD_OPT_EXPORT_NAME => {
                 // Old-style negotiation finish.
-                let size = snap.size(SnapshotStream::Primary);
+                let size = snap.size(ArchiveStream::Main);
                 let export_flags = NBD_FLAG_HAS_FLAGS | NBD_FLAG_READ_ONLY;
 
                 socket.write_u64(size).await?;
@@ -199,7 +199,7 @@ pub async fn handle_client(mut socket: TcpStream, snap: Arc<File>) -> Result<()>
                 break;
             }
             NBD_OPT_INFO | NBD_OPT_GO => {
-                let size = snap.size(SnapshotStream::Primary);
+                let size = snap.size(ArchiveStream::Main);
                 let export_flags = NBD_FLAG_HAS_FLAGS | NBD_FLAG_READ_ONLY;
 
                 // Reply NBD_INFO_EXPORT
@@ -252,7 +252,7 @@ pub async fn handle_client(mut socket: TcpStream, snap: Arc<File>) -> Result<()>
         match type_ {
             NBD_CMD_READ => {
                 let mut error = 0u32;
-                let data = match snap.read_at(SnapshotStream::Primary, offset, length as usize) {
+                let data = match snap.read_at(ArchiveStream::Main, offset, length as usize) {
                     Ok(d) => d,
                     Err(e) => {
                         tracing::error!("Read error: {}", e);

@@ -1,9 +1,9 @@
-//! HTTP server for exposing Hexz snapshots over network protocols.
+//! HTTP server for exposing Hexz archives over network protocols.
 //!
-//! This command starts a server that exposes Hexz snapshot data over various
+//! This command starts a server that exposes Hexz archive data over various
 //! network protocols (HTTP, NBD, S3), enabling remote access without local
-//! snapshot files. Supports daemon mode for background operation and is designed
-//! for high-performance remote snapshot access.
+//! archive files. Supports daemon mode for background operation and is designed
+//! for high-performance remote archive access.
 //!
 //! # Server Modes
 //!
@@ -14,7 +14,7 @@
 //! **Endpoints:**
 //! - `GET /disk` - Serves disk image stream
 //! - `GET /memory` - Serves memory dump stream (if present)
-//! - `GET /info` - Returns snapshot metadata (JSON)
+//! - `GET /info` - Returns archive metadata (JSON)
 //!
 //! **Range Request Support:**
 //! - Supports `Range: bytes=start-end` header
@@ -22,10 +22,10 @@
 //! - Used by HTTP storage backend for transparent remote mounting
 //!
 //! **Use Cases:**
-//! - Remote snapshot access over networks
+//! - Remote archive access over networks
 //! - HTTP storage backend testing
-//! - Web-based snapshot browsing
-//! - Container registry-like snapshot distribution
+//! - Web-based archive browsing
+//! - Container registry-like archive distribution
 //!
 //! **Performance:**
 //! - Sequential reads: ~100-500 MB/s (network-bound)
@@ -49,7 +49,7 @@
 //! **Client Usage:**
 //! ```bash
 //! # Start NBD server
-//! hexz serve snapshot.hxz --nbd --port 10809
+//! hexz serve archive.hxz --nbd --port 10809
 //!
 //! # Connect from client
 //! sudo nbd-client server-ip 10809 /dev/nbd0
@@ -78,8 +78,8 @@
 //! - Working directory: Current directory (not `/`)
 //! - No PID file created (use systemd or similar for management)
 //!
-//! **Snapshot Loading:**
-//! - Opens snapshot read-only
+//! **Archive Loading:**
+//! - Opens archive read-only
 //! - Loads compression dictionary if present
 //! - Initializes appropriate decompressor (LZ4 or Zstd)
 //! - No caching configured (each request decompresses on-demand)
@@ -114,20 +114,20 @@
 //!
 //! **Network:**
 //! - Performance limited by network bandwidth and latency
-//! - Use 10 GbE or faster for multi-GB snapshots
+//! - Use 10 GbE or faster for multi-GB archives
 //! - Consider proximity to clients (same datacenter/region)
 //!
 //! # Common Usage Patterns
 //!
 //! ```bash
 //! # Start HTTP server on port 8080
-//! hexz serve snapshot.hxz --port 8080
+//! hexz serve archive.hxz --port 8080
 //!
 //! # Start as daemon (background process)
-//! hexz serve snapshot.hxz --port 8080 --daemon
+//! hexz serve archive.hxz --port 8080 --daemon
 //!
 //! # Start NBD server
-//! hexz serve snapshot.hxz --nbd --port 10809
+//! hexz serve archive.hxz --nbd --port 10809
 //!
 //! # Access from remote client
 //! curl -H "Range: bytes=0-1024" http://server:8080/disk
@@ -138,20 +138,20 @@
 
 use anyhow::Result;
 use daemonize::Daemonize;
-use hexz_core::File as HexzFile;
+use hexz_core::Archive as HexzFile;
 use hexz_store::local::MmapBackend;
 use std::fs::File;
 use std::sync::Arc;
 
 /// Executes the serve command to start a network server.
 ///
-/// Opens a Hexz snapshot and starts a server that exposes it over HTTP, NBD,
+/// Opens a Hexz archive and starts a server that exposes it over HTTP, NBD,
 /// or S3 protocol. The server runs until interrupted (Ctrl+C) or, in daemon mode,
 /// until explicitly killed.
 ///
 /// # Arguments
 ///
-/// * `hexz_path` - Path to the `.hxz` snapshot file to serve
+/// * `hexz_path` - Path to the `.hxz` archive file to serve
 /// * `port` - TCP port to bind to
 /// * `daemon` - If true, daemonize the process and run in background
 /// * `nbd` - If true, use NBD protocol; otherwise use HTTP
@@ -164,8 +164,8 @@ use std::sync::Arc;
 ///    - Redirect stdout to `/tmp/hexz-serve.log`
 ///    - Redirect stderr to `/tmp/hexz-serve.err`
 ///
-/// 2. **Snapshot Loading**:
-///    - Open snapshot file via `MmapBackend`
+/// 2. **Archive Loading**:
+///    - Open archive file via `MmapBackend`
 ///    - Read and parse header
 ///    - Load compression dictionary if present
 ///    - Initialize decompressor (LZ4 or Zstd)
@@ -189,8 +189,8 @@ use std::sync::Arc;
 /// # Errors
 ///
 /// Returns an error if:
-/// - Snapshot file cannot be opened or read
-/// - Header or dictionary cannot be parsed (corrupted snapshot)
+/// - Archive file cannot be opened or read
+/// - Header or dictionary cannot be parsed (corrupted archive)
 /// - Port is already in use (address binding fails)
 /// - Daemonization fails (resource limits, permissions)
 /// - Server fails to start (Tokio runtime error)
@@ -202,7 +202,7 @@ use std::sync::Arc;
 ///
 /// // Start HTTP server on port 8080
 /// serve::run(
-///     "snapshot.hxz".to_string(),
+///     "archive.hxz".to_string(),
 ///     8080,
 ///     "127.0.0.1".to_string(),
 ///     false, // not daemon
@@ -211,7 +211,7 @@ use std::sync::Arc;
 ///
 /// // Start NBD server as daemon
 /// serve::run(
-///     "snapshot.hxz".to_string(),
+///     "archive.hxz".to_string(),
 ///     10809,
 ///     "127.0.0.1".to_string(),
 ///     true,  // daemon mode

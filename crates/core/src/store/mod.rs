@@ -1,4 +1,4 @@
-//! Storage backends for snapshot byte access.
+//! Storage backends for archive byte access.
 //!
 //! Implements the `StorageBackend` trait for local files, HTTP (blocking and
 //! async), memory-mapped files, and S3-compatible object storage. Higher
@@ -9,9 +9,9 @@ use bytes::Bytes;
 use hexz_common::Result;
 use std::fmt::Debug;
 
-/// Abstract interface for all byte-addressable snapshot storage backends.
+/// Abstract interface for all byte-addressable archive storage backends.
 ///
-/// **Architectural intent:** Decouples the snapshot decoding logic from the
+/// **Architectural intent:** Decouples the archive decoding logic from the
 /// physical storage medium so that files, HTTP endpoints, memory maps, or
 /// object stores can be swapped without changing higher layers.
 ///
@@ -35,7 +35,7 @@ pub trait StorageBackend: Send + Sync + Debug {
     /// `Bytes` buffer per call; repeated small reads can be expensive.
     fn read_exact(&self, offset: u64, len: usize) -> Result<Bytes>;
 
-    /// Returns the total logical size of the underlying snapshot in bytes.
+    /// Returns the total logical size of the underlying archive in bytes.
     ///
     /// **Architectural intent:** Allows upper layers to validate range
     /// requests and compute offsets into the header and index regions.

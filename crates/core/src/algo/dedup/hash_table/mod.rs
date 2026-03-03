@@ -1,7 +1,7 @@
 //! Hash table for deduplication workloads.
 //!
 //! This module provides a specialized hash table optimized for Hexz's block
-//! deduplication during snapshot packing. It wraps `std::collections::HashMap`
+//! deduplication during archive packing. It wraps `std::collections::HashMap`
 //! with an identity hasher since keys are BLAKE3 hashes (already uniformly
 //! distributed), eliminating redundant SipHash overhead.
 //!

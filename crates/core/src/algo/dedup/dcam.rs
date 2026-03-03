@@ -107,7 +107,7 @@
 //! - **Change rate (c)**: Probability that a byte differs from its previous version.
 //!   Lower values indicate higher redundancy and better deduplication potential.
 //!
-//! - **Fingerprint bits (f)**: Controls average chunk size (`2^f` bytes). The primary
+//! - **Fingerprint bits (f)**: Controls average chunk size (`2^f` bytes). The main
 //!   tuning parameter for balancing granularity vs. overhead.
 //!
 //! - **Deduplication ratio**: Final size / Original size. Values < 1.0 indicate
@@ -194,7 +194,7 @@
 //!
 //! ## High Redundancy (c < 0.2)
 //!
-//! Examples: Backups, snapshots, versioned documents
+//! Examples: Backups, archives, versioned documents
 //!
 //! - **Recommendation**: Use smaller chunks (f=12 or f=13, ~4-8KB)
 //! - **Rationale**: High redundancy means duplicate savings far exceed metadata overhead,
@@ -331,7 +331,7 @@
 /// - **Formula**: Average chunk size = `2^f` bytes
 /// - **Range**: Typically 12-16 (4KB to 64KB average chunks)
 /// - **Default**: 13 (8KB average chunks)
-/// - **Effect**: Primary tuning parameter for deduplication granularity
+/// - **Effect**: Main tuning parameter for deduplication granularity
 ///
 /// **Examples**:
 /// - `f = 12`: ~4KB chunks (fine granularity, high overhead)
@@ -402,7 +402,7 @@
 /// - **Slower processing**: More chunk boundaries to compute and hash
 /// - **Higher memory usage**: Larger deduplication index
 ///
-/// **Best for**: Highly redundant data with small, scattered changes (backups, snapshots)
+/// **Best for**: Highly redundant data with small, scattered changes (backups, archives)
 ///
 /// ### Larger Chunks (Higher f, e.g., f=15, ~32KB)
 ///
@@ -1543,7 +1543,7 @@ pub fn predict_ratio(file_size: u64, c: f64, params: &DedupeParams) -> f64 {
 /// Returns `c = 1.0`, indicating no redundancy. This can occur with:
 /// - Compressed or encrypted data
 /// - Random data
-/// - First snapshot (no previous version to deduplicate against)
+/// - First archive (no previous version to deduplicate against)
 ///
 /// ## ndb ≈ 0 (Perfect Deduplication)
 ///
@@ -1588,15 +1588,15 @@ pub struct OptimizedParams {
 
 /// Auto-detect optimal CDC parameters for a given file.
 ///
-/// Sweeps fingerprint sizes from f=10 (1KB avg) through f=18 (256KB avg),
-/// deriving min and max chunk sizes from each, and picks the combination
-/// that minimizes the predicted deduplication ratio.
+/// Sweeps fingerprint sizes and picks the combination that minimizes the
+/// predicted deduplication ratio.
 ///
 /// # Arguments
 ///
 /// * `file_size` - Total size of the file in bytes.
 /// * `unique_bytes` - Number of unique bytes from a baseline `analyze_stream` run.
 /// * `baseline` - The baseline `DedupeParams` used for the analysis run.
+/// * `unbounded` - If true, sweeps a much wider range of parameters (up to 16MB chunks).
 ///
 /// # Returns
 ///
@@ -1606,16 +1606,27 @@ pub fn optimize_params(
     file_size: u64,
     unique_bytes: u64,
     baseline: &DedupeParams,
+    unbounded: bool,
 ) -> OptimizedParams {
     let c = calculate_c(unique_bytes, file_size, baseline);
 
     let mut best_ratio = f64::MAX;
     let mut best_params = *baseline;
 
-    for f in 10..=18u32 {
+    let (f_start, f_end) = if unbounded { (10, 24) } else { (10, 18) };
+
+    for f in f_start..=f_end {
         let avg = 1u32 << f;
-        let m = (avg / 4).max(1024);
-        let z = ((avg as u64) * 8).min(1 << 20) as u32;
+        let m = if unbounded {
+            (avg / 8).max(1024)
+        } else {
+            (avg / 4).max(1024)
+        };
+        let z = if unbounded {
+            ((avg as u64) * 16).min(1 << 26) as u32 // Up to 64MB max chunk
+        } else {
+            ((avg as u64) * 8).min(1 << 20) as u32 // Up to 1MB max chunk
+        };
 
         let candidate = DedupeParams {
             f,

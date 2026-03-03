@@ -39,7 +39,7 @@
 //!
 //! ```bash
 //! # Verify an archive signature
-//! hexz sys verify --key ~/.hexz/keys/public.key snapshot.st
+//! hexz sys verify --key ~/.hexz/keys/public.key archive.st
 //!
 //! # On success
 //! # => Signature Verified! The image index is authentic.
@@ -54,7 +54,7 @@
 //! - **Non-zero**: Verification failed (invalid signature or archive not signed)
 
 use anyhow::Result;
-use hexz_ops::sign::verify_snapshot;
+use hexz_ops::sign::verify_archive;
 use std::path::PathBuf;
 
 /// Verify the Ed25519 signature on a signed Hexz archive.
@@ -92,7 +92,7 @@ use std::path::PathBuf;
 /// # use std::path::PathBuf;
 /// # use hexz_cli::cmd::sys::verify;
 /// let key = PathBuf::from("~/.hexz/keys/public.key");
-/// let archive = PathBuf::from("snapshot.hxz");
+/// let archive = PathBuf::from("archive.hxz");
 ///
 /// match verify::run(key, archive) {
 ///     Ok(()) => println!("✓ Signature valid"),
@@ -112,7 +112,7 @@ pub fn run(key_path: PathBuf, image_path: PathBuf) -> Result<()> {
         key_path.display(),
         p.reset,
     );
-    verify_snapshot(&image_path, &key_path)?;
+    verify_archive(&image_path, &key_path)?;
     println!(
         "{}✓ Signature verified.{} The index is authentic.",
         p.green, p.reset

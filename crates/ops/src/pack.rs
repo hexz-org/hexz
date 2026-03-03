@@ -1,9 +1,9 @@
-//! High-level snapshot packing operations.
+//! High-level archive packing operations.
 //!
-//! This module implements the core business logic for creating Hexz snapshot files
+//! This module implements the core business logic for creating Hexz archive files
 //! from raw disk and memory images. It orchestrates a multi-stage pipeline that
 //! transforms raw input data into compressed, indexed, and optionally encrypted
-//! snapshot files optimized for fast random access and deduplication.
+//! archive files optimized for fast random access and deduplication.
 //!
 //! # Core Capabilities
 //!
@@ -61,7 +61,7 @@
 //! ┌─────────────────────────────────────────────────────────────────────┐
 //! │ Stage 3: Index Finalization                                          │
 //! │                                                                      │
-//! │  MasterIndex (primary_pages[], secondary_pages[], sizes) → Serialize      │
+//! │  MasterIndex (main_pages[], auxiliary_pages[], sizes) → Serialize      │
 //! │                                                                      │
 //! │  - Collect all PageEntry records from both streams                  │
 //! │  - Write master index at end of file                                │
@@ -164,19 +164,19 @@
 //! ## Basic Packing (LZ4, No Encryption)
 //!
 //! ```no_run
-//! use hexz_ops::pack::{pack_snapshot, PackConfig};
+//! use hexz_ops::pack::{pack_archive, PackConfig};
 //! use std::path::PathBuf;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = PackConfig {
 //!     disk: Some(PathBuf::from("disk.raw")),
 //!     memory: None,
-//!     output: PathBuf::from("snapshot.hxz"),
+//!     output: PathBuf::from("archive.hxz"),
 //!     compression: "lz4".to_string(),
 //!     ..Default::default()
 //! };
 //!
-//! pack_snapshot::<fn(u64, u64)>(config, None)?;
+//! pack_archive::<fn(u64, u64)>(config, None)?;
 //! # Ok(())
 //! # }
 //! ```
@@ -184,7 +184,7 @@
 //! ## Advanced Packing (Zstd with Dictionary, CDC, Encryption)
 //!
 //! ```no_run
-//! use hexz_ops::pack::{pack_snapshot, PackConfig};
+//! use hexz_ops::pack::{pack_archive, PackConfig};
 //! use std::path::PathBuf;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -201,7 +201,7 @@
 //!     ..Default::default()
 //! };
 //!
-//! pack_snapshot::<fn(u64, u64)>(config, None)?;
+//! pack_archive::<fn(u64, u64)>(config, None)?;
 //! # Ok(())
 //! # }
 //! ```
@@ -209,18 +209,18 @@
 //! ## Progress Reporting
 //!
 //! ```no_run
-//! use hexz_ops::pack::{pack_snapshot, PackConfig};
+//! use hexz_ops::pack::{pack_archive, PackConfig};
 //! use std::path::PathBuf;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = PackConfig {
 //!     disk: Some(PathBuf::from("disk.raw")),
-//!     output: PathBuf::from("snapshot.hxz"),
+//!     output: PathBuf::from("archive.hxz"),
 //!     ..Default::default()
 //! };
 //!
 //! // Callback receives (current_logical_pos, total_size)
-//! pack_snapshot(config, Some(|pos, total| {
+//! pack_archive(config, Some(|pos, total| {
 //!     let pct = (pos as f64 / total as f64) * 100.0;
 //!     println!("Packing: {:.1}%", pct);
 //! }))?;
@@ -279,18 +279,25 @@
 use hexz_common::constants::{DICT_TRAINING_SIZE, ENTROPY_THRESHOLD};
 use hexz_common::crypto::KeyDerivationParams;
 use hexz_common::{Error, Result};
+use hexz_core::api::file::Archive;
+use hexz_core::format::header::Header;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use walkdir::WalkDir;
 
 use crate::parallel_pack::{CompressedChunk, RawChunk};
-use crate::snapshot_writer::SnapshotWriter;
+use crate::archive_writer::ArchiveWriter;
 use hexz_core::algo::compression::{create_compressor_from_str, zstd::ZstdCompressor};
 use hexz_core::algo::dedup::cdc::{StreamChunker, analyze_stream};
 use hexz_core::algo::dedup::dcam::{DedupeParams, optimize_params};
-use hexz_core::algo::encryption::{Encryptor, aes_gcm::AesGcmEncryptor};
+use hexz_core::algo::encryption::{aes_gcm::AesGcmEncryptor, Encryptor};
+use hexz_core::api::manifest::{ArchiveManifest, FileEntry};
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 
-/// Configuration parameters for snapshot packing.
+/// Configuration parameters for archive packing.
 ///
 /// This struct encapsulates all settings for the packing process. It's designed
 /// to be easily constructed from CLI arguments or programmatic APIs.
@@ -303,15 +310,15 @@ use hexz_core::algo::encryption::{Encryptor, aes_gcm::AesGcmEncryptor};
 ///
 /// // Basic configuration with defaults
 /// let config = PackConfig {
-///     disk: Some(PathBuf::from("disk.img")),
-///     output: PathBuf::from("snapshot.hxz"),
+///     input: PathBuf::from("data/"),
+///     output: PathBuf::from("archive.hxz"),
 ///     ..Default::default()
 /// };
 ///
 /// // Advanced configuration with CDC and encryption
 /// let advanced = PackConfig {
-///     disk: Some(PathBuf::from("disk.img")),
-///     output: PathBuf::from("snapshot.hxz"),
+///     input: PathBuf::from("data/"),
+///     output: PathBuf::from("archive.hxz"),
 ///     compression: "zstd".to_string(),
 ///     encrypt: true,
 ///     password: Some("secret".to_string()),
@@ -323,11 +330,11 @@ use hexz_core::algo::encryption::{Encryptor, aes_gcm::AesGcmEncryptor};
 /// ```
 #[derive(Debug, Clone)]
 pub struct PackConfig {
-    /// Path to the disk image (optional).
-    pub disk: Option<PathBuf>,
-    /// Path to the memory image (optional).
-    pub memory: Option<PathBuf>,
-    /// Output snapshot file path.
+    /// Input path (file or directory).
+    pub input: PathBuf,
+    /// Base archive for delta deduplication.
+    pub base: Option<PathBuf>,
+    /// Output archive file path.
     pub output: PathBuf,
     /// Compression algorithm ("lz4" or "zstd").
     pub compression: String,
@@ -354,13 +361,15 @@ pub struct PackConfig {
     /// Run DCAM analysis to auto-detect optimal CDC parameters.
     /// When false (default), uses fixed global defaults: min=16 KiB, avg=64 KiB, max=256 KiB.
     pub use_dcam: bool,
+    /// If true, DCAM will sweep a wider range of parameters (up to 16MB average chunks).
+    pub dcam_optimal: bool,
 }
 
 impl Default for PackConfig {
     fn default() -> Self {
         Self {
-            disk: None,
-            memory: None,
+            input: PathBuf::new(),
+            base: None,
             output: PathBuf::from("output.hxz"),
             compression: "lz4".to_string(),
             encrypt: false,
@@ -374,6 +383,7 @@ impl Default for PackConfig {
             num_workers: 0,      // Auto-detect CPU cores
             show_progress: true, // Show progress by default
             use_dcam: false,     // Use fixed defaults; opt-in DCAM with --dcam
+            dcam_optimal: false,
         }
     }
 }
@@ -481,6 +491,20 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
         return Ok(from_sizes(min, avg, max));
     }
 
+    // Try to inherit from base archive if provided
+    if let Some(ref base_path) = config.base {
+        if let Ok(base_file) = File::open(base_path) {
+            let mut reader = std::io::BufReader::new(base_file);
+            if let Ok(header) = Header::read_from(&mut reader) {
+                if let Some((f, m, z)) = header.cdc_params {
+                    let avg = 1u32 << f;
+                    tracing::debug!("Inheriting CDC params from base archive: f={} m={} z={}", f, m, z);
+                    return Ok(from_sizes(m, avg, z));
+                }
+            }
+        }
+    }
+
     // Determine the base (min, avg, max) triple, either from DCAM or defaults.
     let (base_min, base_avg, base_max) = if config.use_dcam {
         // DCAM: scan the entire file to find data-adaptive optimal params.
@@ -492,7 +516,7 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
             (CDC_DEFAULT_MIN, CDC_DEFAULT_AVG, CDC_DEFAULT_MAX)
         } else {
             let stats = analyze_stream(file, &baseline)?;
-            let optimized = optimize_params(file_size, stats.unique_bytes, &baseline);
+            let optimized = optimize_params(file_size, stats.unique_bytes, &baseline, config.dcam_optimal);
             let p = &optimized.params;
             let avg = (2u32).pow(p.f);
             tracing::debug!(
@@ -517,9 +541,9 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
     Ok(from_sizes(min, avg, max))
 }
 
-/// Packs a snapshot file from disk and/or memory images.
+/// Packs a archive file from disk and/or memory images.
 ///
-/// This is the main entry point for creating Hexz snapshot files. It orchestrates
+/// This is the main entry point for creating Hexz archive files. It orchestrates
 /// the complete packing pipeline: dictionary training, stream processing, index
 /// building, and header finalization.
 ///
@@ -531,7 +555,7 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 /// 4. **Dictionary Writing**: If trained, write dictionary immediately after header
 /// 5. **Compressor Initialization**: Create LZ4 or Zstd compressor (with optional dictionary)
 /// 6. **Encryptor Initialization**: If requested, derive key from password using PBKDF2
-/// 7. **Stream Processing**: Process primary stream (if provided), then secondary stream (if provided)
+/// 7. **Stream Processing**: Process main stream (if provided), then auxiliary stream (if provided)
 ///    - Each stream independently chunks, compresses, encrypts, deduplicates, and indexes
 /// 8. **Master Index Writing**: Serialize master index (all PageEntry records) to end of file
 /// 9. **Header Writing**: Seek to start, write complete header with metadata and offsets
@@ -547,7 +571,7 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 ///
 /// # Returns
 ///
-/// - `Ok(())`: Snapshot packed successfully
+/// - `Ok(())`: Archive packed successfully
 /// - `Err(Error::Io)`: I/O error (file access, disk full, permission denied)
 /// - `Err(Error::Compression)`: Compression error (unlikely, usually indicates invalid state)
 /// - `Err(Error::Encryption)`: Encryption error (invalid password format, crypto failure)
@@ -581,17 +605,17 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 /// ## Basic Usage
 ///
 /// ```no_run
-/// use hexz_ops::pack::{pack_snapshot, PackConfig};
+/// use hexz_ops::pack::{pack_archive, PackConfig};
 /// use std::path::PathBuf;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = PackConfig {
 ///     disk: Some(PathBuf::from("disk.raw")),
-///     output: PathBuf::from("snapshot.hxz"),
+///     output: PathBuf::from("archive.hxz"),
 ///     ..Default::default()
 /// };
 ///
-/// pack_snapshot::<fn(u64, u64)>(config, None)?;
+/// pack_archive::<fn(u64, u64)>(config, None)?;
 /// # Ok(())
 /// # }
 /// ```
@@ -599,7 +623,7 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 /// ## With Progress Reporting
 ///
 /// ```no_run
-/// use hexz_ops::pack::{pack_snapshot, PackConfig};
+/// use hexz_ops::pack::{pack_archive, PackConfig};
 /// use std::path::PathBuf;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -611,7 +635,7 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 ///     ..Default::default()
 /// };
 ///
-/// pack_snapshot(config, Some(|pos, total| {
+/// pack_archive(config, Some(|pos, total| {
 ///     eprint!("\rPacking: {:.1}%", (pos as f64 / total as f64) * 100.0);
 /// }))?;
 /// eprintln!("\nDone!");
@@ -619,10 +643,10 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 /// # }
 /// ```
 ///
-/// ## Encrypted Snapshot
+/// ## Encrypted Archive
 ///
 /// ```no_run
-/// use hexz_ops::pack::{pack_snapshot, PackConfig};
+/// use hexz_ops::pack::{pack_archive, PackConfig};
 /// use std::path::PathBuf;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -634,8 +658,8 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 ///     ..Default::default()
 /// };
 ///
-/// pack_snapshot::<fn(u64, u64)>(config, None)?;
-/// println!("Encrypted snapshot created");
+/// pack_archive::<fn(u64, u64)>(config, None)?;
+/// println!("Encrypted archive created");
 /// # Ok(())
 /// # }
 /// ```
@@ -643,7 +667,7 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 /// ## Content-Defined Chunking for Deduplication
 ///
 /// ```no_run
-/// use hexz_ops::pack::{pack_snapshot, PackConfig};
+/// use hexz_ops::pack::{pack_archive, PackConfig};
 /// use std::path::PathBuf;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -656,7 +680,7 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 ///     ..Default::default()
 /// };
 ///
-/// pack_snapshot::<fn(u64, u64)>(config, None)?;
+/// pack_archive::<fn(u64, u64)>(config, None)?;
 /// # Ok(())
 /// # }
 /// ```
@@ -681,18 +705,18 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 /// rename after success:
 ///
 /// ```no_run
-/// # use hexz_ops::pack::{pack_snapshot, PackConfig};
+/// # use hexz_ops::pack::{pack_archive, PackConfig};
 /// # use std::path::PathBuf;
 /// # use std::fs;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let mut config = PackConfig {
 ///     disk: Some(PathBuf::from("disk.raw")),
-///     output: PathBuf::from("snapshot.st.tmp"),
+///     output: PathBuf::from("archive.st.tmp"),
 ///     ..Default::default()
 /// };
 ///
-/// pack_snapshot::<fn(u64, u64)>(config.clone(), None)?;
-/// fs::rename("snapshot.st.tmp", "snapshot.hxz")?;
+/// pack_archive::<fn(u64, u64)>(config.clone(), None)?;
+/// fs::rename("archive.st.tmp", "archive.hxz")?;
 /// # Ok(())
 /// # }
 /// ```
@@ -700,47 +724,48 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 /// # Thread Safety
 ///
 /// This function is not thread-safe with respect to the output file. Do not call
-/// `pack_snapshot` concurrently with the same output path. Concurrent packing to
+/// `pack_archive` concurrently with the same output path. Concurrent packing to
 /// different output files is safe.
 ///
 /// The progress callback must be `Send + Sync` if you want to call this function
 /// from a non-main thread.
-pub fn pack_snapshot<F>(config: PackConfig, progress_callback: Option<F>) -> Result<()>
+pub fn pack_archive<F>(config: PackConfig, progress_callback: Option<F>) -> Result<()>
 where
     F: Fn(u64, u64) + Send + Sync,
 {
-    // Validate inputs
-    if config.disk.is_none() && config.memory.is_none() {
-        return Err(Error::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "At least one input (disk or memory) must be provided",
-        )));
-    }
+    // 1. Resolve inputs
+    let input_path = &config.input;
 
-    // Train compression dictionary if requested
-    let dictionary = if config.compression == "zstd" && config.train_dict {
-        Some(train_dictionary(
-            config
-                .disk
-                .as_ref()
-                .or(config.memory.as_ref())
-                .ok_or_else(|| {
-                    Error::Io(std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        "No input file available for dictionary training",
-                    ))
-                })?,
-            config.block_size,
-        )?)
+    // 2. Load parent archive if specified (for thin snapshots)
+    let parent = if let Some(ref base_path) = config.base {
+        Some(hexz_store::open_local(base_path, None)?)
     } else {
         None
     };
 
-    // Initialize compressor
+    // 3. Train compression dictionary if requested
+    let dictionary = if config.compression == "zstd" && config.train_dict {
+        let sample_path = if input_path.is_dir() {
+            // Sample from the first file in the directory
+            WalkDir::new(input_path)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .find(|e| e.file_type().is_file())
+                .ok_or_else(|| Error::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "No files found for dictionary training")))?
+                .path()
+                .to_path_buf()
+        } else {
+            input_path.clone()
+        };
+        Some(train_dictionary(&sample_path, config.block_size)?)
+    } else {
+        None
+    };
+
+    // 4. Initialize compressor & encryptor
     let (compressor, compression_type) =
         create_compressor_from_str(&config.compression, None, dictionary.clone())?;
 
-    // Initialize encryptor if requested
     let (encryptor, enc_params): (Option<Box<dyn Encryptor>>, _) = if config.encrypt {
         let password = config.password.clone().ok_or_else(|| {
             Error::Io(std::io::Error::new(
@@ -755,18 +780,22 @@ where
         (None, None)
     };
 
-    // Resolve CDC parameters (auto-detect via DCAM or use user overrides)
-    let cdc_params = if let Some(path) = config.disk.as_ref().or(config.memory.as_ref()) {
-        resolve_cdc_params(path, &config)?
+    // 5. Resolve CDC parameters
+    let cdc_params = if input_path.is_file() {
+        resolve_cdc_params(input_path, &config)?
     } else {
-        // Fallback to LBFS baseline (shouldn't reach here due to validation above)
         DedupeParams::lbfs_baseline()
     };
 
-    // Build the snapshot writer with optional encryption
-    let mut builder = SnapshotWriter::builder(&config.output, compressor, compression_type)
+    // 5. Create ArchiveWriter
+    let mut builder = ArchiveWriter::builder(&config.output, compressor, compression_type)
         .block_size(config.block_size)
-        .variable_blocks(true);
+        .variable_blocks(true)
+        .cdc_params(Some((cdc_params.f, cdc_params.m, cdc_params.z)));
+
+    if let Some(parent_snap) = parent {
+        builder = builder.parent(parent_snap);
+    }
 
     if let (Some(enc), Some(params)) = (encryptor, enc_params) {
         builder = builder.encryption(enc, params);
@@ -774,34 +803,29 @@ where
 
     let mut writer = builder.build()?;
 
-    // Write dictionary to file
     if let Some(d) = &dictionary {
         writer.write_dictionary(d)?;
     }
 
-    // Set up progress bar if show_progress is enabled and no user callback given
-    let primary_size = config
-        .disk
-        .as_ref()
-        .and_then(|p| std::fs::metadata(p).ok())
-        .map(|m| m.len())
-        .unwrap_or(0);
-    let secondary_size = config
-        .memory
-        .as_ref()
-        .and_then(|p| std::fs::metadata(p).ok())
-        .map(|m| m.len())
-        .unwrap_or(0);
-    let total_size = primary_size + secondary_size;
-
-    let progress_bar = if config.show_progress && progress_callback.is_none() && total_size > 0 {
-        Some(crate::progress::PackProgress::new(total_size, "Packing"))
+    // 7. Process input
+    let mut manifest = None;
+    if input_path.is_dir() {
+        manifest = Some(pack_directory(
+            input_path,
+            &mut writer,
+            &cdc_params,
+            &config,
+            dictionary,
+            progress_callback,
+        )?);
     } else {
-        None
-    };
+        let total_size = input_path.metadata()?.len();
+        let progress_bar = if config.show_progress && progress_callback.is_none() && total_size > 0 {
+            Some(crate::progress::PackProgress::new(total_size, "Packing"))
+        } else {
+            None
+        };
 
-    // Process primary stream
-    if let Some(ref path) = config.disk {
         let cb = |pos: u64, total: u64| {
             if let Some(ref pb) = progress_bar {
                 pb.set_position(pos);
@@ -810,43 +834,254 @@ where
                 cb(pos, total);
             }
         };
+
         process_stream(
-            path.clone(),
+            input_path.clone(),
             true,
             &mut writer,
             &cdc_params,
             &config,
-            dictionary.clone(),
+            dictionary,
             Some(&cb),
         )?;
+
+        if let Some(ref pb) = progress_bar {
+            pb.finish();
+        }
     }
 
-    // Process secondary stream
-    if let Some(ref path) = config.memory {
-        let cb = |pos: u64, total: u64| {
+    // 8. Finalize
+    let metadata = if let Some(m) = manifest {
+        Some(serde_json::to_vec(&m).map_err(|e| Error::Format(e.to_string()))?)
+    } else {
+        None
+    };
+
+    let parent_paths = if let Some(ref base) = config.base {
+        vec![base.to_string_lossy().into_owned()]
+    } else {
+        Vec::new()
+    };
+
+    writer.finalize(parent_paths, metadata.as_deref())?;
+
+    Ok(())
+}
+
+/// Recursively packs a directory into the Main archive stream.
+fn pack_directory<F>(
+    root: &Path,
+    writer: &mut ArchiveWriter,
+    cdc_params: &DedupeParams,
+    config: &PackConfig,
+    dictionary: Option<Vec<u8>>,
+    progress_callback: Option<F>,
+) -> Result<ArchiveManifest>
+where
+    F: Fn(u64, u64) + Send + Sync,
+{
+    let mut files = Vec::new();
+    let mut current_logical_offset = 0u64;
+
+    // Calculate total size for progress bar
+    let total_size: u64 = WalkDir::new(root)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .map(|e| e.metadata().map(|m| m.len()).unwrap_or(0))
+        .sum();
+
+    let progress_bar = if config.show_progress && progress_callback.is_none() && total_size > 0 {
+        Some(crate::progress::PackProgress::new(total_size, "Packing Directory"))
+    } else {
+        None
+    };
+
+    writer.begin_stream(true, total_size);
+
+    for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+
+        let path = entry.path();
+        let rel_path = path.strip_prefix(root).unwrap().to_string_lossy().into_owned();
+        let metadata = entry.metadata().map_err(|e| Error::Io(e.into()))?;
+        let size = metadata.len();
+
+        let file_entry = FileEntry {
+            path: rel_path,
+            offset: current_logical_offset,
+            size,
+            mode: if cfg!(unix) { metadata.mode() } else { 0o644 },
+            mtime: metadata.modified()?.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+        };
+
+        let cb = |pos: u64, _total: u64| {
+            let global_pos = current_logical_offset + pos;
             if let Some(ref pb) = progress_bar {
-                pb.set_position(primary_size + pos);
+                pb.set_position(global_pos);
             }
             if let Some(ref cb) = progress_callback {
-                cb(pos, total);
+                cb(global_pos, total_size);
             }
         };
-        process_stream(
-            path.clone(),
-            false,
-            &mut writer,
-            &cdc_params,
-            &config,
+
+        pack_file_to_stream(
+            path,
+            writer,
+            cdc_params,
+            config,
             dictionary.clone(),
             Some(&cb),
         )?;
+
+        writer.flush_stream()?;
+
+        files.push(file_entry);
+        current_logical_offset = writer.current_logical_pos();
     }
 
     if let Some(ref pb) = progress_bar {
         pb.finish();
     }
 
-    writer.finalize(Vec::new(), None)?;
+    writer.end_stream()?;
+    Ok(ArchiveManifest { files })
+}
+
+/// Packs a single file into the current active stream of the ArchiveWriter.
+fn pack_file_to_stream<F>(
+    path: &Path,
+    writer: &mut ArchiveWriter,
+    cdc_params: &DedupeParams,
+    config: &PackConfig,
+    dictionary: Option<Vec<u8>>,
+    progress_callback: Option<&F>,
+) -> Result<()>
+where
+    F: Fn(u64, u64),
+{
+    let f = File::open(path)?;
+    let len = f.metadata()?.len();
+
+    if config.parallel && !config.encrypt {
+        process_stream_parallel(
+            f,
+            len,
+            writer,
+            cdc_params,
+            config,
+            dictionary,
+            progress_callback,
+        )?;
+    } else {
+        process_stream_serial(f, len, writer, cdc_params, progress_callback)?;
+    }
+
+    Ok(())
+}
+
+/// Extracts an archive back to the filesystem.
+///
+/// If the archive contains a manifest, it will be extracted as a directory.
+/// Otherwise, the Main stream will be extracted as a single raw file.
+pub fn extract_archive(
+    input_path: &Path,
+    output_path: &Path,
+    password: Option<String>,
+) -> Result<()> {
+    use hexz_core::algo::encryption::aes_gcm::AesGcmEncryptor;
+    use hexz_core::algo::compression::create_compressor;
+    use hexz_core::ArchiveStream;
+    use hexz_store::local::MmapBackend;
+    use hexz_core::format::header::Header;
+    use hexz_core::api::file::ParentLoader;
+
+    let backend = Arc::new(MmapBackend::new(input_path)?);
+    let header = Header::read_from_backend(backend.as_ref())?;
+
+    let encryptor = if let (Some(params), Some(pass)) = (header.encryption.as_ref(), password) {
+        let enc = AesGcmEncryptor::new(pass.as_bytes(), &params.salt, params.iterations)?;
+        Some(Box::new(enc) as Box<dyn hexz_core::algo::encryption::Encryptor>)
+    } else {
+        None
+    };
+
+    let dictionary = header.load_dictionary(backend.as_ref())?;
+    let compressor = create_compressor(header.compression, None, dictionary);
+
+    // Provide a parent loader that resolves relative to the input archive
+    let archive_dir = input_path.parent().unwrap_or_else(|| Path::new(".")).to_path_buf();
+    let loader: ParentLoader = Box::new(move |parent_path: &str| {
+        let p = Path::new(parent_path);
+        
+        // Try resolving in this order:
+        // 1. As provided (if absolute or relative to CWD)
+        // 2. Relative to the archive being extracted
+        let full_parent_path = if p.exists() {
+            p.to_path_buf()
+        } else {
+            let rel = archive_dir.join(parent_path);
+            if rel.exists() {
+                rel
+            } else {
+                // Fallback to p and let it fail with proper error if not found
+                p.to_path_buf()
+            }
+        };
+        
+        let pb: Arc<dyn hexz_core::store::StorageBackend> = Arc::new(MmapBackend::new(&full_parent_path)?);
+        Archive::open(pb, None)
+    });
+
+    let archive = Archive::with_cache_and_loader(
+        backend,
+        compressor,
+        encryptor,
+        None,
+        None,
+        Some(&loader),
+    )?;
+
+    // Check for manifest in metadata
+    if let Some(metadata) = &archive.metadata {
+        if let Ok(manifest) = serde_json::from_slice::<ArchiveManifest>(metadata) {
+            std::fs::create_dir_all(output_path)?;
+            
+            for file in manifest.files {
+                let out_path = output_path.join(&file.path);
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+
+                let mut out_file = File::create(&out_path)?;
+                let data = archive.read_at(ArchiveStream::Main, file.offset, file.size as usize)?;
+                out_file.write_all(&data)?;
+
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    std::fs::set_permissions(&out_path, std::fs::Permissions::from_mode(file.mode))?;
+                }
+            }
+            return Ok(());
+        }
+    }
+
+    // Fallback: extract Main stream to a single file
+    let mut out_file = File::create(output_path)?;
+    let size = archive.size(ArchiveStream::Main);
+    
+    // Extract in chunks to avoid huge memory usage
+    let chunk_size = 1024 * 1024; // 1MB
+    let mut pos = 0u64;
+    while pos < size {
+        let len = std::cmp::min(chunk_size as u64, size - pos) as usize;
+        let data = archive.read_at(ArchiveStream::Main, pos, len)?;
+        out_file.write_all(&data)?;
+        pos += len as u64;
+    }
 
     Ok(())
 }
@@ -905,7 +1140,7 @@ where
 ///
 /// # Examples
 ///
-/// Called internally by `pack_snapshot` when `train_dict` is enabled:
+/// Called internally by `pack_archive` when `train_dict` is enabled:
 ///
 /// ```text
 /// let dict = train_dictionary(Path::new("disk.raw"), 65536)?;
@@ -959,11 +1194,11 @@ fn train_dictionary(input_path: &Path, block_size: u32) -> Result<Vec<u8>> {
     }
 }
 
-/// Processes a single input stream (disk or memory) via the [`SnapshotWriter`].
+/// Processes a single input stream (disk or memory) via the [`ArchiveWriter`].
 fn process_stream<F>(
     path: PathBuf,
     is_disk: bool,
-    writer: &mut SnapshotWriter,
+    writer: &mut ArchiveWriter,
     cdc_params: &DedupeParams,
     config: &PackConfig,
     dictionary: Option<Vec<u8>>,
@@ -1000,7 +1235,7 @@ where
 fn process_stream_serial<F>(
     f: File,
     len: u64,
-    writer: &mut SnapshotWriter,
+    writer: &mut ArchiveWriter,
     cdc_params: &DedupeParams,
     progress_callback: Option<&F>,
 ) -> Result<()>
@@ -1035,7 +1270,7 @@ where
 fn process_stream_parallel<F>(
     f: File,
     len: u64,
-    writer: &mut SnapshotWriter,
+    writer: &mut ArchiveWriter,
     cdc_params: &DedupeParams,
     config: &PackConfig,
     dictionary: Option<Vec<u8>>,
@@ -1255,7 +1490,7 @@ mod tests {
     #[test]
     fn test_pack_config_clone() {
         let config1 = PackConfig {
-            disk: Some(PathBuf::from("/dev/sda")),
+            input: PathBuf::from("/dev/sda"),
             output: PathBuf::from("output.hxz"),
             compression: "zstd".to_string(),
             encrypt: true,
@@ -1265,7 +1500,7 @@ mod tests {
 
         let config2 = config1.clone();
 
-        assert_eq!(config2.disk, config1.disk);
+        assert_eq!(config2.input, config1.input);
         assert_eq!(config2.output, config1.output);
         assert_eq!(config2.compression, config1.compression);
         assert_eq!(config2.encrypt, config1.encrypt);

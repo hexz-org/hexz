@@ -1,8 +1,8 @@
-//! Storage backend implementations for Hexz snapshots.
+//! Storage backend implementations for Hexz archives.
 //!
 //! This crate provides concrete implementations of `hexz_core::store::StorageBackend`
 //! for local files, HTTP/HTTPS, and S3-compatible object storage. It also exposes a
-//! `ParentLoader` helper for opening thin-snapshot parent chains via `FileBackend`.
+//! `ParentLoader` helper for opening thin-archive parent chains via `ArchiveBackend`.
 
 pub mod http;
 pub mod local;
@@ -16,16 +16,16 @@ pub use hexz_core::store::StorageBackend;
 use hexz_common::Result;
 use hexz_core::algo::compression::create_compressor;
 use hexz_core::algo::encryption::Encryptor;
-use hexz_core::api::file::{File, ParentLoader};
+use hexz_core::api::file::{Archive, ParentLoader};
 use hexz_core::format::header::Header;
 use std::sync::Arc;
 
-/// Opens a Hexz snapshot from a local file path, resolving any parent chain via
-/// `FileBackend`. This is the standard entry point when working with local snapshots.
+/// Opens a Hexz archive from a local file path, resolving any parent chain via
+/// `ArchiveBackend`. This is the standard entry point when working with local archives.
 pub fn open_local(
     path: &std::path::Path,
     encryptor: Option<Box<dyn Encryptor>>,
-) -> Result<Arc<File>> {
+) -> Result<Arc<Archive>> {
     open_local_with_cache(path, encryptor, None, None)
 }
 
@@ -36,19 +36,30 @@ pub fn open_local_with_cache(
     encryptor: Option<Box<dyn Encryptor>>,
     cache_capacity_bytes: Option<usize>,
     prefetch_window_size: Option<u32>,
-) -> Result<Arc<File>> {
+) -> Result<Arc<Archive>> {
     let backend: Arc<dyn StorageBackend> = Arc::new(local::MmapBackend::new(path)?);
     let header = Header::read_from_backend(backend.as_ref())?;
     let dictionary = header.load_dictionary(backend.as_ref())?;
     let compressor = create_compressor(header.compression, None, dictionary);
 
-    let loader: ParentLoader = Box::new(|parent_path: &str| {
-        let pb = std::path::Path::new(parent_path);
-        let pb: Arc<dyn StorageBackend> = Arc::new(local::MmapBackend::new(pb)?);
-        File::open(pb, None)
+    let archive_dir = path.parent().unwrap_or_else(|| std::path::Path::new(".")).to_path_buf();
+    let loader: ParentLoader = Box::new(move |parent_path: &str| {
+        let p = std::path::Path::new(parent_path);
+        let full_parent_path = if p.exists() {
+            p.to_path_buf()
+        } else {
+            let rel = archive_dir.join(parent_path);
+            if rel.exists() {
+                rel
+            } else {
+                p.to_path_buf()
+            }
+        };
+        let pb: Arc<dyn StorageBackend> = Arc::new(local::MmapBackend::new(&full_parent_path)?);
+        Archive::open(pb, None)
     });
 
-    File::with_cache_and_loader(
+    Archive::with_cache_and_loader(
         backend,
         compressor,
         encryptor,

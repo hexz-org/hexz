@@ -1,11 +1,12 @@
-//! Data operation commands for archive management.
-
-pub mod build;
-pub mod convert;
+pub mod checkout;
+pub mod commit;
 pub mod diff;
 pub mod extract;
 pub mod inspect;
 pub mod ls;
+pub mod mount;
 pub mod pack;
 pub mod predict;
-pub mod store;
+pub mod status;
+pub mod unmount;
+pub mod workspace;

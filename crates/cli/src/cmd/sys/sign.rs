@@ -42,10 +42,10 @@
 //! hexz sys keygen --output-dir ~/.hexz/keys
 //!
 //! # Sign an archive
-//! hexz sys sign --key ~/.hexz/keys/private.key snapshot.st
+//! hexz sys sign --key ~/.hexz/keys/private.key archive.st
 //!
 //! # Verify the signature
-//! hexz sys verify --key ~/.hexz/keys/public.key snapshot.st
+//! hexz sys verify --key ~/.hexz/keys/public.key archive.st
 //! ```
 //!
 //! # File Format Changes
@@ -65,7 +65,7 @@
 //! ```
 
 use anyhow::Result;
-use hexz_ops::sign::sign_snapshot;
+use hexz_ops::sign::sign_archive;
 use std::path::PathBuf;
 
 /// Sign a Hexz archive with an Ed25519 private key.
@@ -108,7 +108,7 @@ use std::path::PathBuf;
 /// # use std::path::PathBuf;
 /// # use hexz_cli::cmd::sys::sign;
 /// let key = PathBuf::from("~/.hexz/keys/private.key");
-/// let archive = PathBuf::from("snapshot.hxz");
+/// let archive = PathBuf::from("archive.hxz");
 /// sign::run(key, archive)?;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
@@ -124,7 +124,7 @@ pub fn run(key_path: PathBuf, image_path: PathBuf) -> Result<()> {
         key_path.display(),
         p.reset,
     );
-    sign_snapshot(&image_path, &key_path)?;
+    sign_archive(&image_path, &key_path)?;
     println!("{}Signature written.{}", p.green, p.reset);
     Ok(())
 }

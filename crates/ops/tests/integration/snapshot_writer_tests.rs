@@ -1,14 +1,14 @@
-/// Integration tests for SnapshotWriter.
+/// Integration tests for ArchiveWriter.
 ///
 /// These tests exercise the low-level write → read roundtrip directly via
-/// `SnapshotWriter`, bypassing the higher-level `pack_snapshot` helper used
+/// `ArchiveWriter`, bypassing the higher-level `pack_archive` helper used
 /// by the CLI.  This gives fine-grained coverage of begin_stream /
 /// write_data_block / end_stream / finalize and their interactions.
 use hexz_core::algo::compression::lz4::Lz4Compressor;
 use hexz_core::algo::compression::zstd::ZstdCompressor;
 use hexz_core::format::header::CompressionType;
-use hexz_core::{File as HexzFile, SnapshotStream};
-use hexz_ops::snapshot_writer::SnapshotWriter;
+use hexz_core::{Archive as HexzArchive, ArchiveStream};
+use hexz_ops::archive_writer::ArchiveWriter;
 use hexz_store::local::FileBackend;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -17,35 +17,35 @@ use tempfile::TempDir;
 
 const BLOCK: usize = 65_536; // 64 KiB default block size
 
-fn lz4_writer(dir: &TempDir, name: &str) -> (SnapshotWriter, std::path::PathBuf) {
+fn lz4_writer(dir: &TempDir, name: &str) -> (ArchiveWriter, std::path::PathBuf) {
     let path = dir.path().join(name);
     let writer =
-        SnapshotWriter::builder(&path, Box::new(Lz4Compressor::new()), CompressionType::Lz4)
+        ArchiveWriter::builder(&path, Box::new(Lz4Compressor::new()), CompressionType::Lz4)
             .block_size(BLOCK as u32)
             .build()
-            .expect("SnapshotWriter::build failed");
+            .expect("ArchiveWriter::build failed");
     (writer, path)
 }
 
-fn zstd_writer(dir: &TempDir, name: &str) -> (SnapshotWriter, std::path::PathBuf) {
+fn zstd_writer(dir: &TempDir, name: &str) -> (ArchiveWriter, std::path::PathBuf) {
     let path = dir.path().join(name);
-    let writer = SnapshotWriter::builder(
+    let writer = ArchiveWriter::builder(
         &path,
         Box::new(ZstdCompressor::new(3, None)),
         CompressionType::Zstd,
     )
     .block_size(BLOCK as u32)
     .build()
-    .expect("SnapshotWriter::build failed");
+    .expect("ArchiveWriter::build failed");
     (writer, path)
 }
 
-fn open(path: &std::path::Path) -> Arc<HexzFile> {
+fn open(path: &std::path::Path) -> Arc<HexzArchive> {
     let backend = Arc::new(FileBackend::new(path).expect("FileBackend::new failed"));
-    HexzFile::open(backend, None).expect("HexzFile::open failed")
+    HexzArchive::open(backend, None).expect("HexzArchive::open failed")
 }
 
-fn read_all(file: &Arc<HexzFile>, stream: SnapshotStream) -> Vec<u8> {
+fn read_all(file: &Arc<HexzArchive>, stream: ArchiveStream) -> Vec<u8> {
     let size = file.size(stream) as usize;
     file.read_at(stream, 0, size).expect("read_at failed")
 }
@@ -78,7 +78,7 @@ fn test_single_block_lz4_roundtrip() {
     writer.finalize(vec![], None).unwrap();
 
     let file = open(&path);
-    assert_eq!(read_all(&file, SnapshotStream::Primary), data);
+    assert_eq!(read_all(&file, ArchiveStream::Main), data);
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn test_single_block_zstd_roundtrip() {
     writer.finalize(vec![], None).unwrap();
 
     let file = open(&path);
-    assert_eq!(read_all(&file, SnapshotStream::Primary), data);
+    assert_eq!(read_all(&file, ArchiveStream::Main), data);
 }
 
 // ── multi-block roundtrips ────────────────────────────────────────────────────
@@ -113,7 +113,7 @@ fn test_multi_block_roundtrip() {
     writer.finalize(vec![], None).unwrap();
 
     let file = open(&path);
-    assert_eq!(read_all(&file, SnapshotStream::Primary), data);
+    assert_eq!(read_all(&file, ArchiveStream::Main), data);
 }
 
 #[test]
@@ -131,7 +131,7 @@ fn test_partial_last_block_roundtrip() {
     writer.finalize(vec![], None).unwrap();
 
     let file = open(&path);
-    assert_eq!(read_all(&file, SnapshotStream::Primary), data);
+    assert_eq!(read_all(&file, ArchiveStream::Main), data);
 }
 
 // ── deduplication ─────────────────────────────────────────────────────────────
@@ -159,9 +159,9 @@ fn test_duplicate_blocks_deduplicated() {
     );
 
     let file = open(&path);
-    assert_eq!(file.size(SnapshotStream::Primary), total);
+    assert_eq!(file.size(ArchiveStream::Main), total);
     let expected: Vec<u8> = block.iter().cloned().cycle().take(4 * BLOCK).collect();
-    assert_eq!(read_all(&file, SnapshotStream::Primary), expected);
+    assert_eq!(read_all(&file, ArchiveStream::Main), expected);
 }
 
 // ── zero / sparse blocks ──────────────────────────────────────────────────────
@@ -178,7 +178,7 @@ fn test_all_zero_block_reads_back_correctly() {
     writer.finalize(vec![], None).unwrap();
 
     let file = open(&path);
-    assert_eq!(read_all(&file, SnapshotStream::Primary), data);
+    assert_eq!(read_all(&file, ArchiveStream::Main), data);
 }
 
 // ── metadata ──────────────────────────────────────────────────────────────────
@@ -197,7 +197,7 @@ fn test_metadata_embedded_in_archive() {
 
     // Archive must still be readable after metadata is embedded.
     let file = open(&path);
-    assert_eq!(file.size(SnapshotStream::Primary), data.len() as u64);
+    assert_eq!(file.size(ArchiveStream::Main), data.len() as u64);
 }
 
 // ── parent paths ──────────────────────────────────────────────────────────────
@@ -245,8 +245,8 @@ fn test_disk_and_memory_streams_roundtrip() {
     writer.finalize(vec![], None).unwrap();
 
     let file = open(&path);
-    assert_eq!(read_all(&file, SnapshotStream::Primary), disk_data);
-    assert_eq!(read_all(&file, SnapshotStream::Secondary), mem_data);
+    assert_eq!(read_all(&file, ArchiveStream::Main), disk_data);
+    assert_eq!(read_all(&file, ArchiveStream::Auxiliary), mem_data);
 }
 
 // ── block_count / current_offset ─────────────────────────────────────────────

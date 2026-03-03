@@ -1,18 +1,18 @@
 # hexz-server
 
-HTTP and NBD server for streaming Hexz snapshot data over the network.
+HTTP and NBD server for streaming Hexz archive data over the network.
 
 ## Overview
 
-`hexz-server` provides network-facing interfaces for accessing compressed Hexz snapshots via standard protocols. It enables remote access to snapshot data without requiring clients to download entire files, making it ideal for forensics, VM hosting, and distributed data access.
+`hexz-server` provides network-facing interfaces for accessing compressed Hexz archives via standard protocols. It enables remote access to archive data without requiring clients to download entire files, making it ideal for forensics, VM hosting, and distributed data access.
 
 ## Supported Protocols
 
 ### HTTP Range Server
-Exposes snapshots via HTTP 1.1 with range request support (RFC 7233). Clients can fetch specific byte ranges using standard HTTP GET requests with `Range` headers.
+Exposes archives via HTTP 1.1 with range request support (RFC 7233). Clients can fetch specific byte ranges using standard HTTP GET requests with `Range` headers.
 
 ### NBD (Network Block Device)
-Allows mounting snapshots as Linux block devices using the NBD protocol. This enables transparent filesystem access and use of standard tools (mount, dd, fsck).
+Allows mounting archives as Linux block devices using the NBD protocol. This enables transparent filesystem access and use of standard tools (mount, dd, fsck).
 
 ### S3 Gateway (Planned)
 Future S3-compatible API for cloud integration (not yet implemented).
@@ -30,7 +30,7 @@ use hexz_server::serve_http;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
+    let backend = Arc::new(FileBackend::new("archive.hxz".as_ref())?);
     let compressor = Box::new(Lz4Compressor::new());
     let snap = Arc::new(File::new(backend, compressor, None)?);
 
@@ -51,7 +51,7 @@ use hexz_server::serve_nbd;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
+    let backend = Arc::new(FileBackend::new("archive.hxz".as_ref())?);
     let compressor = Box::new(Lz4Compressor::new());
     let snap = Arc::new(File::new(backend, compressor, None)?);
 
@@ -65,23 +65,23 @@ async fn main() -> anyhow::Result<()> {
 
 ```bash
 # Start HTTP server (via hexz CLI)
-hexz sys serve --port 8080 snapshot.st
+hexz sys serve --port 8080 archive.st
 
 # Start NBD server
-hexz sys serve --nbd --port 10809 snapshot.st
+hexz sys serve --nbd --port 10809 archive.st
 ```
 
 ## HTTP Server
 
 ### Endpoints
 
-- **GET /disk** - Serves the primary stream (persistent storage)
-- **GET /memory** - Serves the secondary stream (RAM snapshot)
+- **GET /disk** - Serves the main stream (persistent storage)
+- **GET /memory** - Serves the auxiliary stream (RAM archive)
 
 ### Range Request Support
 
 ```bash
-# Fetch first 4KB of primary stream
+# Fetch first 4KB of main stream
 curl -H "Range: bytes=0-4095" http://localhost:8080/disk -o chunk.bin
 
 # Fetch 1MB starting at offset 1MB
@@ -95,7 +95,7 @@ curl -H "Range: bytes=1048576-" http://localhost:8080/disk -o large_chunk.bin
 
 - **206 Partial Content** - Successful range request
 - **416 Range Not Satisfiable** - Invalid range or out of bounds
-- **500 Internal Server Error** - Snapshot read failure
+- **500 Internal Server Error** - Archive read failure
 
 ### Python Client Example
 
@@ -124,22 +124,22 @@ print(f"Fetched {len(data)} bytes")
 sudo nbd-client localhost 10809 /dev/nbd0
 
 # Mount the block device (read-only)
-sudo mount -o ro /dev/nbd0 /mnt/snapshot
+sudo mount -o ro /dev/nbd0 /mnt/archive
 
 # Access files normally
-ls -la /mnt/snapshot
-cat /mnt/snapshot/important.log
+ls -la /mnt/archive
+cat /mnt/archive/important.log
 
 # Disconnect when done
-sudo umount /mnt/snapshot
+sudo umount /mnt/archive
 sudo nbd-client -d /dev/nbd0
 ```
 
 ### Use Cases
 
-- **VM Hosting**: Boot VMs directly from NBD-mounted snapshots
+- **VM Hosting**: Boot VMs directly from NBD-mounted archives
 - **Forensics**: Mount disk images for analysis without full download
-- **File Access**: Browse snapshot contents with standard Linux tools
+- **File Access**: Browse archive contents with standard Linux tools
 
 ## Architecture
 
@@ -185,7 +185,7 @@ Performance is primarily limited by decompression CPU time, not network bandwidt
 ### Current Security Posture
 
 - **Localhost-only**: Binds to 127.0.0.1, not accessible from network
-- **No authentication**: Anyone with local access can read snapshots
+- **No authentication**: Anyone with local access can read archives
 - **No TLS**: Plaintext protocols (acceptable for loopback)
 - **DoS protection**: Request size clamping to prevent memory exhaustion
 
@@ -276,10 +276,10 @@ The crate includes example programs:
 
 ```bash
 # HTTP server example
-cargo run --example http_server -- snapshot.hxz 8080
+cargo run --example http_server -- archive.hxz 8080
 
 # NBD server example
-cargo run --example nbd_server -- snapshot.hxz 10809
+cargo run --example nbd_server -- archive.hxz 10809
 ```
 
 ## Dependencies
@@ -287,7 +287,7 @@ cargo run --example nbd_server -- snapshot.hxz 10809
 - **axum**: HTTP server framework
 - **tokio**: Async runtime
 - **tower**: Middleware and utilities
-- **hexz-core**: Core snapshot engine
+- **hexz-core**: Core archive engine
 
 ## See Also
 

@@ -12,7 +12,7 @@ pub mod args;
 /// This module contains all the CLI command implementations:
 ///
 /// - `data`: Data operations (pack, info, diff, analyze)
-/// - `vm`: Virtual machine operations (boot, commit, snapshot)
+/// - `vm`: Virtual machine operations (boot, commit, archive)
 /// - `sys`: System utilities (mount, unmount)
 pub mod cmd;
 

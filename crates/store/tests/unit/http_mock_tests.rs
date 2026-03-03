@@ -15,7 +15,7 @@ use hexz_store::http::HttpBackend;
 fn start_mock_server(data: Vec<u8>) -> (String, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
-    let url = format!("http://127.0.0.1:{}/snapshot.hxz", addr.port());
+    let url = format!("http://127.0.0.1:{}/archive.hxz", addr.port());
 
     let handle = thread::spawn(move || {
         // Handle up to 20 requests then exit
@@ -188,7 +188,7 @@ fn test_http_backend_send_sync() {
 fn test_http_backend_missing_content_length() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
-    let url = format!("http://127.0.0.1:{}/snapshot.hxz", addr.port());
+    let url = format!("http://127.0.0.1:{}/archive.hxz", addr.port());
 
     let _handle = thread::spawn(move || {
         if let Ok((stream, _)) = listener.accept() {

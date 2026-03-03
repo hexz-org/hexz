@@ -7,8 +7,8 @@ use common::*;
 
 use hexz_core::algo::compression::lz4::Lz4Compressor;
 use hexz_core::algo::compression::zstd::ZstdCompressor;
-use hexz_core::{File, SnapshotStream};
-use hexz_ops::pack::{PackConfig, pack_snapshot};
+use hexz_core::{Archive, ArchiveStream};
+use hexz_ops::pack::{PackConfig, pack_archive};
 use hexz_store::local::FileBackend;
 use std::fs;
 use std::sync::Arc;
@@ -31,8 +31,7 @@ fn test_cdc_pack_lz4() {
     let output_path = temp_dir.path().join("cdc.hxz");
 
     let config = PackConfig {
-        disk: Some(disk_path),
-        memory: None,
+        input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
         encrypt: false,
@@ -45,17 +44,17 @@ fn test_cdc_pack_lz4() {
         ..Default::default()
     };
 
-    pack_snapshot(config, None::<fn(u64, u64)>).expect("CDC packing failed");
+    pack_archive(config, None::<fn(u64, u64)>).expect("CDC packing failed");
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = File::new(backend, compressor, None).unwrap();
+    let archive = Archive::new(backend, compressor, None).unwrap();
 
-    assert_eq!(snapshot.size(SnapshotStream::Primary) as usize, data.len());
+    assert_eq!(archive.size(ArchiveStream::Main) as usize, data.len());
 
     // Verify data integrity
-    let read_data = snapshot
-        .read_at(SnapshotStream::Primary, 0, data.len())
+    let read_data = archive
+        .read_at(ArchiveStream::Main, 0, data.len())
         .unwrap();
     assert_bytes_equal(&read_data, &data, "CDC LZ4 round-trip");
 }
@@ -72,8 +71,7 @@ fn test_cdc_pack_zstd() {
     let output_path = temp_dir.path().join("cdc_zstd.hxz");
 
     let config = PackConfig {
-        disk: Some(disk_path),
-        memory: None,
+        input: disk_path,
         output: output_path.clone(),
         compression: "zstd".to_string(),
         encrypt: false,
@@ -86,19 +84,19 @@ fn test_cdc_pack_zstd() {
         ..Default::default()
     };
 
-    pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(config, None::<fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(ZstdCompressor::new(3, None));
-    let snapshot = File::new(backend, compressor, None).unwrap();
+    let archive = Archive::new(backend, compressor, None).unwrap();
 
-    let read_data = snapshot
-        .read_at(SnapshotStream::Primary, 0, data.len())
+    let read_data = archive
+        .read_at(ArchiveStream::Main, 0, data.len())
         .unwrap();
     assert_bytes_equal(&read_data, &data, "CDC Zstd round-trip");
 }
 
-/// Test CDC with encrypted snapshot.
+/// Test CDC with encrypted archive.
 #[test]
 fn test_cdc_encrypted() {
     let temp_dir = TempDir::new().unwrap();
@@ -111,8 +109,7 @@ fn test_cdc_encrypted() {
     let password = "cdc_encrypt_pw";
 
     let config = PackConfig {
-        disk: Some(disk_path),
-        memory: None,
+        input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
         encrypt: true,
@@ -125,7 +122,7 @@ fn test_cdc_encrypted() {
         ..Default::default()
     };
 
-    pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(config, None::<fn(u64, u64)>).unwrap();
 
     // Read back with encryption
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
@@ -144,9 +141,9 @@ fn test_cdc_encrypted() {
     });
 
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = File::new(backend, compressor, encryptor).unwrap();
+    let archive = Archive::new(backend, compressor, encryptor).unwrap();
 
-    let read_data = snapshot.read_at(SnapshotStream::Primary, 0, 4096).unwrap();
+    let read_data = archive.read_at(ArchiveStream::Main, 0, 4096).unwrap();
     assert!(read_data.iter().all(|&b| b == 0xAA));
 }
 
@@ -162,8 +159,7 @@ fn test_cdc_small_chunks() {
     let output_path = temp_dir.path().join("cdc_small.hxz");
 
     let config = PackConfig {
-        disk: Some(disk_path),
-        memory: None,
+        input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
         encrypt: false,
@@ -176,14 +172,14 @@ fn test_cdc_small_chunks() {
         ..Default::default()
     };
 
-    pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(config, None::<fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = File::new(backend, compressor, None).unwrap();
+    let archive = Archive::new(backend, compressor, None).unwrap();
 
-    let read_data = snapshot
-        .read_at(SnapshotStream::Primary, 0, data.len())
+    let read_data = archive
+        .read_at(ArchiveStream::Main, 0, data.len())
         .unwrap();
     assert_bytes_equal(&read_data, &data, "CDC small chunks round-trip");
 }
@@ -205,8 +201,7 @@ fn test_cdc_deduplication() {
     let output_path = temp_dir.path().join("cdc_dedup.hxz");
 
     let config = PackConfig {
-        disk: Some(disk_path.clone()),
-        memory: None,
+        input: disk_path.clone(),
         output: output_path.clone(),
         compression: "lz4".to_string(),
         encrypt: false,
@@ -219,7 +214,7 @@ fn test_cdc_deduplication() {
         ..Default::default()
     };
 
-    pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(config, None::<fn(u64, u64)>).unwrap();
 
     // The compressed file should be significantly smaller than the original
     let original_size = fs::metadata(&disk_path).unwrap().len();
@@ -234,10 +229,10 @@ fn test_cdc_deduplication() {
     // Verify data integrity
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = File::new(backend, compressor, None).unwrap();
+    let archive = Archive::new(backend, compressor, None).unwrap();
 
-    let read_data = snapshot
-        .read_at(SnapshotStream::Primary, 0, data.len())
+    let read_data = archive
+        .read_at(ArchiveStream::Main, 0, data.len())
         .unwrap();
     assert_bytes_equal(&read_data, &data, "CDC dedup round-trip");
 }
@@ -257,8 +252,7 @@ fn test_cdc_dual_stream() {
     let output_path = temp_dir.path().join("cdc_dual.hxz");
 
     let config = PackConfig {
-        disk: Some(disk_path),
-        memory: Some(mem_path),
+        input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
         encrypt: false,
@@ -271,20 +265,20 @@ fn test_cdc_dual_stream() {
         ..Default::default()
     };
 
-    pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(config, None::<fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = File::new(backend, compressor, None).unwrap();
+    let archive = Archive::new(backend, compressor, None).unwrap();
 
-    assert_eq!(snapshot.size(SnapshotStream::Primary), 256 * 1024);
-    assert_eq!(snapshot.size(SnapshotStream::Secondary), 128 * 1024);
+    assert_eq!(archive.size(ArchiveStream::Main), 256 * 1024);
+    assert_eq!(archive.size(ArchiveStream::Auxiliary), 128 * 1024);
 
-    let disk_read = snapshot.read_at(SnapshotStream::Primary, 0, 1024).unwrap();
+    let disk_read = archive.read_at(ArchiveStream::Main, 0, 1024).unwrap();
     assert!(disk_read.iter().all(|&b| b == 0xDD));
 
-    let mem_read = snapshot
-        .read_at(SnapshotStream::Secondary, 0, 1024)
+    let mem_read = archive
+        .read_at(ArchiveStream::Auxiliary, 0, 1024)
         .unwrap();
     assert!(mem_read.iter().all(|&b| b == 0xCC));
 }
@@ -306,8 +300,7 @@ fn test_pack_with_progress_callback() {
     let cc = callback_count.clone();
 
     let config = PackConfig {
-        disk: Some(disk_path),
-        memory: None,
+        input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
         encrypt: false,
@@ -317,7 +310,7 @@ fn test_pack_with_progress_callback() {
         ..Default::default()
     };
 
-    pack_snapshot(
+    pack_archive(
         config,
         Some(move |current: u64, total: u64| {
             lp.store(current, Ordering::SeqCst);
@@ -332,4 +325,60 @@ fn test_pack_with_progress_callback() {
         callback_count.load(Ordering::SeqCst) > 0,
         "Progress callback should have been called"
     );
+}
+
+/// Test CDC packing with DCAM and Zstd for high compression.
+#[test]
+fn test_cdc_dcam_zstd_high_compression() {
+    let temp_dir = TempDir::new().unwrap();
+    let output_path = temp_dir.path().join("cdc_dcam.hxz");
+
+    // 1. Generate highly redundant data
+    // 1MB of repeating patterns + some unique data
+    let mut data = Vec::with_capacity(1024 * 1024 + 24 * 1024);
+    let pattern = vec![0xAA; 1024]; // 1KB pattern
+    for _ in 0..1024 {
+        data.extend_from_slice(&pattern);
+    }
+    
+    // Add 24KB of semi-random data (using a predictable loop for simplicity without extra deps)
+    for i in 0..24 * 1024 {
+        data.push((i % 251) as u8);
+    }
+
+    let input_path = temp_dir.path().join("input.bin");
+    fs::write(&input_path, &data).unwrap();
+
+    // 2. Pack with CDC + DCAM + Zstd
+    let config = PackConfig {
+        input: input_path,
+        output: output_path.clone(),
+        compression: "zstd".to_string(),
+        use_dcam: true, // Enable DCAM
+        min_chunk: None, // Let DCAM decide
+        avg_chunk: None,
+        max_chunk: None,
+        ..Default::default()
+    };
+
+    pack_archive(config, None::<fn(u64, u64)>).expect("CDC+DCAM packing failed");
+
+    // 3. Verify high compression/deduplication
+    let metadata = fs::metadata(&output_path).unwrap();
+    let archive_size = metadata.len();
+    
+    // Original size is ~1048 KB.
+    // With 1024x redundancy, the pattern part should dedup to ~1KB compressed.
+    // Unique data is 24KB.
+    // Expected size should be well under 100KB including metadata.
+    assert!(archive_size < 100 * 1024, "Archive size too large: {} bytes", archive_size);
+
+    // 4. Verify Integrity
+    let backend = Arc::new(FileBackend::new(&output_path).unwrap());
+    let compressor = Box::new(ZstdCompressor::new(3, None));
+    let archive = Archive::new(backend, compressor, None).unwrap();
+
+    assert_eq!(archive.size(ArchiveStream::Main) as usize, data.len());
+    let read_data = archive.read_at(ArchiveStream::Main, 0, data.len()).unwrap();
+    assert_eq!(read_data, data);
 }

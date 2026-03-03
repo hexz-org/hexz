@@ -19,7 +19,7 @@ mod encryption_pack_tests;
 mod cdc_pack_tests;
 
 #[path = "integration/thin_snapshot_tests.rs"]
-mod thin_snapshot_tests;
+mod thin_archive_tests;
 
 #[path = "integration/file_coverage_tests.rs"]
 mod file_coverage_tests;
@@ -31,7 +31,7 @@ mod crash_safety_tests;
 mod parallel_pack_tests;
 
 #[path = "integration/snapshot_writer_tests.rs"]
-mod snapshot_writer_tests;
+mod archive_writer_tests;
 
 #[path = "unit/file_tests.rs"]
 mod file_tests;

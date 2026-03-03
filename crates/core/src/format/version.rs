@@ -1,9 +1,9 @@
 //! Format version management and compatibility checking.
 //!
-//! This module defines the versioning strategy for Hexz snapshot files (`.hxz`),
+//! This module defines the versioning strategy for Hexz archive files (`.hxz`),
 //! enabling safe evolution of the on-disk format while maintaining backward and
 //! forward compatibility guarantees. Version negotiation ensures that readers can
-//! detect incompatible snapshots and provide actionable error messages.
+//! detect incompatible archives and provide actionable error messages.
 //!
 //! # Versioning Strategy
 //!
@@ -27,27 +27,27 @@
 //!
 //! # Compatibility Model
 //!
-//! ## Backward Compatibility (Reading Old Snapshots)
+//! ## Backward Compatibility (Reading Old Archives)
 //!
-//! Hexz readers maintain compatibility with snapshots created by older software:
+//! Hexz readers maintain compatibility with archives created by older software:
 //!
 //! - **MIN_SUPPORTED_VERSION**: Oldest format version we can read (currently 1)
-//! - **Upgrade Path**: Snapshots older than MIN_SUPPORTED_VERSION must be migrated
+//! - **Upgrade Path**: Archives older than MIN_SUPPORTED_VERSION must be migrated
 //!   using the `hexz-migrate` tool (see Migration section below)
 //!
-//! ## Forward Compatibility (Reading New Snapshots)
+//! ## Forward Compatibility (Reading New Archives)
 //!
-//! Hexz readers handle snapshots created by newer software:
+//! Hexz readers handle archives created by newer software:
 //!
 //! - **MAX_SUPPORTED_VERSION**: Newest format version we can read (currently 1)
 //! - **Degraded Mode**: Future versions may enable partial reads with warnings if
 //!   minor features are unrecognized (not yet implemented)
-//! - **Strict Rejection**: Snapshots with `version > MAX_SUPPORTED_VERSION` are
+//! - **Strict Rejection**: Archives with `version > MAX_SUPPORTED_VERSION` are
 //!   rejected with an actionable error message
 //!
 //! # Version Negotiation Workflow
 //!
-//! When opening a snapshot file:
+//! When opening a archive file:
 //!
 //! ```text
 //! 1. Read header magic bytes (validate "HEXZ" signature)
@@ -121,9 +121,9 @@
 //! ```rust,no_run
 //! # fn load_fixture(_: &str) -> hexz_core::File { todo!() }
 //! #[test]
-//! fn test_read_v2_snapshot() {
-//!     let snapshot = load_fixture("testdata/v2_snapshot.hxz");
-//!     assert_eq!(snapshot.header.version, 2);
+//! fn test_read_v2_archive() {
+//!     let archive = load_fixture("testdata/v2_archive.hxz");
+//!     assert_eq!(archive.header.version, 2);
 //!     // Verify new features work correctly
 //! }
 //! ```
@@ -134,10 +134,10 @@
 //!
 //! # Migration Between Versions
 //!
-//! The `hexz-migrate` tool converts snapshots between format versions:
+//! The `hexz-migrate` tool converts archives between format versions:
 //!
 //! ```bash
-//! # Upgrade old snapshot to current format
+//! # Upgrade old archive to current format
 //! hexz-migrate upgrade --input old_v1.hxz --output new_v2.hxz
 //!
 //! # Downgrade for compatibility (if supported)
@@ -149,8 +149,8 @@
 //!
 //! The migration tool performs a streaming rewrite:
 //!
-//! 1. Open source snapshot with reader for version N
-//! 2. Create destination snapshot with writer for version M
+//! 1. Open source archive with reader for version N
+//! 2. Create destination archive with writer for version M
 //! 3. Stream all blocks through decompression/re-compression
 //! 4. Rebuild index in target format
 //! 5. Preserve metadata (encryption keys, parent references, etc.)
@@ -163,7 +163,7 @@
 //!
 //! # Performance Considerations
 //!
-//! Version checking is performed once per snapshot open operation:
+//! Version checking is performed once per archive open operation:
 //!
 //! - **Overhead**: Negligible (~100ns for integer comparison)
 //! - **Caching**: Version is cached in [`crate::api::file::File`] struct
@@ -176,18 +176,18 @@
 //! ```
 //! use hexz_core::format::version::{check_version, VersionCompatibility};
 //!
-//! let snapshot_version = 1;
-//! let compat = check_version(snapshot_version);
+//! let archive_version = 1;
+//! let compat = check_version(archive_version);
 //!
 //! match compat {
 //!     VersionCompatibility::Full => {
-//!         println!("Snapshot is fully compatible");
+//!         println!("Archive is fully compatible");
 //!     }
 //!     VersionCompatibility::Incompatible => {
-//!         eprintln!("Cannot read snapshot (incompatible version)");
+//!         eprintln!("Cannot read archive (incompatible version)");
 //!     }
 //!     VersionCompatibility::Degraded => {
-//!         println!("Snapshot readable with warnings");
+//!         println!("Archive readable with warnings");
 //!     }
 //! }
 //! ```
@@ -210,9 +210,9 @@
 //! # use hexz_common::Error;
 //! # use hexz_core::format::header::Header;
 //! # use std::path::Path;
-//! # struct Snapshot { header: Header }
+//! # struct Archive { header: Header }
 //! # fn read_header(_: &Path) -> Result<Header, Error> { todo!() }
-//! fn open_snapshot(path: &Path) -> Result<Snapshot, Error> {
+//! fn open_archive(path: &Path) -> Result<Archive, Error> {
 //!     let header = read_header(path)?;
 //!
 //!     if !check_version(header.version).is_compatible() {
@@ -223,7 +223,7 @@
 //!     }
 //!
 //!     // Proceed with version-aware deserialization
-//!     Ok(Snapshot { header })
+//!     Ok(Archive { header })
 //! }
 //! ```
 
@@ -232,7 +232,7 @@ use std::fmt;
 /// Current format version written by this build of Hexz.
 ///
 /// This constant defines the format version number written to the `version` field
-/// of new snapshot headers. It is incremented when the on-disk format changes in
+/// of new archive headers. It is incremented when the on-disk format changes in
 /// a way that requires readers to adapt their parsing logic.
 ///
 /// # Incrementing Policy
@@ -255,21 +255,21 @@ use std::fmt;
 /// - bincode serialization
 /// - LZ4/Zstd compression support
 /// - Optional AES-256-GCM encryption
-/// - Thin provisioning via parent snapshots
+/// - Thin provisioning via parent archives
 /// - Dual streams (disk + memory)
 pub const CURRENT_VERSION: u32 = 1;
 
 /// Minimum format version readable by this build.
 ///
-/// Snapshots with `version < MIN_SUPPORTED_VERSION` are rejected with an
+/// Archives with `version < MIN_SUPPORTED_VERSION` are rejected with an
 /// [`VersionCompatibility::Incompatible`] error. Users must migrate such
-/// snapshots using `hexz-migrate upgrade` before reading.
+/// archives using `hexz-migrate upgrade` before reading.
 ///
 /// # Rationale
 ///
 /// Maintaining backward compatibility indefinitely is untenable as format
 /// complexity grows. This constant defines the "support horizon" for old
-/// snapshots. When incrementing, ensure migration tooling exists.
+/// archives. When incrementing, ensure migration tooling exists.
 ///
 /// # Current Policy
 ///
@@ -279,9 +279,9 @@ pub const MIN_SUPPORTED_VERSION: u32 = 1;
 
 /// Maximum format version readable by this build.
 ///
-/// Snapshots with `version > MAX_SUPPORTED_VERSION` are rejected unless
+/// Archives with `version > MAX_SUPPORTED_VERSION` are rejected unless
 /// degraded mode is enabled (not yet implemented). This prevents crashes
-/// when reading snapshots created by future Hexz versions.
+/// when reading archives created by future Hexz versions.
 ///
 /// # Forward Compatibility
 ///
@@ -291,13 +291,13 @@ pub const MIN_SUPPORTED_VERSION: u32 = 1;
 ///
 /// # Upgrade Path
 ///
-/// If you encounter a snapshot with `version > MAX_SUPPORTED_VERSION`,
+/// If you encounter a archive with `version > MAX_SUPPORTED_VERSION`,
 /// upgrade Hexz to a newer release that supports that version.
 pub const MAX_SUPPORTED_VERSION: u32 = 1;
 
-/// Result of snapshot version compatibility analysis.
+/// Result of archive version compatibility analysis.
 ///
-/// Returned by [`check_version`] to indicate whether a snapshot with a given
+/// Returned by [`check_version`] to indicate whether a archive with a given
 /// format version can be read by this build of Hexz. This enum enables
 /// graceful handling of version mismatches with appropriate error messages.
 ///
@@ -312,8 +312,8 @@ pub const MAX_SUPPORTED_VERSION: u32 = 1;
 ///   treated as Incompatible.)
 ///
 /// - **Incompatible**: Version is outside the supported range and cannot be read.
-///   The user must upgrade Hexz (for newer snapshots) or migrate the snapshot
-///   (for older snapshots).
+///   The user must upgrade Hexz (for newer archives) or migrate the archive
+///   (for older archives).
 ///
 /// # Examples
 ///
@@ -341,18 +341,18 @@ pub enum VersionCompatibility {
 }
 
 impl VersionCompatibility {
-    /// Tests whether the snapshot can be read with this compatibility status.
+    /// Tests whether the archive can be read with this compatibility status.
     ///
     /// Returns `true` for [`Full`](VersionCompatibility::Full) and
     /// [`Degraded`](VersionCompatibility::Degraded) compatibility, indicating
     /// that read operations can proceed (possibly with warnings). Returns `false`
     /// for [`Incompatible`](VersionCompatibility::Incompatible), indicating that
-    /// the snapshot must be rejected.
+    /// the archive must be rejected.
     ///
     /// # Returns
     ///
-    /// - `true`: Snapshot can be opened (possibly with limited functionality)
-    /// - `false`: Snapshot cannot be opened (hard error)
+    /// - `true`: Archive can be opened (possibly with limited functionality)
+    /// - `false`: Archive cannot be opened (hard error)
     ///
     /// # Examples
     ///
@@ -361,9 +361,9 @@ impl VersionCompatibility {
     ///
     /// let compat = check_version(1);
     /// if compat.is_compatible() {
-    ///     println!("Snapshot can be read");
+    ///     println!("Archive can be read");
     /// } else {
-    ///     eprintln!("Snapshot is incompatible");
+    ///     eprintln!("Archive is incompatible");
     /// }
     /// ```
     pub fn is_compatible(&self) -> bool {
@@ -374,7 +374,7 @@ impl VersionCompatibility {
     }
 }
 
-/// Determines compatibility status of a snapshot format version.
+/// Determines compatibility status of a archive format version.
 ///
 /// This function implements the version negotiation logic by comparing the
 /// provided version number against the supported range defined by
@@ -382,11 +382,11 @@ impl VersionCompatibility {
 ///
 /// # Parameters
 ///
-/// - `version`: The format version number read from a snapshot header
+/// - `version`: The format version number read from a archive header
 ///
 /// # Returns
 ///
-/// A [`VersionCompatibility`] value indicating whether the snapshot can be read:
+/// A [`VersionCompatibility`] value indicating whether the archive can be read:
 ///
 /// - [`Full`](VersionCompatibility::Full): Version is within supported range
 /// - [`Incompatible`](VersionCompatibility::Incompatible): Version is too old or too new
@@ -402,7 +402,7 @@ impl VersionCompatibility {
 ///
 /// # Future Extensions
 ///
-/// In future versions, this function may return `Degraded` for snapshots with
+/// In future versions, this function may return `Degraded` for archives with
 /// minor version mismatches, enabling partial reads with warnings. For example:
 ///
 /// ```rust,no_run
@@ -421,7 +421,7 @@ impl VersionCompatibility {
 /// # Performance
 ///
 /// This function performs two integer comparisons and has negligible overhead
-/// (~100ns). It is called once per snapshot open operation and does not affect
+/// (~100ns). It is called once per archive open operation and does not affect
 /// hot path performance.
 ///
 /// # Examples
@@ -451,9 +451,9 @@ impl VersionCompatibility {
 /// # use hexz_core::format::version::{check_version, MIN_SUPPORTED_VERSION, MAX_SUPPORTED_VERSION};
 /// # use hexz_common::{Error, Result};
 /// # use hexz_core::format::header::Header;
-/// # struct Snapshot;
-/// # impl Snapshot { fn new(_: &Header) -> Self { Snapshot } }
-/// fn open_snapshot(header: &Header) -> Result<Snapshot> {
+/// # struct Archive;
+/// # impl Archive { fn new(_: &Header) -> Self { Archive } }
+/// fn open_archive(header: &Header) -> Result<Archive> {
 ///     let compat = check_version(header.version);
 ///     if !compat.is_compatible() {
 ///         return Err(Error::Format(format!(
@@ -462,7 +462,7 @@ impl VersionCompatibility {
 ///         )));
 ///     }
 ///     // Proceed with read operations
-///     Ok(Snapshot::new(header))
+///     Ok(Archive::new(header))
 /// }
 /// ```
 pub fn check_version(version: u32) -> VersionCompatibility {
@@ -484,7 +484,7 @@ pub fn check_version(version: u32) -> VersionCompatibility {
 ///
 /// # Parameters
 ///
-/// - `version`: The format version number from a snapshot header
+/// - `version`: The format version number from a archive header
 ///
 /// # Returns
 ///
@@ -504,10 +504,10 @@ pub fn check_version(version: u32) -> VersionCompatibility {
 /// ## Too Old (version < MIN_SUPPORTED_VERSION)
 ///
 /// ```text
-/// "Version 0 is too old (min supported: 1). Please upgrade the snapshot."
+/// "Version 0 is too old (min supported: 1). Please upgrade the archive."
 /// ```
 ///
-/// Remediation: Use `hexz-migrate upgrade` to convert the snapshot.
+/// Remediation: Use `hexz-migrate upgrade` to convert the archive.
 ///
 /// ## Too New (version > MAX_SUPPORTED_VERSION)
 ///
@@ -532,7 +532,7 @@ pub fn check_version(version: u32) -> VersionCompatibility {
 /// ```rust,no_run
 /// # use hexz_core::format::version::{check_version, compatibility_message};
 /// # use hexz_core::format::header::Header;
-/// fn validate_snapshot(header: &Header) -> Result<(), String> {
+/// fn validate_archive(header: &Header) -> Result<(), String> {
 ///     let compat = check_version(header.version);
 ///     if !compat.is_compatible() {
 ///         return Err(compatibility_message(header.version));
@@ -558,16 +558,16 @@ pub fn check_version(version: u32) -> VersionCompatibility {
 /// // Version too old (hypothetical if MIN_SUPPORTED_VERSION > 1)
 /// let msg = compatibility_message(0);
 /// assert!(msg.contains("too old"));
-/// assert!(msg.contains("upgrade the snapshot"));
+/// assert!(msg.contains("upgrade the archive"));
 /// ```
 ///
 /// ## CLI Integration
 ///
 /// ```bash
-/// $ hexz open old_snapshot.hxz
-/// Error: Version 0 is too old (min supported: 1). Please upgrade the snapshot.
+/// $ hexz open old_archive.hxz
+/// Error: Version 0 is too old (min supported: 1). Please upgrade the archive.
 ///
-/// Run: hexz-migrate upgrade old_snapshot.hxz new_snapshot.hxz
+/// Run: hexz-migrate upgrade old_archive.hxz new_archive.hxz
 /// ```
 pub fn compatibility_message(version: u32) -> String {
     match check_version(version) {
@@ -579,7 +579,7 @@ pub fn compatibility_message(version: u32) -> String {
         VersionCompatibility::Incompatible => {
             if version < MIN_SUPPORTED_VERSION {
                 format!(
-                    "Version {} is too old (min supported: {}). Please upgrade the snapshot.",
+                    "Version {} is too old (min supported: {}). Please upgrade the archive.",
                     version, MIN_SUPPORTED_VERSION
                 )
             } else {
@@ -726,7 +726,7 @@ mod tests {
                 "Message: {}",
                 msg
             );
-            assert!(msg.contains("upgrade the snapshot"), "Message: {}", msg);
+            assert!(msg.contains("upgrade the archive"), "Message: {}", msg);
         }
     }
 

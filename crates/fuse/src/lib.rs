@@ -1,123 +1,42 @@
-//! FUSE adapter for mounting Hexz snapshots as filesystems.
+//! FUSE adapter for mounting Hexz archives as filesystems.
 //!
 //! This crate provides a FUSE (Filesystem in Userspace) implementation that
-//! mounts Hexz snapshots as block device files, enabling standard tools to
+//! mounts Hexz archives as directory trees, enabling standard tools to
 //! interact with compressed archives as if they were regular files.
-//!
-//! # Overview
-//!
-//! The FUSE adapter exposes a minimal filesystem structure:
-//!
-//! ```text
-//! /mountpoint/
-//! ├── disk       (block device file, size = snapshot disk size)
-//! └── memory     (optional, if secondary stream present)
-//! ```
-//!
-//! # Features
-//!
-//! - **Transparent Decompression**: Reads decompress blocks on-the-fly
-//! - **Overlay Support**: Writes go to separate overlay file (copy-on-write)
-//! - **Standard Tools**: Works with dd, qemu, mount, parted, etc.
-//! - **Random Access**: Efficient seeking without full decompression
-//!
-//! # Usage
-//!
-//! ```no_run
-//! use hexz_fuse::mount_fs;
-//! use hexz_core::File;
-//! use hexz_store::local::FileBackend;
-//! use hexz_core::algo::compression::lz4::Lz4Compressor;
-//! use std::sync::Arc;
-//! use std::path::Path;
-//!
-//! # fn main() -> anyhow::Result<()> {
-//! // Open snapshot
-//! let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
-//! let compressor = Box::new(Lz4Compressor::new());
-//! let snap = File::new(backend, compressor, None)?;
-//!
-//! // Mount with overlay
-//! mount_fs(snap, Path::new("/mnt/snapshot"), Some(Path::new("overlay.bin")), 1000, 1000)?;
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! # Overlay Copy-on-Write
-//!
-//! When mounted with an overlay:
-//! - Reads: Overlay deltas override base snapshot
-//! - Writes: Stored in overlay file, base remains immutable
-//! - Commit: Use `hexz vm commit` to merge overlay into new snapshot
-//!
-//! # Performance
-//!
-//! - **Read latency**: ~80μs (cached), ~1ms (uncached)
-//! - **Write latency**: ~50μs (overlay write, no compression)
-//! - **Sequential throughput**: ~2-3 GB/s with LZ4
-//!
-//! # Requirements
-//!
-//! - Linux with FUSE support (`fusermount` or `libfuse`)
-//! - User must have permission to mount filesystems
 
-/// Virtual filesystem abstractions (inodes, attributes, overlay).
-///
-/// This module provides the core VFS primitives for representing snapshot
-/// contents as a filesystem tree.
-///
-/// - `inode`: Inode numbering, directory entries, inode metadata
-/// - `attr`: File attribute construction (size, mode, timestamps)
-/// - `overlay`: Copy-on-write overlay for writable mounts
-///
-/// See submodules for detailed specifications.
+/// Virtual filesystem abstractions (inodes, attributes).
 pub mod vfs;
 
 /// FUSE filesystem implementation.
-///
-/// Implements the `fuser::Filesystem` trait to expose snapshots as
-/// mountable filesystems.
-///
-/// Main components:
-/// - `lookup`: Inode lookup and directory listing
-/// - `read`: Read operations on disk/memory files
-/// - `write`: Write operations with copy-on-write semantics
-///
-/// The filesystem struct is `!Send` due to FUSE library constraints.
 pub mod fuse;
 
 use fuser::MountOption;
-use hexz_core::File;
-use std::path::Path;
+use hexz_core::Archive;
 use std::sync::Arc;
 
-/// Mounts a Hexz snapshot at a given path using the `fuser` library.
+/// Mounts a Hexz archive at a given path using the `fuser` library.
 ///
-/// **Architectural intent:** Creates a read-mostly filesystem view over a
-/// snapshot and optional overlay so tools can interact with it via standard
-/// POSIX operations.
-///
-/// **Constraints:** The target `mountpoint` must exist and be accessible to
-/// the caller. Options are fixed to read-write with default permission
-/// handling; additional mount flags are not currently surfaced.
-///
-/// **Side effects:** Spawns a FUSE background thread inside `fuser::mount2`
-/// and holds open file descriptors for the snapshot and overlay for the
-/// lifetime of the mount.
+/// **Architectural intent:** Creates a read-only filesystem view over an
+/// archive so tools can interact with it via standard POSIX operations.
 pub fn mount_fs(
-    snap: Arc<File>,
-    mountpoint: &Path,
-    overlay_path: Option<&Path>,
+    snap: Arc<Archive>,
+    mountpoint: &std::path::Path,
     uid: u32,
     gid: u32,
+    write_layer: Option<std::path::PathBuf>,
+    metadata_dir: Option<std::path::PathBuf>,
 ) -> anyhow::Result<()> {
-    let options = vec![
-        MountOption::RW,
+    let mut options = vec![
         MountOption::FSName("hexz".to_string()),
-        MountOption::DefaultPermissions,
+        MountOption::AutoUnmount,
     ];
 
-    let fs = fuse::Hexz::new(snap, overlay_path, uid, gid)?;
+    if write_layer.is_none() {
+        options.push(MountOption::RO);
+        options.push(MountOption::DefaultPermissions);
+    }
+
+    let fs = fuse::Hexz::new(snap, uid, gid, write_layer, metadata_dir)?;
     fuser::mount2(fs, mountpoint, &options)?;
     Ok(())
 }

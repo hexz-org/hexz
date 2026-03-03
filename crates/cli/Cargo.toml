@@ -6,7 +6,7 @@ autobenches = false
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
-description = "CLI tool for managing Hexz snapshots and datasets"
+description = "CLI tool for managing Hexz deduplicated archives"
 
 [dependencies]
 hexz-core = { workspace = true }
@@ -20,6 +20,7 @@ anyhow = { workspace = true }
 tokio = { workspace = true }
 indicatif = "0.17"
 rpassword = "7.0"
+walkdir = "2.4"
 hex = { workspace = true }
 sha2 = { workspace = true }
 blake3 = "1.5"
@@ -29,6 +30,7 @@ daemonize = { version = "0.5", optional = true }
 fuser = { version = "0.14", optional = true }
 lz4_flex = "0.11"
 tempfile = "3.10"
+serde = { workspace = true }
 serde_json = "1.0"
 tar = "0.4"
 libc = "0.2.180"
@@ -48,123 +50,10 @@ name = "hexz_cli"
 path = "src/lib.rs"
 bench = false
 
-# --- ADDED SECTION ---
 [[bin]]
 name = "hexz"
 path = "src/main.rs"
 bench = false
-# ---------------------
-
-[[bench]]
-name = "read_throughput"
-harness = false
-path = "benches/macro/read_throughput.rs"
-
-[[bench]]
-name = "sparse_access"
-harness = false
-path = "benches/macro/sparse_access.rs"
-
-[[bench]]
-name = "concurrency"
-harness = false
-path = "benches/macro/concurrency.rs"
-
-[[bench]]
-name = "gzip_comparison"
-harness = false
-path = "benches/macro/gzip_comparison.rs"
-
-[[bench]]
-name = "http_throughput"
-harness = false
-path = "benches/http_throughput.rs"
-
-# AI/ML-focused benchmarks
-[[bench]]
-name = "ai_shuffle"
-harness = false
-path = "benches/ai/shuffle.rs"
-
-[[bench]]
-name = "ai_tensor_ops"
-harness = false
-path = "benches/ai/tensor_ops.rs"
-
-[[bench]]
-name = "cache_concurrent"
-harness = false
-path = "benches/micro/cache_concurrent.rs"
-
-[[bench]]
-name = "scatter_gather"
-harness = false
-path = "benches/micro/scatter_gather.rs"
-
-[[bench]]
-name = "read_api_comparison"
-harness = false
-path = "benches/micro/read_api_comparison.rs"
-
-[[bench]]
-name = "decompress_scaling"
-harness = false
-path = "benches/micro/decompress_scaling.rs"
-
-[[bench]]
-name = "compression"
-harness = false
-path = "benches/micro/compression.rs"
-
-[[bench]]
-name = "hashing"
-harness = false
-path = "benches/micro/hashing.rs"
-
-[[bench]]
-name = "cdc_chunking"
-harness = false
-path = "benches/micro/cdc_chunking.rs"
-
-[[bench]]
-name = "write_throughput"
-harness = false
-path = "benches/macro/write_throughput.rs"
-
-[[bench]]
-name = "encryption"
-harness = false
-path = "benches/micro/encryption.rs"
-
-[[bench]]
-name = "hash_table"
-harness = false
-path = "benches/micro/hash_table.rs"
-
-[[bench]]
-name = "cache_shard_hash"
-harness = false
-path = "benches/micro/cache_shard_hash.rs"
-
-[[bench]]
-name = "read_alloc"
-harness = false
-path = "benches/micro/read_alloc.rs"
-
-[[bench]]
-name = "dedup_efficiency"
-harness = false
-path = "benches/macro/dedup_efficiency.rs"
-
-[[bench]]
-name = "block_size_tradeoffs"
-harness = false
-path = "benches/macro/block_size_tradeoffs.rs"
-
-[[bench]]
-name = "pack_memory"
-harness = false
-path = "benches/macro/pack_memory.rs"
 
 [features]
 default = ["fuse", "server", "compression-zstd", "encryption", "diagnostics", "signing", "s3"]
@@ -183,7 +72,3 @@ compression-zstd = ["hexz-core/compression-zstd", "hexz-ops/compression-zstd"]
 
 # Optional tools
 diagnostics = []
-
-# Advanced backends
-firecracker = []
-

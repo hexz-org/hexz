@@ -38,40 +38,35 @@ fn test_read_from_default() {
 
 #[test]
 fn test_read_from_lz4_compression() {
-    let mut h = Header::default();
-    h.compression = CompressionType::Lz4;
+    let h = Header { compression: CompressionType::Lz4, ..Default::default() };
     let decoded = roundtrip(&h);
     assert_eq!(decoded.compression, CompressionType::Lz4);
 }
 
 #[test]
 fn test_read_from_zstd_compression() {
-    let mut h = Header::default();
-    h.compression = CompressionType::Zstd;
+    let h = Header { compression: CompressionType::Zstd, ..Default::default() };
     let decoded = roundtrip(&h);
     assert_eq!(decoded.compression, CompressionType::Zstd);
 }
 
 #[test]
 fn test_read_from_custom_block_size() {
-    let mut h = Header::default();
-    h.block_size = 131_072;
+    let h = Header { block_size: 131_072, ..Default::default() };
     let decoded = roundtrip(&h);
     assert_eq!(decoded.block_size, 131_072);
 }
 
 #[test]
 fn test_read_from_with_parent_path() {
-    let mut h = Header::default();
-    h.parent_paths = vec!["/snapshots/base.hxz".to_string()];
+    let h = Header { parent_paths: vec!["/archives/base.hxz".to_string()], ..Default::default() };
     let decoded = roundtrip(&h);
-    assert_eq!(decoded.parent_paths, vec!["/snapshots/base.hxz"]);
+    assert_eq!(decoded.parent_paths, vec!["/archives/base.hxz"]);
 }
 
 #[test]
 fn test_read_from_with_multiple_parent_paths() {
-    let mut h = Header::default();
-    h.parent_paths = vec!["a.hxz".to_string(), "b.hxz".to_string()];
+    let h = Header { parent_paths: vec!["a.hxz".to_string(), "b.hxz".to_string()], ..Default::default() };
     let decoded = roundtrip(&h);
     assert_eq!(decoded.parent_paths.len(), 2);
     assert_eq!(decoded.parent_paths[0], "a.hxz");
@@ -80,9 +75,11 @@ fn test_read_from_with_multiple_parent_paths() {
 
 #[test]
 fn test_read_from_with_metadata_location() {
-    let mut h = Header::default();
-    h.metadata_offset = Some(1_048_576);
-    h.metadata_length = Some(4096);
+    let h = Header {
+        metadata_offset: Some(1_048_576),
+        metadata_length: Some(4096),
+        ..Default::default()
+    };
     let decoded = roundtrip(&h);
     assert_eq!(decoded.metadata_offset, Some(1_048_576));
     assert_eq!(decoded.metadata_length, Some(4096));
@@ -90,9 +87,11 @@ fn test_read_from_with_metadata_location() {
 
 #[test]
 fn test_read_from_with_signature_location() {
-    let mut h = Header::default();
-    h.signature_offset = Some(2_000_000);
-    h.signature_length = Some(64);
+    let h = Header {
+        signature_offset: Some(2_000_000),
+        signature_length: Some(64),
+        ..Default::default()
+    };
     let decoded = roundtrip(&h);
     assert_eq!(decoded.signature_offset, Some(2_000_000));
     assert_eq!(decoded.signature_length, Some(64));
@@ -100,15 +99,18 @@ fn test_read_from_with_signature_location() {
 
 #[test]
 fn test_read_from_feature_flags() {
-    let mut h = Header::default();
-    h.features = FeatureFlags {
-        has_disk: true,
-        has_memory: true,
-        variable_blocks: false,
+    let h = Header {
+            cdc_params: None,
+        features: FeatureFlags {
+            has_main: true,
+            has_auxiliary: true,
+            variable_blocks: false,
+        },
+        ..Default::default()
     };
     let decoded = roundtrip(&h);
-    assert!(decoded.features.has_disk);
-    assert!(decoded.features.has_memory);
+    assert!(decoded.features.has_main);
+    assert!(decoded.features.has_auxiliary);
     assert!(!decoded.features.variable_blocks);
 }
 
@@ -136,8 +138,7 @@ fn test_read_from_version_preserved() {
 
 #[test]
 fn test_read_from_index_offset_preserved() {
-    let mut h = Header::default();
-    h.index_offset = 4096;
+    let h = Header { index_offset: 4096, ..Default::default() };
     let decoded = roundtrip(&h);
     assert_eq!(decoded.index_offset, 4096);
 }
@@ -172,7 +173,7 @@ fn test_serialized_size_fits_in_header() {
         version: 1,
         block_size: 65536,
         index_offset: 999_999_999,
-        parent_paths: vec!["a/very/long/parent/path/to/a/snapshot.hxz".to_string()],
+        parent_paths: vec!["a/very/long/parent/path/to/a/archive.hxz".to_string()],
         dictionary_offset: Some(1_234_567),
         dictionary_length: Some(32768),
         metadata_offset: Some(9_999_999),
@@ -181,9 +182,10 @@ fn test_serialized_size_fits_in_header() {
         signature_length: Some(64),
         encryption: None,
         compression: CompressionType::Zstd,
+            cdc_params: None,
         features: FeatureFlags {
-            has_disk: true,
-            has_memory: true,
+            has_main: true,
+            has_auxiliary: true,
             variable_blocks: true,
         },
     };

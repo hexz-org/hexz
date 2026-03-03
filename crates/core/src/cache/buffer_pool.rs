@@ -18,6 +18,9 @@
 
 use std::sync::Mutex;
 
+/// Default maximum number of idle buffers to retain in the pool.
+pub const DEFAULT_POOL_SIZE: usize = 16;
+
 /// A pool of reusable `Vec<u8>` buffers for decompression.
 ///
 /// Thread-safe via internal `Mutex`. The pool stores buffers sorted by capacity

@@ -1,6 +1,6 @@
-//! Crash safety tests for the snapshot write path.
+//! Crash safety tests for the archive write path.
 //!
-//! These tests verify that readers correctly reject snapshots where the write
+//! These tests verify that readers correctly reject archives where the write
 //! process was interrupted (simulated by truncation or header corruption).
 //! The write path uses a header-last design: the header (with index_offset)
 //! is written only after all blocks and indices are on disk, so a crash at
@@ -9,15 +9,15 @@
 use hexz_core::algo::compression::lz4::Lz4Compressor;
 use hexz_core::format::header::Header;
 use hexz_core::format::magic::HEADER_SIZE;
-use hexz_core::{File, SnapshotStream};
-use hexz_ops::pack::{PackConfig, pack_snapshot};
+use hexz_core::{Archive, ArchiveStream};
+use hexz_ops::pack::{PackConfig, pack_archive};
 use hexz_store::local::FileBackend;
 use std::fs;
 use std::sync::Arc;
 use tempfile::TempDir;
 
-/// Creates a valid snapshot and returns its path + the temp dir (to keep it alive).
-fn create_valid_snapshot() -> (std::path::PathBuf, TempDir) {
+/// Creates a valid archive and returns its path + the temp dir (to keep it alive).
+fn create_valid_archive() -> (std::path::PathBuf, TempDir) {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = temp_dir.path().join("disk.img");
     // 256KB of mixed data (not all zeros, to ensure blocks are actually written)
@@ -27,10 +27,9 @@ fn create_valid_snapshot() -> (std::path::PathBuf, TempDir) {
     }
     fs::write(&disk_path, &data).unwrap();
 
-    let output_path = temp_dir.path().join("snapshot.hxz");
+    let output_path = temp_dir.path().join("archive.hxz");
     let config = PackConfig {
-        disk: Some(disk_path),
-        memory: None,
+        input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
         encrypt: false,
@@ -42,22 +41,22 @@ fn create_valid_snapshot() -> (std::path::PathBuf, TempDir) {
         max_chunk: Some(131072),
         ..Default::default()
     };
-    pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(config, None::<fn(u64, u64)>).unwrap();
 
-    // Sanity check: the snapshot is valid
+    // Sanity check: the archive is valid
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = File::new(backend, compressor, None).unwrap();
-    assert_eq!(snapshot.size(SnapshotStream::Primary), 256 * 1024);
+    let archive = Archive::new(backend, compressor, None).unwrap();
+    assert_eq!(archive.size(ArchiveStream::Main), 256 * 1024);
 
     (output_path, temp_dir)
 }
 
-/// Try to open a snapshot file, returning Ok if it opens or Err if it's rejected.
-fn try_open_snapshot(path: &std::path::Path) -> hexz_common::Result<Arc<File>> {
+/// Try to open a archive file, returning Ok if it opens or Err if it's rejected.
+fn try_open_archive(path: &std::path::Path) -> hexz_common::Result<Arc<Archive>> {
     let backend = Arc::new(FileBackend::new(path)?);
     let compressor = Box::new(Lz4Compressor::new());
-    File::new(backend, compressor, None)
+    Archive::new(backend, compressor, None)
 }
 
 // ── Empty / zero-byte file ──────────────────────────────────────────────────
@@ -68,7 +67,7 @@ fn test_crash_empty_file() {
     let path = temp_dir.path().join("empty.hxz");
     fs::write(&path, []).unwrap();
     assert!(
-        try_open_snapshot(&path).is_err(),
+        try_open_archive(&path).is_err(),
         "empty file should be rejected"
     );
 }
@@ -80,7 +79,7 @@ fn test_crash_zeroed_header_only() {
     // Simulate: process crashed right after reserving header space
     fs::write(&path, [0u8; HEADER_SIZE]).unwrap();
     assert!(
-        try_open_snapshot(&path).is_err(),
+        try_open_archive(&path).is_err(),
         "zeroed header should be rejected"
     );
 }
@@ -94,15 +93,15 @@ fn test_crash_truncated_mid_header() {
     // File shorter than HEADER_SIZE — simulates crash during initial header reserve
     fs::write(&path, [0u8; 100]).unwrap();
     assert!(
-        try_open_snapshot(&path).is_err(),
+        try_open_archive(&path).is_err(),
         "truncated header should be rejected"
     );
 }
 
 #[test]
 fn test_crash_truncated_during_block_write() {
-    let (snapshot_path, _temp_dir) = create_valid_snapshot();
-    let full_data = fs::read(&snapshot_path).unwrap();
+    let (archive_path, _temp_dir) = create_valid_archive();
+    let full_data = fs::read(&archive_path).unwrap();
 
     // Truncate to header + half a block (simulates crash mid-block-write)
     let truncated_path = _temp_dir.path().join("truncated_blocks.hxz");
@@ -115,15 +114,15 @@ fn test_crash_truncated_during_block_write() {
     fs::write(&truncated_path, &truncated).unwrap();
 
     assert!(
-        try_open_snapshot(&truncated_path).is_err(),
+        try_open_archive(&truncated_path).is_err(),
         "file truncated during block write (zeroed header) should be rejected"
     );
 }
 
 #[test]
 fn test_crash_truncated_before_master_index() {
-    let (snapshot_path, _temp_dir) = create_valid_snapshot();
-    let full_data = fs::read(&snapshot_path).unwrap();
+    let (archive_path, _temp_dir) = create_valid_archive();
+    let full_data = fs::read(&archive_path).unwrap();
 
     // Read the real header to find the index offset
     let header: Header = bincode::deserialize(&full_data[..HEADER_SIZE]).unwrap();
@@ -136,7 +135,7 @@ fn test_crash_truncated_before_master_index() {
     fs::write(&truncated_path, &truncated).unwrap();
 
     assert!(
-        try_open_snapshot(&truncated_path).is_err(),
+        try_open_archive(&truncated_path).is_err(),
         "file without master index (zeroed header) should be rejected"
     );
 }
@@ -145,8 +144,8 @@ fn test_crash_truncated_before_master_index() {
 
 #[test]
 fn test_crash_wrong_magic_bytes() {
-    let (snapshot_path, _temp_dir) = create_valid_snapshot();
-    let mut data = fs::read(&snapshot_path).unwrap();
+    let (archive_path, _temp_dir) = create_valid_archive();
+    let mut data = fs::read(&archive_path).unwrap();
 
     // Corrupt magic bytes (simulate partial header write)
     data[0] = 0x00;
@@ -155,15 +154,15 @@ fn test_crash_wrong_magic_bytes() {
     fs::write(&corrupted_path, &data).unwrap();
 
     assert!(
-        try_open_snapshot(&corrupted_path).is_err(),
+        try_open_archive(&corrupted_path).is_err(),
         "corrupted magic bytes should be rejected"
     );
 }
 
 #[test]
 fn test_crash_header_written_but_index_truncated() {
-    let (snapshot_path, _temp_dir) = create_valid_snapshot();
-    let mut data = fs::read(&snapshot_path).unwrap();
+    let (archive_path, _temp_dir) = create_valid_archive();
+    let mut data = fs::read(&archive_path).unwrap();
 
     // Read header to get index_offset
     let header: Header = bincode::deserialize(&data[..HEADER_SIZE]).unwrap();
@@ -178,15 +177,15 @@ fn test_crash_header_written_but_index_truncated() {
     fs::write(&corrupted_path, &data).unwrap();
 
     assert!(
-        try_open_snapshot(&corrupted_path).is_err(),
+        try_open_archive(&corrupted_path).is_err(),
         "valid header but truncated master index should be rejected"
     );
 }
 
 #[test]
 fn test_crash_index_offset_points_past_eof() {
-    let (snapshot_path, _temp_dir) = create_valid_snapshot();
-    let mut data = fs::read(&snapshot_path).unwrap();
+    let (archive_path, _temp_dir) = create_valid_archive();
+    let mut data = fs::read(&archive_path).unwrap();
 
     // Modify header to point index_offset past end of file
     let mut header: Header = bincode::deserialize(&data[..HEADER_SIZE]).unwrap();
@@ -198,7 +197,7 @@ fn test_crash_index_offset_points_past_eof() {
     fs::write(&corrupted_path, &data).unwrap();
 
     assert!(
-        try_open_snapshot(&corrupted_path).is_err(),
+        try_open_archive(&corrupted_path).is_err(),
         "index_offset past EOF should be rejected"
     );
 }
@@ -207,8 +206,8 @@ fn test_crash_index_offset_points_past_eof() {
 
 #[test]
 fn test_corruption_single_bitflip_in_block_data() {
-    let (snapshot_path, _temp_dir) = create_valid_snapshot();
-    let mut data = fs::read(&snapshot_path).unwrap();
+    let (archive_path, _temp_dir) = create_valid_archive();
+    let mut data = fs::read(&archive_path).unwrap();
 
     // Flip a bit in the first data block (just past the header)
     let flip_offset = HEADER_SIZE + 10;
@@ -220,8 +219,8 @@ fn test_corruption_single_bitflip_in_block_data() {
     let backend = Arc::new(FileBackend::new(&corrupted_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
     // File should open (header is fine), but reading the corrupted block should fail
-    let snapshot = File::new(backend, compressor, None).unwrap();
-    let result = snapshot.read_at(SnapshotStream::Primary, 0, 4096);
+    let archive = Archive::new(backend, compressor, None).unwrap();
+    let result = archive.read_at(ArchiveStream::Main, 0, 4096);
     assert!(
         result.is_err(),
         "bitflip in block data should be detected by CRC32"
@@ -230,8 +229,8 @@ fn test_corruption_single_bitflip_in_block_data() {
 
 #[test]
 fn test_corruption_zeroed_block_data() {
-    let (snapshot_path, _temp_dir) = create_valid_snapshot();
-    let mut data = fs::read(&snapshot_path).unwrap();
+    let (archive_path, _temp_dir) = create_valid_archive();
+    let mut data = fs::read(&archive_path).unwrap();
 
     // Zero out a chunk of block data after the header
     let start = HEADER_SIZE;
@@ -245,8 +244,8 @@ fn test_corruption_zeroed_block_data() {
 
     let backend = Arc::new(FileBackend::new(&corrupted_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = File::new(backend, compressor, None).unwrap();
-    let result = snapshot.read_at(SnapshotStream::Primary, 0, 4096);
+    let archive = Archive::new(backend, compressor, None).unwrap();
+    let result = archive.read_at(ArchiveStream::Main, 0, 4096);
     assert!(
         result.is_err(),
         "zeroed block data should be detected by CRC32"
@@ -257,8 +256,8 @@ fn test_corruption_zeroed_block_data() {
 
 #[test]
 fn test_corruption_bitflip_in_master_index() {
-    let (snapshot_path, _temp_dir) = create_valid_snapshot();
-    let mut data = fs::read(&snapshot_path).unwrap();
+    let (archive_path, _temp_dir) = create_valid_archive();
+    let mut data = fs::read(&archive_path).unwrap();
 
     let header: Header = bincode::deserialize(&data[..HEADER_SIZE]).unwrap();
     // Flip a bit in the master index region
@@ -271,11 +270,11 @@ fn test_corruption_bitflip_in_master_index() {
 
         // Should either fail to open (deserialization error) or produce wrong results
         // that get caught by CRC32 on block reads
-        match try_open_snapshot(&corrupted_path) {
+        match try_open_archive(&corrupted_path) {
             Err(_) => {} // Good: corruption detected at index deserialization
-            Ok(snapshot) => {
+            Ok(archive) => {
                 // If it opened, block reads should fail due to wrong offsets/checksums
-                let result = snapshot.read_at(SnapshotStream::Primary, 0, 65536);
+                let result = archive.read_at(ArchiveStream::Main, 0, 65536);
                 // Either error (CRC32 mismatch) or wrong data — both acceptable
                 // as long as it doesn't silently return the original correct data
                 // while the index was corrupted
@@ -285,18 +284,18 @@ fn test_corruption_bitflip_in_master_index() {
     }
 }
 
-// ── Valid snapshot survives all checks (positive control) ───────────────────
+// ── Valid archive survives all checks (positive control) ───────────────────
 
 #[test]
-fn test_valid_snapshot_reads_correctly() {
-    let (snapshot_path, _temp_dir) = create_valid_snapshot();
+fn test_valid_archive_reads_correctly() {
+    let (archive_path, _temp_dir) = create_valid_archive();
 
-    let backend = Arc::new(FileBackend::new(&snapshot_path).unwrap());
+    let backend = Arc::new(FileBackend::new(&archive_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = File::new(backend, compressor, None).unwrap();
+    let archive = Archive::new(backend, compressor, None).unwrap();
 
     // Read first block and verify expected pattern
-    let data = snapshot.read_at(SnapshotStream::Primary, 0, 4096).unwrap();
+    let data = archive.read_at(ArchiveStream::Main, 0, 4096).unwrap();
     assert_eq!(data.len(), 4096);
     for (i, &byte) in data.iter().enumerate() {
         assert_eq!(byte, (i % 251) as u8, "mismatch at offset {i}");
@@ -304,8 +303,8 @@ fn test_valid_snapshot_reads_correctly() {
 
     // Read last block
     let last_offset = 256 * 1024 - 4096;
-    let last_data = snapshot
-        .read_at(SnapshotStream::Primary, last_offset as u64, 4096)
+    let last_data = archive
+        .read_at(ArchiveStream::Main, last_offset as u64, 4096)
         .unwrap();
     assert_eq!(last_data.len(), 4096);
 }

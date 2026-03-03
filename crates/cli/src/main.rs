@@ -11,19 +11,12 @@ fn main() -> anyhow::Result<()> {
     let cli = match Cli::try_parse() {
         Ok(c) => c,
         Err(e) => {
-            // 2. Intercept errors to provide custom help
             let cmd = Cli::command();
             let args: Vec<String> = std::env::args().collect();
-
-            // Check if user provided a subcommand (e.g., "hexz pack ...")
             if args.len() > 1 {
                 let sub_name = &args[1];
-
-                // If the first arg is a valid subcommand...
                 if cmd.find_subcommand(sub_name).is_some() {
                     use clap::error::ErrorKind;
-
-                    // ...and the error is specifically about help or missing required args
                     match e.kind() {
                         ErrorKind::DisplayHelp
                         | ErrorKind::MissingRequiredArgument
@@ -33,7 +26,6 @@ fn main() -> anyhow::Result<()> {
                             std::process::exit(0);
                         }
                         ErrorKind::UnknownArgument => {
-                            // --help is disabled globally but users expect `hexz <cmd> --help`
                             let has_help_flag = args.iter().any(|a| a == "--help" || a == "-h");
                             if has_help_flag {
                                 let mut printer = Printer::new(cmd);
@@ -43,14 +35,11 @@ fn main() -> anyhow::Result<()> {
                             e.exit();
                         }
                         _ => {
-                            // If it's a legitimate error (e.g. invalid int), show clap error
                             e.exit();
                         }
                     }
                 }
             }
-
-            // If no subcommand was found, or just "hexz --help", show top-level help
             if e.kind() == clap::error::ErrorKind::DisplayHelp
                 || e.kind() == clap::error::ErrorKind::MissingRequiredArgument
             {
@@ -58,20 +47,16 @@ fn main() -> anyhow::Result<()> {
                 printer.print_help();
                 std::process::exit(0);
             }
-
-            // Fallback for other errors
             e.exit();
         }
     };
 
-    // 3. Handle explicit --help flag if it somehow passed parsing (Action::SetTrue)
     if cli.help {
         let mut printer = Printer::new(Cli::command());
         printer.print_help();
         return Ok(());
     }
 
-    // 4. Determine command to run
     let command = match cli.command {
         Some(c) => c,
         None => {
@@ -81,55 +66,38 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    // 5. Execute command
     match command {
-        // --------------------------------------------------------------------
-        // Archive Operations
-        // --------------------------------------------------------------------
         Commands::Pack {
-            disk,
-            memory,
-            output,
-            compression,
-            encrypt,
-            train_dict,
-            block_size,
-            min_chunk,
-            avg_chunk,
-            max_chunk,
-            workers,
-            dcam,
-            silent,
-        } => hexz_cli::cmd::data::pack::run(
-            disk,
-            memory,
-            output,
-            compression,
-            encrypt,
-            train_dict,
-            block_size,
-            min_chunk,
-            avg_chunk,
-            max_chunk,
-            workers,
-            dcam,
-            silent,
-        ),
-
-        Commands::Import {
             input,
             output,
             base,
             compression,
+            encrypt,
             block_size,
+            workers,
+            dcam,
+            dcam_optimal,
             silent,
-        } => hexz_cli::cmd::data::store::run(input, output, base, compression, block_size, silent),
-
-        Commands::Export {
-            input,
+        } => hexz_cli::cmd::data::pack::run(
+            Some(input),
+            base,
             output,
-            tensor,
-        } => hexz_cli::cmd::data::extract::run(input, output, tensor),
+            compression,
+            encrypt,
+            false, // train_dict
+            block_size,
+            None,
+            None,
+            None,
+            workers,
+            dcam || dcam_optimal,
+            dcam_optimal,
+            silent,
+        ),
+
+        Commands::Extract { input, output } => {
+            hexz_cli::cmd::data::extract::run(input, Some(output))
+        }
 
         Commands::Show { snap, json } => hexz_cli::cmd::data::inspect::run(snap, json),
 
@@ -137,133 +105,35 @@ fn main() -> anyhow::Result<()> {
 
         Commands::Log { dir } => hexz_cli::cmd::data::ls::run(dir),
 
-        Commands::Build {
-            source,
-            memory,
-            output,
-            profile,
-            encrypt,
-        } => hexz_cli::cmd::data::build::run(source, memory, output, profile, encrypt),
-
-        Commands::Convert {
-            format,
-            input,
-            output,
-            compression,
-            block_size,
-            profile,
-            silent,
-        } => hexz_cli::cmd::data::convert::run(
-            format,
-            input,
-            output,
-            compression,
-            block_size,
-            profile,
-            silent,
-        ),
-
-        Commands::Predict {
-            file,
-            block_size,
-            min_chunk,
-            avg_chunk,
-            max_chunk,
-            json,
-        } => hexz_cli::cmd::data::predict::run(
-            file, block_size, min_chunk, avg_chunk, max_chunk, json,
-        ),
-
-        // --------------------------------------------------------------------
-        // Virtual Machine Operations
-        // --------------------------------------------------------------------
-        #[cfg(feature = "fuse")]
-        Commands::Boot {
-            snap,
-            ram,
-            no_kvm,
-            network,
-            backend,
-            persist,
-            qmp_socket,
-            no_graphics,
-            vnc,
-        } => hexz_cli::cmd::vm::boot::run(
-            snap,
-            ram,
-            !no_kvm,
-            persist,
-            qmp_socket,
-            network,
-            backend,
-            no_graphics,
-            vnc,
-        ),
-
-        #[cfg(feature = "fuse")]
-        Commands::Install {
-            iso,
-            primary_size,
-            ram,
-            output,
-            no_graphics,
-            vnc,
-        } => hexz_cli::cmd::vm::install::run(iso, primary_size, ram, output, no_graphics, vnc),
-
-        #[cfg(unix)]
-        Commands::Snap {
-            socket,
-            base,
-            overlay,
-            output,
-        } => hexz_cli::cmd::vm::snap::run(socket, overlay, base, output),
-
-        Commands::Commit {
-            base,
-            overlay,
-            output,
-            compression,
-            block_size,
-            keep_overlay,
-            memory,
-            message,
-            thin,
-        } => hexz_cli::cmd::vm::commit::run(
-            base,
-            overlay,
-            memory,
-            output,
-            compression,
-            block_size,
-            keep_overlay,
-            message,
-            thin,
-        ),
-
         #[cfg(feature = "fuse")]
         Commands::Mount {
             snap,
             mountpoint,
             overlay,
+            editable,
             daemon,
-            rw,
             cache_size,
             uid,
             gid,
-            nbd,
-            prefetch,
-        } => hexz_cli::cmd::vm::mount::run(
-            snap, mountpoint, overlay, daemon, rw, cache_size, uid, gid, nbd, prefetch,
+        } => hexz_cli::cmd::data::mount::run(
+            snap, mountpoint, daemon, cache_size, uid, gid, overlay, editable, None,
         ),
 
         #[cfg(feature = "fuse")]
-        Commands::Unmount { mountpoint } => hexz_cli::cmd::vm::unmount::run(mountpoint),
+        Commands::Unmount { mountpoint } => hexz_cli::cmd::data::unmount::run(mountpoint),
 
-        // --------------------------------------------------------------------
-        // System & Diagnostics
-        // --------------------------------------------------------------------
-        #[cfg(feature = "diagnostics")]
-        Commands::Doctor => hexz_cli::cmd::sys::doctor::run(),
+        #[cfg(feature = "fuse")]
+        Commands::Commit {
+            output,
+            mountpoint,
+            base,
+        } => hexz_cli::cmd::data::commit::run(output, mountpoint, base),
+
+        #[cfg(feature = "fuse")]
+        Commands::Checkout { archive, path } => hexz_cli::cmd::data::checkout::run(archive, path),
+
+        #[cfg(feature = "fuse")]
+        Commands::Status { path } => hexz_cli::cmd::data::status::run(path),
 
         #[cfg(feature = "server")]
         Commands::Serve {
@@ -271,8 +141,7 @@ fn main() -> anyhow::Result<()> {
             port,
             bind,
             daemon,
-            nbd,
-        } => hexz_cli::cmd::sys::serve::run(snap, port, bind, daemon, nbd),
+        } => hexz_cli::cmd::sys::serve::run(snap, port, bind, daemon, false),
 
         #[cfg(feature = "signing")]
         Commands::Keygen { output_dir } => hexz_cli::cmd::sys::keygen::run(output_dir),

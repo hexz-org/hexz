@@ -26,7 +26,7 @@ impl MmapBackend {
     pub fn new(path: &std::path::Path) -> Result<Self> {
         let file = File::open(path)?;
         let len = file.metadata()?.len();
-        // SAFETY: The file is immutable for the lifetime of the mapping (snapshot semantics).
+        // SAFETY: The file is immutable for the lifetime of the mapping (archive semantics).
         let map = unsafe { Mmap::map(&file)? };
         let bytes = Bytes::from_owner(map);
         Ok(Self { bytes, len })

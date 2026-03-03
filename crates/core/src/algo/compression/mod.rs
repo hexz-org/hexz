@@ -1,4 +1,4 @@
-//! Compression codecs for snapshot blocks.
+//! Compression codecs for archive blocks.
 //!
 //! Provides the `Compressor` trait and concrete implementations (LZ4, Zstd).
 //! The format layer uses this trait to encode and decode blocks without
@@ -9,7 +9,7 @@ use std::fmt::Debug;
 
 /// Pluggable interface for block-oriented compressors.
 ///
-/// **Architectural intent:** Allows snapshot writers and readers to operate
+/// **Architectural intent:** Allows archive writers and readers to operate
 /// against an abstraction rather than a specific compression library, making
 /// it possible to add or swap algorithms without touching the format layer.
 ///

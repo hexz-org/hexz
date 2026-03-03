@@ -12,7 +12,6 @@ mod perf;
 mod setup;
 mod test;
 mod version;
-mod vm_test;
 
 #[derive(Parser)]
 #[command(name = "xtask", about = "Hexz development automation tasks")]
@@ -26,7 +25,7 @@ enum Command {
     /// Check version consistency and compare against published versions
     VersionCheck,
 
-    /// Dry-run cargo publish for all crates and build the Python wheel
+    /// Dry-run cargo publish for all crates
     PublishDryRun,
 
     /// Check / install development dependencies
@@ -65,9 +64,6 @@ enum Command {
     #[command(subcommand)]
     Perf(perf::PerfCmd),
 
-    /// QEMU VM boot integration test
-    VmTest,
-
     /// Manage local MinIO (S3-compatible) server
     #[command(subcommand)]
     Minio(minio::MinioCmd),
@@ -87,7 +83,6 @@ fn main() -> anyhow::Result<()> {
         Command::Docs => docs::run(),
         Command::Clean => clean::run(),
         Command::Perf(cmd) => perf::run(cmd),
-        Command::VmTest => vm_test::run(),
         Command::Minio(cmd) => minio::run(cmd),
     }
 }

@@ -1,7 +1,7 @@
-//! Low-level write operations for Hexz snapshots.
+//! Low-level write operations for Hexz archives.
 //!
 //! This module provides the foundational building blocks for writing compressed,
-//! encrypted, and deduplicated blocks to snapshot files. These functions implement
+//! encrypted, and deduplicated blocks to archive files. These functions implement
 //! the core write semantics used by higher-level pack operations while remaining
 //! independent of the packing workflow.
 //!
@@ -144,7 +144,7 @@
 //! Functions in this module do NOT flush data to disk. Flushing is the caller's
 //! responsibility and typically occurs:
 //!
-//! - After writing all blocks and indices (in [`pack_snapshot`](crate::pack::pack_snapshot))
+//! - After writing all blocks and indices (in [`pack_archive`](crate::pack::pack_archive))
 //! - Before closing the output file
 //! - Never during block writing (to maximize write batching)
 //!
@@ -305,9 +305,9 @@ use hexz_core::format::index::BlockInfo;
 ///   - Must not be empty (undefined behavior for zero-length chunks)
 ///
 /// - `block_idx`: Global block index (zero-based)
-///   - Used as encryption nonce (must be unique per snapshot)
+///   - Used as encryption nonce (must be unique per archive)
 ///   - Monotonically increases across all streams
-///   - Must not reuse indices within same encrypted snapshot (breaks security)
+///   - Must not reuse indices within same encrypted archive (breaks security)
 ///
 /// - `current_offset`: Mutable reference to current physical file offset
 ///   - Updated after successful write: `*current_offset += bytes_written`
@@ -527,7 +527,7 @@ use hexz_core::format::index::BlockInfo;
 /// ## Block Index as Nonce
 ///
 /// When encrypting, `block_idx` is used as part of the AES-GCM nonce. **CRITICAL**:
-/// - Never reuse `block_idx` values within the same encrypted snapshot
+/// - Never reuse `block_idx` values within the same encrypted archive
 /// - Nonce reuse breaks AES-GCM security (allows plaintext recovery)
 /// - Each logical block must have a unique index
 ///
@@ -738,7 +738,7 @@ pub fn write_block<W: Write>(
 ///
 /// Zero blocks work correctly with encryption:
 /// - They are detected **before** compression/encryption
-/// - Encrypted snapshots still use zero-block optimization
+/// - Encrypted archives still use zero-block optimization
 /// - Readers synthesize zeros without decryption
 ///
 /// This is safe because zeros are public information (no confidentiality lost).
@@ -762,7 +762,7 @@ pub fn create_zero_block(logical_len: u32) -> BlockInfo {
 
 /// Convenience wrapper for `write_block` that allocates hasher and buffer internally.
 ///
-/// This is a simpler API for tests and one-off writes. For hot paths (like snapshot
+/// This is a simpler API for tests and one-off writes. For hot paths (like archive
 /// packing loops), use `write_block` directly with a reused hasher and buffer.
 #[allow(dead_code)]
 fn write_block_simple<W: Write>(

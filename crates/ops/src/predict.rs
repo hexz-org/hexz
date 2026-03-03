@@ -237,7 +237,7 @@ pub fn predict(config: PredictConfig) -> Result<PredictReport> {
         }
     } else {
         // DCAM auto-detection
-        let optimized = optimize_params(file_size, baseline_stats.unique_bytes, &baseline);
+        let optimized = optimize_params(file_size, baseline_stats.unique_bytes, &baseline, false);
         let mut params = optimized.params;
         if let Some(min) = config.min_chunk {
             params.m = min;

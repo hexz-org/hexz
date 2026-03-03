@@ -1,6 +1,6 @@
 //! Compare block hashes between two Hexz archives.
 //!
-//! Reports how much data is shared between two snapshots at the block-hash
+//! Reports how much data is shared between two archives at the block-hash
 //! level, and — when the archives contain checkpoint manifests — at the
 //! logical checkpoint-delta level (XOR delta tensors).
 //!
@@ -13,7 +13,7 @@
 use anyhow::{Context, Result};
 use hexz_core::format::header::Header;
 use hexz_core::format::index::{IndexPage, MasterIndex};
-use hexz_ops::inspect::inspect_snapshot;
+use hexz_ops::inspect::inspect_archive;
 use indicatif::HumanBytes;
 use std::collections::HashMap;
 use std::fs::File;
@@ -44,7 +44,7 @@ fn scan(path: &Path) -> Result<BlockSummary> {
     let mut parent_ref_bytes = 0u64;
     let mut parent_ref_blocks = 0usize;
 
-    for page_meta in &master.primary_pages {
+    for page_meta in &master.main_pages {
         f.seek(SeekFrom::Start(page_meta.offset))?;
         let mut buf = vec![0u8; page_meta.length as usize];
         f.read_exact(&mut buf)?;
@@ -133,8 +133,8 @@ fn parse_checkpoint_delta(
 
 /// Compare two archives and report shared vs. unique block data.
 pub fn run(a: PathBuf, b: PathBuf) -> Result<()> {
-    let info_a = inspect_snapshot(&a).with_context(|| format!("Failed to read {}", a.display()))?;
-    let info_b = inspect_snapshot(&b).with_context(|| format!("Failed to read {}", b.display()))?;
+    let info_a = inspect_archive(&a).with_context(|| format!("Failed to read {}", a.display()))?;
+    let info_b = inspect_archive(&b).with_context(|| format!("Failed to read {}", b.display()))?;
 
     let summary_a =
         scan(&a).with_context(|| format!("Failed to read blocks from {}", a.display()))?;

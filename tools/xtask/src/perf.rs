@@ -52,7 +52,7 @@ fn rust(size_mb: u32) -> Result<()> {
             root.join("target/release/hexz").to_str().unwrap(),
             "data",
             "pack",
-            "--disk",
+            "--input",
             &format!("{}/test.bin", perf_dir.display()),
             "--output",
             &format!("{}/output.hxz", perf_dir.display()),

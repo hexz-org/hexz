@@ -1,10 +1,10 @@
-//! LZ4 block compression for low-latency snapshot reads.
+//! LZ4 block compression for low-latency archive reads.
 //!
 //! This module provides a high-speed compression implementation optimized for scenarios
 //! where decompression throughput and CPU efficiency are more critical than achieving
 //! maximum compression ratios. LZ4 is the default compression algorithm in Hexz for
 //! workloads requiring interactive read performance, such as virtual machine disk images,
-//! database snapshots, and container filesystems.
+//! database archives, and container filesystems.
 //!
 //! # LZ4 Algorithm Overview
 //!
@@ -18,7 +18,7 @@
 //!
 //! This design philosophy makes LZ4 asymmetric: compression is fast (~2000 MB/s single-threaded),
 //! but decompression is even faster (~3000 MB/s), making it ideal for write-once, read-many
-//! workloads like snapshot archives.
+//! workloads like archive archives.
 //!
 //! # Implementation Details
 //!
@@ -96,7 +96,7 @@
 //! | Database pages (PostgreSQL)  | 64 KB        | ~40 KB         | 1.6x  | B-tree nodes with data       |
 //! | Text/logs (ASCII)            | 64 KB        | ~18 KB         | 3.5x  | Highly compressible          |
 //! | JSON configuration           | 64 KB        | ~22 KB         | 2.9x  | Repeated keys/structure      |
-//! | Memory snapshots (sparse)    | 64 KB        | ~8 KB          | 8.0x  | 70%+ zeros                   |
+//! | Memory archives (sparse)    | 64 KB        | ~8 KB          | 8.0x  | 70%+ zeros                   |
 //! | Compiled binaries (x86-64)   | 64 KB        | ~44 KB         | 1.5x  | Code + data sections         |
 //! | Random/encrypted data        | 64 KB        | ~65 KB         | 1.0x  | Incompressible (slight expansion) |
 //! | JPEG images                  | 64 KB        | ~65 KB         | 1.0x  | Already compressed           |
@@ -147,7 +147,7 @@
 //! use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor};
 //!
 //! let compressor = Lz4Compressor::new();
-//! let data = b"Hexz snapshot data with some repeated patterns...";
+//! let data = b"Hexz archive data with some repeated patterns...";
 //!
 //! let compressed = compressor.compress(data).unwrap();
 //! println!("Original: {} bytes, Compressed: {} bytes ({:.1}x ratio)",
@@ -190,7 +190,7 @@
 //!
 //! let compressor = Lz4Compressor::new();
 //!
-//! // Memory snapshot with 90% zeros
+//! // Memory archive with 90% zeros
 //! let mut data = vec![0u8; 100_000];
 //! for i in (0..10_000).step_by(100) {
 //!     data[i] = 0xFF; // Sparse non-zero values
@@ -224,10 +224,10 @@
 //!
 //! In Hexz's layered architecture:
 //!
-//! - **Pack operations**: Compresses each block before writing to the snapshot file
+//! - **Pack operations**: Compresses each block before writing to the archive file
 //! - **Unpack operations**: Decompresses blocks on read, using `decompress_into` for
 //!   block cache integration
-//! - **Format layer**: Stores compression type in snapshot header (1 byte: 0=none, 1=LZ4, 2=Zstd)
+//! - **Format layer**: Stores compression type in archive header (1 byte: 0=none, 1=LZ4, 2=Zstd)
 //! - **CLI**: Selects LZ4 via `--compression=lz4` or `--fast-compression` flags
 //!
 //! The format layer validates that the decompressor matches the header before attempting
@@ -268,7 +268,7 @@ use hexz_common::{Error, Result};
 ///
 /// # Architectural Intent
 ///
-/// Designed for Hexz's snapshot blocks where read performance is prioritized over
+/// Designed for Hexz's archive blocks where read performance is prioritized over
 /// storage efficiency. LZ4's asymmetric performance profile (fast compression, even
 /// faster decompression) aligns perfectly with write-once, read-many workloads.
 ///
@@ -305,7 +305,7 @@ use hexz_common::{Error, Result};
 /// let compressor = Lz4Compressor::new();
 ///
 /// // Compress
-/// let data = b"snapshot block data";
+/// let data = b"archive block data";
 /// let compressed = compressor.compress(data).unwrap();
 ///
 /// // Decompress
@@ -412,7 +412,7 @@ impl Compressor for Lz4Compressor {
     /// use hexz_core::algo::compression::{Compressor, lz4::Lz4Compressor};
     ///
     /// let compressor = Lz4Compressor::new();
-    /// let original = b"Hexz snapshot block data";
+    /// let original = b"Hexz archive block data";
     /// let compressed = compressor.compress(original).unwrap();
     ///
     /// let decompressed = compressor.decompress(&compressed).unwrap();

@@ -3,7 +3,7 @@
 //! Tunable parameters governing performance, memory usage, and security.
 //! Magic bytes, format version, and header size live in `hexz-core::format::magic`.
 
-/// Default block size for snapshot compression (64 KiB).
+/// Default block size for archive compression (64 KiB).
 ///
 /// Balances compression ratio, read amplification, and cache efficiency.
 /// Smaller values (16-32 KiB) reduce read amplification for random I/O;
@@ -62,7 +62,7 @@ pub const DICT_TRAINING_SAMPLE_COUNT: usize = 4000;
 /// Fits in L2 cache during decompression. Zstd's recommended max is 112 KiB.
 pub const DICT_TRAINING_SIZE: usize = 110 * 1024;
 
-/// Sentinel offset indicating a block is stored in the parent snapshot.
+/// Sentinel offset indicating a block is stored in the parent archive.
 pub const BLOCK_OFFSET_PARENT: u64 = u64::MAX;
 
 /// Overlay block granularity (4 KiB).

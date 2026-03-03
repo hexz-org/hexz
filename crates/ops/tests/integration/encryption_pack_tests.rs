@@ -1,4 +1,4 @@
-//! Integration tests for encrypted snapshot packing and reading.
+//! Integration tests for encrypted archive packing and reading.
 //!
 //! These tests exercise the encryption code path in pack.rs and file.rs.
 
@@ -10,16 +10,16 @@ use hexz_core::algo::compression::zstd::ZstdCompressor;
 use hexz_core::algo::encryption::aes_gcm::AesGcmEncryptor;
 use hexz_core::format::header::Header;
 use hexz_core::format::magic::HEADER_SIZE;
-use hexz_core::{File, SnapshotStream};
-use hexz_ops::pack::{PackConfig, pack_snapshot};
+use hexz_core::{Archive, ArchiveStream};
+use hexz_ops::pack::{PackConfig, pack_archive};
 use hexz_store::local::FileBackend;
 use std::fs;
 use std::io::Write;
 use std::sync::Arc;
 use tempfile::TempDir;
 
-/// Helper to create an encrypted snapshot and read it back.
-fn create_encrypted_snapshot(
+/// Helper to create an encrypted archive and read it back.
+fn create_encrypted_archive(
     temp_dir: &TempDir,
     data: &[u8],
     password: &str,
@@ -31,8 +31,7 @@ fn create_encrypted_snapshot(
     let output_path = temp_dir.path().join("encrypted.hxz");
 
     let config = PackConfig {
-        disk: Some(disk_path),
-        memory: None,
+        input: disk_path,
         output: output_path.clone(),
         compression: compression.to_string(),
         encrypt: true,
@@ -42,12 +41,12 @@ fn create_encrypted_snapshot(
         ..Default::default()
     };
 
-    pack_snapshot(config, None::<fn(u64, u64)>).expect("Encrypted packing failed");
+    pack_archive(config, None::<fn(u64, u64)>).expect("Encrypted packing failed");
     output_path
 }
 
-/// Helper to open an encrypted snapshot.
-fn open_encrypted_snapshot(path: &std::path::Path, password: &str) -> Arc<File> {
+/// Helper to open an encrypted archive.
+fn open_encrypted_archive(path: &std::path::Path, password: &str) -> Arc<Archive> {
     let backend = Arc::new(FileBackend::new(path).unwrap());
 
     // Read header to get encryption params
@@ -65,7 +64,7 @@ fn open_encrypted_snapshot(path: &std::path::Path, password: &str) -> Arc<File> 
         ) as Box<dyn hexz_core::algo::encryption::Encryptor>
     });
 
-    File::new(backend, compressor, encryptor).unwrap()
+    Archive::new(backend, compressor, encryptor).unwrap()
 }
 
 use hexz_store::StorageBackend;
@@ -77,12 +76,12 @@ fn test_encrypted_pack_read_lz4() {
     let data = vec![0x42u8; 256 * 1024];
     let password = "test_password_123";
 
-    let snap_path = create_encrypted_snapshot(&temp_dir, &data, password, "lz4");
-    let snapshot = open_encrypted_snapshot(&snap_path, password);
+    let snap_path = create_encrypted_archive(&temp_dir, &data, password, "lz4");
+    let archive = open_encrypted_archive(&snap_path, password);
 
-    assert_eq!(snapshot.size(SnapshotStream::Primary), 256 * 1024);
+    assert_eq!(archive.size(ArchiveStream::Main), 256 * 1024);
 
-    let read_data = snapshot.read_at(SnapshotStream::Primary, 0, 4096).unwrap();
+    let read_data = archive.read_at(ArchiveStream::Main, 0, 4096).unwrap();
     assert_eq!(read_data.len(), 4096);
     assert!(read_data.iter().all(|&b| b == 0x42));
 }
@@ -94,12 +93,12 @@ fn test_encrypted_pack_read_zstd() {
     let data = vec![0xAB; 128 * 1024];
     let password = "zstd_secret";
 
-    let snap_path = create_encrypted_snapshot(&temp_dir, &data, password, "zstd");
-    let snapshot = open_encrypted_snapshot(&snap_path, password);
+    let snap_path = create_encrypted_archive(&temp_dir, &data, password, "zstd");
+    let archive = open_encrypted_archive(&snap_path, password);
 
-    assert_eq!(snapshot.size(SnapshotStream::Primary), 128 * 1024);
+    assert_eq!(archive.size(ArchiveStream::Main), 128 * 1024);
 
-    let read_data = snapshot.read_at(SnapshotStream::Primary, 0, 1024).unwrap();
+    let read_data = archive.read_at(ArchiveStream::Main, 0, 1024).unwrap();
     assert!(read_data.iter().all(|&b| b == 0xAB));
 }
 
@@ -111,7 +110,7 @@ fn test_encrypted_wrong_password_fails() {
     let correct_password = "correct_password";
     let wrong_password = "wrong_password";
 
-    let snap_path = create_encrypted_snapshot(&temp_dir, &data, correct_password, "lz4");
+    let snap_path = create_encrypted_archive(&temp_dir, &data, correct_password, "lz4");
 
     // Opening with wrong password should fail during read (decryption error)
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
@@ -126,14 +125,14 @@ fn test_encrypted_wrong_password_fails() {
     });
 
     let compressor = Box::new(Lz4Compressor::new());
-    let snapshot = File::new(backend, compressor, encryptor).unwrap();
+    let archive = Archive::new(backend, compressor, encryptor).unwrap();
 
     // Reading should fail because decryption with wrong key produces garbage
-    let result = snapshot.read_at(SnapshotStream::Primary, 0, 4096);
+    let result = archive.read_at(ArchiveStream::Main, 0, 4096);
     assert!(result.is_err(), "Wrong password should cause read failure");
 }
 
-/// Test encrypted snapshot with varied data patterns.
+/// Test encrypted archive with varied data patterns.
 #[test]
 fn test_encrypted_varied_data() {
     let temp_dir = TempDir::new().unwrap();
@@ -150,8 +149,7 @@ fn test_encrypted_varied_data() {
     let password = "varied_data_pw";
 
     let config = PackConfig {
-        disk: Some(disk_path),
-        memory: None,
+        input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
         encrypt: true,
@@ -161,14 +159,14 @@ fn test_encrypted_varied_data() {
         ..Default::default()
     };
 
-    pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(config, None::<fn(u64, u64)>).unwrap();
 
-    let snapshot = open_encrypted_snapshot(&output_path, password);
+    let archive = open_encrypted_archive(&output_path, password);
 
     for i in 0..8u64 {
         let expected = (i * 37) as u8;
-        let read = snapshot
-            .read_at(SnapshotStream::Primary, i * 65536, 1024)
+        let read = archive
+            .read_at(ArchiveStream::Main, i * 65536, 1024)
             .unwrap();
         assert!(
             read.iter().all(|&b| b == expected),
@@ -179,7 +177,7 @@ fn test_encrypted_varied_data() {
     }
 }
 
-/// Test encrypted snapshot with both disk and memory.
+/// Test encrypted archive with both disk and memory.
 #[test]
 fn test_encrypted_dual_stream() {
     let temp_dir = TempDir::new().unwrap();
@@ -193,8 +191,7 @@ fn test_encrypted_dual_stream() {
     let password = "dual_stream_pw";
 
     let config = PackConfig {
-        disk: Some(disk_path),
-        memory: Some(mem_path),
+        input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
         encrypt: true,
@@ -204,18 +201,18 @@ fn test_encrypted_dual_stream() {
         ..Default::default()
     };
 
-    pack_snapshot(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(config, None::<fn(u64, u64)>).unwrap();
 
-    let snapshot = open_encrypted_snapshot(&output_path, password);
+    let archive = open_encrypted_archive(&output_path, password);
 
-    assert_eq!(snapshot.size(SnapshotStream::Primary), 256 * 1024);
-    assert_eq!(snapshot.size(SnapshotStream::Secondary), 128 * 1024);
+    assert_eq!(archive.size(ArchiveStream::Main), 256 * 1024);
+    assert_eq!(archive.size(ArchiveStream::Auxiliary), 128 * 1024);
 
-    let disk_read = snapshot.read_at(SnapshotStream::Primary, 0, 1024).unwrap();
+    let disk_read = archive.read_at(ArchiveStream::Main, 0, 1024).unwrap();
     assert!(disk_read.iter().all(|&b| b == 0xDD));
 
-    let mem_read = snapshot
-        .read_at(SnapshotStream::Secondary, 0, 1024)
+    let mem_read = archive
+        .read_at(ArchiveStream::Auxiliary, 0, 1024)
         .unwrap();
     assert!(mem_read.iter().all(|&b| b == 0xCC));
 }
@@ -230,8 +227,7 @@ fn test_encrypted_pack_no_password_fails() {
     let output_path = temp_dir.path().join("no_pw.hxz");
 
     let config = PackConfig {
-        disk: Some(disk_path),
-        memory: None,
+        input: disk_path,
         output: output_path,
         compression: "lz4".to_string(),
         encrypt: true,
@@ -241,7 +237,7 @@ fn test_encrypted_pack_no_password_fails() {
         ..Default::default()
     };
 
-    let result = pack_snapshot(config, None::<fn(u64, u64)>);
+    let result = pack_archive(config, None::<fn(u64, u64)>);
     assert!(result.is_err(), "Should fail without password");
 }
 
@@ -252,8 +248,8 @@ fn test_encrypted_sequential_read() {
     let data: Vec<u8> = (0..256 * 1024).map(|i| (i % 256) as u8).collect();
     let password = "sequential_pw";
 
-    let snap_path = create_encrypted_snapshot(&temp_dir, &data, password, "lz4");
-    let snapshot = open_encrypted_snapshot(&snap_path, password);
+    let snap_path = create_encrypted_archive(&temp_dir, &data, password, "lz4");
+    let archive = open_encrypted_archive(&snap_path, password);
 
     // Read in chunks and verify
     let mut offset = 0u64;
@@ -261,8 +257,8 @@ fn test_encrypted_sequential_read() {
     while offset < data.len() as u64 {
         let remaining = data.len() as u64 - offset;
         let to_read = std::cmp::min(chunk_size, remaining as usize);
-        let chunk = snapshot
-            .read_at(SnapshotStream::Primary, offset, to_read)
+        let chunk = archive
+            .read_at(ArchiveStream::Main, offset, to_read)
             .unwrap();
         assert_eq!(
             &chunk[..],
@@ -274,18 +270,18 @@ fn test_encrypted_sequential_read() {
     }
 }
 
-/// Test encrypted snapshot with random data (incompressible).
+/// Test encrypted archive with random data (incompressible).
 #[test]
 fn test_encrypted_random_data() {
     let temp_dir = TempDir::new().unwrap();
     let data = create_random_data(128 * 1024);
     let password = "random_pw";
 
-    let snap_path = create_encrypted_snapshot(&temp_dir, &data, password, "lz4");
-    let snapshot = open_encrypted_snapshot(&snap_path, password);
+    let snap_path = create_encrypted_archive(&temp_dir, &data, password, "lz4");
+    let archive = open_encrypted_archive(&snap_path, password);
 
-    let read_data = snapshot
-        .read_at(SnapshotStream::Primary, 0, data.len())
+    let read_data = archive
+        .read_at(ArchiveStream::Main, 0, data.len())
         .unwrap();
     assert_bytes_equal(&read_data, &data, "encrypted random data round-trip");
 }

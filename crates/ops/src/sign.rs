@@ -1,4 +1,4 @@
-//! Cryptographic signing and verification for snapshot files.
+//! Cryptographic signing and verification for archive files.
 
 use hexz_common::Result;
 use hexz_common::sign;
@@ -8,8 +8,8 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
-/// Sign a snapshot's master index with Ed25519.
-pub fn sign_snapshot(image_path: impl AsRef<Path>, key_path: impl AsRef<Path>) -> Result<()> {
+/// Sign a archive's master index with Ed25519.
+pub fn sign_archive(image_path: impl AsRef<Path>, key_path: impl AsRef<Path>) -> Result<()> {
     let image_path = image_path.as_ref();
     let key_path = key_path.as_ref();
 
@@ -38,8 +38,8 @@ pub fn sign_snapshot(image_path: impl AsRef<Path>, key_path: impl AsRef<Path>) -
     Ok(())
 }
 
-/// Verify a snapshot's Ed25519 signature.
-pub fn verify_snapshot(image_path: impl AsRef<Path>, key_path: impl AsRef<Path>) -> Result<()> {
+/// Verify a archive's Ed25519 signature.
+pub fn verify_archive(image_path: impl AsRef<Path>, key_path: impl AsRef<Path>) -> Result<()> {
     let image_path = image_path.as_ref();
     let key_path = key_path.as_ref();
 

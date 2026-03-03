@@ -1,7 +1,7 @@
-//! Core snapshot engine: format, algorithms, cache, and read API.
+//! Core archive engine: format, algorithms, cache, and read API.
 //!
 //! `hexz-core` is the minimal, dependency-light foundation for reading Hexz
-//! snapshots. It has no network deps, no async runtime, and no write-path
+//! archives. It has no network deps, no async runtime, and no write-path
 //! parallelism. Those concerns live in `hexz-store` and `hexz-ops`.
 //!
 //! # Modules
@@ -10,7 +10,7 @@
 //! - **[`algo`]**: Compression, encryption, hashing, deduplication traits + impls
 //! - **[`cache`]**: Sharded LRU cache for decompressed blocks and index pages
 //! - **[`store`]**: [`StorageBackend`](store::StorageBackend) trait (implementations in `hexz-store`)
-//! - **[`api`]**: [`File`] — the public read API
+//! - **[`api`]**: [`Archive`] — the public read API
 
 pub mod algo;
 pub mod api;
@@ -18,4 +18,4 @@ pub mod cache;
 pub mod format;
 pub mod store;
 
-pub use api::file::{File, SnapshotStream};
+pub use api::file::{Archive, ArchiveStream};

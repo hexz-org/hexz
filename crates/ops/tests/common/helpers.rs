@@ -164,10 +164,10 @@ pub fn random_password() -> String {
         .collect()
 }
 
-/// Create a simple snapshot for testing using PackConfig
-pub fn create_simple_snapshot() -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn std::error::Error>>
+/// Create a simple archive for testing using PackConfig
+pub fn create_simple_archive() -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn std::error::Error>>
 {
-    use hexz_ops::pack::{PackConfig, pack_snapshot};
+    use hexz_ops::pack::{PackConfig, pack_archive};
     use std::fs;
     use tempfile::TempDir;
 
@@ -178,11 +178,10 @@ pub fn create_simple_snapshot() -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn
     let disk_path = temp_dir.path().join("disk.img");
     fs::write(&disk_path, &data)?;
 
-    let snap_path = temp_dir.path().join("snapshot.hxz");
+    let snap_path = temp_dir.path().join("archive.hxz");
 
     let config = PackConfig {
-        disk: Some(disk_path),
-        memory: None,
+        input: disk_path,
         output: snap_path.clone(),
         compression: "lz4".to_string(),
         encrypt: false,
@@ -195,19 +194,19 @@ pub fn create_simple_snapshot() -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn
         ..Default::default()
     };
 
-    pack_snapshot(config, None::<fn(u64, u64)>)?;
+    pack_archive(config, None::<fn(u64, u64)>)?;
 
     // Persist the temp dir by leaking it (files needed for test lifetime)
     let persisted = temp_dir.keep();
-    let final_snap = persisted.join("snapshot.hxz");
+    let final_snap = persisted.join("archive.hxz");
 
     Ok((final_snap, data))
 }
 
-/// Create a snapshot with memory data using PackConfig
-pub fn create_snapshot_with_memory()
+/// Create a archive with memory data using PackConfig
+pub fn create_archive_with_memory()
 -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn std::error::Error>> {
-    use hexz_ops::pack::{PackConfig, pack_snapshot};
+    use hexz_ops::pack::{PackConfig, pack_archive};
     use std::fs;
     use tempfile::TempDir;
 
@@ -222,11 +221,10 @@ pub fn create_snapshot_with_memory()
     fs::write(&disk_path, &disk_data)?;
     fs::write(&mem_path, &mem_data)?;
 
-    let snap_path = temp_dir.path().join("snapshot.hxz");
+    let snap_path = temp_dir.path().join("archive.hxz");
 
     let config = PackConfig {
-        disk: Some(disk_path),
-        memory: Some(mem_path),
+        input: disk_path,
         output: snap_path.clone(),
         compression: "lz4".to_string(),
         encrypt: false,
@@ -239,18 +237,18 @@ pub fn create_snapshot_with_memory()
         ..Default::default()
     };
 
-    pack_snapshot(config, None::<fn(u64, u64)>)?;
+    pack_archive(config, None::<fn(u64, u64)>)?;
 
     let persisted = temp_dir.keep();
-    let final_snap = persisted.join("snapshot.hxz");
+    let final_snap = persisted.join("archive.hxz");
 
     Ok((final_snap, disk_data))
 }
 
-/// Create a multi-block snapshot for testing parallel decompression
-pub fn create_multi_block_snapshot()
+/// Create a multi-block archive for testing parallel decompression
+pub fn create_multi_block_archive()
 -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn std::error::Error>> {
-    use hexz_ops::pack::{PackConfig, pack_snapshot};
+    use hexz_ops::pack::{PackConfig, pack_archive};
     use std::fs;
     use tempfile::TempDir;
 
@@ -261,11 +259,10 @@ pub fn create_multi_block_snapshot()
     let disk_path = temp_dir.path().join("disk.img");
     fs::write(&disk_path, &data)?;
 
-    let snap_path = temp_dir.path().join("snapshot.hxz");
+    let snap_path = temp_dir.path().join("archive.hxz");
 
     let config = PackConfig {
-        disk: Some(disk_path),
-        memory: None,
+        input: disk_path,
         output: snap_path.clone(),
         compression: "lz4".to_string(),
         encrypt: false,
@@ -278,10 +275,10 @@ pub fn create_multi_block_snapshot()
         ..Default::default()
     };
 
-    pack_snapshot(config, None::<fn(u64, u64)>)?;
+    pack_archive(config, None::<fn(u64, u64)>)?;
 
     let persisted = temp_dir.keep();
-    let final_snap = persisted.join("snapshot.hxz");
+    let final_snap = persisted.join("archive.hxz");
 
     Ok((final_snap, data))
 }

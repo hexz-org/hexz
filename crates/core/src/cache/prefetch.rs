@@ -153,11 +153,11 @@
 //! # use hexz_core::algo::compression::lz4::Lz4Compressor;
 //! # use std::sync::Arc;
 //! # fn main() -> hexz_common::Result<()> {
-//! let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
+//! let backend = Arc::new(FileBackend::new("archive.hxz".as_ref())?);
 //! let compressor = Box::new(Lz4Compressor::new());
 //!
 //! // Enable prefetching at File creation
-//! let snapshot = File::with_cache(
+//! let archive = File::with_cache(
 //!     backend,
 //!     compressor,
 //!     None, // encryptor
@@ -346,7 +346,7 @@ impl Prefetcher {
     ///
     /// This method performs saturating addition to avoid panics if `current_block`
     /// is near `u64::MAX`. However, in practice, block indices are bounded by the
-    /// snapshot's logical size, which is typically far below `u64::MAX`.
+    /// archive's logical size, which is typically far below `u64::MAX`.
     ///
     /// # Examples
     ///
@@ -384,7 +384,7 @@ impl Prefetcher {
     ///
     /// The caller must handle:
     /// - **Bounds checking**: Ensure prefetch targets do not exceed the stream's
-    ///   logical size (number of blocks in the snapshot)
+    ///   logical size (number of blocks in the archive)
     /// - **Cache lookup**: Skip prefetching blocks already present in the cache
     /// - **I/O scheduling**: Issue async or background reads for the target blocks
     /// - **Error handling**: Prefetch failures should not impact the foreground read

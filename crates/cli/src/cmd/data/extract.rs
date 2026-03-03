@@ -1,17 +1,45 @@
-//! Reconstruct a safetensors file from a Hexz archive.
+//! Extract data from a Hexz archive.
 
-use anyhow::Result;
-use hexz_ops::safetensors::extract_safetensors;
+use anyhow::{Context, Result};
+use hexz_ops::pack::extract_archive;
+use hexz_core::format::header::Header;
+use hexz_store::StorageBackend;
+use hexz_store::local::MmapBackend;
+use hexz_core::format::magic::HEADER_SIZE;
 use std::path::PathBuf;
 
 /// Execute the `hexz extract` command.
-pub fn run(input: PathBuf, output: Option<PathBuf>, tensor: Option<String>) -> Result<()> {
+pub fn run(input: PathBuf, output: Option<PathBuf>) -> Result<()> {
+    // 1. Resolve output path
     let output = match output {
         Some(p) => p,
-        None => input.with_extension("safetensors"),
+        None => {
+            // Default: if it has a manifest, use dir name, otherwise .bin
+            let mut out = input.clone();
+            out.set_extension("");
+            out
+        }
     };
 
-    extract_safetensors(&input, &output, tensor.as_deref())?;
-    println!("Extracted: {:?}", output);
+    // 2. Check for encryption
+    let password = {
+        let backend = MmapBackend::new(&input)?;
+        let header_bytes = backend.read_exact(0, HEADER_SIZE)?;
+        let header: Header = bincode::deserialize(&header_bytes)?;
+
+        if header.encryption.is_some() {
+            Some(match std::env::var("HEXZ_PASSWORD") {
+                Ok(p) => p,
+                Err(_) => rpassword::prompt_password("Enter decryption password: ")?,
+            })
+        } else {
+            None
+        }
+    };
+
+    println!("Extracting {:?} to {:?}...", input, output);
+    extract_archive(&input, &output, password).context("Failed to extract archive")?;
+    println!("Extraction complete.");
+    
     Ok(())
 }

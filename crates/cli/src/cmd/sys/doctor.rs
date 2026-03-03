@@ -3,7 +3,7 @@
 //! Performs comprehensive system health checks to verify that all required
 //! dependencies, kernel modules, and system resources are available for Hexz
 //! operations. This command helps troubleshoot installation issues and validates
-//! the environment before running VMs or mounting snapshots.
+//! the environment before running VMs or mounting archives.
 //!
 //! # Common Usage Patterns
 //!

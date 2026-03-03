@@ -70,7 +70,7 @@
 //!
 //! For Hexz's deduplication, collision resistance prevents:
 //! - **Accidental data loss**: Different chunks incorrectly treated as duplicates
-//! - **Malicious attacks**: Adversary crafting colliding chunks to corrupt snapshots
+//! - **Malicious attacks**: Adversary crafting colliding chunks to corrupt archives
 //!
 //! ## Preimage Resistance
 //!
@@ -189,7 +189,7 @@ impl Blake3Hasher {
     /// Computes the BLAKE3 hash with a keyed mode for MAC (Message Authentication Code).
     ///
     /// **Architectural intent:** Provides authenticated hashing where only parties with
-    /// the key can verify the hash. Useful for integrity verification in encrypted snapshots.
+    /// the key can verify the hash. Useful for integrity verification in encrypted archives.
     ///
     /// **Constraints:** The key must be exactly 32 bytes (256 bits). Using a shorter or
     /// longer key will panic.

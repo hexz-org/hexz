@@ -1,4 +1,4 @@
-//! Convert external data formats into Hexz snapshots.
+//! Convert external data formats into Hexz archives.
 //!
 //! Supports:
 //! - **tar**: Pure Rust via the `tar` crate (streaming, no extraction)
@@ -8,7 +8,7 @@
 use crate::ui::progress::create_progress_bar;
 use anyhow::{Context, Result, bail};
 use hexz_core::algo::compression::create_compressor_from_str;
-use hexz_ops::snapshot_writer::SnapshotWriter;
+use hexz_ops::archive_writer::ArchiveWriter;
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -39,10 +39,10 @@ pub fn run(
     }
 }
 
-/// Convert a tar archive to a Hexz snapshot using pure Rust.
+/// Convert a tar archive to a Hexz archive using pure Rust.
 ///
-/// Streams tar entries directly through the SnapshotWriter without
-/// extracting to disk. Stores a file manifest in snapshot metadata.
+/// Streams tar entries directly through the ArchiveWriter without
+/// extracting to disk. Stores a file manifest in archive metadata.
 fn convert_tar(
     input: PathBuf,
     output: PathBuf,
@@ -63,11 +63,11 @@ fn convert_tar(
         None
     };
 
-    // Create compressor and snapshot writer
+    // Create compressor and archive writer
     let (compressor, compression_type) =
         create_compressor_from_str(&compression, None, None).map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    let mut writer = SnapshotWriter::builder(&output, compressor, compression_type)
+    let mut writer = ArchiveWriter::builder(&output, compressor, compression_type)
         .block_size(block_size)
         .build()
         .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -83,7 +83,7 @@ fn convert_tar(
     let mut total_bytes: u64 = 0;
     let mut bytes_from_archive: u64 = 0;
 
-    // Begin a primary stream for the tar data
+    // Begin a main stream for the tar data
     // We'll set total_size after reading all entries by using a two-pass approach,
     // but for streaming we start with the tar file size as an estimate.
     writer.begin_stream(true, total_size);
@@ -161,7 +161,7 @@ fn convert_tar(
             source_files.len(),
             total_bytes
         );
-        println!("Snapshot created: {}", output.display());
+        println!("Archive created: {}", output.display());
     }
 
     Ok(())
@@ -210,7 +210,7 @@ fn convert_via_python(
     }
 
     if !silent {
-        println!("Snapshot created: {}", output.display());
+        println!("Archive created: {}", output.display());
     }
 
     Ok(())

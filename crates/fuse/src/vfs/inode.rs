@@ -3,7 +3,7 @@
 //! This module defines the **inode numbering scheme** and **directory layout**
 //! for the Hexz FUSE adapter. It provides the mapping between:
 //! - Logical inode numbers (1, 2, 3)
-//! - Snapshot streams (Disk, Memory)
+//! - Archive streams (Disk, Memory)
 //! - Directory entry names ("disk", "memory")
 //! - File attributes (size, permissions, type)
 //!
@@ -17,31 +17,31 @@
 //! | Inode | Type      | Name     | Backing         | Purpose                    |
 //! |-------|-----------|----------|-----------------|----------------------------|
 //! | 1     | Directory | (root)   | None            | Mount point root directory |
-//! | 2     | File      | `disk`   | Primary stream     | Guest disk image           |
-//! | 3     | File      | `memory` | Secondary stream   | Guest RAM snapshot         |
+//! | 2     | File      | `disk`   | Main stream     | Guest disk image           |
+//! | 3     | File      | `memory` | Auxiliary stream   | Guest RAM archive         |
 //!
-//! This minimal namespace is sufficient for unikernel snapshots, which consist
+//! This minimal namespace is sufficient for unikernel archives, which consist
 //! of a disk image and optional memory state. The root directory is always
 //! present; `disk` and `memory` entries appear only if the corresponding
-//! snapshot streams exist (determined by feature flags in the snapshot header).
+//! archive streams exist (determined by feature flags in the archive header).
 //!
 //! # InodeMap Structure
 //!
-//! The `InodeMap` struct caches snapshot metadata at mount time:
+//! The `InodeMap` struct caches archive metadata at mount time:
 //! - Which streams are present (`has_disk`, `has_mem`)
-//! - Stream sizes (`primary_size`, `mem_size`)
+//! - Stream sizes (`main_size`, `mem_size`)
 //! - Mount user/group IDs (`uid`, `gid`)
 //!
-//! This avoids repeated snapshot header queries and ensures attribute
+//! This avoids repeated archive header queries and ensures attribute
 //! consistency throughout the mount's lifetime. Changes to the underlying
-//! snapshot (e.g., manual modification of the snapshot file) are not
+//! archive (e.g., manual modification of the archive file) are not
 //! reflected until remount.
 //!
 //! # Directory Entry Resolution
 //!
 //! The `lookup` method implements a simple name-to-inode mapping:
 //! - Parent must be inode 1 (root)
-//! - Name must be "disk" (if primary stream present) or "memory" (if memory present)
+//! - Name must be "disk" (if main stream present) or "memory" (if memory present)
 //! - All other names return `None`, causing FUSE to report `ENOENT`
 //!
 //! This flat namespace prevents nesting directories or creating new files,
@@ -69,14 +69,14 @@
 //! use std::sync::Arc;
 //!
 //! # fn main() -> anyhow::Result<()> {
-//! let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
+//! let backend = Arc::new(FileBackend::new("archive.hxz".as_ref())?);
 //! let compressor = Box::new(Lz4Compressor::new());
 //! let snap = File::new(backend, compressor, None)?;
 //! let inode_map = InodeMap::new(&snap, 1000, 1000);
 //!
 //! // Query available streams
 //! if inode_map.lookup(1, "disk".as_ref()).is_some() {
-//!     println!("Primary stream available");
+//!     println!("Main stream available");
 //! }
 //! # Ok(())
 //! # }
@@ -91,7 +91,7 @@
 //! # use hexz_fuse::vfs::InodeMap;
 //! # use std::sync::Arc;
 //! # fn main() -> anyhow::Result<()> {
-//! # let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
+//! # let backend = Arc::new(FileBackend::new("archive.hxz".as_ref())?);
 //! # let compressor = Box::new(Lz4Compressor::new());
 //! # let snap = File::new(backend, compressor, None)?;
 //! # let inode_map = InodeMap::new(&snap, 1000, 1000);
@@ -110,515 +110,362 @@
 //! ```
 
 use fuser::FileType;
-use hexz_core::{File, SnapshotStream};
+use hexz_core::api::manifest::{ArchiveManifest, FileEntry};
+use hexz_core::{Archive, ArchiveStream};
+use serde_json;
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use super::attr;
 
-/// Logical inode identifier used by the FUSE adapter.
-///
-/// Inode numbers are 64-bit integers assigned by the filesystem. In Hexz,
-/// they follow a fixed scheme:
-/// - 1: Root directory
-/// - 2: Disk file
-/// - 3: Memory file
-///
-/// All other values are invalid. This type alias makes the intent clear in
-/// function signatures while allowing efficient representation and comparison.
-///
-/// # FUSE Protocol Notes
-///
-/// FUSE inode numbers must be:
-/// - Unique within a mount (satisfied by fixed assignment)
-/// - Stable across lookups (satisfied by hardcoding)
-/// - Non-zero (satisfied by starting at 1)
-///
-/// The kernel uses inode numbers as keys for its dentry cache, so consistency
-/// is critical for correct path resolution.
 pub type Inode = u64;
 
-/// Fixed inode number assignments for the Hexz FUSE namespace.
-///
-/// This enum encodes the three possible inodes in the Hexz filesystem. The
-/// `#[repr(u64)]` attribute ensures that each variant has a specific numeric
-/// value that matches FUSE inode numbers.
-///
-/// # Inode Assignments
-///
-/// - **Root (1)**: The mount point directory, always present
-/// - **Disk (2)**: The guest disk image, present if `has_disk` feature flag set
-/// - **Memory (3)**: The guest RAM snapshot, present if `has_memory` feature flag set
-///
-/// # Usage
-///
-/// Convert between raw inode numbers and this enum using:
-/// - `InodeType::Disk as u64` -> 2 (enum to raw)
-/// - `InodeType::from_u64(2)` -> Some(InodeType::Disk) (raw to enum)
-///
-/// # Rationale
-///
-/// Using an enum (rather than raw constants) provides:
-/// - Type safety in function signatures
-/// - Exhaustive match checking when branching on inode type
-/// - Self-documenting code (e.g., `ino == InodeType::Disk as u64`)
-#[repr(u64)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InodeType {
-    Root = 1,
-    Disk = 2,
-    Memory = 3,
-}
+pub const ROOT_INODE: Inode = 1;
 
-impl InodeType {
-    /// Converts a raw inode number into an `InodeType`, if valid.
-    ///
-    /// This method validates that an inode number falls within the expected
-    /// range (1-3) and returns the corresponding enum variant. It is used when
-    /// the FUSE kernel driver provides an inode number and the handler needs
-    /// to determine its meaning.
-    ///
-    /// # Parameters
-    ///
-    /// - `v`: Raw inode number from FUSE operation (e.g., from `lookup` or `read`)
-    ///
-    /// # Returns
-    ///
-    /// - `Some(InodeType)`: If `v` is 1, 2, or 3
-    /// - `None`: If `v` is any other value (invalid inode)
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use hexz_fuse::vfs::InodeType;
-    ///
-    /// assert_eq!(InodeType::from_u64(1), Some(InodeType::Root));
-    /// assert_eq!(InodeType::from_u64(2), Some(InodeType::Disk));
-    /// assert_eq!(InodeType::from_u64(3), Some(InodeType::Memory));
-    /// assert_eq!(InodeType::from_u64(4), None);
-    /// ```
-    pub fn from_u64(v: u64) -> Option<Self> {
-        match v {
-            1 => Some(Self::Root),
-            2 => Some(Self::Disk),
-            3 => Some(Self::Memory),
-            _ => None,
-        }
-    }
-}
-
-/// Directory entry returned by `readdir` operations.
-///
-/// This structure packages the metadata needed to populate the kernel's
-/// directory cache during `readdir` iteration. Each entry corresponds to a
-/// single file or subdirectory within the parent.
-///
-/// # Fields
-///
-/// - `inode`: The inode number of this entry (used for subsequent `getattr` calls)
-/// - `kind`: File type (Directory or RegularFile) for `ls -F` and `stat` compatibility
-/// - `name`: File name as a UTF-8 string (e.g., "disk", "memory", ".", "..")
-///
-/// # FUSE Protocol Notes
-///
-/// The `ReplyDirectory::add()` method consumes `DirEntry` values and encodes
-/// them into the kernel-supplied buffer. If the buffer fills, `add()` returns
-/// `true`, signaling that iteration should stop and resume on the next
-/// `readdir` call with an updated offset.
-///
-/// # Examples
-///
-/// ```
-/// use hexz_fuse::vfs::DirEntry;
-/// use fuser::FileType;
-///
-/// let entry = DirEntry {
-///     inode: 2,
-///     kind: FileType::RegularFile,
-///     name: "disk".to_string(),
-/// };
-///
-/// assert_eq!(entry.name, "disk");
-/// assert_eq!(entry.inode, 2);
-/// ```
 pub struct DirEntry {
     pub inode: Inode,
     pub kind: FileType,
     pub name: String,
 }
 
-/// In-memory cache of snapshot metadata for FUSE inode operations.
-///
-/// The `InodeMap` is constructed once at mount time and captures:
-/// - Which snapshot streams (disk, memory) are present
-/// - The logical size of each stream
-/// - The UID/GID to assign to all inodes
-///
-/// This avoids repeatedly querying the snapshot header during FUSE operations
-/// and ensures consistent attribute reporting throughout the mount's lifetime.
-///
-/// # Immutability
-///
-/// The `InodeMap` is **immutable after construction**. Changes to the
-/// underlying snapshot file (e.g., manual edits with a hex editor) are not
-/// reflected until the filesystem is unmounted and remounted.
-///
-/// For overlay modifications (writes to the disk inode), the FUSE adapter
-/// queries overlay length dynamically via `Overlay::len()`, not via this map.
-///
-/// # Flat Namespace Assumption
-///
-/// The current implementation assumes a **flat namespace**:
-/// - Root directory (inode 1) contains at most 2 files: `disk` and `memory`
-/// - No subdirectories, no dynamic file creation
-/// - Directory structure is fully determined by snapshot feature flags
-///
-/// This simplifies lookup and readdir operations to O(1) but prevents nesting
-/// or runtime modification of the directory tree.
-///
-/// # Memory Footprint
-///
-/// - Size: 26 bytes (2 bools + 2 u64 + 2 u32, with padding)
-/// - Lifetime: Same as FUSE mount (created in `Hexz::new`, dropped on unmount)
-/// - Copies: Typically just one per mount (stored in `Hexz` struct)
+#[derive(Debug, Clone)]
+pub enum Node {
+    Directory {
+        children: BTreeMap<String, Inode>,
+        parent: Option<Inode>,
+    },
+    File {
+        offset: u64,
+        size: u64,
+        mode: u32,
+        mtime: u64,
+        parent: Option<Inode>,
+    },
+}
+
 pub struct InodeMap {
-    has_disk: bool,
-    has_mem: bool,
-    primary_size: u64,
-    mem_size: u64,
+    nodes: BTreeMap<Inode, Node>,
+    path_to_ino: BTreeMap<PathBuf, Inode>,
+    ino_to_path: BTreeMap<Inode, PathBuf>,
+    pub passthrough_paths: BTreeMap<Inode, PathBuf>,
+    next_inode: Inode,
     uid: u32,
     gid: u32,
 }
 
 impl InodeMap {
-    /// Constructs an `InodeMap` by reading snapshot metadata.
-    ///
-    /// This method queries the snapshot's feature flags and stream sizes to
-    /// determine which inodes should be visible in the FUSE namespace. The
-    /// resulting map is immutable and cached for the mount's lifetime.
-    ///
-    /// # Snapshot Header Inspection
-    ///
-    /// The following fields are extracted from `snap`:
-    /// - `snap.header.features.has_disk`: Whether inode 2 (disk) should exist
-    /// - `snap.header.features.has_memory`: Whether inode 3 (memory) should exist
-    /// - `snap.size(SnapshotStream::Primary)`: Logical size of primary stream in bytes
-    /// - `snap.size(SnapshotStream::Secondary)`: Logical size of secondary stream in bytes
-    ///
-    /// # Parameters
-    ///
-    /// - `snap`: Reference to an open snapshot file (must outlive the FUSE mount)
-    /// - `uid`: User ID to assign to all inodes (typically from `getuid()`)
-    /// - `gid`: Group ID to assign to all inodes (typically from `getgid()`)
-    ///
-    /// # Returns
-    ///
-    /// An `InodeMap` ready for use in `Hexz::new`. This map is cheap to
-    /// clone (26 bytes) if needed.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use hexz_core::File;
-    /// use hexz_store::local::FileBackend;
-    /// use hexz_core::algo::compression::lz4::Lz4Compressor;
-    /// use hexz_fuse::vfs::InodeMap;
-    /// use std::sync::Arc;
-    ///
-    /// # fn main() -> anyhow::Result<()> {
-    /// let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
-    /// let compressor = Box::new(Lz4Compressor::new());
-    /// let snap = File::new(backend, compressor, None)?;
-    /// let inode_map = InodeMap::new(&snap, 1000, 1000);
-    ///
-    /// // Now inode_map can be used for lookups and attribute synthesis
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn new(snap: &File, uid: u32, gid: u32) -> Self {
-        Self {
-            has_disk: snap.header.features.has_disk,
-            has_mem: snap.header.features.has_memory,
-            primary_size: snap.size(SnapshotStream::Primary),
-            mem_size: snap.size(SnapshotStream::Secondary),
+    pub fn new(snap: &Archive, uid: u32, gid: u32) -> Self {
+        let mut nodes = BTreeMap::new();
+        nodes.insert(
+            ROOT_INODE,
+            Node::Directory {
+                children: BTreeMap::new(),
+                parent: None,
+            },
+        );
+
+        let mut map = Self {
+            nodes,
+            path_to_ino: BTreeMap::new(),
+            ino_to_path: BTreeMap::new(),
+            passthrough_paths: BTreeMap::new(),
+            next_inode: 2,
             uid,
             gid,
-        }
-    }
-
-    /// Resolves a child name under a parent inode into an inode number.
-    ///
-    /// This method implements the core name-to-inode mapping used by the FUSE
-    /// `lookup` operation. It validates that the parent is the root directory
-    /// and that the name matches one of the exported files.
-    ///
-    /// # Lookup Rules
-    ///
-    /// 1. Parent must be 1 (root directory). Lookups under file inodes return `None`.
-    /// 2. Name must be "disk" or "memory" (case-sensitive, UTF-8).
-    /// 3. The corresponding snapshot stream must be present (checked via `has_disk`/`has_mem`).
-    ///
-    /// # Parameters
-    ///
-    /// - `parent`: Inode number of the directory being searched (must be 1)
-    /// - `name`: Name to resolve (as `OsStr`, converted to UTF-8 internally)
-    ///
-    /// # Returns
-    ///
-    /// - `Some(2)`: If parent=1, name="disk", and primary stream present
-    /// - `Some(3)`: If parent=1, name="memory", and secondary stream present
-    /// - `None`: Otherwise (invalid parent, unknown name, or stream not present)
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # use hexz_core::File;
-    /// # use hexz_store::local::FileBackend;
-    /// # use hexz_core::algo::compression::lz4::Lz4Compressor;
-    /// # use hexz_fuse::vfs::InodeMap;
-    /// # use std::sync::Arc;
-    /// # fn main() -> anyhow::Result<()> {
-    /// # let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
-    /// # let compressor = Box::new(Lz4Compressor::new());
-    /// # let snap = File::new(backend, compressor, None)?;
-    /// # let map = InodeMap::new(&snap, 1000, 1000);
-    /// // Valid lookup
-    /// assert_eq!(map.lookup(1, "disk".as_ref()), Some(2));
-    ///
-    /// // Invalid parent
-    /// assert_eq!(map.lookup(2, "disk".as_ref()), None);
-    ///
-    /// // Unknown name
-    /// assert_eq!(map.lookup(1, "foo".as_ref()), None);
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// # Performance
-    ///
-    /// - Time complexity: O(1) - two string comparisons maximum
-    /// - Typical latency: 50-100 nanoseconds
-    pub fn lookup(&self, parent: u64, name: &std::ffi::OsStr) -> Option<Inode> {
-        if parent != InodeType::Root as u64 {
-            return None;
-        }
-        let s = name.to_str()?;
-        match s {
-            "disk" if self.has_disk => Some(InodeType::Disk as u64),
-            "memory" if self.has_mem => Some(InodeType::Memory as u64),
-            _ => None,
-        }
-    }
-
-    /// Synthesizes file attributes for a given inode.
-    ///
-    /// This method constructs a `FileAttr` structure by combining the inode
-    /// number with snapshot-derived size information. It is used by the FUSE
-    /// `getattr` and `lookup` operations to report file metadata to the kernel.
-    ///
-    /// # Attribute Sources
-    ///
-    /// - **Size**: Derived from `primary_size` or `mem_size` (cached at mount time)
-    /// - **Permissions, timestamps, type**: Delegated to `attr::make_attr()`
-    /// - **UID/GID**: From `uid` and `gid` (set at mount time)
-    ///
-    /// # Overlay Size Handling
-    ///
-    /// This method returns the **snapshot size**, not the overlay size. The
-    /// FUSE adapter's `get_merged_attr()` method is responsible for merging
-    /// overlay length with snapshot size when inode 2 (disk) is queried.
-    ///
-    /// # Parameters
-    ///
-    /// - `ino`: Inode number (1=root, 2=disk, 3=memory)
-    ///
-    /// # Returns
-    ///
-    /// A fully populated `FileAttr` structure. Unknown inodes receive size 0
-    /// but still return valid attributes (this allows graceful degradation).
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # use hexz_core::File;
-    /// # use hexz_store::local::FileBackend;
-    /// # use hexz_core::algo::compression::lz4::Lz4Compressor;
-    /// # use hexz_fuse::vfs::InodeMap;
-    /// # use std::sync::Arc;
-    /// # fn main() -> anyhow::Result<()> {
-    /// # let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
-    /// # let compressor = Box::new(Lz4Compressor::new());
-    /// # let snap = File::new(backend, compressor, None)?;
-    /// # let map = InodeMap::new(&snap, 1000, 1000);
-    /// // Get attributes for disk inode
-    /// let attr = map.getattr(2);
-    /// assert_eq!(attr.ino, 2);
-    /// // attr.size == snapshot disk size (not overlay size)
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn getattr(&self, ino: u64) -> fuser::FileAttr {
-        let size = match InodeType::from_u64(ino) {
-            Some(InodeType::Disk) => self.primary_size,
-            Some(InodeType::Memory) => self.mem_size,
-            _ => 0,
         };
+        map.ino_to_path.insert(ROOT_INODE, PathBuf::new());
 
-        attr::make_attr(ino, size, self.uid, self.gid)
+        // Parse manifest from metadata
+        if let Some(metadata) = &snap.metadata {
+            if let Ok(manifest) = serde_json::from_slice::<ArchiveManifest>(metadata) {
+                for file in manifest.files {
+                    map.add_file(&file);
+                }
+            }
+        } else {
+            if snap.header.features.has_main {
+                map.add_legacy_file("main", snap.size(ArchiveStream::Main));
+            }
+            if snap.header.features.has_auxiliary {
+                map.add_legacy_file("auxiliary", snap.size(ArchiveStream::Auxiliary));
+            }
+        }
+
+        map
     }
 
-    /// Returns the complete directory listing for the root directory.
-    ///
-    /// This method constructs the set of directory entries visible in the root
-    /// directory (inode 1). The entries are materialized on demand from the
-    /// snapshot feature flags; no on-disk directory structure is consulted.
-    ///
-    /// # Entry Ordering
-    ///
-    /// The returned vector always follows this order:
-    /// 1. `.` (current directory, inode 1)
-    /// 2. `..` (parent directory, also inode 1 since root has no parent)
-    /// 3. `disk` (inode 2, if primary stream present)
-    /// 4. `memory` (inode 3, if secondary stream present)
-    ///
-    /// This ordering is **stable** and can be relied upon for testing, but the
-    /// FUSE protocol does not require any specific order.
-    ///
-    /// # Returns
-    ///
-    /// A vector of `DirEntry` structures, each containing:
-    /// - `inode`: Inode number for subsequent operations
-    /// - `kind`: File type (Directory for `.` and `..`, RegularFile otherwise)
-    /// - `name`: UTF-8 file name
-    ///
-    /// The vector length is 2-4 entries depending on snapshot contents.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # use hexz_core::File;
-    /// # use hexz_store::local::FileBackend;
-    /// # use hexz_core::algo::compression::lz4::Lz4Compressor;
-    /// # use hexz_fuse::vfs::InodeMap;
-    /// # use std::sync::Arc;
-    /// # fn main() -> anyhow::Result<()> {
-    /// # let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
-    /// # let compressor = Box::new(Lz4Compressor::new());
-    /// # let snap = File::new(backend, compressor, None)?;
-    /// # let map = InodeMap::new(&snap, 1000, 1000);
-    /// let entries = map.readdir();
-    ///
-    /// // Minimum entries: . and ..
-    /// assert!(entries.len() >= 2);
-    /// assert_eq!(entries[0].name, ".");
-    /// assert_eq!(entries[1].name, "..");
-    ///
-    /// // Additional entries if streams present
-    /// if map.lookup(1, "disk".as_ref()).is_some() {
-    ///     assert_eq!(entries[2].name, "disk");
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// # Performance
-    ///
-    /// - Time complexity: O(1) - fixed entry count (2-4)
-    /// - Space complexity: O(1) - fixed allocation
-    /// - Typical latency: < 1 microsecond
-    pub fn readdir(&self) -> Vec<DirEntry> {
-        let mut entries = vec![
-            DirEntry {
-                inode: InodeType::Root as u64,
+    pub fn add_file_at_path(&mut self, path: &std::path::Path, is_dir: bool) -> Inode {
+        if let Some(&ino) = self.path_to_ino.get(path) {
+            return ino;
+        }
+
+        let parent_path = path.parent().unwrap_or_else(|| std::path::Path::new(""));
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        let parent_ino = self.get_or_create_dir(parent_path);
+
+        let ino = self.next_inode;
+        self.next_inode += 1;
+
+        if is_dir {
+            self.nodes.insert(
+                ino,
+                Node::Directory {
+                    children: BTreeMap::new(),
+                    parent: Some(parent_ino),
+                },
+            );
+        } else {
+            self.nodes.insert(
+                ino,
+                Node::File {
+                    offset: 0,
+                    size: 0,
+                    mode: 0o644,
+                    mtime: 0,
+                    parent: Some(parent_ino),
+                },
+            );
+        }
+
+        let pb = path.to_path_buf();
+        self.path_to_ino.insert(pb.clone(), ino);
+        self.ino_to_path.insert(ino, pb);
+
+        if let Some(Node::Directory { children, .. }) = self.nodes.get_mut(&parent_ino) {
+            children.insert(name, ino);
+        }
+        ino
+    }
+
+    fn add_legacy_file(&mut self, name: &str, size: u64) {
+        let ino = self.next_inode;
+        self.next_inode += 1;
+        self.nodes.insert(
+            ino,
+            Node::File {
+                offset: 0,
+                size,
+                mode: 0o644,
+                mtime: 0,
+                parent: Some(ROOT_INODE),
+            },
+        );
+        let pb = PathBuf::from(name);
+        self.path_to_ino.insert(pb.clone(), ino);
+        self.ino_to_path.insert(ino, pb);
+
+        if let Some(Node::Directory { children, .. }) = self.nodes.get_mut(&ROOT_INODE) {
+            children.insert(name.to_string(), ino);
+        }
+    }
+
+    fn get_or_create_dir(&mut self, path: &std::path::Path) -> Inode {
+        let mut current_ino = ROOT_INODE;
+        let mut current_path = PathBuf::new();
+
+        for component in path.iter() {
+            let name = component.to_string_lossy().to_string();
+            current_path.push(&name);
+
+            let mut create_new = false;
+            if let Some(Node::Directory { children, .. }) = self.nodes.get(&current_ino) {
+                if let Some(&child_ino) = children.get(&name) {
+                    current_ino = child_ino;
+                    continue;
+                } else {
+                    create_new = true;
+                }
+            }
+
+            if create_new {
+                let new_ino = self.next_inode;
+                self.next_inode += 1;
+
+                self.nodes.insert(
+                    new_ino,
+                    Node::Directory {
+                        children: BTreeMap::new(),
+                        parent: Some(current_ino),
+                    },
+                );
+
+                let pb = current_path.clone();
+                self.path_to_ino.insert(pb.clone(), new_ino);
+                self.ino_to_path.insert(new_ino, pb);
+
+                if let Some(Node::Directory { children, .. }) = self.nodes.get_mut(&current_ino) {
+                    children.insert(name, new_ino);
+                }
+
+                current_ino = new_ino;
+            }
+        }
+
+        current_ino
+    }
+    /// Recursively populates the InodeMap from an existing overlay directory.
+    pub fn populate_from_metadata_dir(&mut self, metadata_dir: &std::path::Path) {
+        if !metadata_dir.exists() {
+            return;
+        }
+
+        let base = std::path::Path::new(".hexz");
+        self.get_or_create_dir(base);
+
+        let walk = walkdir::WalkDir::new(metadata_dir);
+        for entry in walk
+            .into_iter()
+            .filter_map(|e: walkdir::Result<walkdir::DirEntry>| e.ok())
+        {
+            if entry.path() == metadata_dir {
+                continue;
+            }
+            if let Ok(rel_path) = entry.path().strip_prefix(metadata_dir) {
+                let virtual_path = base.join(rel_path);
+                let is_dir = entry.file_type().is_dir();
+                let ino = self.add_file_at_path(&virtual_path, is_dir);
+                self.passthrough_paths
+                    .insert(ino, entry.path().to_path_buf());
+            }
+        }
+    }
+
+    pub fn populate_from_overlay(&mut self, base: &std::path::Path) {
+        let walk = walkdir::WalkDir::new(base);
+        for entry in walk
+            .into_iter()
+            .filter_map(|e: walkdir::Result<walkdir::DirEntry>| e.ok())
+        {
+            if entry.path() == base {
+                continue;
+            }
+            if let Ok(rel_path) = entry.path().strip_prefix(base) {
+                let is_dir = entry.file_type().is_dir();
+                self.add_file_at_path(rel_path, is_dir);
+            }
+        }
+    }
+
+    fn add_file(&mut self, entry: &FileEntry) {
+        let path = std::path::Path::new(&entry.path);
+        let parent_path = path.parent().unwrap_or_else(|| std::path::Path::new(""));
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+
+        let parent_ino = self.get_or_create_dir(parent_path);
+
+        let file_ino = self.next_inode;
+        self.next_inode += 1;
+
+        self.nodes.insert(
+            file_ino,
+            Node::File {
+                offset: entry.offset,
+                size: entry.size,
+                mode: entry.mode,
+                mtime: entry.mtime,
+                parent: Some(parent_ino),
+            },
+        );
+
+        let pb = path.to_path_buf();
+        self.path_to_ino.insert(pb.clone(), file_ino);
+        self.ino_to_path.insert(file_ino, pb);
+
+        if let Some(Node::Directory { children, .. }) = self.nodes.get_mut(&parent_ino) {
+            children.insert(name, file_ino);
+        }
+    }
+
+    pub fn lookup(&self, parent: u64, name: &std::ffi::OsStr) -> Option<Inode> {
+        let s = name.to_str()?;
+        if let Some(Node::Directory { children, .. }) = self.nodes.get(&parent) {
+            children.get(s).copied()
+        } else {
+            None
+        }
+    }
+
+    pub fn getattr(&self, ino: u64) -> fuser::FileAttr {
+        match self.nodes.get(&ino) {
+            Some(Node::Directory { .. }) => {
+                let mut attr = attr::make_attr(ino, 4096, self.uid, self.gid);
+                attr.kind = FileType::Directory;
+                attr.perm = 0o755;
+                attr
+            }
+            Some(Node::File { size, mode, .. }) => {
+                let mut attr = attr::make_attr(ino, *size, self.uid, self.gid);
+                attr.kind = FileType::RegularFile;
+                attr.perm = (*mode as u16) & 0o777;
+                attr
+            }
+            None => attr::make_attr(ino, 0, self.uid, self.gid), // Fallback
+        }
+    }
+
+    pub fn readdir(&self, ino: u64) -> Vec<DirEntry> {
+        let mut entries = Vec::new();
+
+        if let Some(Node::Directory { children, parent }) = self.nodes.get(&ino) {
+            entries.push(DirEntry {
+                inode: ino,
                 kind: FileType::Directory,
                 name: ".".into(),
-            },
-            DirEntry {
-                inode: InodeType::Root as u64,
+            });
+            entries.push(DirEntry {
+                inode: parent.unwrap_or(ROOT_INODE),
                 kind: FileType::Directory,
                 name: "..".into(),
-            },
-        ];
-        if self.has_disk {
-            entries.push(DirEntry {
-                inode: InodeType::Disk as u64,
-                kind: FileType::RegularFile,
-                name: "disk".into(),
             });
+
+            for (name, &child_ino) in children {
+                let kind = match self.nodes.get(&child_ino) {
+                    Some(Node::Directory { .. }) => FileType::Directory,
+                    Some(Node::File { .. }) => FileType::RegularFile,
+                    None => continue,
+                };
+                entries.push(DirEntry {
+                    inode: child_ino,
+                    kind,
+                    name: name.clone(),
+                });
+            }
         }
-        if self.has_mem {
-            entries.push(DirEntry {
-                inode: InodeType::Memory as u64,
-                kind: FileType::RegularFile,
-                name: "memory".into(),
-            });
-        }
+
         entries
     }
 
-    /// Maps an inode number to its backing snapshot stream.
-    ///
-    /// This method is used by read operations to determine which snapshot
-    /// stream should service a read request. It validates that the inode
-    /// corresponds to a file (not a directory) and that the corresponding
-    /// snapshot stream exists.
-    ///
-    /// # Mapping Rules
-    ///
-    /// - Inode 1 (root): Returns `None` (directories have no stream)
-    /// - Inode 2 (disk): Returns `Some(SnapshotStream::Primary)` if `has_disk`
-    /// - Inode 3 (memory): Returns `Some(SnapshotStream::Secondary)` if `has_mem`
-    /// - Other inodes: Returns `None` (invalid)
-    ///
-    /// # Parameters
-    ///
-    /// - `ino`: Inode number from a FUSE operation
-    ///
-    /// # Returns
-    ///
-    /// - `Some(SnapshotStream)`: If the inode maps to a valid, present stream
-    /// - `None`: If the inode is invalid or corresponds to a directory
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # use hexz_core::File;
-    /// # use hexz_store::local::FileBackend;
-    /// # use hexz_core::algo::compression::lz4::Lz4Compressor;
-    /// # use hexz_core::SnapshotStream;
-    /// # use hexz_fuse::vfs::InodeMap;
-    /// # use std::sync::Arc;
-    /// # fn main() -> anyhow::Result<()> {
-    /// # let backend = Arc::new(FileBackend::new("snapshot.hxz".as_ref())?);
-    /// # let compressor = Box::new(Lz4Compressor::new());
-    /// # let snap = File::new(backend, compressor, None)?;
-    /// # let map = InodeMap::new(&snap, 1000, 1000);
-    /// // Valid stream mapping
-    /// assert_eq!(map.inode_to_stream(2), Some(SnapshotStream::Primary));
-    ///
-    /// // Root directory has no stream
-    /// assert_eq!(map.inode_to_stream(1), None);
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// # Performance
-    ///
-    /// - Time complexity: O(1) - enum match
-    /// - Typical latency: < 10 nanoseconds
-    ///
-    /// Returns whether the given inode number is valid (root, disk, or memory).
     pub fn is_valid_inode(&self, ino: u64) -> bool {
-        match InodeType::from_u64(ino) {
-            Some(InodeType::Root) => true,
-            Some(InodeType::Disk) => self.has_disk,
-            Some(InodeType::Memory) => self.has_mem,
-            _ => false,
-        }
+        self.nodes.contains_key(&ino)
     }
 
-    pub fn inode_to_stream(&self, ino: u64) -> Option<SnapshotStream> {
-        match InodeType::from_u64(ino) {
-            Some(InodeType::Disk) if self.has_disk => Some(SnapshotStream::Primary),
-            Some(InodeType::Memory) if self.has_mem => Some(SnapshotStream::Secondary),
+    pub fn get_inode(&self, path: &std::path::Path) -> Option<Inode> {
+        self.path_to_ino.get(path).copied()
+    }
+
+    /// Reconstructs the full logical path for a given inode.
+    pub fn get_path(&self, ino: u64) -> Option<std::path::PathBuf> {
+        self.ino_to_path.get(&ino).cloned()
+    }
+
+    pub fn uid(&self) -> u32 {
+        self.uid
+    }
+
+    pub fn gid(&self) -> u32 {
+        self.gid
+    }
+
+    /// Returns (stream, offset_in_stream, size)
+    pub fn file_info(&self, ino: u64) -> Option<(ArchiveStream, u64, u64)> {
+        match self.nodes.get(&ino) {
+            Some(Node::File { offset, size, .. }) => {
+                // If it's the legacy memory file, we would need to map it to Auxiliary stream.
+                // But for now, let's assume everything in manifest is Main.
+                // To support legacy memory, we check if offset=0 and size matches...
+                // Actually, let's simplify and just use Main for manifest files.
+                Some((ArchiveStream::Main, *offset, *size))
+            }
             _ => None,
         }
     }

@@ -217,7 +217,7 @@ fn test_pack_config_parallel_defaults() {
 #[test]
 fn test_pack_config_with_parallel_settings() {
     let config = PackConfig {
-        disk: Some(std::path::PathBuf::from("test.img")),
+        input: std::path::PathBuf::from("test.img"),
         output: std::path::PathBuf::from("test.hxz"),
         parallel: false,
         num_workers: 4,

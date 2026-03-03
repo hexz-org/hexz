@@ -163,8 +163,8 @@ proptest! {
     fn header_roundtrip(
         block_size in prop_oneof![Just(4096u32), Just(65536u32), Just(131072u32)],
         index_offset in any::<u64>(),
-        has_disk in any::<bool>(),
-        has_memory in any::<bool>(),
+        has_main in any::<bool>(),
+        has_auxiliary in any::<bool>(),
         variable_blocks in any::<bool>(),
     ) {
         let header = Header {
@@ -181,7 +181,8 @@ proptest! {
             signature_length: None,
             encryption: None,
             compression: CompressionType::Lz4,
-            features: FeatureFlags { has_disk, has_memory, variable_blocks },
+            cdc_params: None,
+            features: FeatureFlags { has_main, has_auxiliary, variable_blocks },
         };
 
         let bytes = bincode::serialize(&header).unwrap();
@@ -209,34 +210,34 @@ proptest! {
     /// MasterIndex: deserialize(serialize(index)) == index.
     #[test]
     fn master_index_roundtrip(
-        primary_size in any::<u64>(),
-        secondary_size in any::<u64>(),
-        n_primary_pages in 0usize..8,
-        n_secondary_pages in 0usize..4,
+        main_size in any::<u64>(),
+        auxiliary_size in any::<u64>(),
+        n_main_pages in 0usize..8,
+        n_auxiliary_pages in 0usize..4,
     ) {
         let master = MasterIndex {
-            primary_pages: (0..n_primary_pages).map(|i| PageEntry {
+            main_pages: (0..n_main_pages).map(|i| PageEntry {
                 start_block: i as u64 * 4096,
                 start_logical: i as u64 * 4096 * 65536,
                 offset: 4096 + i as u64 * 65536,
                 length: 65536,
             }).collect(),
-            secondary_pages: (0..n_secondary_pages).map(|i| PageEntry {
+            auxiliary_pages: (0..n_auxiliary_pages).map(|i| PageEntry {
                 start_block: i as u64 * 4096,
                 start_logical: i as u64 * 4096 * 65536,
                 offset: 4096 + i as u64 * 65536,
                 length: 65536,
             }).collect(),
-            primary_size,
-            secondary_size,
+            main_size,
+            auxiliary_size,
         };
 
         let bytes = bincode::serialize(&master).unwrap();
         let deserialized: MasterIndex = bincode::deserialize(&bytes).unwrap();
-        prop_assert_eq!(master.primary_size, deserialized.primary_size);
-        prop_assert_eq!(master.secondary_size, deserialized.secondary_size);
-        prop_assert_eq!(master.primary_pages.len(), deserialized.primary_pages.len());
-        prop_assert_eq!(master.secondary_pages.len(), deserialized.secondary_pages.len());
+        prop_assert_eq!(master.main_size, deserialized.main_size);
+        prop_assert_eq!(master.auxiliary_size, deserialized.auxiliary_size);
+        prop_assert_eq!(master.main_pages.len(), deserialized.main_pages.len());
+        prop_assert_eq!(master.auxiliary_pages.len(), deserialized.auxiliary_pages.len());
     }
 }
 

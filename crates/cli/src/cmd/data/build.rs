@@ -1,6 +1,6 @@
 //! Build archive from source with profile-based optimization.
 //!
-//! This command provides a high-level interface for creating Hexz snapshots
+//! This command provides a high-level interface for creating Hexz archives
 //! with domain-specific optimizations. Unlike the low-level `pack` command,
 //! `build` uses predefined profiles that automatically select compression
 //! algorithms, block sizes, and dictionary training settings optimized for
@@ -25,7 +25,7 @@
 //! **Embedded Profile:**
 //! - Compression: LZ4 (minimal CPU overhead for resource-constrained targets)
 //! - Block size: 16 KiB (smaller blocks reduce memory pressure)
-//! - Dictionary training: Disabled (reduces snapshot creation time)
+//! - Dictionary training: Disabled (reduces archive creation time)
 //! - Use case: IoT devices, embedded Linux systems, edge computing
 //!
 //! **ML Profile (Machine Learning):**
@@ -57,21 +57,21 @@
 //!
 //! When enabled, samples ~1000 blocks and trains a Zstd dictionary:
 //! - Improves compression ratio by 10-30% for repetitive data
-//! - Adds 2-5 seconds to snapshot creation time
-//! - Dictionary size: ~110 KiB stored in snapshot header
+//! - Adds 2-5 seconds to archive creation time
+//! - Dictionary size: ~110 KiB stored in archive header
 //!
 //! # Use Cases
 //!
-//! - **VM Image Creation**: Build bootable snapshots from disk images
-//! - **Reproducible Environments**: Create snapshots with consistent compression settings
+//! - **VM Image Creation**: Build bootable archives from disk images
+//! - **Reproducible Environments**: Create archives with consistent compression settings
 //! - **Workload Optimization**: Select profiles matched to application characteristics
-//! - **CI/CD Pipelines**: Automate snapshot creation with profile presets
+//! - **CI/CD Pipelines**: Automate archive creation with profile presets
 //!
 //! # Common Usage Patterns
 //!
 //! ```bash
-//! # Build generic snapshot from disk image
-//! hexz build --source disk.img --output snapshot.st
+//! # Build generic archive from disk image
+//! hexz build --source disk.img --output archive.st
 //!
 //! # Build EDA workstation with optimal compression
 //! hexz build --source eda-vm.img --output eda.st --profile eda
@@ -87,18 +87,18 @@ use anyhow::Result;
 use hexz_common::config::BuildProfile;
 use std::path::PathBuf;
 
-/// Executes the build command to create a snapshot using profile-based settings.
+/// Executes the build command to create a archive using profile-based settings.
 ///
 /// This command maps a high-level build profile to low-level packing parameters
 /// (compression algorithm, block size, dictionary training) and delegates to the
-/// `pack` command for actual snapshot creation. This provides a simplified
+/// `pack` command for actual archive creation. This provides a simplified
 /// interface for users who want optimized settings without manual tuning.
 ///
 /// # Arguments
 ///
 /// * `source` - Path to the source disk image (raw or qcow2 format)
-/// * `memory` - Optional path to memory dump file to include in snapshot
-/// * `output` - Output path for the generated `.st` snapshot file
+/// * `memory` - Optional path to memory dump file to include in archive
+/// * `output` - Output path for the generated `.st` archive file
 /// * `profile` - Build profile name: "generic", "eda", "embedded", or "ml"
 /// * `encrypt` - Enable AES-256-GCM encryption (prompts for password)
 /// * `cdc` - Enable content-defined chunking for variable-sized blocks
@@ -136,11 +136,11 @@ use std::path::PathBuf;
 /// use std::path::PathBuf;
 /// use hexz_cli::cmd::data::build;
 ///
-/// // Build generic snapshot without encryption
+/// // Build generic archive without encryption
 /// build::run(
 ///     PathBuf::from("disk.img"),
 ///     None,
-///     PathBuf::from("snapshot.hxz"),
+///     PathBuf::from("archive.hxz"),
 ///     Some("generic".to_string()),
 ///     false,  // no encryption
 /// )?;
@@ -177,7 +177,7 @@ pub fn run(
         }
     };
 
-    println!("Building snapshot with profile: {:?}", build_profile);
+    println!("Building archive with profile: {:?}", build_profile);
 
     // 2. Map profile to parameters
     let compression = build_profile.compression_algo().to_string();

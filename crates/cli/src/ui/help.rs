@@ -31,8 +31,6 @@ impl Printer {
 
         let mut create_cmds = Vec::new();
         let mut inspect_cmds = Vec::new();
-        let mut restore_cmds = Vec::new();
-        let mut vm_cmds = Vec::new();
         let mut infra_cmds = Vec::new();
 
         let subcommands: Vec<Command> = self.cmd.get_subcommands().cloned().collect();
@@ -47,19 +45,15 @@ impl Printer {
             let item = (name.clone(), about);
 
             match name.as_str() {
-                "pack" | "import" | "build" | "convert" => create_cmds.push(item),
-                "show" | "diff" | "log" | "predict" => inspect_cmds.push(item),
-                "export" | "mount" | "unmount" => restore_cmds.push(item),
-                "boot" | "install" | "snap" | "commit" => vm_cmds.push(item),
-                "serve" | "keygen" | "sign" | "verify" | "doctor" => infra_cmds.push(item),
+                "pack" | "extract" | "mount" | "unmount" | "commit" | "checkout" | "status" => create_cmds.push(item),
+                "show" | "diff" | "log" => inspect_cmds.push(item),
+                "serve" | "keygen" | "sign" | "verify" => infra_cmds.push(item),
                 _ => {}
             }
         }
 
-        self.print_section("create and store snapshots", create_cmds);
+        self.print_section("archive and filesystem operations", create_cmds);
         self.print_section("inspect and compare", inspect_cmds);
-        self.print_section("restore and extract", restore_cmds);
-        self.print_section("virtual machines", vm_cmds);
         self.print_section("signing and infrastructure", infra_cmds);
 
         println!("{}Options:{}", BOLD, RESET);

@@ -34,10 +34,10 @@
 //!
 //! ```bash
 //! # Sign an archive
-//! hexz sys sign --key private.key snapshot.st
+//! hexz sys sign --key private.key archive.st
 //!
 //! # Verify the signature
-//! hexz sys verify --key public.key snapshot.st
+//! hexz sys verify --key public.key archive.st
 //! ```
 //!
 //! # Implementation

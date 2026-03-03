@@ -21,7 +21,7 @@ pub mod constants;
 /// Cryptographic utilities shared across crates.
 ///
 /// Houses password-based key-derivation parameters and related helpers that
-/// are embedded into snapshot metadata when encryption is enabled.
+/// are embedded into archive metadata when encryption is enabled.
 pub mod crypto;
 
 /// Core error types and result aliases used by Hexz.

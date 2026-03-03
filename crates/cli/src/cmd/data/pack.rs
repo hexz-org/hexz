@@ -5,7 +5,7 @@
 //!
 //! # Overview
 //!
-//! The `pack` command is the primary way to create Hexz archives from raw data.
+//! The `pack` command is the main way to create Hexz archives from raw data.
 //! It supports multiple compression algorithms, encryption, deduplication, and
 //! both fixed-size and content-defined chunking strategies.
 //!
@@ -38,13 +38,13 @@
 
 use crate::ui::progress::create_progress_bar;
 use anyhow::Result;
-use hexz_ops::pack::{PackConfig, pack_snapshot};
+use hexz_ops::pack::{PackConfig, pack_archive};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-/// Execute the pack command to create a Hexz snapshot archive.
+/// Execute the pack command to create a Hexz archive archive.
 ///
-/// This command creates a `.st` snapshot file from disk and/or memory dump files.
+/// This command creates a `.st` archive file from disk and/or memory dump files.
 /// It supports compression (LZ4 or Zstd), optional encryption, deduplication,
 /// content-defined chunking (CDC), and dictionary training for improved compression.
 ///
@@ -64,7 +64,7 @@ use std::sync::{Arc, Mutex};
 ///
 /// * `disk` - Optional path to disk image file (raw or qcow2)
 /// * `memory` - Optional path to memory dump file
-/// * `output` - Output path for the `.st` snapshot file
+/// * `output` - Output path for the `.st` archive file
 /// * `compression` - Compression algorithm: "lz4" (fast) or "zstd" (balanced)
 /// * `encrypt` - Enable AES-256-GCM encryption (prompts for password)
 /// * `train_dict` - Train a Zstd dictionary for improved compression ratios
@@ -91,7 +91,7 @@ use std::sync::{Arc, Mutex};
 /// pack::run(
 ///     Some(PathBuf::from("disk.img")),
 ///     None,
-///     PathBuf::from("snapshot.hxz"),
+///     PathBuf::from("archive.hxz"),
 ///     "zstd".to_string(),
 ///     false,  // no encryption
 ///     true,   // train dictionary
@@ -106,8 +106,8 @@ use std::sync::{Arc, Mutex};
 /// ```
 #[allow(clippy::too_many_arguments)]
 pub fn run(
-    disk: Option<PathBuf>,
-    memory: Option<PathBuf>,
+    input: Option<PathBuf>,
+    base: Option<PathBuf>,
     output: PathBuf,
     compression: String,
     encrypt: bool,
@@ -118,6 +118,7 @@ pub fn run(
     max_chunk: Option<u32>,
     workers: Option<usize>,
     dcam: bool,
+    dcam_optimal: bool,
     silent: bool,
 ) -> Result<()> {
     // Get password if encryption is enabled (env var for non-interactive use)
@@ -130,16 +131,18 @@ pub fn run(
         None
     };
 
+    let input_path = input.unwrap_or_else(|| PathBuf::from("."));
+
     // Calculate total size for progress bar
-    let total_size = {
-        let mut size = 0u64;
-        if let Some(ref path) = disk {
-            size += std::fs::metadata(path)?.len();
-        }
-        if let Some(ref path) = memory {
-            size += std::fs::metadata(path)?.len();
-        }
-        size
+    let total_size = if input_path.is_dir() {
+        walkdir::WalkDir::new(&input_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e: &walkdir::DirEntry| e.file_type().is_file())
+            .map(|e: walkdir::DirEntry| e.metadata().map(|m| m.len()).unwrap_or(0))
+            .sum()
+    } else {
+        std::fs::metadata(&input_path).map(|m| m.len()).unwrap_or(0)
     };
 
     // Create progress bar
@@ -158,8 +161,8 @@ pub fn run(
 
     // Create pack configuration
     let config = PackConfig {
-        disk,
-        memory,
+        input: input_path,
+        base,
         output: output.clone(),
         compression,
         encrypt,
@@ -172,13 +175,14 @@ pub fn run(
         parallel: workers != Some(1),
         num_workers: workers.unwrap_or(0),
         use_dcam: dcam,
+        dcam_optimal,
         ..Default::default()
     };
 
     // Run the packing operation with progress callback
-    pack_snapshot(
+    pack_archive(
         config,
-        Some(move |current, _total| {
+        Some(move |current, _| {
             if let Some(ref pb) = pb_clone {
                 if let Ok(pb) = pb.lock() {
                     pb.set_position(current);

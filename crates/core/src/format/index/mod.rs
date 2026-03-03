@@ -1,8 +1,8 @@
-//! Snapshot index structures for mapping logical offsets to physical blocks.
+//! Archive index structures for mapping logical offsets to physical blocks.
 //!
 //! # Overview
 //!
-//! Hexz snapshots use a two-level index hierarchy:
+//! Hexz archives use a two-level index hierarchy:
 //! 1. **Master Index**: Top-level directory of index pages (stored at end of file)
 //! 2. **Index Pages**: Arrays of `BlockInfo` records for contiguous block ranges
 //!
@@ -33,7 +33,7 @@
 //! # Random Access Workflow
 //!
 //! To read data at logical offset `O`:
-//! 1. Binary search `master.primary_pages` for page covering `O`
+//! 1. Binary search `master.main_pages` for page covering `O`
 //! 2. Read and deserialize the index page
 //! 3. Find block(s) overlapping `O`
 //! 4. Read compressed block from `BlockInfo.offset`
@@ -85,8 +85,8 @@ use serde::{Deserialize, Serialize};
 /// ## Master Index Size
 ///
 /// With 4096 entries per page:
-/// - **1 GB snapshot**: ~64 pages (~4 KB master index)
-/// - **1 TB snapshot**: ~64,000 pages (~4 MB master index)
+/// - **1 GB archive**: ~64 pages (~4 KB master index)
+/// - **1 TB archive**: ~64,000 pages (~4 MB master index)
 ///
 /// Larger `ENTRIES_PER_PAGE` reduces master index size but increases page load
 /// latency for random access.
@@ -116,9 +116,9 @@ use serde::{Deserialize, Serialize};
 ///
 /// | Value | Page Size | Coverage | Use Case |
 /// |-------|-----------|----------|----------|
-/// | 1024  | ~20 KB    | 4 MB     | Fine-grained random access, small snapshots |
+/// | 1024  | ~20 KB    | 4 MB     | Fine-grained random access, small archives |
 /// | 4096  | ~64 KB    | 16 MB    | **Balanced (current default)** |
-/// | 16384 | ~256 KB   | 64 MB    | Sequential access, large snapshots |
+/// | 16384 | ~256 KB   | 64 MB    | Sequential access, large archives |
 ///
 /// # Examples
 ///
@@ -127,8 +127,8 @@ use serde::{Deserialize, Serialize};
 ///
 /// // Calculate how many pages are needed for a 1 GB disk image
 /// let block_size = 4096;
-/// let primary_size = 1_000_000_000u64;
-/// let block_count = (primary_size + block_size - 1) / block_size;
+/// let main_size = 1_000_000_000u64;
+/// let block_count = (main_size + block_size - 1) / block_size;
 /// let page_count = (block_count as usize + ENTRIES_PER_PAGE - 1) / ENTRIES_PER_PAGE;
 ///
 /// println!("Blocks: {}", block_count);
@@ -138,21 +138,21 @@ use serde::{Deserialize, Serialize};
 /// ```
 pub const ENTRIES_PER_PAGE: usize = 4096;
 
-/// Metadata for a single compressed block in the snapshot.
+/// Metadata for a single compressed block in the archive.
 ///
 /// Each block represents a contiguous chunk of logical data (typically 4KB-64KB)
-/// that has been compressed, optionally encrypted, and written to the snapshot file.
+/// that has been compressed, optionally encrypted, and written to the archive file.
 ///
 /// # Fields
 ///
-/// - **offset**: Physical byte offset in the snapshot file (where compressed data starts)
+/// - **offset**: Physical byte offset in the archive file (where compressed data starts)
 /// - **length**: Compressed size in bytes (0 for sparse/zero blocks)
 /// - **logical_len**: Uncompressed size in bytes (original data size)
 /// - **checksum**: CRC32 of compressed data (for integrity verification)
 ///
 /// # Special Values
 ///
-/// - `offset = BLOCK_OFFSET_PARENT` (u64::MAX): Block stored in parent snapshot (thin snapshots)
+/// - `offset = BLOCK_OFFSET_PARENT` (u64::MAX): Block stored in parent archive (thin archives)
 /// - `length = 0`: Sparse block (all zeros, not stored on disk)
 ///
 /// # Size
@@ -184,7 +184,7 @@ pub const ENTRIES_PER_PAGE: usize = 4096;
 /// ```
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 pub struct BlockInfo {
-    /// Physical offset in the snapshot file (bytes).
+    /// Physical offset in the archive file (bytes).
     #[serde(alias = "offset")]
     pub offset: u64,
 
@@ -209,7 +209,7 @@ impl BlockInfo {
     /// Creates a sparse (zero-filled) block descriptor.
     ///
     /// Sparse blocks represent regions of all-zero data that are not physically
-    /// stored in the snapshot file. This optimization significantly reduces snapshot
+    /// stored in the archive file. This optimization significantly reduces archive
     /// size for sparse disk images (e.g., freshly created filesystems, swap areas).
     ///
     /// # Returns
@@ -254,7 +254,7 @@ impl BlockInfo {
     /// # Returns
     ///
     /// `true` if `length == 0` and `offset != BLOCK_OFFSET_PARENT`, indicating
-    /// that this block is not stored in the snapshot file and should be read as zeros.
+    /// that this block is not stored in the archive file and should be read as zeros.
     ///
     /// # Examples
     ///
@@ -277,11 +277,11 @@ impl BlockInfo {
         self.length == 0 && self.offset != u64::MAX
     }
 
-    /// Tests whether this block is stored in the parent snapshot.
+    /// Tests whether this block is stored in the parent archive.
     ///
-    /// For thin snapshots, blocks that haven't been modified are marked with
+    /// For thin archives, blocks that haven't been modified are marked with
     /// `offset = BLOCK_OFFSET_PARENT` (u64::MAX) and must be read from the
-    /// parent snapshot instead of the current file.
+    /// parent archive instead of the current file.
     ///
     /// # Returns
     ///
@@ -310,7 +310,7 @@ impl BlockInfo {
 ///
 /// Each `PageEntry` describes the location of an index page containing up to
 /// `ENTRIES_PER_PAGE` block metadata records. The master index is an array
-/// of these entries, stored at the end of the snapshot file.
+/// of these entries, stored at the end of the archive file.
 ///
 /// # Fields
 ///
@@ -323,7 +323,7 @@ impl BlockInfo {
 ///
 /// To find the page covering logical offset `O`:
 /// ```text
-/// binary_search(master.primary_pages, |p| p.start_logical.cmp(&O))
+/// binary_search(master.main_pages, |p| p.start_logical.cmp(&O))
 /// ```
 ///
 /// # Serialization
@@ -345,7 +345,7 @@ impl BlockInfo {
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PageEntry {
-    /// Physical offset of the index page in the snapshot file.
+    /// Physical offset of the index page in the archive file.
     pub offset: u64,
 
     /// Serialized size of the index page in bytes.
@@ -358,23 +358,23 @@ pub struct PageEntry {
     pub start_logical: u64,
 }
 
-/// Top-level index stored at the end of a snapshot file.
+/// Top-level index stored at the end of a archive file.
 ///
 /// The master index is the entry point for all random access operations. It
-/// contains separate page directories for disk and secondary streams, plus logical
+/// contains separate page directories for disk and auxiliary streams, plus logical
 /// size metadata for each stream.
 ///
 /// # Structure
 ///
-/// - **primary_pages**: Index entries for the primary stream (persistent storage)
-/// - **secondary_pages**: Index entries for the secondary stream (volatile state)
-/// - **primary_size**: Total logical size of primary stream (uncompressed bytes)
-/// - **secondary_size**: Total logical size of secondary stream (uncompressed bytes)
+/// - **main_pages**: Index entries for the main stream (persistent storage)
+/// - **auxiliary_pages**: Index entries for the auxiliary stream (volatile state)
+/// - **main_size**: Total logical size of main stream (uncompressed bytes)
+/// - **auxiliary_size**: Total logical size of auxiliary stream (uncompressed bytes)
 ///
 /// # Location
 ///
-/// The master index is always stored at the end of the snapshot file. Its offset
-/// is recorded in the snapshot header (`header.index_offset`).
+/// The master index is always stored at the end of the archive file. Its offset
+/// is recorded in the archive header (`header.index_offset`).
 ///
 /// # Serialization
 ///
@@ -383,8 +383,8 @@ pub struct PageEntry {
 /// # Random Access Algorithm
 ///
 /// ```text
-/// To read from primary stream at offset O:
-/// 1. page_idx = binary_search(master.primary_pages, |p| p.start_logical.cmp(&O))
+/// To read from main stream at offset O:
+/// 1. page_idx = binary_search(master.main_pages, |p| p.start_logical.cmp(&O))
 /// 2. page = read_and_deserialize(page_entry[page_idx])
 /// 3. block_info = find_block_in_page(page, O)
 /// 4. compressed = backend.read_exact(block_info.offset, block_info.length)
@@ -394,9 +394,9 @@ pub struct PageEntry {
 ///
 /// # Dual Streams
 ///
-/// Disk and secondary streams are independently indexed. This enables:
-/// - VM snapshots (disk = disk image, memory = RAM dump)
-/// - Application snapshots (disk = state, memory = heap)
+/// Disk and auxiliary streams are independently indexed. This enables:
+/// - VM archives (disk = disk image, memory = RAM dump)
+/// - Application archives (disk = state, memory = heap)
 /// - Separate compression tuning per stream
 ///
 /// # Examples
@@ -405,7 +405,7 @@ pub struct PageEntry {
 /// use hexz_core::format::index::{MasterIndex, PageEntry};
 ///
 /// let master = MasterIndex {
-///     primary_pages: vec![
+///     main_pages: vec![
 ///         PageEntry {
 ///             offset: 4096,
 ///             length: 65536,
@@ -413,31 +413,31 @@ pub struct PageEntry {
 ///             start_logical: 0,
 ///         }
 ///     ],
-///     secondary_pages: vec![],
-///     primary_size: 1_000_000_000,  // 1GB logical
-///     secondary_size: 0,
+///     auxiliary_pages: vec![],
+///     main_size: 1_000_000_000,  // 1GB logical
+///     auxiliary_size: 0,
 /// };
 ///
-/// println!("Primary stream: {} GB", master.primary_size / (1024 * 1024 * 1024));
-/// println!("Index pages: {}", master.primary_pages.len());
+/// println!("Main stream: {} GB", master.main_size / (1024 * 1024 * 1024));
+/// println!("Index pages: {}", master.main_pages.len());
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MasterIndex {
-    /// Index pages for the primary stream (formerly disk).
-    #[serde(alias = "primary_pages")]
-    pub primary_pages: Vec<PageEntry>,
+    /// Index pages for the main stream (formerly disk).
+    #[serde(alias = "main_pages")]
+    pub main_pages: Vec<PageEntry>,
 
-    /// Index pages for the secondary stream (formerly memory).
-    #[serde(alias = "secondary_pages")]
-    pub secondary_pages: Vec<PageEntry>,
+    /// Index pages for the auxiliary stream (formerly memory).
+    #[serde(alias = "auxiliary_pages")]
+    pub auxiliary_pages: Vec<PageEntry>,
 
-    /// Total logical size of the primary stream (formerly disk).
-    #[serde(alias = "primary_size")]
-    pub primary_size: u64,
+    /// Total logical size of the main stream (formerly disk).
+    #[serde(alias = "main_size")]
+    pub main_size: u64,
 
-    /// Total logical size of the secondary stream (formerly memory).
-    #[serde(alias = "secondary_size")]
-    pub secondary_size: u64,
+    /// Total logical size of the auxiliary stream (formerly memory).
+    #[serde(alias = "auxiliary_size")]
+    pub auxiliary_size: u64,
 }
 
 impl MasterIndex {
@@ -478,13 +478,35 @@ impl MasterIndex {
         let master: MasterIndex = bincode::deserialize(&index_bytes)?;
         Ok(master)
     }
+
+    /// Read master index from a storage backend.
+    pub fn read_from_backend(
+        backend: &dyn crate::store::StorageBackend,
+        index_offset: u64,
+    ) -> hexz_common::Result<Self> {
+        let total_len = backend.len();
+        if index_offset >= total_len {
+            return Err(hexz_common::Error::Format("Index offset past EOF".into()));
+        }
+        let index_size = total_len.saturating_sub(index_offset);
+        if index_size > Self::MAX_INDEX_SIZE {
+            return Err(hexz_common::Error::Format(format!(
+                "Master index too large: {} bytes (max {})",
+                index_size,
+                Self::MAX_INDEX_SIZE
+            )));
+        }
+        let index_bytes = backend.read_exact(index_offset, index_size as usize)?;
+        let master: MasterIndex = bincode::deserialize(&index_bytes)?;
+        Ok(master)
+    }
 }
 
 /// Serialized array of block metadata records.
 ///
 /// An index page contains up to `ENTRIES_PER_PAGE` (4096) block metadata entries
 /// for a contiguous range of logical blocks. Pages are serialized with `bincode`
-/// and stored in the snapshot file before the master index.
+/// and stored in the archive file before the master index.
 ///
 /// # Size
 ///
@@ -696,16 +718,16 @@ mod tests {
     #[test]
     fn test_master_index_default() {
         let master = MasterIndex::default();
-        assert!(master.primary_pages.is_empty());
-        assert!(master.secondary_pages.is_empty());
-        assert_eq!(master.primary_size, 0);
-        assert_eq!(master.secondary_size, 0);
+        assert!(master.main_pages.is_empty());
+        assert!(master.auxiliary_pages.is_empty());
+        assert_eq!(master.main_size, 0);
+        assert_eq!(master.auxiliary_size, 0);
     }
 
     #[test]
     fn test_master_index_with_pages() {
         let master = MasterIndex {
-            primary_pages: vec![
+            main_pages: vec![
                 PageEntry {
                     offset: 4096,
                     length: 65536,
@@ -719,35 +741,35 @@ mod tests {
                     start_logical: 16777216,
                 },
             ],
-            secondary_pages: vec![],
-            primary_size: 1_000_000_000,
-            secondary_size: 0,
+            auxiliary_pages: vec![],
+            main_size: 1_000_000_000,
+            auxiliary_size: 0,
         };
 
-        assert_eq!(master.primary_pages.len(), 2);
-        assert_eq!(master.primary_size, 1_000_000_000);
+        assert_eq!(master.main_pages.len(), 2);
+        assert_eq!(master.main_size, 1_000_000_000);
     }
 
     #[test]
     fn test_master_index_serialization() {
         let master = MasterIndex {
-            primary_pages: vec![PageEntry {
+            main_pages: vec![PageEntry {
                 offset: 4096,
                 length: 65536,
                 start_block: 0,
                 start_logical: 0,
             }],
-            secondary_pages: vec![],
-            primary_size: 1_000_000_000,
-            secondary_size: 0,
+            auxiliary_pages: vec![],
+            main_size: 1_000_000_000,
+            auxiliary_size: 0,
         };
 
         let bytes = bincode::serialize(&master).unwrap();
         let deserialized: MasterIndex = bincode::deserialize(&bytes).unwrap();
 
-        assert_eq!(deserialized.primary_pages.len(), master.primary_pages.len());
-        assert_eq!(deserialized.primary_size, master.primary_size);
-        assert_eq!(deserialized.secondary_size, master.secondary_size);
+        assert_eq!(deserialized.main_pages.len(), master.main_pages.len());
+        assert_eq!(deserialized.main_size, master.main_size);
+        assert_eq!(deserialized.auxiliary_size, master.auxiliary_size);
     }
 
     #[test]

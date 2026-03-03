@@ -1,10 +1,10 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-/// Compressed, deduplicated snapshots
+/// High-performance, deduplicated data archives
 #[derive(Parser)]
-#[command(name = "hexz", version, about = "Compressed, deduplicated snapshots", long_about = None)]
-#[command(disable_help_flag = true)] // We handle help manually
+#[command(name = "hexz", version, about = "High-performance, deduplicated data archives", long_about = None)]
+#[command(disable_help_flag = true)] 
 #[command(styles = get_styles())]
 pub struct Cli {
     #[arg(short, long, action = clap::ArgAction::SetTrue)]
@@ -23,29 +23,27 @@ fn get_styles() -> clap::builder::Styles {
         .placeholder(AnsiColor::Cyan.on_default())
 }
 
-/// Top-level command categories
 #[derive(Subcommand)]
 pub enum Commands {
     // ------------------------------------------------------------------------
     // Archive Operations
     // ------------------------------------------------------------------------
-    /// Pack files into a snapshot
+    /// Pack a file or directory into a deduplicated archive
     #[command(display_order = 1)]
     #[command(
-        long_about = "Creates a highly compressed, encrypted, and deduplicated archive from a disk image or memory dump.\n\nIt uses Content-Defined Chunking (CDC) to ensure that only changed weights are stored when archiving multiple versions of a model. This is the primary way to ingest data into Hexz."
+        long_about = "Creates a compressed and deduplicated archive (.hxz). Uses Content-Defined Chunking (CDC) to identify shared blocks across versions."
     )]
-    #[command(after_help = "hexz pack model.hxz --disk ./model.bin --compression zstd")]
+    #[command(after_help = "hexz pack ./folder data.hxz --compression zstd")]
     Pack {
+        /// Path to input data
+        input: PathBuf,
+
         /// Output archive path (.hxz)
         output: PathBuf,
 
-        /// Path to disk image to pack
-        #[arg(long)]
-        disk: Option<PathBuf>,
-
-        /// Path to memory dump to pack
-        #[arg(long)]
-        memory: Option<PathBuf>,
+        /// Base archive to diff against
+        #[arg(long, short)]
+        base: Option<PathBuf>,
 
         /// Compression algorithm (lz4, zstd, none)
         #[arg(long, default_value = "lz4")]
@@ -55,97 +53,42 @@ pub enum Commands {
         #[arg(long)]
         encrypt: bool,
 
-        /// Train compression dictionary
-        #[arg(long)]
-        train_dict: bool,
-
-        /// Block size in bytes (must be > 0)
+        /// Block size in bytes
         #[arg(long, default_value_t = 65536, value_parser = clap::value_parser!(u32).range(1..))]
         block_size: u32,
-
-        /// Minimum CDC chunk size (auto-detected if not specified)
-        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
-        min_chunk: Option<u32>,
-
-        /// Average CDC chunk size (auto-detected if not specified)
-        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
-        avg_chunk: Option<u32>,
-
-        /// Maximum CDC chunk size (auto-detected if not specified)
-        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
-        max_chunk: Option<u32>,
 
         /// Number of compression worker threads (0 = auto)
         #[arg(long)]
         workers: Option<usize>,
 
-        /// Run DCAM analysis to auto-tune CDC chunk sizes (slower but adaptive).
-        /// Without this flag, CDC uses global defaults: min=16 KiB, avg=64 KiB, max=256 KiB.
+        /// Run adaptive CDC analysis
         #[arg(long)]
         dcam: bool,
 
-        /// Suppress all output and progress bars
-        #[arg(long, short)]
-        silent: bool,
-    },
-
-    /// Import safetensors as a snapshot
-    #[command(display_order = 2)]
-    #[command(alias = "store")]
-    #[command(
-        long_about = "Converts a .safetensors file to a .hxz archive.\n\nNo PyTorch required — tensor bytes are copied directly from the source file. If --base is given, only changed blocks are stored; frozen tensors are referenced from the parent archive."
-    )]
-    #[command(after_help = "hexz import model.safetensors model.hxz --compression zstd")]
-    Import {
-        /// Input .safetensors file
-        input: PathBuf,
-
-        /// Output .hxz archive
-        output: PathBuf,
-
-        /// Parent .hxz archive for delta deduplication
+        /// Run extensive DCAM analysis to find globally optimal parameters (up to 16MB chunks)
         #[arg(long)]
-        base: Option<PathBuf>,
+        dcam_optimal: bool,
 
-        /// Compression algorithm (lz4, zstd)
-        #[arg(long, default_value = "zstd")]
-        compression: String,
-
-        /// Block size in bytes
-        #[arg(long, default_value_t = 65536, value_parser = clap::value_parser!(u32).range(1..))]
-        block_size: u32,
-
-        /// Suppress progress output
+        /// Suppress output
         #[arg(long, short)]
         silent: bool,
     },
 
-    /// Export safetensors from a snapshot
-    #[command(display_order = 3)]
-    #[command(alias = "extract")]
-    #[command(
-        long_about = "Extracts a .hxz archive back to a .safetensors file.\n\nIf --tensor is given, only the raw bytes for that tensor are written (no file header)."
-    )]
-    #[command(after_help = "hexz export model.hxz model-out.safetensors")]
-    Export {
+    /// Extract an archive back to a file or directory
+    #[command(display_order = 2)]
+    #[command(after_help = "hexz extract data.hxz ./output")]
+    Extract {
         /// Input .hxz archive
         input: PathBuf,
 
-        /// Output .safetensors file (default: <input stem>.safetensors)
-        output: Option<PathBuf>,
-
-        /// Extract a single tensor by name (raw bytes, no header)
-        #[arg(long)]
-        tensor: Option<String>,
+        /// Output path
+        output: PathBuf,
     },
 
-    /// Show snapshot details
-    #[command(display_order = 4)]
+    /// Show archive details and metadata
+    #[command(display_order = 3)]
     #[command(alias = "inspect")]
-    #[command(
-        long_about = "Reads the header and index of a Hexz archive without decompressing the full body.\n\nUse this to verify archive integrity, check compression ratios, or view metadata about the stored snapshot."
-    )]
-    #[command(after_help = "hexz show ./model.hxz --json")]
+    #[command(after_help = "hexz show ./data.hxz --json")]
     Show {
         /// Path to archive
         snap: PathBuf,
@@ -155,12 +98,9 @@ pub enum Commands {
         json: bool,
     },
 
-    /// Compare two snapshots
-    #[command(display_order = 3)]
-    #[command(
-        long_about = "Compares the BLAKE3 block hashes of two Hexz archives.\n\nReports how much data is shared between them, unique to each, and the storage savings achieved through deduplication. Useful for understanding how much a fine-tuned checkpoint differs from its base."
-    )]
-    #[command(after_help = "hexz diff base.hxz finetuned.hxz")]
+    /// Compare two archives and show storage savings
+    #[command(display_order = 4)]
+    #[command(after_help = "hexz diff v1.hxz v2.hxz")]
     Diff {
         /// First archive
         a: PathBuf,
@@ -169,326 +109,112 @@ pub enum Commands {
         b: PathBuf,
     },
 
-    /// Show snapshot lineage tree
-    #[command(display_order = 4)]
+    /// List archives in a directory and show their lineage
+    #[command(display_order = 5)]
     #[command(alias = "ls")]
-    #[command(
-        long_about = "Scans a directory for .hxz archives and renders their parent-child relationships as a tree.\n\nParent links are read from each archive's header. Archives whose declared parent lives outside the scanned directory are annotated as external."
-    )]
-    #[command(after_help = "hexz log ./checkpoints/")]
     Log {
         /// Directory to scan
         dir: PathBuf,
     },
 
-    /// Pack with profile presets
-    #[command(display_order = 4)]
-    #[command(
-        long_about = "Creates a Hexz archive using a named build profile.\n\nProfiles automatically select compression, block size, and dictionary training settings optimized for different workloads (ML, EDA, embedded, generic)."
-    )]
-    #[command(after_help = "hexz build disk.img archive.hxz --profile ml")]
-    Build {
-        /// Source disk image
-        source: PathBuf,
-
-        /// Output archive path
-        output: PathBuf,
-
-        /// Optional memory dump
-        #[arg(long)]
-        memory: Option<PathBuf>,
-
-        /// Build profile
-        #[arg(long)]
-        profile: Option<String>,
-
-        /// Enable encryption
-        #[arg(long)]
-        encrypt: bool,
-    },
-
-    /// Convert external formats to snapshot
-    #[command(display_order = 6)]
-    #[command(
-        long_about = "Ingests external formats like tar, HDF5, or WebDataset into a Hexz snapshot.\n\nThis allows legacy datasets to benefit from Hexz's random access and deduplication features."
-    )]
-    #[command(after_help = "hexz convert tar data.tar data.hxz")]
-    Convert {
-        /// Source format (tar, hdf5, webdataset)
-        format: String,
-
-        /// Input file path
-        input: PathBuf,
-
-        /// Output snapshot path (.hxz)
-        output: PathBuf,
-
-        /// Compression algorithm (lz4, zstd)
-        #[arg(long, default_value = "lz4")]
-        compression: String,
-
-        /// Block size in bytes
-        #[arg(long, default_value_t = 65536)]
-        block_size: u32,
-
-        /// Build profile (ml, eda, embedded, generic)
-        #[arg(long)]
-        profile: Option<String>,
-
-        /// Suppress output
-        #[arg(long, short)]
-        silent: bool,
-    },
-
-    /// Estimate compression savings
-    #[command(display_order = 7)]
-    #[command(
-        long_about = "Quickly estimates the compression and deduplication savings if a raw data file\nwere packed into the Hexz format. Samples blocks without reading the whole file,\nso it completes in seconds even on multi-GB inputs."
-    )]
-    #[command(after_help = "hexz predict model.bin --block-size 65536 --json")]
-    Predict {
-        /// Path to the raw data file to analyze
-        file: PathBuf,
-
-        /// Block size in bytes
-        #[arg(long, default_value_t = 65536)]
-        block_size: u32,
-
-        /// Minimum CDC chunk size (auto-detected if not specified)
-        #[arg(long)]
-        min_chunk: Option<u32>,
-
-        /// Average CDC chunk size (auto-detected if not specified)
-        #[arg(long)]
-        avg_chunk: Option<u32>,
-
-        /// Maximum CDC chunk size (auto-detected if not specified)
-        #[arg(long)]
-        max_chunk: Option<u32>,
-
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
-    },
-
     // ------------------------------------------------------------------------
-    // Virtual Machine Operations
+    // Filesystem Operations
     // ------------------------------------------------------------------------
-    /// Boot a VM from snapshot
+    /// Mount an archive as a FUSE filesystem
     #[cfg(feature = "fuse")]
     #[command(display_order = 10)]
     #[command(
-        long_about = "Boots a transient Virtual Machine directly from a Hexz snapshot.\n\nThe VM uses a copy-on-write overlay, meaning the original snapshot remains immutable. Changes are lost on shutdown unless --persist is used."
+        long_about = "Exposes the archive's content as a read-only filesystem. Only requested blocks are fetched/decompressed on-demand."
     )]
-    #[command(after_help = "hexz boot ubuntu.hxz --ram 4G --no-graphics")]
-    Boot {
-        /// Snapshot to boot from
-        snap: String,
-
-        /// RAM size (e.g., "4G")
-        #[arg(long)]
-        ram: Option<String>,
-
-        /// Disable KVM acceleration
-        #[arg(long)]
-        no_kvm: bool,
-
-        /// Network mode (user, bridge, none)
-        #[arg(long, default_value = "user")]
-        network: String,
-
-        /// Hypervisor backend (qemu, firecracker)
-        #[arg(long, default_value = "qemu")]
-        backend: String,
-
-        /// Persistent overlay path
-        #[arg(long)]
-        persist: Option<PathBuf>,
-
-        /// QMP socket path for control
-        #[arg(long)]
-        qmp_socket: Option<PathBuf>,
-
-        /// Disable graphics (headless mode)
-        #[arg(long)]
-        no_graphics: bool,
-
-        /// Enable VNC server
-        #[arg(long)]
-        vnc: bool,
-    },
-
-    /// Install OS from ISO to snapshot
-    #[cfg(feature = "fuse")]
-    #[command(display_order = 11)]
-    #[command(
-        long_about = "Runs an OS installer from an ISO and captures the result into a new Hexz snapshot.\n\nThis automates the process of creating base images for VMs."
-    )]
-    #[command(after_help = "hexz install alpine.iso alpine-base.hxz")]
-    Install {
-        /// Path to ISO image
-        iso: PathBuf,
-
-        /// Output snapshot path
-        output: PathBuf,
-
-        /// Virtual disk size (e.g., "10G")
-        #[arg(long, default_value = "10G")]
-        primary_size: String,
-
-        /// RAM size (e.g., "4G")
-        #[arg(long, default_value = "4G")]
-        ram: String,
-
-        /// Disable graphics
-        #[arg(long)]
-        no_graphics: bool,
-
-        /// Enable VNC
-        #[arg(long)]
-        vnc: bool,
-    },
-
-    /// Take a live VM snapshot
-    #[cfg(unix)]
-    #[command(display_order = 12)]
-    #[command(
-        long_about = "Triggers a live snapshot of a running VM via the QMP socket.\n\nThis allows for capturing the state of a running system without shutting it down."
-    )]
-    #[command(after_help = "hexz snap /tmp/qmp.sock base.hxz overlay.bin live.hxz")]
-    Snap {
-        /// QMP socket path
-        socket: PathBuf,
-
-        /// Base snapshot
-        base: PathBuf,
-
-        /// Overlay path
-        overlay: PathBuf,
-
-        /// Output snapshot
-        output: PathBuf,
-    },
-
-    /// Commit overlay to new snapshot
-    #[command(display_order = 13)]
-    #[command(
-        long_about = "Finalizes a writable overlay into a new immutable snapshot.\n\nSupports 'thin' snapshots which only store the deltas referencing the parent, ideal for iterative model fine-tuning."
-    )]
-    #[command(after_help = "hexz commit base.hxz overlay.bin new_model.hxz --thin")]
-    Commit {
-        /// Base snapshot
-        base: PathBuf,
-
-        /// Overlay with changes
-        overlay: PathBuf,
-
-        /// Output snapshot
-        output: PathBuf,
-
-        /// Compression algorithm
-        #[arg(long, default_value = "lz4")]
-        compression: String,
-
-        /// Block size (must be > 0)
-        #[arg(long, default_value_t = 65536, value_parser = clap::value_parser!(u32).range(1..))]
-        block_size: u32,
-
-        /// Keep overlay file after commit
-        #[arg(long)]
-        keep_overlay: bool,
-
-        /// Path to memory dump to include
-        #[arg(long)]
-        memory: Option<PathBuf>,
-
-        /// Commit message
-        #[arg(long)]
-        message: Option<String>,
-
-        /// Create thin snapshot (reference base)
-        #[arg(long)]
-        thin: bool,
-    },
-
-    /// Mount snapshot as filesystem
-    #[cfg(feature = "fuse")]
-    #[command(display_order = 14)]
-    #[command(
-        long_about = "Mounts a Hexz snapshot as a FUSE filesystem.\n\nAllows standard tools to read data from the snapshot as if it were a normal directory."
-    )]
-    #[command(after_help = "hexz mount model.hxz /mnt/model --rw")]
+    #[command(after_help = "hexz mount data.hxz /mnt/data")]
     Mount {
-        /// Snapshot to mount
+        /// Archive to mount
         snap: String,
 
         /// Mount point directory
         mountpoint: PathBuf,
 
-        /// Overlay for writes
-        #[arg(long)]
+        /// Optional write layer directory for modifications
+        #[arg(long, short)]
         overlay: Option<PathBuf>,
+
+        /// Make the mount writable by automatically using a temporary overlay
+        #[arg(long, short = 'e')]
+        editable: bool,
 
         /// Run as daemon
         #[arg(short, long)]
         daemon: bool,
-
-        /// Enable read-write mode
-        #[arg(long)]
-        rw: bool,
 
         /// Cache size (e.g., "1G")
         #[arg(long)]
         cache_size: Option<String>,
 
         /// User ID for files
-        #[arg(long, default_value_t = 1000)]
+        #[arg(long, default_value_t = 0)]
         uid: u32,
 
         /// Group ID for files
-        #[arg(long, default_value_t = 1000)]
+        #[arg(long, default_value_t = 0)]
         gid: u32,
-
-        /// Export as NBD device
-        #[arg(long)]
-        nbd: bool,
-
-        /// Prefetch window size (number of blocks to read ahead)
-        #[arg(long)]
-        prefetch: Option<u32>,
     },
 
-    /// Unmount snapshot filesystem
+    /// Unmount a previously mounted archive
     #[cfg(feature = "fuse")]
-    #[command(display_order = 15)]
-    #[command(long_about = "Unmounts a previously mounted Hexz filesystem.")]
-    #[command(after_help = "hexz unmount /mnt/model")]
+    #[command(display_order = 11)]
     Unmount {
         /// Mount point to unmount
         mountpoint: PathBuf,
     },
 
-    // ------------------------------------------------------------------------
-    // System & Diagnostics
-    // ------------------------------------------------------------------------
-    /// Check system requirements
-    #[cfg(feature = "diagnostics")]
-    #[command(display_order = 20)]
+    /// Commit changes from a writable mount to a new thin archive
+    #[cfg(feature = "fuse")]
+    #[command(display_order = 12)]
     #[command(
-        long_about = "Checks the system for compatibility with Hexz features (FUSE, QEMU, network)."
+        long_about = "Takes a writable mount point and saves the modifications as a new thin archive linked to the original base."
     )]
-    #[command(after_help = "hexz doctor")]
-    Doctor,
+    #[command(after_help = "hexz commit v2.hxz")]
+    Commit {
+        /// Output archive path (.hxz)
+        output: PathBuf,
 
-    /// Serve snapshot over network
+        /// Mount point directory or workspace path (defaults to current directory)
+        mountpoint: Option<PathBuf>,
+
+        /// Base archive to link against (optional if can be inferred)
+        #[arg(long, short)]
+        base: Option<PathBuf>,
+    },
+
+    /// Initialize a workspace from an archive (Git-style)
+    #[cfg(feature = "fuse")]
+    #[command(display_order = 13)]
+    #[command(alias = "co")]
+    Checkout {
+        /// Archive to use as base
+        archive: PathBuf,
+
+        /// Directory to create the workspace in
+        path: PathBuf,
+    },
+
+    /// Show changes in the current workspace
+    #[cfg(feature = "fuse")]
+    #[command(display_order = 14)]
+    #[command(alias = "st")]
+    Status {
+        /// Workspace path (defaults to current directory)
+        path: Option<PathBuf>,
+    },
+
+    // ------------------------------------------------------------------------
+    // Networking & Security
+    // ------------------------------------------------------------------------
+    /// Serve an archive over the network (HTTP range requests)
     #[cfg(feature = "server")]
-    #[command(display_order = 22)]
-    #[command(
-        long_about = "Starts an HTTP server to stream the snapshot over the network.\n\nClients can fetch specific byte ranges efficiently."
-    )]
-    #[command(after_help = "hexz serve model.hxz --port 8080")]
+    #[command(display_order = 20)]
     Serve {
-        /// Snapshot to serve
+        /// Archive to serve
         snap: String,
 
         /// Server port
@@ -502,28 +228,20 @@ pub enum Commands {
         /// Run as daemon
         #[arg(short, long)]
         daemon: bool,
-
-        /// Enable NBD protocol
-        #[arg(long)]
-        nbd: bool,
     },
 
-    /// Generate signing keypair
+    /// Generate an Ed25519 signing keypair
     #[cfg(feature = "signing")]
-    #[command(display_order = 23)]
-    #[command(long_about = "Generates an Ed25519 keypair for signing Hexz archives.")]
-    #[command(after_help = "hexz keygen --output-dir ~/.hexz/keys")]
+    #[command(display_order = 21)]
     Keygen {
         /// Output directory for keys
         #[arg(short, long)]
         output_dir: Option<PathBuf>,
     },
 
-    /// Sign a snapshot
+    /// Sign an archive
     #[cfg(feature = "signing")]
-    #[command(display_order = 24)]
-    #[command(long_about = "Cryptographically signs a Hexz archive using a private key.")]
-    #[command(after_help = "hexz sign private.pem model.hxz")]
+    #[command(display_order = 22)]
     Sign {
         /// Private key path
         key: PathBuf,
@@ -532,13 +250,9 @@ pub enum Commands {
         image: PathBuf,
     },
 
-    /// Verify snapshot signature
+    /// Verify an archive's signature
     #[cfg(feature = "signing")]
-    #[command(display_order = 25)]
-    #[command(
-        long_about = "Verifies the cryptographic signature of an archive using a public key."
-    )]
-    #[command(after_help = "hexz verify public.pem model.hxz")]
+    #[command(display_order = 23)]
     Verify {
         /// Public key path
         key: PathBuf,

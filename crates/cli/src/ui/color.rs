@@ -17,7 +17,7 @@ pub struct Palette {
     pub green: &'static str,
     /// Bright yellow — used for annotations and scalar values.
     pub yellow: &'static str,
-    /// Dark gray — used for tree chrome and secondary info.
+    /// Dark gray — used for tree chrome and auxiliary info.
     pub gray: &'static str,
     /// Bright red — used for error/failure status.
     pub red: &'static str,
