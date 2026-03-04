@@ -82,18 +82,28 @@ fn open_archive(
         None
     };
 
-    let cache_capacity = if let Some(s) = cache_size {
-        Some(parse_size(&s)?)
+    let cache_capacity = if let Some(ref s) = cache_size {
+        Some(parse_size(s)?)
     } else {
         None
     };
 
-    Ok(Archive::with_cache(
+    let cache_size_clone = cache_size.clone();
+    let abs_hexz_path_clone = abs_hexz_path.clone();
+
+    let parent_loader: hexz_core::api::file::ParentLoader = Box::new(move |parent_path: &str| {
+        let parent_full_path = abs_hexz_path_clone.parent().unwrap().join(parent_path);
+        open_archive(parent_full_path.to_str().unwrap(), cache_size_clone.clone(), prefetch)
+            .map_err(|e| hexz_common::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))
+    });
+
+    Ok(Archive::with_cache_and_loader(
         backend,
         compressor,
         encryptor,
         cache_capacity,
         prefetch,
+        Some(&parent_loader),
     )?)
 }
 

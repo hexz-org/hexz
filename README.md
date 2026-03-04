@@ -9,6 +9,7 @@ Hexz is a single-file archive format (`.hxz`) designed for storing and distribut
 - **Block-Level Deduplication:** Uses Content-Defined Chunking (CDC) to identify shared blocks across different versions of the same data, even if offsets shift.
 - **Random Access (Seekable):** O(1) seek time. Mount archives via FUSE to treat them as standard block devices or filesystems.
 - **Thin Archives (Deltas):** Create archives that only store changed blocks, referencing a "base" archive for common data. Ideal for versioning large datasets.
+- **Git-like Workspaces:** Checkout archives into writable workspaces. Hexz creates a standard, transparent directory structure using advanced FUSE passthrough while keeping state securely isolated in global storage (`~/.hexz/workspaces/`).
 - **Transparent Compression & Encryption:** Supports LZ4 and Zstandard compression, and AES-256-GCM encryption.
 - **Self-Contained:** A single `.hxz` file contains the data, the index, and the metadata. No complex repository structure required.
 - **Cloud Native:** Supports byte-range requests for on-demand fetching from S3-compatible object storage.
@@ -46,6 +47,22 @@ ls -lh /mnt/data
 ```bash
 # Create a new version that dedups against the base
 hexz pack ./large_dataset_v2.bin v2.hxz --base v1.hxz
+```
+
+### Workspaces (Git-like Workflow)
+```bash
+# Checkout an archive into a writable workspace
+hexz checkout data.hxz ./my_workspace
+cd my_workspace
+
+# Make changes to the mounted files
+echo "New data" > README.md
+
+# View changes
+hexz status
+
+# Commit changes to a new thin archive (delta)
+hexz commit ../data_v2.hxz
 ```
 
 ## Documentation
