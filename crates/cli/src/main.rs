@@ -135,6 +135,18 @@ fn main() -> anyhow::Result<()> {
         #[cfg(feature = "fuse")]
         Commands::Status { path } => hexz_cli::cmd::data::status::run(path),
 
+        #[cfg(feature = "fuse")]
+        Commands::Init { path } => hexz_cli::cmd::data::init::run(path),
+
+        #[cfg(feature = "fuse")]
+        Commands::Remote { action } => hexz_cli::cmd::data::remote::run(action),
+
+        #[cfg(feature = "fuse")]
+        Commands::Push { remote, archive } => hexz_cli::cmd::data::push::run(remote, archive),
+
+        #[cfg(feature = "fuse")]
+        Commands::Pull { remote } => hexz_cli::cmd::data::pull::run(remote),
+
         #[cfg(feature = "server")]
         Commands::Serve {
             snap,

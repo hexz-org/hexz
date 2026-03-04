@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WorkspaceConfig {
-    pub base_archive: PathBuf,
+    pub base_archive: Option<PathBuf>,
+    #[serde(default)]
+    pub remotes: std::collections::HashMap<String, String>,
 }
 
 pub struct Workspace {
@@ -15,7 +17,7 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    pub fn init(path: &Path, base_archive: PathBuf) -> Result<Self> {
+    pub fn init(path: &Path, base_archive: Option<PathBuf>) -> Result<Self> {
         let abs_path = std::fs::canonicalize(path)?;
 
         // Centralized storage: ~/.hexz/workspaces/<hash_of_abs_path>
@@ -33,8 +35,15 @@ impl Workspace {
         let overlay_dir = hexz_root.join("overlay");
         std::fs::create_dir_all(overlay_dir)?;
 
+        let base_archive = if let Some(b) = base_archive {
+            Some(std::fs::canonicalize(b)?)
+        } else {
+            None
+        };
+
         let config = WorkspaceConfig {
-            base_archive: std::fs::canonicalize(base_archive)?,
+            base_archive,
+            remotes: std::collections::HashMap::new(),
         };
 
         let config_path = hexz_root.join("config.json");
@@ -45,6 +54,13 @@ impl Workspace {
             root: abs_path,
             config,
         })
+    }
+
+    pub fn save(&self) -> Result<()> {
+        let config_path = self.metadata_dir().join("config.json");
+        let f = std::fs::File::create(config_path)?;
+        serde_json::to_writer_pretty(f, &self.config)?;
+        Ok(())
     }
 
     pub fn find(start_path: &Path) -> Result<Option<Self>> {

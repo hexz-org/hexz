@@ -30,7 +30,11 @@ pub fn run(
     } else {
         // Check workspace first
         if let Some(ws) = Workspace::find(&mountpoint)? {
-            Some(ws.config.base_archive)
+            if let Some(b) = ws.config.base_archive {
+                Some(b)
+            } else {
+                infer_base_archive(&mountpoint)
+            }
         } else {
             infer_base_archive(&mountpoint)
         }

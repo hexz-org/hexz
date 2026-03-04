@@ -15,7 +15,7 @@ pub fn run(archive: PathBuf, path: PathBuf) -> Result<()> {
 
     println!("Initializing workspace at {:?}...", path);
     println!("(Workspace version: 0.7.0-refactor-perms)");
-    let ws = Workspace::init(&path, archive.clone())?;
+    let ws = Workspace::init(&path, Some(archive.clone()))?;
     let overlay = ws.overlay_path();
 
     println!("Mounting base archive...");

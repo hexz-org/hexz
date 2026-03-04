@@ -15,7 +15,11 @@ pub fn run(path: Option<PathBuf>) -> Result<()> {
     let overlay = ws.overlay_path();
     
     println!("Workspace: {:?}", ws.root);
-    println!("Base:      {:?}", ws.config.base_archive);
+    if let Some(b) = ws.config.base_archive {
+        println!("Base:      {:?}", b);
+    } else {
+        println!("Base:      (none)");
+    }
     println!("
 Changes:");
 

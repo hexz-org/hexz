@@ -10,3 +10,7 @@ pub mod predict;
 pub mod status;
 pub mod unmount;
 pub mod workspace;
+pub mod init;
+pub mod remote;
+pub mod push;
+pub mod pull;

@@ -23,6 +23,21 @@ fn get_styles() -> clap::builder::Styles {
         .placeholder(AnsiColor::Cyan.on_default())
 }
 
+#[derive(Subcommand, Debug, Clone)]
+pub enum RemoteCommand {
+    /// Add a new remote
+    Add {
+        name: String,
+        url: String,
+    },
+    /// Remove a remote
+    Remove {
+        name: String,
+    },
+    /// List all remotes
+    List,
+}
+
 #[derive(Subcommand)]
 pub enum Commands {
     // ------------------------------------------------------------------------
@@ -205,6 +220,43 @@ pub enum Commands {
     Status {
         /// Workspace path (defaults to current directory)
         path: Option<PathBuf>,
+    },
+
+    /// Initialize a new empty workspace
+    #[cfg(feature = "fuse")]
+    #[command(display_order = 15)]
+    Init {
+        /// Directory to create the workspace in (defaults to current directory)
+        path: Option<PathBuf>,
+    },
+
+    /// Manage remote endpoints for the workspace
+    #[cfg(feature = "fuse")]
+    #[command(display_order = 16)]
+    Remote {
+        #[command(subcommand)]
+        action: RemoteCommand,
+    },
+
+    /// Push thin archives to a remote endpoint
+    #[cfg(feature = "fuse")]
+    #[command(display_order = 17)]
+    Push {
+        /// Remote name (defaults to "origin")
+        #[arg(default_value = "origin")]
+        remote: String,
+        
+        /// Archive to push (defaults to the workspace's base archive)
+        archive: Option<PathBuf>,
+    },
+
+    /// Pull thin archives from a remote endpoint
+    #[cfg(feature = "fuse")]
+    #[command(display_order = 18)]
+    Pull {
+        /// Remote name (defaults to "origin")
+        #[arg(default_value = "origin")]
+        remote: String,
     },
 
     // ------------------------------------------------------------------------
