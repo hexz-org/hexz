@@ -8,6 +8,7 @@ members = [
     "crates/fuse",
     "crates/server",
     "crates/cli",
+    "crates/python",
     "tools/xtask",
 ]
 
