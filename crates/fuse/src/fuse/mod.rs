@@ -2,14 +2,34 @@
 
 mod read;
 
-use crate::vfs::InodeMap;
 use fuser::Filesystem;
 use hexz_core::Archive;
+use hexz_vfs::{InodeMap, VfsAttr, DirEntry};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 pub(crate) const TTL: Duration = Duration::from_secs(1);
+
+fn vfs_attr_to_fuser(attr: VfsAttr) -> fuser::FileAttr {
+    fuser::FileAttr {
+        ino: attr.ino,
+        size: attr.size,
+        blocks: attr.blocks,
+        atime: attr.atime,
+        mtime: attr.mtime,
+        ctime: attr.ctime,
+        crtime: attr.crtime,
+        kind: attr.kind,
+        perm: attr.perm,
+        nlink: attr.nlink,
+        uid: attr.uid,
+        gid: attr.gid,
+        rdev: attr.rdev,
+        blksize: attr.blksize,
+        flags: attr.flags,
+    }
+}
 
 pub struct Hexz {
     pub(crate) snap: Arc<Archive>,
@@ -69,6 +89,45 @@ impl Hexz {
         Ok(())
     }
 
+    fn is_whiteout(&self, parent_ino: u64, name: &std::ffi::OsStr) -> bool {
+        let base = match &self.write_layer {
+            Some(b) => b,
+            None => return false,
+        };
+        let parent_path = match self.inodes.get_path(parent_ino) {
+            Some(p) => p,
+            None => return false,
+        };
+        let whiteout_path = base.join(parent_path).join(".hexz_whiteout").join(name);
+        whiteout_path.exists()
+    }
+
+    fn create_whiteout(&self, parent_ino: u64, name: &std::ffi::OsStr) -> std::io::Result<()> {
+        let base = match &self.write_layer {
+            Some(b) => b,
+            None => return Err(std::io::Error::from_raw_os_error(libc::EROFS)),
+        };
+        let parent_path = self.inodes.get_path(parent_ino).ok_or_else(|| std::io::Error::from_raw_os_error(libc::ENOENT))?;
+        let whiteout_dir = base.join(parent_path).join(".hexz_whiteout");
+        std::fs::create_dir_all(&whiteout_dir)?;
+        let whiteout_path = whiteout_dir.join(name);
+        std::fs::File::create(whiteout_path)?;
+        Ok(())
+    }
+
+    fn remove_whiteout(&self, parent_ino: u64, name: &std::ffi::OsStr) -> std::io::Result<()> {
+        let base = match &self.write_layer {
+            Some(b) => b,
+            None => return Ok(()),
+        };
+        let parent_path = self.inodes.get_path(parent_ino).ok_or_else(|| std::io::Error::from_raw_os_error(libc::ENOENT))?;
+        let whiteout_path = base.join(parent_path).join(".hexz_whiteout").join(name);
+        if whiteout_path.exists() {
+            std::fs::remove_file(whiteout_path)?;
+        }
+        Ok(())
+    }
+
     /// Internal getattr that doesn't send a FUSE reply, for internal lookups.
     fn getattr_internal(&self, ino: u64) -> fuser::FileAttr {
         // Check if file exists in passthrough paths
@@ -107,7 +166,7 @@ impl Hexz {
         // Check if file exists in overlay
         if let (Some(base), Some(rel_path)) = (&self.write_layer, self.inodes.get_path(ino)) {
             let full_path = base.join(rel_path);
-            if let Ok(meta) = std::fs::metadata(&full_path) {
+            if let Ok(meta) = std::fs::symlink_metadata(&full_path) {
                 use std::os::unix::fs::MetadataExt;
                 let mut attr = fuser::FileAttr {
                     ino,
@@ -120,6 +179,8 @@ impl Hexz {
                     crtime: std::time::UNIX_EPOCH,
                     kind: if meta.is_dir() {
                         fuser::FileType::Directory
+                    } else if meta.file_type().is_symlink() {
+                        fuser::FileType::Symlink
                     } else {
                         fuser::FileType::RegularFile
                     },
@@ -138,7 +199,7 @@ impl Hexz {
             }
         }
 
-        let mut attr = self.inodes.getattr(ino);
+        let mut attr = vfs_attr_to_fuser(self.inodes.getattr(ino));
         if self.write_layer.is_some() {
             attr.perm |= 0o222; // Add write bit
         }
@@ -158,8 +219,28 @@ impl Filesystem for Hexz {
         name: &std::ffi::OsStr,
         reply: fuser::ReplyEntry,
     ) {
+        if self.is_whiteout(parent, name) {
+            reply.error(libc::ENOENT);
+            return;
+        }
+
         if let Some(parent_path) = self.inodes.get_path(parent) {
             let rel_path = parent_path.join(name);
+
+            // 1. Check overlay first (including newly created files)
+            if let Some(base) = &self.write_layer {
+                let full_path = base.join(&rel_path);
+                if full_path.exists() || full_path.is_symlink() {
+                    let ino = self.inodes.get_inode(&rel_path).unwrap_or_else(|| {
+                        self.inodes.add_file_at_path(&rel_path, full_path.is_dir())
+                    });
+                    let attr = self.getattr_internal(ino);
+                    reply.entry(&TTL, &attr, 0);
+                    return;
+                }
+            }
+
+            // 2. Check archive
             if let Some(inode) = self.inodes.get_inode(&rel_path) {
                 let attr = self.getattr_internal(inode);
                 reply.entry(&TTL, &attr, 0);
@@ -170,7 +251,10 @@ impl Filesystem for Hexz {
         reply.error(libc::ENOENT);
     }
 
-    fn open(&mut self, _req: &fuser::Request, _ino: u64, _flags: i32, reply: fuser::ReplyOpen) {
+    fn open(&mut self, _req: &fuser::Request, ino: u64, _flags: i32, reply: fuser::ReplyOpen) {
+        if self.write_layer.is_some() {
+            let _ = self.ensure_cow(ino);
+        }
         reply.opened(1, 0);
     }
 
@@ -183,7 +267,7 @@ impl Filesystem for Hexz {
         _req: &fuser::Request,
         parent: u64,
         name: &std::ffi::OsStr,
-        _mode: u32,
+        mode: u32,
         _umask: u32,
         _flags: i32,
         reply: fuser::ReplyCreate,
@@ -196,8 +280,13 @@ impl Filesystem for Hexz {
                     let _ = std::fs::create_dir_all(p);
                 }
 
+                let _ = self.remove_whiteout(parent, name);
+
                 match std::fs::File::create(&full_path) {
                     Ok(_) => {
+                        use std::os::unix::fs::PermissionsExt;
+                        let _ = std::fs::set_permissions(&full_path, std::fs::Permissions::from_mode(mode));
+                        
                         let ino = self.inodes.add_file_at_path(&rel_path, false);
                         let attr = self.getattr_internal(ino);
                         reply.created(&TTL, &attr, 0, 1, 0);
@@ -218,7 +307,7 @@ impl Filesystem for Hexz {
         _req: &fuser::Request,
         parent: u64,
         name: &std::ffi::OsStr,
-        _mode: u32,
+        mode: u32,
         _umask: u32,
         _rdev: u32,
         reply: fuser::ReplyEntry,
@@ -231,8 +320,12 @@ impl Filesystem for Hexz {
                     let _ = std::fs::create_dir_all(p);
                 }
 
+                let _ = self.remove_whiteout(parent, name);
+
                 match std::fs::File::create(&full_path) {
                     Ok(_) => {
+                        use std::os::unix::fs::PermissionsExt;
+                        let _ = std::fs::set_permissions(&full_path, std::fs::Permissions::from_mode(mode));
                         let ino = self.inodes.add_file_at_path(&rel_path, false);
                         let attr = self.getattr_internal(ino);
                         reply.entry(&TTL, &attr, 0);
@@ -253,7 +346,7 @@ impl Filesystem for Hexz {
         _req: &fuser::Request,
         parent: u64,
         name: &std::ffi::OsStr,
-        _mode: u32,
+        mode: u32,
         _umask: u32,
         reply: fuser::ReplyEntry,
     ) {
@@ -261,10 +354,15 @@ impl Filesystem for Hexz {
             if let Some(parent_path) = self.inodes.get_path(parent) {
                 let rel_path = parent_path.join(name);
                 let full_path = base.join(&rel_path);
+                
+                let _ = self.remove_whiteout(parent, name);
+
                 match std::fs::create_dir_all(&full_path) {
                     Ok(_) => {
+                        use std::os::unix::fs::PermissionsExt;
+                        let _ = std::fs::set_permissions(&full_path, std::fs::Permissions::from_mode(mode));
                         let ino = self.inodes.add_file_at_path(&rel_path, true);
-                        let attr = self.inodes.getattr(ino);
+                        let attr = self.getattr_internal(ino);
                         reply.entry(&TTL, &attr, 0);
                         return;
                     }
@@ -326,7 +424,34 @@ impl Filesystem for Hexz {
             return;
         }
 
-        let entries = self.inodes.readdir(ino);
+        let mut entries = self.inodes.readdir(ino);
+        
+        // Filter out whiteouts and add files from overlay
+        if let (Some(base), Some(parent_path)) = (&self.write_layer, self.inodes.get_path(ino)) {
+            let full_parent_path = base.join(&parent_path);
+            
+            // 1. Add files from overlay that aren't in archive
+            if let Ok(dir) = std::fs::read_dir(&full_parent_path) {
+                for entry in dir.flatten() {
+                    let name = entry.file_name();
+                    if name == ".hexz_whiteout" { continue; }
+                    let name_str = name.to_string_lossy().to_string();
+                    if !entries.iter().any(|e| e.name == name_str) {
+                        let rel_path = parent_path.join(&name);
+                        let child_ino = self.inodes.add_file_at_path(&rel_path, entry.path().is_dir());
+                        let kind = if entry.path().is_dir() { fuser::FileType::Directory } else { fuser::FileType::RegularFile };
+                        entries.push(DirEntry { inode: child_ino, kind, name: name_str });
+                    }
+                }
+            }
+
+            // 2. Remove entries that are whiteouted
+            entries.retain(|e| {
+                if e.name == "." || e.name == ".." { return true; }
+                !self.is_whiteout(ino, std::ffi::OsStr::new(&e.name))
+            });
+        }
+
         let skip = if offset < 0 { 0usize } else { offset as usize };
         for (i, entry) in entries.iter().enumerate().skip(skip) {
             if reply.add(entry.inode, (i + 1) as i64, entry.kind, &entry.name) {
@@ -498,11 +623,24 @@ impl Filesystem for Hexz {
             if let Some(parent_path) = self.inodes.get_path(parent) {
                 let rel_path = parent_path.join(name);
                 let full_path = base.join(&rel_path);
-                if full_path.exists() {
+                
+                // If in overlay, remove it
+                if full_path.exists() || full_path.is_symlink() {
                     let _ = std::fs::remove_file(full_path);
-                    reply.ok();
-                    return;
                 }
+                
+                self.inodes.remove_path(&rel_path);
+
+                // Always create whiteout if it exists in archive
+                if self.inodes.get_inode(&rel_path).is_some() {
+                    if let Err(e) = self.create_whiteout(parent, name) {
+                        reply.error(e.raw_os_error().unwrap_or(libc::EIO));
+                        return;
+                    }
+                }
+                
+                reply.ok();
+                return;
             }
         }
         reply.error(libc::EROFS);
@@ -519,13 +657,177 @@ impl Filesystem for Hexz {
             if let Some(parent_path) = self.inodes.get_path(parent) {
                 let rel_path = parent_path.join(name);
                 let full_path = base.join(&rel_path);
+                
                 if full_path.exists() {
-                    let _ = std::fs::remove_dir_all(full_path);
-                    reply.ok();
-                    return;
+                    if let Err(e) = std::fs::remove_dir_all(full_path) {
+                        reply.error(e.raw_os_error().unwrap_or(libc::EIO));
+                        return;
+                    }
                 }
+
+                self.inodes.remove_path(&rel_path);
+
+                if self.inodes.get_inode(&rel_path).is_some() {
+                    if let Err(e) = self.create_whiteout(parent, name) {
+                        reply.error(e.raw_os_error().unwrap_or(libc::EIO));
+                        return;
+                    }
+                }
+
+                reply.ok();
+                return;
             }
         }
         reply.error(libc::EROFS);
+    }
+
+    fn rename(
+        &mut self,
+        _req: &fuser::Request,
+        parent: u64,
+        name: &std::ffi::OsStr,
+        newparent: u64,
+        newname: &std::ffi::OsStr,
+        _flags: u32,
+        reply: fuser::ReplyEmpty,
+    ) {
+        if self.write_layer.is_none() {
+            reply.error(libc::EROFS);
+            return;
+        }
+
+        if let (Some(base), Some(old_p), Some(new_p)) = (
+            &self.write_layer,
+            self.inodes.get_path(parent),
+            self.inodes.get_path(newparent),
+        ) {
+            let old_rel = old_p.join(name);
+            let new_rel = new_p.join(newname);
+            let old_full = base.join(&old_rel);
+            let new_full = base.join(&new_rel);
+
+            // Ensure source is in overlay
+            if !old_full.exists() {
+                if let Some(ino) = self.inodes.get_inode(&old_rel) {
+                    if let Err(e) = self.ensure_cow(ino) {
+                        reply.error(e.raw_os_error().unwrap_or(libc::EIO));
+                        return;
+                    }
+                } else {
+                    reply.error(libc::ENOENT);
+                    return;
+                }
+            }
+
+            if let Some(p) = new_full.parent() {
+                let _ = std::fs::create_dir_all(p);
+            }
+
+            match std::fs::rename(old_full, new_full) {
+                Ok(_) => {
+                    self.inodes.rename_path(&old_rel, &new_rel);
+                    let _ = self.create_whiteout(parent, name);
+                    let _ = self.remove_whiteout(newparent, newname);
+                    reply.ok();
+                }
+                Err(e) => reply.error(e.raw_os_error().unwrap_or(libc::EIO)),
+            }
+        } else {
+            reply.error(libc::EROFS);
+        }
+    }
+
+    fn link(
+        &mut self,
+        _req: &fuser::Request,
+        ino: u64,
+        newparent: u64,
+        newname: &std::ffi::OsStr,
+        reply: fuser::ReplyEntry,
+    ) {
+        if self.write_layer.is_none() {
+            reply.error(libc::EROFS);
+            return;
+        }
+
+        if let Err(e) = self.ensure_cow(ino) {
+            reply.error(e.raw_os_error().unwrap_or(libc::EIO));
+            return;
+        }
+
+        if let (Some(base), Some(old_rel), Some(new_parent_rel)) = (
+            &self.write_layer,
+            self.inodes.get_path(ino),
+            self.inodes.get_path(newparent),
+        ) {
+            let new_rel = new_parent_rel.join(newname);
+            let old_full = base.join(old_rel);
+            let new_full = base.join(&new_rel);
+
+            match std::fs::hard_link(old_full, new_full) {
+                Ok(_) => {
+                    // In our current InodeMap, we don't support true hardlinks (1 ino -> many paths)
+                    // perfectly, but we can add the new path pointing to the same Inode.
+                    // This is enough for most tools.
+                    let _ = self.inodes.add_file_at_path(&new_rel, false);
+                    let attr = self.getattr_internal(ino);
+                    reply.entry(&TTL, &attr, 0);
+                }
+                Err(e) => reply.error(e.raw_os_error().unwrap_or(libc::EIO)),
+            }
+        } else {
+            reply.error(libc::ENOENT);
+        }
+    }
+
+    fn symlink(
+        &mut self,
+        _req: &fuser::Request,
+        parent: u64,
+        name: &std::ffi::OsStr,
+        link: &std::path::Path,
+        reply: fuser::ReplyEntry,
+    ) {
+        if let Some(base) = &self.write_layer {
+            if let Some(parent_path) = self.inodes.get_path(parent) {
+                let rel_path = parent_path.join(name);
+                let full_path = base.join(&rel_path);
+                
+                if let Some(p) = full_path.parent() {
+                    let _ = std::fs::create_dir_all(p);
+                }
+
+                let _ = self.remove_whiteout(parent, name);
+
+                #[cfg(unix)]
+                match std::os::unix::fs::symlink(link, &full_path) {
+                    Ok(_) => {
+                        let ino = self.inodes.add_file_at_path(&rel_path, false);
+                        let attr = self.getattr_internal(ino);
+                        reply.entry(&TTL, &attr, 0);
+                    }
+                    Err(e) => reply.error(e.raw_os_error().unwrap_or(libc::EIO)),
+                }
+                #[cfg(not(unix))]
+                reply.error(libc::ENOSYS);
+                return;
+            }
+        }
+        reply.error(libc::EROFS);
+    }
+
+    fn readlink(&mut self, _req: &fuser::Request, ino: u64, reply: fuser::ReplyData) {
+        if let (Some(base), Some(rel_path)) = (&self.write_layer, self.inodes.get_path(ino)) {
+            let full_path = base.join(rel_path);
+            match std::fs::read_link(full_path) {
+                Ok(link) => {
+                    use std::os::unix::ffi::OsStrExt;
+                    reply.data(link.as_os_str().as_bytes());
+                },
+                Err(e) => reply.error(e.raw_os_error().unwrap_or(libc::EIO)),
+            }
+        } else {
+            reply.error(libc::EINVAL);
+        }
     }
 }

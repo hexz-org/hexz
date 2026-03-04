@@ -26,18 +26,20 @@ pub enum BuildProfile {
 
 impl BuildProfile {
     /// Returns the recommended block size for this profile.
-    pub fn block_size(&self) -> u32 {
+    #[must_use]
+    pub const fn block_size(&self) -> u32 {
         match self {
-            Self::Generic => 65536, // 64 KiB
-            Self::Eda => 16384,     // 16 KiB
-            Self::Embedded => 4096, // 4 KiB
-            Self::Ml => 1048576,    // 1 MiB
+            Self::Generic => 65_536, // 64 KiB
+            Self::Eda => 16_384,     // 16 KiB
+            Self::Embedded => 4_096, // 4 KiB
+            Self::Ml => 1_048_576,    // 1 MiB
         }
     }
 
     /// Returns the recommended compression algorithm for this profile.
     /// Note: This returns a string compatible with the CLI argument parser.
-    pub fn compression_algo(&self) -> &'static str {
+    #[must_use]
+    pub const fn compression_algo(&self) -> &'static str {
         match self {
             Self::Generic => "lz4",
             Self::Eda => "zstd",
@@ -47,7 +49,8 @@ impl BuildProfile {
     }
 
     /// Whether this profile recommends dictionary training.
-    pub fn recommended_dict_training(&self) -> bool {
+    #[must_use]
+    pub const fn recommended_dict_training(&self) -> bool {
         match self {
             Self::Generic => false,
             Self::Eda => true,
@@ -117,7 +120,7 @@ mod tests {
     #[test]
     fn test_build_profile_generic() {
         let profile = BuildProfile::Generic;
-        assert_eq!(profile.block_size(), 65536);
+        assert_eq!(profile.block_size(), 65_536);
         assert_eq!(profile.compression_algo(), "lz4");
         assert!(!profile.recommended_dict_training());
     }
@@ -125,7 +128,7 @@ mod tests {
     #[test]
     fn test_build_profile_eda() {
         let profile = BuildProfile::Eda;
-        assert_eq!(profile.block_size(), 16384);
+        assert_eq!(profile.block_size(), 16_384);
         assert_eq!(profile.compression_algo(), "zstd");
         assert!(profile.recommended_dict_training());
     }
@@ -133,7 +136,7 @@ mod tests {
     #[test]
     fn test_build_profile_embedded() {
         let profile = BuildProfile::Embedded;
-        assert_eq!(profile.block_size(), 4096);
+        assert_eq!(profile.block_size(), 4_096);
         assert_eq!(profile.compression_algo(), "zstd");
         assert!(profile.recommended_dict_training());
     }
@@ -141,7 +144,7 @@ mod tests {
     #[test]
     fn test_build_profile_ml() {
         let profile = BuildProfile::Ml;
-        assert_eq!(profile.block_size(), 1048576);
+        assert_eq!(profile.block_size(), 1_048_576);
         assert_eq!(profile.compression_algo(), "lz4");
         assert!(!profile.recommended_dict_training());
     }
@@ -174,7 +177,7 @@ mod tests {
     #[test]
     fn test_build_profile_debug() {
         let profile = BuildProfile::Ml;
-        let debug_str = format!("{:?}", profile);
+        let debug_str = format!("{profile:?}");
 
         assert!(debug_str.contains("Ml"));
     }
@@ -206,7 +209,7 @@ mod tests {
     #[test]
     fn test_config_debug() {
         let config = Config::default();
-        let debug_str = format!("{:?}", config);
+        let debug_str = format!("{config:?}");
 
         assert!(debug_str.contains("Config"));
         assert!(debug_str.contains("cache_size_bytes"));

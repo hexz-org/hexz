@@ -1386,6 +1386,7 @@ dependencies = [
  "hexz-common",
  "hexz-core",
  "hexz-store",
+ "hexz-vfs",
  "libc",
  "serde",
  "serde_json",
@@ -1478,10 +1479,12 @@ name = "hexz-vfs"
 version = "0.7.0"
 dependencies = [
  "anyhow",
+ "fuser",
  "hexz-common",
  "hexz-core",
  "libc",
  "serde",
+ "serde_json",
  "tracing",
  "walkdir",
 ]

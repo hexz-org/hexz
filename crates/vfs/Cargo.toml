@@ -13,5 +13,7 @@ hexz-common.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 serde.workspace = true
+serde_json.workspace = true
+fuser = "0.14"
 walkdir = "2.4"
 libc = "0.2"

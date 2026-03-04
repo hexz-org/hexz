@@ -5,7 +5,7 @@
 //! interact with compressed archives as if they were regular files.
 
 /// Virtual filesystem abstractions (inodes, attributes).
-pub mod vfs;
+pub use hexz_vfs as vfs;
 
 /// FUSE filesystem implementation.
 pub mod fuse;
