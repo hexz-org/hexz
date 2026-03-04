@@ -14,61 +14,63 @@
 
 use anyhow::Result;
 use std::process::Command;
+use colored::*;
 
 use crate::ui::color::{Palette, palette};
 
 pub fn run() -> Result<()> {
     let p = palette();
-    println!(
-        "\n  {}Hexz Doctor{} — System Health Check\n",
-        p.bold, p.reset
-    );
+    println!("{} Hexz Doctor", "╭".dimmed());
+    println!("{} System Health Check", "╰".dimmed());
+    println!();
 
     check_binary("fusermount", &["--version"], p);
     check_binary("qemu-system-x86_64", &["--version"], p);
     check_fuse_support(p);
     check_network(p);
 
-    println!("\n  Diagnosis complete.");
+    println!("\n  {} Diagnosis complete.", "✓".green());
     Ok(())
 }
 
-fn check_binary(name: &str, args: &[&str], p: &'static Palette) {
-    print!("  Checking {}{}{}... ", p.cyan, name, p.reset);
+fn check_binary(name: &str, args: &[&str], _p: &'static Palette) {
+    print!("  {} Checking {}... ", "→".yellow(), name.cyan());
     match Command::new(name).args(args).output() {
         Ok(output) => {
             if output.status.success() {
-                println!("{}OK{}", p.green, p.reset);
+                println!("{}", "OK".green());
             } else {
-                println!("{}FAIL{} (exit code {})", p.red, p.reset, output.status);
+                println!("{} (exit code {})", "FAIL".red(), output.status);
             }
         }
-        Err(_) => println!("{}NOT FOUND{} (please install {})", p.yellow, p.reset, name),
+        Err(_) => println!("{} (please install {})", "NOT FOUND".yellow(), name),
     }
 }
 
-fn check_fuse_support(p: &'static Palette) {
+fn check_fuse_support(_p: &'static Palette) {
     print!(
-        "  Checking {}FUSE kernel support{} (/dev/fuse)... ",
-        p.cyan, p.reset
+        "  {} Checking {} (/dev/fuse)... ",
+        "→".yellow(),
+        "FUSE kernel support".cyan()
     );
     if std::path::Path::new("/dev/fuse").exists() {
-        println!("{}OK{}", p.green, p.reset);
+        println!("{}", "OK".green());
     } else {
         println!(
-            "{}FAIL{} (device node not found — run {}sudo modprobe fuse{})",
-            p.red, p.reset, p.dim, p.reset,
+            "{} (device node not found — run sudo modprobe fuse)",
+            "FAIL".red()
         );
     }
 }
 
-fn check_network(p: &'static Palette) {
+fn check_network(_p: &'static Palette) {
     print!(
-        "  Checking {}network connectivity{} (DNS)... ",
-        p.cyan, p.reset
+        "  {} Checking {} (DNS)... ",
+        "→".yellow(),
+        "network connectivity".cyan()
     );
     match std::net::ToSocketAddrs::to_socket_addrs("google.com:80") {
-        Ok(_) => println!("{}OK{}", p.green, p.reset),
-        Err(e) => println!("{}FAIL{} ({})", p.red, p.reset, e),
+        Ok(_) => println!("{}", "OK".green()),
+        Err(e) => println!("{} ({})", "FAIL".red(), e),
     }
 }

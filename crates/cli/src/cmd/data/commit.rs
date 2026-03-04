@@ -1,13 +1,15 @@
 //! Commit changes from a writable mount to a new thin archive.
 
 use anyhow::{Context, Result};
-use hexz_ops::pack::{PackConfig, pack_archive};
 use std::path::PathBuf;
 use std::process::Command;
+use colored::*;
+use indicatif::HumanBytes;
+
+use hexz_ops::pack::{PackConfig, pack_archive};
 
 use super::workspace::Workspace;
 
-/// Commits changes from a writable mount to a new thin archive.
 pub fn run(
     output: PathBuf,
     mountpoint: Option<PathBuf>,
@@ -40,15 +42,17 @@ pub fn run(
         }
     };
 
-    println!("Committing changes from {:?} to {:?}...", mountpoint, output);
+    println!("{} Committing to {}", "╭".dimmed(), output.display().to_string().cyan());
     if let Some(ref b) = base {
-        println!("Using base archive: {:?}", b);
+        println!("{} Base:         {}", "╰".dimmed(), b.display().to_string().bright_black());
+    } else {
+        println!("{} Base:         {}", "╰".dimmed(), "(none)".bright_black());
     }
 
     let config = PackConfig {
         input: mountpoint,
         base,
-        output,
+        output: output.clone(),
         compression: "zstd".to_string(), // Default to zstd for commits
         use_dcam: true,
         show_progress: true,
@@ -57,10 +61,12 @@ pub fn run(
 
     pack_archive(config, None::<fn(u64, u64)>).context("Commit failed during packing")?;
 
-    println!("Commit complete.");
+    let file_size = std::fs::metadata(&output).map(|m| m.len()).unwrap_or(0);
+    let size_str = HumanBytes(file_size).to_string();
+
+    println!("\n  {} Commit complete {}", "✓".green(), format!("({} delta)", size_str).bright_black());
     Ok(())
 }
-
 fn infer_base_archive(mountpoint: &std::path::Path) -> Option<PathBuf> {
     // On Linux, we can try to find the archive path from the mount options
     if cfg!(target_os = "linux") {

@@ -105,6 +105,35 @@ fn main() -> anyhow::Result<()> {
 
         Commands::Log { dir } => hexz_cli::cmd::data::ls::run(dir),
 
+        Commands::Convert {
+            format,
+            input,
+            output,
+            compression,
+            block_size,
+            profile,
+            silent,
+        } => hexz_cli::cmd::data::convert::run(
+            format,
+            input,
+            output,
+            compression,
+            block_size,
+            profile,
+            silent,
+        ),
+
+        Commands::Predict {
+            path,
+            block_size,
+            min_chunk,
+            avg_chunk,
+            max_chunk,
+            json,
+        } => hexz_cli::cmd::data::predict::run(
+            path, block_size, min_chunk, avg_chunk, max_chunk, json,
+        ),
+
         #[cfg(feature = "fuse")]
         Commands::Mount {
             snap,
@@ -163,5 +192,7 @@ fn main() -> anyhow::Result<()> {
 
         #[cfg(feature = "signing")]
         Commands::Verify { key, image } => hexz_cli::cmd::sys::verify::run(key, image),
+
+        Commands::Doctor => hexz_cli::cmd::sys::doctor::run(),
     }
 }

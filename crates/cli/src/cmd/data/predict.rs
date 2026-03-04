@@ -2,6 +2,7 @@ use anyhow::Result;
 use hexz_ops::predict::{PredictConfig, predict};
 use indicatif::HumanBytes;
 use std::path::PathBuf;
+use colored::*;
 
 pub fn run(
     path: PathBuf,
@@ -27,94 +28,53 @@ pub fn run(
         return Ok(());
     }
 
-    println!("File:           {}", report.file_path);
-    println!("Size:           {}", HumanBytes(report.file_size));
-    println!("Block Size:     {}", HumanBytes(report.block_size as u64));
-    println!("Blocks Sampled: {}", report.blocks_sampled);
-    println!();
+    println!("{} Prediction   {}", "╭".dimmed(), report.file_path.cyan());
+    println!("{} Size         {}", "│".dimmed(), HumanBytes(report.file_size).to_string().green());
+    println!("{} Block Size   {}", "╰".dimmed(), HumanBytes(report.block_size as u64).to_string().bright_black());
 
-    println!("  Zero Blocks:    {:.1}%", report.zero_block_pct * 100.0);
-    println!("  Mean Entropy:   {:.2} bits/byte", report.mean_entropy);
-    println!(
-        "  High Entropy:   {:.1}%  (incompressible)",
-        report.high_entropy_pct * 100.0
-    );
-    println!();
+    println!("\n  {} Statistics:", "→".yellow());
+    println!("    {} Zero Blocks    {:.1}%", "→".dimmed(), report.zero_block_pct * 100.0);
+    println!("    {} Mean Entropy   {:.2} bits/byte", "→".dimmed(), report.mean_entropy);
+    println!("    {} High Entropy   {:.1}%", "→".dimmed(), report.high_entropy_pct * 100.0);
 
+    println!("\n  {} Estimation:", "→".yellow());
     println!(
-        "  LZ4:            {:.1}x  ({:.1}% savings)  -> ~{}",
-        if report.lz4_ratio > 0.0 {
-            1.0 / report.lz4_ratio
-        } else {
-            f64::INFINITY
-        },
-        report.lz4_savings_pct,
-        HumanBytes(report.estimated_lz4_size)
+        "    {} LZ4            {:.1}x  ({})",
+        "→".dimmed(),
+        if report.lz4_ratio > 0.0 { 1.0 / report.lz4_ratio } else { 0.0 },
+        HumanBytes(report.estimated_lz4_size).to_string().bright_black()
     );
     println!(
-        "  Zstd (level 3): {:.1}x  ({:.1}% savings)  -> ~{}",
-        if report.zstd_ratio > 0.0 {
-            1.0 / report.zstd_ratio
-        } else {
-            f64::INFINITY
-        },
-        report.zstd_savings_pct,
-        HumanBytes(report.estimated_zstd_size)
+        "    {} Zstd (lvl 3)   {:.1}x  ({})",
+        "→".dimmed(),
+        if report.zstd_ratio > 0.0 { 1.0 / report.zstd_ratio } else { 0.0 },
+        HumanBytes(report.estimated_zstd_size).to_string().bright_black()
     );
-    println!();
 
-    println!(
-        "  Fixed Dedup:    {:.1}% savings",
-        report.fixed_dedup_savings_pct
-    );
-    println!(
-        "  CDC Dedup:      {:.1}% savings  ({} chunks, {} unique, min/avg/max {}/{}/{})",
-        report.cdc_dedup_savings_pct,
-        report.cdc_chunks_total,
-        report.cdc_chunks_unique,
-        HumanBytes(report.cdc_min_chunk as u64),
-        HumanBytes(report.cdc_avg_chunk as u64),
-        HumanBytes(report.cdc_max_chunk as u64),
-    );
-    println!();
+    println!("\n  {} Deduplication:", "→".yellow());
+    println!("    {} Fixed Dedup    {:.1}% savings", "→".dimmed(), report.fixed_dedup_savings_pct);
+    println!("    {} CDC Dedup      {:.1}% savings", "→".dimmed(), report.cdc_dedup_savings_pct);
 
+    println!("\n  {} Combined Best:", "→".yellow());
     println!(
-        "  LZ4 + fixed:    {}",
-        HumanBytes(report.estimated_packed_size_lz4_fixed)
-    );
-    println!(
-        "  Zstd + CDC:     {}  ({:.1}% reduction)",
-        HumanBytes(report.estimated_packed_size_zstd_cdc),
+        "    {} Zstd + CDC     {}  ({:.1}% reduction)",
+        "→".dimmed(),
+        HumanBytes(report.estimated_packed_size_zstd_cdc).to_string().green(),
         report.overall_best_savings_pct
     );
-    println!();
 
-    // Recommendation
-    let file_path = &report.file_path;
+    println!("\n  {} Recommendation:", "→".yellow());
+    // Recommendation logic...
     if report.overall_best_savings_pct > 10.0 {
         if report.cdc_dedup_savings_pct > 1.0 {
-            print!(
-                "Try: hexz pack output.hxz --disk {} --compression zstd",
-                file_path
-            );
-            print!(
-                " --min-chunk {} --avg-chunk {} --max-chunk {}",
-                report.cdc_min_chunk, report.cdc_avg_chunk, report.cdc_max_chunk
-            );
-            println!();
+            println!("    {} Use {} with {} blocks and {} algorithm", "→".dimmed(), "CDC packing".cyan(), "zstd".magenta(), "zstd".magenta());
         } else {
-            println!(
-                "Try: hexz pack output.hxz --disk {} --compression zstd",
-                file_path
-            );
+            println!("    {} Use {} with {} algorithm", "→".dimmed(), "standard packing".cyan(), "zstd".magenta());
         }
     } else if report.overall_best_savings_pct > 1.0 {
-        println!(
-            "Try: hexz pack output.hxz --disk {} --compression lz4",
-            file_path
-        );
+        println!("    {} Use {} with {} algorithm", "→".dimmed(), "standard packing".cyan(), "lz4".magenta());
     } else {
-        println!("Data is mostly incompressible with minimal deduplication potential.");
+        println!("    {} Data is mostly incompressible.", "→".dimmed());
     }
 
     Ok(())

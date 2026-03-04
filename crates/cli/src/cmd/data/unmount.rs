@@ -3,6 +3,7 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::process::Command;
+use colored::*;
 
 /// Unmounts a previously mounted Hexz filesystem.
 pub fn run(mountpoint: PathBuf) -> Result<()> {
@@ -13,10 +14,10 @@ pub fn run(mountpoint: PathBuf) -> Result<()> {
             .arg("-u")
             .arg(&mountpoint)
             .output();
-            
+
         if let Ok(output) = output {
             if output.status.success() {
-                println!("Successfully unmounted {}", path_str);
+                println!("  {} Successfully unmounted {}", "✓".green(), path_str.cyan());
                 return Ok(());
             }
 
@@ -33,7 +34,7 @@ pub fn run(mountpoint: PathBuf) -> Result<()> {
         .context("Failed to execute unmount command")?;
 
     if output.status.success() {
-        println!("Successfully unmounted {}", path_str);
+        println!("  {} Successfully unmounted {}", "✓".green(), path_str.cyan());
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);

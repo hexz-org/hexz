@@ -132,6 +132,62 @@ pub enum Commands {
         dir: PathBuf,
     },
 
+    /// Convert external data formats into Hexz archives
+    #[command(display_order = 6)]
+    Convert {
+        /// Input format (tar, hdf5, webdataset)
+        format: String,
+
+        /// Input path
+        input: PathBuf,
+
+        /// Output archive path
+        output: PathBuf,
+
+        /// Compression algorithm
+        #[arg(long, default_value = "lz4")]
+        compression: String,
+
+        /// Block size
+        #[arg(long, default_value_t = 65536)]
+        block_size: u32,
+
+        /// Profile name
+        #[arg(short, long)]
+        profile: Option<String>,
+
+        /// Suppress output
+        #[arg(long, short)]
+        silent: bool,
+    },
+
+    /// Predict compression and deduplication potential
+    #[command(display_order = 7)]
+    Predict {
+        /// Path to analyze
+        path: PathBuf,
+
+        /// Block size to test
+        #[arg(long, default_value_t = 65536)]
+        block_size: u32,
+
+        /// Minimum chunk size for CDC
+        #[arg(long)]
+        min_chunk: Option<u32>,
+
+        /// Average chunk size for CDC
+        #[arg(long)]
+        avg_chunk: Option<u32>,
+
+        /// Maximum chunk size for CDC
+        #[arg(long)]
+        max_chunk: Option<u32>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     // ------------------------------------------------------------------------
     // Filesystem Operations
     // ------------------------------------------------------------------------
@@ -312,4 +368,8 @@ pub enum Commands {
         /// Archive to verify
         image: PathBuf,
     },
+
+    /// Run system health check and diagnostics
+    #[command(display_order = 24)]
+    Doctor,
 }

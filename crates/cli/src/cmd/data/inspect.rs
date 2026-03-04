@@ -5,13 +5,6 @@ use hexz_ops::inspect::inspect_archive;
 use indicatif::HumanBytes;
 use std::path::PathBuf;
 
-use crate::ui::color::{Palette, palette};
-
-fn lbl(key: &str, p: &'static Palette) -> String {
-    let spaces = 14usize.saturating_sub(2 + key.len());
-    format!("  {}{}{}{}", p.cyan, key, p.reset, " ".repeat(spaces))
-}
-
 pub fn run(snap: PathBuf, json: bool) -> Result<()> {
     let info = inspect_archive(&snap).context("Failed to inspect archive")?;
 
@@ -42,8 +35,6 @@ pub fn run(snap: PathBuf, json: bool) -> Result<()> {
         return Ok(());
     }
 
-    let p = palette();
-
     let filename = snap
         .file_name()
         .map(|f| f.to_string_lossy().to_string())
@@ -54,29 +45,24 @@ pub fn run(snap: PathBuf, json: bool) -> Result<()> {
         hexz_core::format::header::CompressionType::Zstd => "Zstd",
     };
 
-    println!("{}{}{}", p.bold, filename, p.reset);
-
+    use colored::*;
+    println!("{} {}", "╭".dimmed(), filename.cyan());
+    
     let block_kib = info.block_size / 1024;
     println!(
-        "{}v{}, {}, {} KiB blocks",
-        lbl("format:", p),
+        "{} format      v{}, {}, {} KiB blocks",
+        "│".dimmed(),
         info.version,
         comp_name,
         block_kib,
     );
 
     println!(
-        "{}{}{}{} on disk, {}{}{} uncompressed ({}{:.2}x{})",
-        lbl("size:", p),
-        p.green,
-        HumanBytes(info.file_size),
-        p.reset,
-        p.green,
-        HumanBytes(total_uncompressed),
-        p.reset,
-        p.bold,
+        "{} size        {} on disk, {} uncompressed ({:.2}x)",
+        "│".dimmed(),
+        HumanBytes(info.file_size).to_string().green(),
+        HumanBytes(total_uncompressed).to_string().green(),
         ratio,
-        p.reset,
     );
 
     if !info.parent_paths.is_empty() {
@@ -85,11 +71,9 @@ pub fn run(snap: PathBuf, json: bool) -> Result<()> {
             .map(|f| f.to_string_lossy().to_string())
             .unwrap_or_else(|| info.parent_paths[0].clone());
         println!(
-            "{}{}{}{}",
-            lbl("parent:", p),
-            p.yellow,
-            parent_display,
-            p.reset
+            "{} parent      {}",
+            "│".dimmed(),
+            parent_display.yellow(),
         );
     }
 
@@ -108,12 +92,14 @@ pub fn run(snap: PathBuf, json: bool) -> Result<()> {
             parts.push(format!("{} zero", stats.zero_blocks));
         }
         if !parts.is_empty() {
-            println!("{}{}", lbl("blocks:", p), parts.join(", "));
+            println!("{} blocks      {}", "│".dimmed(), parts.join(", "));
         }
     }
 
     if let Some(len) = info.metadata_length {
-        println!("{}{} bytes", lbl("metadata:", p), len);
+        println!("{} metadata    {} bytes", "╰".dimmed(), len);
+    } else {
+        println!("{}", "╰".dimmed());
     }
 
     Ok(())

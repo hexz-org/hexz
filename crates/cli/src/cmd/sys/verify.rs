@@ -101,21 +101,12 @@ use std::path::PathBuf;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 pub fn run(key_path: PathBuf, image_path: PathBuf) -> Result<()> {
-    use crate::ui::color::palette;
-    let p = palette();
-    println!(
-        "{}Verifying{} {} with key {}{}{}...",
-        p.cyan,
-        p.reset,
-        image_path.display(),
-        p.dim,
-        key_path.display(),
-        p.reset,
-    );
+    use colored::*;
+    println!("{} Verifying archive", "╭".dimmed());
+    println!("{} Image     {}", "│".dimmed(), image_path.display().to_string().cyan());
+    println!("{} Key       {}", "╰".dimmed(), key_path.display().to_string().bright_black());
+
     verify_archive(&image_path, &key_path)?;
-    println!(
-        "{}✓ Signature verified.{} The index is authentic.",
-        p.green, p.reset
-    );
+    println!("\n  {} Signature verified. The index is authentic.", "✓".green());
     Ok(())
 }

@@ -94,13 +94,15 @@ pub fn run(output_dir: Option<PathBuf>) -> Result<()> {
     let priv_path = dir.join("private.key");
     let pub_path = dir.join("public.key");
 
-    println!("Generating Ed25519 keypair...");
+    use colored::*;
+    println!("{} Generating Ed25519 keypair", "╭".dimmed());
     sign::generate_keypair(&priv_path, &pub_path)?;
 
-    println!("Keys generated:");
-    println!("  Private: {:?}", priv_path);
-    println!("  Public:  {:?}", pub_path);
-    println!("Keep the private key safe!");
+    println!("{} Private   {}", "│".dimmed(), priv_path.display().to_string().cyan());
+    println!("{} Public    {}", "╰".dimmed(), pub_path.display().to_string().cyan());
+
+    println!("\n  {} Keys generated successfully.", "✓".green());
+    println!("  {} Keep the private key safe!", "→".yellow());
 
     Ok(())
 }

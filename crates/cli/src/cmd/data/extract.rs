@@ -3,10 +3,11 @@
 use anyhow::{Context, Result};
 use hexz_ops::pack::extract_archive;
 use hexz_core::format::header::Header;
-use hexz_store::StorageBackend;
-use hexz_store::local::MmapBackend;
 use hexz_core::format::magic::HEADER_SIZE;
+use hexz_store::local::MmapBackend;
+use hexz_store::StorageBackend;
 use std::path::PathBuf;
+use colored::*;
 
 /// Execute the `hexz extract` command.
 pub fn run(input: PathBuf, output: Option<PathBuf>) -> Result<()> {
@@ -37,9 +38,12 @@ pub fn run(input: PathBuf, output: Option<PathBuf>) -> Result<()> {
         }
     };
 
-    println!("Extracting {:?} to {:?}...", input, output);
+    println!("{} Extracting {}", "╭".dimmed(), input.display().to_string().cyan());
+    println!("{} Output     {}", "╰".dimmed(), output.display().to_string().bright_black());
+
     extract_archive(&input, &output, password).context("Failed to extract archive")?;
-    println!("Extraction complete.");
-    
+
+    println!("\n  {} Extraction complete.", "✓".green());
+
     Ok(())
 }

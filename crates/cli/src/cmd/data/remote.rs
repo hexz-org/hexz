@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use std::path::PathBuf;
+use colored::*;
 use super::workspace::Workspace;
 use crate::args::RemoteCommand;
 
@@ -11,22 +11,25 @@ pub fn run(action: RemoteCommand) -> Result<()> {
         RemoteCommand::Add { name, url } => {
             ws.config.remotes.insert(name.clone(), url.clone());
             ws.save()?;
-            println!("Added remote '{}' -> '{}'", name, url);
+            println!("  {} Added remote {} {}", "✓".green(), name.magenta(), format!("({})", url).bright_black());
         }
         RemoteCommand::Remove { name } => {
             if ws.config.remotes.remove(&name).is_some() {
                 ws.save()?;
-                println!("Removed remote '{}'", name);
+                println!("  {} Removed remote {}", "✓".green(), name.magenta());
             } else {
                 anyhow::bail!("Remote '{}' not found", name);
             }
         }
         RemoteCommand::List => {
             if ws.config.remotes.is_empty() {
-                println!("No remotes configured.");
+                println!("  {} No remotes configured.", "→".yellow());
             } else {
-                for (name, url) in &ws.config.remotes {
-                    println!("{}	{}", name, url);
+                println!("{} Remotes", "╭".dimmed());
+                let count = ws.config.remotes.len();
+                for (i, (name, url)) in ws.config.remotes.iter().enumerate() {
+                    let prefix = if i == count - 1 { "╰".dimmed() } else { "│".dimmed() };
+                    println!("{} {} {}", prefix, name.magenta(), url.bright_black());
                 }
             }
         }

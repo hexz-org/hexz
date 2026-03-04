@@ -1,6 +1,5 @@
 //! System utility commands for diagnostics and services.
 
-#[cfg(feature = "diagnostics")]
 pub mod doctor;
 
 #[cfg(feature = "server")]

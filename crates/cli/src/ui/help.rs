@@ -31,6 +31,7 @@ impl Printer {
 
         let mut create_cmds = Vec::new();
         let mut inspect_cmds = Vec::new();
+        let mut network_cmds = Vec::new();
         let mut infra_cmds = Vec::new();
 
         let subcommands: Vec<Command> = self.cmd.get_subcommands().cloned().collect();
@@ -45,16 +46,18 @@ impl Printer {
             let item = (name.clone(), about);
 
             match name.as_str() {
-                "pack" | "extract" | "mount" | "unmount" | "commit" | "checkout" | "status" => create_cmds.push(item),
-                "show" | "diff" | "log" => inspect_cmds.push(item),
-                "serve" | "keygen" | "sign" | "verify" => infra_cmds.push(item),
+                "pack" | "extract" | "init" | "checkout" | "commit" | "status" => create_cmds.push(item),
+                "inspect" | "show" | "diff" | "log" | "ls" | "predict" | "convert" => inspect_cmds.push(item),
+                "mount" | "unmount" | "serve" | "remote" | "push" | "pull" => network_cmds.push(item),
+                "keygen" | "sign" | "verify" | "doctor" => infra_cmds.push(item),
                 _ => {}
             }
         }
 
-        self.print_section("archive and filesystem operations", create_cmds);
-        self.print_section("inspect and compare", inspect_cmds);
-        self.print_section("signing and infrastructure", infra_cmds);
+        self.print_section("core archive & workspace workflows", create_cmds);
+        self.print_section("data inspection & conversion", inspect_cmds);
+        self.print_section("networking & cloud collaboration", network_cmds);
+        self.print_section("security & system health", infra_cmds);
 
         println!("{}Options:{}", BOLD, RESET);
         println!("  {}{:<15}{} Print help", GREEN, "-h, --help", RESET);

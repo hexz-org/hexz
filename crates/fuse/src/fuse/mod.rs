@@ -15,7 +15,6 @@ pub struct Hexz {
     pub(crate) snap: Arc<Archive>,
     pub(crate) inodes: InodeMap,
     pub(crate) write_layer: Option<PathBuf>,
-    pub(crate) metadata_dir: Option<PathBuf>,
 }
 
 impl Hexz {
@@ -38,7 +37,6 @@ impl Hexz {
             snap: snap.clone(),
             inodes,
             write_layer,
-            metadata_dir,
         })
     }
     fn overlay_path(&self, ino: u64) -> Option<PathBuf> {

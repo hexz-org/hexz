@@ -234,8 +234,15 @@ pub fn run(hexz_path: String, port: u16, bind: String, daemon: bool, nbd: bool) 
             .stdout(stdout)
             .stderr(stderr)
             .start()?;
-    } else {
-        println!("Starting Hexz server on port {}", port);
+    }
+
+    if !daemon {
+        use colored::*;
+        println!("{} Starting Hexz server", "╭".dimmed());
+        println!("{} Port      {}", "│".dimmed(), port.to_string().cyan());
+        println!("{} Bind      {}", "│".dimmed(), bind.cyan());
+        println!("{} Protocol  {}", "╰".dimmed(), if nbd { "NBD".magenta() } else { "HTTP".magenta() });
+        println!();
     }
 
     tokio::runtime::Builder::new_multi_thread()

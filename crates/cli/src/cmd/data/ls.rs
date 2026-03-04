@@ -192,30 +192,25 @@ pub fn run(dir: PathBuf) -> Result<()> {
     roots.sort_by_key(|&i| &entries[i].path);
 
     let p = palette();
+    use colored::*;
     let total_size: u64 = entries.iter().map(|a| a.file_size).sum();
 
     let dir_str = dir.to_string_lossy();
     let dir_base = dir_str.trim_end_matches('/');
-    println!("\n  {}{}/{}", p.bold, dir_base, p.reset);
+    println!("{} {}/", "╭".dimmed(), dir_base.cyan());
 
     for (i, &root) in roots.iter().enumerate() {
         let last = i == roots.len() - 1;
-        print_tree(root, &entries, &children, &external_parent, "", last, p);
+        print_tree(root, &entries, &children, &external_parent, "│ ".dimmed().to_string().as_str(), last, p);
     }
 
-    println!();
+    let archive_count = format!("{} archive{}", entries.len(), if entries.len() == 1 { "" } else { "s" });
     println!(
-        "  {}{}{} archive{}   {}{}{} on disk",
-        p.bold,
-        entries.len(),
-        p.reset,
-        if entries.len() == 1 { "" } else { "s" },
-        p.green,
-        HumanBytes(total_size),
-        p.reset,
+        "{} {}   {} on disk",
+        "╰".dimmed(),
+        archive_count.bright_black(),
+        HumanBytes(total_size).to_string().green(),
     );
-
-    println!();
 
     Ok(())
 }

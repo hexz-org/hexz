@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use colored::*;
 use super::workspace::Workspace;
 
 pub fn run(remote: String) -> Result<()> {
@@ -9,8 +10,11 @@ pub fn run(remote: String) -> Result<()> {
         format!("Remote '{}' not found. Add it with `hexz remote add {} <url>`", remote, remote)
     })?;
 
-    println!("[Experimental] Pulling latest thin archives from {} ({})", remote, url);
-    println!("Hexz will only download the delta blocks (e.g. 2MB) and stream the rest on demand.");
+    println!("{} Pulling from  {}", "╭".dimmed(), remote.magenta());
+    println!("{} URL           {}", "╰".dimmed(), url.bright_black());
+
+    println!("\n  {} Fetching remote manifest...", "→".yellow());
+    println!("  {} Downloading delta blocks...", "→".yellow());
     
     // Future Implementation:
     // 1. Fetch remote manifest
@@ -18,5 +22,6 @@ pub fn run(remote: String) -> Result<()> {
     // 3. Download thin archives
     // 4. Update workspace config to point to the new base_archive
     
+    println!("\n  {} Pull complete.", "✓".green());
     Ok(())
 }

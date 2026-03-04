@@ -12,6 +12,7 @@ use hexz_ops::archive_writer::ArchiveWriter;
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use colored::*;
 
 /// Execute the convert command.
 #[allow(clippy::too_many_arguments)]
@@ -24,6 +25,12 @@ pub fn run(
     profile: Option<String>,
     silent: bool,
 ) -> Result<()> {
+    if !silent {
+        println!("{} Converting {}", "╭".dimmed(), input.display().to_string().cyan());
+        println!("{} Format     {}", "│".dimmed(), format.bright_black());
+        println!("{} Output     {}", "╰".dimmed(), output.display().to_string().bright_black());
+        println!();
+    }
     match format.to_lowercase().as_str() {
         "tar" => convert_tar(input, output, compression, block_size, silent),
         "hdf5" | "webdataset" => convert_via_python(
@@ -50,6 +57,10 @@ fn convert_tar(
     block_size: u32,
     silent: bool,
 ) -> Result<()> {
+    // ... rest of convert_tar ...
+    // (I will replace the println! calls later or in a separate step if this is too large)
+    // Actually let's try to replace the whole file to be safe with all formatting.
+
     // Calculate total size for progress bar
     let total_size = std::fs::metadata(&input)
         .with_context(|| format!("Cannot read input file: {}", input.display()))?
@@ -157,11 +168,11 @@ fn convert_tar(
 
     if !silent {
         println!(
-            "Converted {} files ({} bytes) from tar archive",
+            "\n  {} Converted {} files ({}) from tar archive",
+            "✓".green(),
             source_files.len(),
-            total_bytes
+            indicatif::HumanBytes(total_bytes).to_string().bright_black(),
         );
-        println!("Archive created: {}", output.display());
     }
 
     Ok(())
@@ -178,7 +189,7 @@ fn convert_via_python(
     silent: bool,
 ) -> Result<()> {
     if !silent {
-        println!("Converting {format} via Python...");
+        println!("  {} Converting {} via Python...", "→".yellow(), format.cyan());
     }
 
     let profile_arg = match profile {
@@ -210,7 +221,7 @@ fn convert_via_python(
     }
 
     if !silent {
-        println!("Archive created: {}", output.display());
+        println!("\n  {} Conversion complete.", "✓".green());
     }
 
     Ok(())

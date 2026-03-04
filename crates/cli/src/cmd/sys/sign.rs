@@ -113,18 +113,12 @@ use std::path::PathBuf;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 pub fn run(key_path: PathBuf, image_path: PathBuf) -> Result<()> {
-    use crate::ui::color::palette;
-    let p = palette();
-    println!(
-        "{}Signing{} {} with key {}{}{}...",
-        p.cyan,
-        p.reset,
-        image_path.display(),
-        p.dim,
-        key_path.display(),
-        p.reset,
-    );
+    use colored::*;
+    println!("{} Signing archive", "╭".dimmed());
+    println!("{} Image     {}", "│".dimmed(), image_path.display().to_string().cyan());
+    println!("{} Key       {}", "╰".dimmed(), key_path.display().to_string().bright_black());
+
     sign_archive(&image_path, &key_path)?;
-    println!("{}Signature written.{}", p.green, p.reset);
+    println!("\n  {} Signature written successfully.", "✓".green());
     Ok(())
 }

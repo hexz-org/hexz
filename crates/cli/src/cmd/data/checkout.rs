@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use std::path::PathBuf;
+use colored::*;
 use super::workspace::Workspace;
 use super::mount;
 
@@ -13,12 +14,11 @@ pub fn run(archive: PathBuf, path: PathBuf) -> Result<()> {
 
     std::fs::create_dir_all(&path)?;
 
-    println!("Initializing workspace at {:?}...", path);
-    println!("(Workspace version: 0.7.0-refactor-perms)");
+    println!("{} Initializing workspace at {}", "╭".dimmed(), path.display().to_string().cyan());
     let ws = Workspace::init(&path, Some(archive.clone()))?;
     let overlay = ws.overlay_path();
 
-    println!("Mounting base archive...");
+    println!("{} Mounting base archive {}", "╰".dimmed(), archive.display().to_string().bright_black());
     mount::run(
         archive.to_string_lossy().to_string(),
         path,
@@ -31,6 +31,6 @@ pub fn run(archive: PathBuf, path: PathBuf) -> Result<()> {
         Some(ws.metadata_dir()),
     )?;
 
-    println!("Workspace ready.");
+    println!("\n  {} Workspace ready.", "✓".green());
     Ok(())
 }

@@ -13,6 +13,7 @@ use hexz_store::StorageBackend;
 use hexz_store::local::MmapBackend;
 use std::path::PathBuf;
 use std::sync::Arc;
+use colored::*;
 
 pub(crate) fn parse_size(s: &str) -> Result<usize> {
     let s = s.trim();
@@ -94,7 +95,7 @@ fn open_archive(
     let parent_loader: hexz_core::api::file::ParentLoader = Box::new(move |parent_path: &str| {
         let parent_full_path = abs_hexz_path_clone.parent().unwrap().join(parent_path);
         open_archive(parent_full_path.to_str().unwrap(), cache_size_clone.clone(), prefetch)
-            .map_err(|e| hexz_common::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))
+            .map_err(|e| hexz_common::Error::Io(std::io::Error::other(e.to_string())))
     });
 
     Ok(Archive::with_cache_and_loader(
@@ -107,6 +108,7 @@ fn open_archive(
     )?)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     hexz_path: String,
     mountpoint: PathBuf,
@@ -148,7 +150,7 @@ pub fn run(
         ));
         std::fs::create_dir_all(&temp_overlay)?;
         if !daemon {
-            println!("Editable mode enabled. Using temporary overlay: {:?}", temp_overlay);
+            println!("  {} Editable mode enabled. Overlay: {}", "→".yellow(), temp_overlay.display().to_string().bright_black());
         }
         Some(temp_overlay)
     } else {
@@ -183,7 +185,7 @@ pub fn run(
     let fs = Hexz::new(snap, uid, gid, overlay, metadata_dir)?;
 
     if daemon {
-        eprintln!("Mounting at {:?} (daemonized)", abs_mountpoint);
+        eprintln!("  {} Mounting at {} (daemonized)", "✓".green(), abs_mountpoint.display().to_string().cyan());
     }
 
     fuser::mount2(fs, abs_mountpoint, &options)?;
