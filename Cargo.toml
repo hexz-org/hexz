@@ -5,6 +5,7 @@ members = [
     "crates/core",
     "crates/store",
     "crates/ops",
+    "crates/vfs",
     "crates/fuse",
     "crates/server",
     "crates/cli",
@@ -24,6 +25,7 @@ hexz-common = { path = "crates/common", version = "0.7.0", default-features = fa
 hexz-core = { path = "crates/core", version = "0.7.0", default-features = false }
 hexz-store = { path = "crates/store", version = "0.7.0" }
 hexz-ops = { path = "crates/ops", version = "0.7.0" }
+hexz-vfs = { path = "crates/vfs", version = "0.7.0" }
 hexz-fuse = { path = "crates/fuse", version = "0.7.0" }
 hexz-server = { path = "crates/server", version = "0.7.0" }
 

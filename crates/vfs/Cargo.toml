@@ -1,0 +1,17 @@
+[package]
+name = "hexz-vfs"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+description = "Platform-agnostic virtual filesystem logic for Hexz"
+
+[dependencies]
+hexz-core.workspace = true
+hexz-common.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+serde.workspace = true
+walkdir = "2.4"
+libc = "0.2"

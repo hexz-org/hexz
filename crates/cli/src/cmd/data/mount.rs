@@ -36,7 +36,7 @@ pub(crate) fn parse_size(s: &str) -> Result<usize> {
     Ok((n * multiplier) as usize)
 }
 
-fn open_archive(
+pub(crate) fn open_archive(
     hexz_path: &str,
     cache_size: Option<String>,
     prefetch: Option<u32>,

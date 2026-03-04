@@ -1474,6 +1474,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "hexz-vfs"
+version = "0.7.0"
+dependencies = [
+ "anyhow",
+ "hexz-common",
+ "hexz-core",
+ "libc",
+ "serde",
+ "tracing",
+ "walkdir",
+]
+
+[[package]]
 name = "hmac"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

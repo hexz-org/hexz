@@ -12,6 +12,7 @@ pub mod predict;
 pub mod pull;
 pub mod push;
 pub mod remote;
+pub mod shell;
 pub mod status;
 pub mod unmount;
 pub mod workspace;

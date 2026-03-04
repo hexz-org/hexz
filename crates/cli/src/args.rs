@@ -238,6 +238,30 @@ pub enum Commands {
         mountpoint: PathBuf,
     },
 
+    /// Drop into a shell within a mounted archive
+    #[cfg(feature = "fuse")]
+    #[command(display_order = 11)]
+    #[command(
+        long_about = "Mounts the archive to a temporary directory and drops you into a subshell. When the shell exits, the archive is automatically unmounted and the temporary directory is cleaned up."
+    )]
+    #[command(after_help = "hexz shell data.hxz --editable")]
+    Shell {
+        /// Archive to mount
+        snap: String,
+
+        /// Optional write layer directory for modifications
+        #[arg(long, short)]
+        overlay: Option<PathBuf>,
+
+        /// Make the mount writable by automatically using a temporary overlay
+        #[arg(long, short = 'e')]
+        editable: bool,
+
+        /// Cache size (e.g., "1G")
+        #[arg(long)]
+        cache_size: Option<String>,
+    },
+
     /// Commit changes from a writable mount to a new thin archive
     #[cfg(feature = "fuse")]
     #[command(display_order = 12)]

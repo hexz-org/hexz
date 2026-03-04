@@ -152,6 +152,14 @@ fn main() -> anyhow::Result<()> {
         Commands::Unmount { mountpoint } => hexz_cli::cmd::data::unmount::run(mountpoint),
 
         #[cfg(feature = "fuse")]
+        Commands::Shell {
+            snap,
+            overlay,
+            editable,
+            cache_size,
+        } => hexz_cli::cmd::data::shell::run(snap, overlay, editable, cache_size),
+
+        #[cfg(feature = "fuse")]
         Commands::Commit {
             output,
             mountpoint,

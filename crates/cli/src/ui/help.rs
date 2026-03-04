@@ -48,7 +48,7 @@ impl Printer {
             match name.as_str() {
                 "pack" | "extract" | "init" | "checkout" | "commit" | "status" => create_cmds.push(item),
                 "inspect" | "show" | "diff" | "log" | "ls" | "predict" | "convert" => inspect_cmds.push(item),
-                "mount" | "unmount" | "serve" | "remote" | "push" | "pull" => network_cmds.push(item),
+                "mount" | "unmount" | "shell" | "serve" | "remote" | "push" | "pull" => network_cmds.push(item),
                 "keygen" | "sign" | "verify" | "doctor" => infra_cmds.push(item),
                 _ => {}
             }
