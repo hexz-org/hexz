@@ -286,6 +286,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use walkdir::WalkDir;
+use ignore::WalkBuilder;
 
 use crate::parallel_pack::{CompressedChunk, RawChunk};
 use crate::archive_writer::ArchiveWriter;
@@ -883,11 +884,15 @@ where
     let mut files = Vec::new();
     let mut current_logical_offset = 0u64;
 
-    // Calculate total size for progress bar
-    let total_size: u64 = WalkDir::new(root)
-        .into_iter()
+    // Calculate total size for progress bar using ignore-aware walker
+    let total_size: u64 = WalkBuilder::new(root)
+        .standard_filters(true) // respects .gitignore, etc.
+        .add_custom_ignore_filename(".hexzignore")
+        .hidden(false) // we want to pack hidden files by default unless ignored
+        .build()
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
+        .filter(|e| e.file_type().is_some_and(|ft| ft.is_file()))
+        .filter(|e| !e.path().components().any(|c| c.as_os_str() == ".hexz"))
         .map(|e| e.metadata().map(|m| m.len()).unwrap_or(0))
         .sum();
 
@@ -899,14 +904,26 @@ where
 
     writer.begin_stream(true, total_size);
 
-    for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
-        if !entry.file_type().is_file() {
+    let walker = WalkBuilder::new(root)
+        .standard_filters(true)
+        .add_custom_ignore_filename(".hexzignore")
+        .hidden(false)
+        .build();
+
+    for entry in walker.filter_map(|e| e.ok()) {
+        if !entry.file_type().is_some_and(|ft| ft.is_file()) {
             continue;
         }
 
         let path = entry.path();
+        
+        // Skip .hexz metadata directory
+        if path.components().any(|c| c.as_os_str() == ".hexz") {
+            continue;
+        }
+
         let rel_path = path.strip_prefix(root).unwrap().to_string_lossy().into_owned();
-        let metadata = entry.metadata().map_err(|e| Error::Io(e.into()))?;
+        let metadata = entry.metadata().map_err(|e| Error::Io(std::io::Error::other(e.to_string())))?;
         let size = metadata.len();
 
         let file_entry = FileEntry {

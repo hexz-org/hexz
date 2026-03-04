@@ -26,6 +26,7 @@ num_cpus = "1.16"
 indicatif = "0.17"
 rayon = "1.8"
 walkdir = "2.4"
+ignore = "0.4"
 
 [dev-dependencies]
 hexz-store = { workspace = true }

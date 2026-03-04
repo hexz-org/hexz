@@ -11,28 +11,40 @@ use hexz_ops::pack::{PackConfig, pack_archive};
 use super::workspace::Workspace;
 
 pub fn run(
-    output: PathBuf,
+    mut output: PathBuf,
     mountpoint: Option<PathBuf>,
     base: Option<PathBuf>,
 ) -> Result<()> {
+    let current_dir = std::env::current_dir()?;
+    let ws = Workspace::find(&current_dir)?;
+
     let mountpoint = if let Some(m) = mountpoint {
         std::fs::canonicalize(m)?
     } else {
         // Try to find workspace in CWD
-        if let Some(ws) = Workspace::find(&std::env::current_dir()?)? {
-            ws.root
+        if let Some(ref w) = ws {
+            w.root.clone()
         } else {
             anyhow::bail!("No mountpoint provided and no .hexz workspace found.");
         }
     };
+
+    // If output is relative and we have a host_cwd, resolve it
+    if output.is_relative() {
+        if let Some(ref w) = ws {
+            if let Some(ref host_cwd) = w.config.host_cwd {
+                output = host_cwd.join(&output);
+            }
+        }
+    }
 
     // Try to infer base archive if not provided
     let base = if let Some(b) = base {
         Some(b)
     } else {
         // Check workspace first
-        if let Some(ws) = Workspace::find(&mountpoint)? {
-            if let Some(b) = ws.config.base_archive {
+        if let Some(ref w) = ws {
+            if let Some(b) = w.config.base_archive.clone() {
                 Some(b)
             } else {
                 infer_base_archive(&mountpoint)

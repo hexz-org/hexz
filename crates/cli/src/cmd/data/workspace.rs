@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 pub struct WorkspaceConfig {
     pub base_archive: Option<PathBuf>,
     pub overlay_path: Option<PathBuf>,
+    pub host_cwd: Option<PathBuf>,
     #[serde(default)]
     pub remotes: std::collections::HashMap<String, String>,
 }
@@ -45,6 +46,7 @@ impl Workspace {
         let config = WorkspaceConfig {
             base_archive,
             overlay_path: None,
+            host_cwd: None,
             remotes: std::collections::HashMap::new(),
         };
 

@@ -42,9 +42,11 @@ pub fn run(
 
     // Initialize workspace config so `hexz status` works
     {
+        let host_cwd = std::env::current_dir().ok();
         let config = crate::cmd::data::workspace::WorkspaceConfig {
             base_archive: Some(std::fs::canonicalize(&hexz_path)?),
             overlay_path: overlay.clone(),
+            host_cwd,
             remotes: std::collections::HashMap::new(),
         };
         let config_path = metadata_dir.join("config.json");
