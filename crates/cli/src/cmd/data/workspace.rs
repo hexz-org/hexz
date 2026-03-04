@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WorkspaceConfig {
     pub base_archive: Option<PathBuf>,
+    pub overlay_path: Option<PathBuf>,
     #[serde(default)]
     pub remotes: std::collections::HashMap<String, String>,
 }
@@ -43,6 +44,7 @@ impl Workspace {
 
         let config = WorkspaceConfig {
             base_archive,
+            overlay_path: None,
             remotes: std::collections::HashMap::new(),
         };
 
@@ -112,6 +114,9 @@ impl Workspace {
     }
 
     pub fn overlay_path(&self) -> PathBuf {
+        if let Some(ref p) = self.config.overlay_path {
+            return p.clone();
+        }
         self.metadata_dir().join("overlay")
     }
 

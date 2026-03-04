@@ -23,6 +23,10 @@ pub fn run(
     let tmp_dir = tempfile::tempdir().context("Failed to create temporary directory")?;
     let mountpoint = tmp_dir.path().to_path_buf();
 
+    // Create temp metadata dir for workspace config
+    let tmp_meta = tempfile::tempdir().context("Failed to create temporary metadata directory")?;
+    let metadata_dir = tmp_meta.path().to_path_buf();
+
     // Handle --editable / --overlay
     let (overlay, is_temp_overlay) = if let Some(o) = overlay {
         std::fs::create_dir_all(&o)?;
@@ -36,7 +40,19 @@ pub fn run(
         (None, false)
     };
 
-    let fs = Hexz::new(snap, uid, gid, overlay.clone(), None)?;
+    // Initialize workspace config so `hexz status` works
+    {
+        let config = crate::cmd::data::workspace::WorkspaceConfig {
+            base_archive: Some(std::fs::canonicalize(&hexz_path)?),
+            overlay_path: overlay.clone(),
+            remotes: std::collections::HashMap::new(),
+        };
+        let config_path = metadata_dir.join("config.json");
+        let f = std::fs::File::create(config_path)?;
+        serde_json::to_writer_pretty(f, &config)?;
+    }
+
+    let fs = Hexz::new(snap, uid, gid, overlay.clone(), Some(metadata_dir))?;
     
     let mut options = vec![
         fuser::MountOption::FSName("hexz".to_string()),
