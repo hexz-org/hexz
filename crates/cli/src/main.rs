@@ -111,7 +111,6 @@ fn main() -> anyhow::Result<()> {
             output,
             compression,
             block_size,
-            profile,
             silent,
         } => hexz_cli::cmd::data::convert::run(
             format,
@@ -119,7 +118,6 @@ fn main() -> anyhow::Result<()> {
             output,
             compression,
             block_size,
-            profile,
             silent,
         ),
 

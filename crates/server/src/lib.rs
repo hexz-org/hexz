@@ -111,13 +111,13 @@
 //! ```no_run
 //! use std::sync::Arc;
 //! use hexz_core::Archive;
-//! use hexz_store::local::ArchiveBackend;
+//! use hexz_store::local::FileBackend;
 //! use hexz_core::algo::compression::lz4::Lz4Compressor;
 //! use hexz_server::serve_http;
 //!
 //! # #[tokio::main]
 //! # async fn main() -> anyhow::Result<()> {
-//! let backend = Arc::new(ArchiveBackend::new("archive.hxz".as_ref())?);
+//! let backend = Arc::new(FileBackend::new("archive.hxz".as_ref())?);
 //! let compressor = Box::new(Lz4Compressor::new());
 //! let snap = Archive::new(backend, compressor, None)?;
 //!
@@ -132,13 +132,13 @@
 //! ```no_run
 //! use std::sync::Arc;
 //! use hexz_core::Archive;
-//! use hexz_store::local::ArchiveBackend;
+//! use hexz_store::local::FileBackend;
 //! use hexz_core::algo::compression::lz4::Lz4Compressor;
 //! use hexz_server::serve_nbd;
 //!
 //! # #[tokio::main]
 //! # async fn main() -> anyhow::Result<()> {
-//! let backend = Arc::new(ArchiveBackend::new("archive.hxz".as_ref())?);
+//! let backend = Arc::new(FileBackend::new("archive.hxz".as_ref())?);
 //! let compressor = Box::new(Lz4Compressor::new());
 //! let snap = Archive::new(backend, compressor, None)?;
 //!
@@ -368,13 +368,13 @@ struct AppState {
 /// ```no_run
 /// use std::sync::Arc;
 /// use hexz_core::Archive;
-/// use hexz_store::local::ArchiveBackend;
+/// use hexz_store::local::FileBackend;
 /// use hexz_core::algo::compression::lz4::Lz4Compressor;
 /// use hexz_server::serve_nbd;
 ///
 /// # #[tokio::main]
 /// # async fn main() -> anyhow::Result<()> {
-/// let backend = Arc::new(ArchiveBackend::new("vm_archive.hxz".as_ref())?);
+/// let backend = Arc::new(FileBackend::new("vm_archive.hxz".as_ref())?);
 /// let compressor = Box::new(Lz4Compressor::new());
 /// let snap = Archive::new(backend, compressor, None)?;
 ///
@@ -591,13 +591,13 @@ pub async fn serve_nbd(snap: Arc<Archive>, port: u16, bind: &str) -> anyhow::Res
 /// ```no_run
 /// use std::sync::Arc;
 /// use hexz_core::Archive;
-/// use hexz_store::local::ArchiveBackend;
+/// use hexz_store::local::FileBackend;
 /// use hexz_core::algo::compression::lz4::Lz4Compressor;
 /// use hexz_server::serve_s3_gateway;
 ///
 /// # #[tokio::main]
 /// # async fn main() -> anyhow::Result<()> {
-/// let backend = Arc::new(ArchiveBackend::new("archive.hxz".as_ref())?);
+/// let backend = Arc::new(FileBackend::new("archive.hxz".as_ref())?);
 /// let compressor = Box::new(Lz4Compressor::new());
 /// let snap = Archive::new(backend, compressor, None)?;
 ///
@@ -768,13 +768,13 @@ pub async fn serve_s3_gateway(_snap: Arc<Archive>, port: u16) -> anyhow::Result<
 /// ```no_run
 /// use std::sync::Arc;
 /// use hexz_core::Archive;
-/// use hexz_store::local::ArchiveBackend;
+/// use hexz_store::local::FileBackend;
 /// use hexz_core::algo::compression::lz4::Lz4Compressor;
 /// use hexz_server::serve_http;
 ///
 /// # #[tokio::main]
 /// # async fn main() -> anyhow::Result<()> {
-/// let backend = Arc::new(ArchiveBackend::new("archive.hxz".as_ref())?);
+/// let backend = Arc::new(FileBackend::new("archive.hxz".as_ref())?);
 /// let compressor = Box::new(Lz4Compressor::new());
 /// let snap = Archive::new(backend, compressor, None)?;
 ///

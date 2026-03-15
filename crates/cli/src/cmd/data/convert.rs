@@ -2,8 +2,6 @@
 //!
 //! Supports:
 //! - **tar**: Pure Rust via the `tar` crate (streaming, no extraction)
-//! - **hdf5**: Delegates to Python (`hexz.convert()`)
-//! - **webdataset**: Delegates to Python (`hexz.convert()`)
 
 use crate::ui::progress::create_progress_bar;
 use anyhow::{Context, Result, bail};
@@ -22,7 +20,6 @@ pub fn run(
     output: PathBuf,
     compression: String,
     block_size: u32,
-    profile: Option<String>,
     silent: bool,
 ) -> Result<()> {
     if !silent {
@@ -33,16 +30,7 @@ pub fn run(
     }
     match format.to_lowercase().as_str() {
         "tar" => convert_tar(input, output, compression, block_size, silent),
-        "hdf5" | "webdataset" => convert_via_python(
-            &format,
-            input,
-            output,
-            compression,
-            block_size,
-            profile,
-            silent,
-        ),
-        other => bail!("Unknown format: {other:?}. Supported formats: tar, hdf5, webdataset"),
+        other => bail!("Unknown format: {other:?}. Supported formats: tar"),
     }
 }
 
@@ -178,51 +166,3 @@ fn convert_tar(
     Ok(())
 }
 
-/// Convert hdf5/webdataset by delegating to Python hexz.convert().
-fn convert_via_python(
-    format: &str,
-    input: PathBuf,
-    output: PathBuf,
-    compression: String,
-    block_size: u32,
-    profile: Option<String>,
-    silent: bool,
-) -> Result<()> {
-    if !silent {
-        println!("  {} Converting {} via Python...", "→".yellow(), format.cyan());
-    }
-
-    let profile_arg = match profile {
-        Some(ref p) => format!(", profile={p:?}"),
-        None => String::new(),
-    };
-
-    let python_code = format!(
-        r#"import hexz; hexz.convert({input:?}, {output:?}, format={format:?}, compression={compression:?}, block_size={block_size}{profile_arg})"#,
-        input = input.display().to_string(),
-        output = output.display().to_string(),
-    );
-
-    let status = std::process::Command::new("python3")
-        .arg("-c")
-        .arg(&python_code)
-        .status()
-        .context(
-            "Failed to run Python. Ensure Python 3 and the hexz package are installed.\n\
-             Install with: pip install hexz[hdf5]",
-        )?;
-
-    if !status.success() {
-        bail!(
-            "Python conversion failed (exit code: {:?}). \
-             Ensure the hexz Python package is installed: pip install hexz",
-            status.code()
-        );
-    }
-
-    if !silent {
-        println!("\n  {} Conversion complete.", "✓".green());
-    }
-
-    Ok(())
-}

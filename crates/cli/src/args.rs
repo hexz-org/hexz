@@ -135,7 +135,7 @@ pub enum Commands {
     /// Convert external data formats into Hexz archives
     #[command(display_order = 6)]
     Convert {
-        /// Input format (tar, hdf5, webdataset)
+        /// Input format (tar)
         format: String,
 
         /// Input path
@@ -151,10 +151,6 @@ pub enum Commands {
         /// Block size
         #[arg(long, default_value_t = 65536)]
         block_size: u32,
-
-        /// Profile name
-        #[arg(short, long)]
-        profile: Option<String>,
 
         /// Suppress output
         #[arg(long, short)]

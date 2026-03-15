@@ -56,6 +56,9 @@ impl Header {
         let mut header_bytes = [0u8; super::magic::HEADER_SIZE];
         reader.read_exact(&mut header_bytes)?;
         let header: Header = bincode::deserialize(&header_bytes)?;
+        if &header.magic != MAGIC_BYTES {
+            return Err(hexz_common::Error::Format("Invalid magic bytes".into()));
+        }
         Ok(header)
     }
 
@@ -65,6 +68,9 @@ impl Header {
     ) -> hexz_common::Result<Self> {
         let header_bytes = backend.read_exact(0, super::magic::HEADER_SIZE)?;
         let header: Header = bincode::deserialize(&header_bytes)?;
+        if &header.magic != MAGIC_BYTES {
+            return Err(hexz_common::Error::Format("Invalid magic bytes".into()));
+        }
         Ok(header)
     }
 

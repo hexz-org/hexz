@@ -241,18 +241,18 @@ fn test_cdc_deduplication() {
 #[test]
 fn test_cdc_dual_stream() {
     let temp_dir = TempDir::new().unwrap();
-    let disk_path = temp_dir.path().join("disk.img");
-    let mem_path = temp_dir.path().join("mem.img");
+    let input_dir = temp_dir.path().join("input");
+    fs::create_dir(&input_dir).unwrap();
 
     let disk_data = vec![0xDD; 256 * 1024];
     let mem_data = vec![0xCC; 128 * 1024];
-    fs::write(&disk_path, &disk_data).unwrap();
-    fs::write(&mem_path, &mem_data).unwrap();
+    fs::write(input_dir.join("disk"), &disk_data).unwrap();
+    fs::write(input_dir.join("memory"), &mem_data).unwrap();
 
     let output_path = temp_dir.path().join("cdc_dual.hxz");
 
     let config = PackConfig {
-        input: disk_path,
+        input: input_dir,
         output: output_path.clone(),
         compression: "lz4".to_string(),
         encrypt: false,

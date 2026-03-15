@@ -1372,7 +1372,6 @@ dependencies = [
  "fastcdc",
  "hexz-common",
  "hmac",
- "indexmap",
  "lru",
  "lz4_flex",
  "pbkdf2",

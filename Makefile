@@ -4,7 +4,7 @@
 #  Run from repo root.  make help  for targets.
 # ═══════════════════════════════════════════════════════════════════════════════
 
-SHELL           := /bin/bash
+SHELL           := bash
 .DEFAULT_GOAL   := help
 
 # ── Paths & tools ─────────────────────────────────────────────────────────────
@@ -20,7 +20,7 @@ BOLD   := \033[1m
 RESET  := \033[0m
 
 # ── Phony ────────────────────────────────────────────────────────────────────
-.PHONY: help build rust python develop install clean clippy check fmt
+.PHONY: help build rust python develop install clean clippy check fmt test
 
 help:
 	@printf "\n$(BOLD)Hexz$(RESET) — snapshot storage engine\n\n"
@@ -30,6 +30,7 @@ help:
 	@printf "    %-35s  Build Python extension wheel\n" "make python"
 	@printf "    %-35s  Install Python extension (editable)\n" "make develop"
 	@printf "    %-35s  Install hexz CLI locally\n" "make install"
+	@printf "    %-35s  Run all workspace tests\n" "make test"
 	@printf "\n  $(CYAN)Quality$(RESET)\n"
 	@printf "    %-35s  Run clippy with strict lints\n" "make clippy"
 	@printf "    %-35s  Fast workspace type check\n" "make check"
@@ -65,6 +66,10 @@ check:
 fmt:
 	@printf "$(GREEN)Formatting…$(RESET)\n"
 	$(CARGO) fmt --all
+
+test:
+	@printf "$(GREEN)Running tests…$(RESET)\n"
+	$(CARGO) test --workspace
 
 clean:
 	@printf "$(GREEN)Cleaning artifacts…$(RESET)\n"

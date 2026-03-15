@@ -1,7 +1,7 @@
 //! Unit tests for VFS layer: make_attr, InodeType, and Overlay.
 
 use fuser::FileType;
-use hexz_fuse::vfs::attr::make_attr;
+use hexz_fuse::vfs::make_attr;
 
 // ─── make_attr tests ───────────────────────────────────────────────────────
 

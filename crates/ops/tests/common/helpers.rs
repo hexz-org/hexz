@@ -203,7 +203,9 @@ pub fn create_simple_archive() -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn 
     Ok((final_snap, data))
 }
 
-/// Create a archive with memory data using PackConfig
+/// Create a archive with memory data using PackConfig.
+///
+/// Packs a directory containing `disk` (Main stream) and `memory` (Auxiliary stream).
 pub fn create_archive_with_memory()
 -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn std::error::Error>> {
     use hexz_ops::pack::{PackConfig, pack_archive};
@@ -216,15 +218,16 @@ pub fn create_archive_with_memory()
         .collect::<Vec<u8>>();
     let mem_data = vec![0xAA; 256 * 1024];
 
-    let disk_path = temp_dir.path().join("disk.img");
-    let mem_path = temp_dir.path().join("mem.img");
-    fs::write(&disk_path, &disk_data)?;
-    fs::write(&mem_path, &mem_data)?;
+    // Create input directory with `disk` and `memory` files
+    let input_dir = temp_dir.path().join("input");
+    fs::create_dir(&input_dir)?;
+    fs::write(input_dir.join("disk"), &disk_data)?;
+    fs::write(input_dir.join("memory"), &mem_data)?;
 
     let snap_path = temp_dir.path().join("archive.hxz");
 
     let config = PackConfig {
-        input: disk_path,
+        input: input_dir,
         output: snap_path.clone(),
         compression: "lz4".to_string(),
         encrypt: false,

@@ -169,8 +169,7 @@
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = PackConfig {
-//!     disk: Some(PathBuf::from("disk.raw")),
-//!     memory: None,
+//!     input: PathBuf::from("disk.raw"),
 //!     output: PathBuf::from("archive.hxz"),
 //!     compression: "lz4".to_string(),
 //!     ..Default::default()
@@ -189,7 +188,7 @@
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = PackConfig {
-//!     disk: Some(PathBuf::from("ubuntu.qcow2")),
+//!     input: PathBuf::from("ubuntu.qcow2"),
 //!     output: PathBuf::from("ubuntu.hxz"),
 //!     compression: "zstd".to_string(),
 //!     train_dict: true,         // Train dictionary for better ratio
@@ -214,7 +213,7 @@
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = PackConfig {
-//!     disk: Some(PathBuf::from("disk.raw")),
+//!     input: PathBuf::from("disk.raw"),
 //!     output: PathBuf::from("archive.hxz"),
 //!     ..Default::default()
 //! };
@@ -611,7 +610,7 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = PackConfig {
-///     disk: Some(PathBuf::from("disk.raw")),
+///     input: PathBuf::from("disk.raw"),
 ///     output: PathBuf::from("archive.hxz"),
 ///     ..Default::default()
 /// };
@@ -629,7 +628,7 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = PackConfig {
-///     disk: Some(PathBuf::from("ubuntu.qcow2")),
+///     input: PathBuf::from("ubuntu.qcow2"),
 ///     output: PathBuf::from("ubuntu.hxz"),
 ///     compression: "zstd".to_string(),
 ///     train_dict: true,
@@ -652,7 +651,7 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = PackConfig {
-///     disk: Some(PathBuf::from("sensitive.raw")),
+///     input: PathBuf::from("sensitive.raw"),
 ///     output: PathBuf::from("sensitive.hxz"),
 ///     encrypt: true,
 ///     password: Some("strong_passphrase".to_string()),
@@ -673,7 +672,7 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = PackConfig {
-///     disk: Some(PathBuf::from("incremental-backup.raw")),
+///     input: PathBuf::from("incremental-backup.raw"),
 ///     output: PathBuf::from("backup.hxz"),
 ///     min_chunk: Some(16384),   // 16 KiB
 ///     avg_chunk: Some(65536),   // 64 KiB
@@ -710,14 +709,14 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 /// # use std::path::PathBuf;
 /// # use std::fs;
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let mut config = PackConfig {
-///     disk: Some(PathBuf::from("disk.raw")),
-///     output: PathBuf::from("archive.st.tmp"),
+/// let config = PackConfig {
+///     input: PathBuf::from("disk.raw"),
+///     output: PathBuf::from("archive.hxz.tmp"),
 ///     ..Default::default()
 /// };
 ///
-/// pack_archive::<fn(u64, u64)>(config.clone(), None)?;
-/// fs::rename("archive.st.tmp", "archive.hxz")?;
+/// pack_archive::<fn(u64, u64)>(config, None)?;
+/// fs::rename("archive.hxz.tmp", "archive.hxz")?;
 /// # Ok(())
 /// # }
 /// ```
@@ -869,7 +868,10 @@ where
     Ok(())
 }
 
-/// Recursively packs a directory into the Main archive stream.
+/// Recursively packs a directory into Main (and optionally Auxiliary) archive streams.
+///
+/// A file named `memory` at the root of the input directory is packed into the
+/// Auxiliary stream. All other files go into the Main stream.
 fn pack_directory<F>(
     root: &Path,
     writer: &mut ArchiveWriter,
@@ -881,28 +883,9 @@ fn pack_directory<F>(
 where
     F: Fn(u64, u64) + Send + Sync,
 {
-    let mut files = Vec::new();
-    let mut current_logical_offset = 0u64;
-
-    // Calculate total size for progress bar using ignore-aware walker
-    let total_size: u64 = WalkBuilder::new(root)
-        .standard_filters(true) // respects .gitignore, etc.
-        .add_custom_ignore_filename(".hexzignore")
-        .hidden(false) // we want to pack hidden files by default unless ignored
-        .build()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_some_and(|ft| ft.is_file()))
-        .filter(|e| !e.path().components().any(|c| c.as_os_str() == ".hexz"))
-        .map(|e| e.metadata().map(|m| m.len()).unwrap_or(0))
-        .sum();
-
-    let progress_bar = if config.show_progress && progress_callback.is_none() && total_size > 0 {
-        Some(crate::progress::PackProgress::new(total_size, "Packing Directory"))
-    } else {
-        None
-    };
-
-    writer.begin_stream(true, total_size);
+    // Collect all file entries, separating main vs auxiliary
+    let mut main_entries: Vec<(PathBuf, String, std::fs::Metadata)> = Vec::new();
+    let mut aux_entries: Vec<(PathBuf, String, std::fs::Metadata)> = Vec::new();
 
     let walker = WalkBuilder::new(root)
         .standard_filters(true)
@@ -914,56 +897,107 @@ where
         if !entry.file_type().is_some_and(|ft| ft.is_file()) {
             continue;
         }
-
-        let path = entry.path();
-        
-        // Skip .hexz metadata directory
+        let path = entry.path().to_path_buf();
         if path.components().any(|c| c.as_os_str() == ".hexz") {
             continue;
         }
-
         let rel_path = path.strip_prefix(root).unwrap().to_string_lossy().into_owned();
         let metadata = entry.metadata().map_err(|e| Error::Io(std::io::Error::other(e.to_string())))?;
-        let size = metadata.len();
 
+        // A file named "memory" at the directory root goes to the Auxiliary stream
+        if rel_path == "memory" {
+            aux_entries.push((path, rel_path, metadata));
+        } else {
+            main_entries.push((path, rel_path, metadata));
+        }
+    }
+
+    let main_size: u64 = main_entries.iter().map(|(_, _, m)| m.len()).sum();
+    let aux_size: u64 = aux_entries.iter().map(|(_, _, m)| m.len()).sum();
+    let total_size = main_size + aux_size;
+
+    let progress_bar = if config.show_progress && progress_callback.is_none() && total_size > 0 {
+        Some(crate::progress::PackProgress::new(total_size, "Packing Directory"))
+    } else {
+        None
+    };
+
+    // Pack main stream
+    let mut files = Vec::new();
+    let mut current_logical_offset = 0u64;
+    let mut global_progress = 0u64;
+
+    writer.begin_stream(true, main_size);
+
+    for (path, rel_path, metadata) in &main_entries {
+        let size = metadata.len();
         let file_entry = FileEntry {
-            path: rel_path,
+            path: rel_path.clone(),
             offset: current_logical_offset,
             size,
-            mode: if cfg!(unix) { metadata.mode() } else { 0o644 },
+            mode: { #[cfg(unix)] { metadata.mode() } #[cfg(not(unix))] { 0o644 } },
             mtime: metadata.modified()?.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
         };
 
+        let cur_offset = current_logical_offset;
         let cb = |pos: u64, _total: u64| {
-            let global_pos = current_logical_offset + pos;
+            let gp = global_progress + pos;
             if let Some(ref pb) = progress_bar {
-                pb.set_position(global_pos);
+                pb.set_position(gp);
             }
             if let Some(ref cb) = progress_callback {
-                cb(global_pos, total_size);
+                cb(cur_offset + pos, total_size);
             }
         };
 
-        pack_file_to_stream(
-            path,
-            writer,
-            cdc_params,
-            config,
-            dictionary.clone(),
-            Some(&cb),
-        )?;
-
+        pack_file_to_stream(path, writer, cdc_params, config, dictionary.clone(), Some(&cb))?;
         writer.flush_stream()?;
 
         files.push(file_entry);
         current_logical_offset = writer.current_logical_pos();
+        global_progress += size;
+    }
+
+    writer.end_stream()?;
+
+    // Pack auxiliary stream if there are memory files
+    if !aux_entries.is_empty() {
+        writer.begin_stream(false, aux_size);
+
+        for (path, rel_path, metadata) in &aux_entries {
+            let size = metadata.len();
+            let file_entry = FileEntry {
+                path: rel_path.clone(),
+                offset: 0,
+                size,
+                mode: { #[cfg(unix)] { metadata.mode() } #[cfg(not(unix))] { 0o644 } },
+                mtime: metadata.modified()?.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+            };
+
+            let cb = |pos: u64, _total: u64| {
+                let gp = global_progress + pos;
+                if let Some(ref pb) = progress_bar {
+                    pb.set_position(gp);
+                }
+                if let Some(ref cb) = progress_callback {
+                    cb(gp, total_size);
+                }
+            };
+
+            pack_file_to_stream(path, writer, cdc_params, config, dictionary.clone(), Some(&cb))?;
+            writer.flush_stream()?;
+
+            files.push(file_entry);
+            global_progress += size;
+        }
+
+        writer.end_stream()?;
     }
 
     if let Some(ref pb) = progress_bar {
         pb.finish();
     }
 
-    writer.end_stream()?;
     Ok(ArchiveManifest { files })
 }
 

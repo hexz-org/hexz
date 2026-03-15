@@ -182,16 +182,16 @@ fn test_encrypted_varied_data() {
 fn test_encrypted_dual_stream() {
     let temp_dir = TempDir::new().unwrap();
 
-    let disk_path = temp_dir.path().join("disk.img");
-    let mem_path = temp_dir.path().join("mem.img");
-    fs::write(&disk_path, vec![0xDD; 256 * 1024]).unwrap();
-    fs::write(&mem_path, vec![0xCC; 128 * 1024]).unwrap();
+    let input_dir = temp_dir.path().join("input");
+    fs::create_dir(&input_dir).unwrap();
+    fs::write(input_dir.join("disk"), vec![0xDD; 256 * 1024]).unwrap();
+    fs::write(input_dir.join("memory"), vec![0xCC; 128 * 1024]).unwrap();
 
     let output_path = temp_dir.path().join("encrypted.hxz");
     let password = "dual_stream_pw";
 
     let config = PackConfig {
-        input: disk_path,
+        input: input_dir,
         output: output_path.clone(),
         compression: "lz4".to_string(),
         encrypt: true,

@@ -119,7 +119,7 @@
 //! Add test fixtures for the new format version:
 //!
 //! ```rust,no_run
-//! # fn load_fixture(_: &str) -> hexz_core::File { todo!() }
+//! # fn load_fixture(_: &str) -> hexz_core::Archive { todo!() }
 //! #[test]
 //! fn test_read_v2_archive() {
 //!     let archive = load_fixture("testdata/v2_archive.hxz");

@@ -83,6 +83,9 @@ criterion/
 .criterion/
 tools/perf/results/
 
+# Nix / direnv
+.direnv/
+
 # Fuzzing artifacts (corpus seeds are committed, but runtime artifacts are not)
 fuzz/artifacts/
 fuzz/corpus/*

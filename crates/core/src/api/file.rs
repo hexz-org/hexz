@@ -504,7 +504,12 @@ impl Archive {
         offset: u64,
         len: usize,
     ) -> Result<Vec<u8>> {
-        let mut buffer = vec![0u8; len];
+        let stream_size = self.size(stream);
+        if offset >= stream_size {
+            return Ok(Vec::new());
+        }
+        let actual_len = std::cmp::min(len as u64, stream_size - offset) as usize;
+        let mut buffer = vec![0u8; actual_len];
         self.read_at_into(stream, offset, &mut buffer)?;
         Ok(buffer)
     }
