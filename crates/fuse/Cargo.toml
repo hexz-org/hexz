@@ -17,7 +17,7 @@ workspace = true
 hexz-core.workspace = true
 hexz-store.workspace = true
 hexz-common.workspace = true
-hexz-vfs = { path = "../vfs" }
+hexz-vfs.workspace = true
 anyhow.workspace = true
 fuser = "0.14"
 libc = "0.2"
