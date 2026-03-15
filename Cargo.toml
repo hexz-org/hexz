@@ -14,7 +14,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.7.0"
+version = "0.8.0"
 edition = "2024"
 authors = ["Will McCallion"]
 repository = "https://github.com/hexz-org/hexz"
@@ -89,13 +89,13 @@ missing_crate_level_docs = "deny"
 broken_intra_doc_links = "deny"
 
 [workspace.dependencies]
-hexz-common = { path = "crates/common", version = "0.7.0", default-features = false }
-hexz-core = { path = "crates/core", version = "0.7.0", default-features = false }
-hexz-store = { path = "crates/store", version = "0.7.0" }
-hexz-ops = { path = "crates/ops", version = "0.7.0" }
-hexz-vfs = { path = "crates/vfs", version = "0.7.0" }
-hexz-fuse = { path = "crates/fuse", version = "0.7.0" }
-hexz-server = { path = "crates/server", version = "0.7.0" }
+hexz-common = { path = "crates/common", version = "0.8.0", default-features = false }
+hexz-core = { path = "crates/core", version = "0.8.0", default-features = false }
+hexz-store = { path = "crates/store", version = "0.8.0" }
+hexz-ops = { path = "crates/ops", version = "0.8.0" }
+hexz-vfs = { path = "crates/vfs", version = "0.8.0" }
+hexz-fuse = { path = "crates/fuse", version = "0.8.0" }
+hexz-server = { path = "crates/server", version = "0.8.0" }
 
 anyhow = "1.0"
 thiserror = "1.0"

@@ -167,6 +167,8 @@ jobs:
           sleep 30
           cargo publish -p hexz-ops --no-verify
           sleep 30
+          cargo publish -p hexz-vfs --no-verify
+          sleep 30
           cargo publish -p hexz-fuse --no-verify
           cargo publish -p hexz-server --no-verify
           sleep 30
