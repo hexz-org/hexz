@@ -56,7 +56,7 @@ fn test_lz4_incompressible() {
     assert_eq!(decompressed, original);
 }
 
-/// Test LZ4 decompress_into with pre-allocated buffer.
+/// Test LZ4 `decompress_into` with pre-allocated buffer.
 #[test]
 fn test_lz4_decompress_into() {
     let compressor = Lz4Compressor::new();
@@ -154,7 +154,7 @@ fn test_zstd_with_dictionary() {
     assert!(dict.len() <= 4096);
 
     // Use dictionary for compression
-    let compressor = ZstdCompressor::new(3, Some(dict));
+    let compressor = ZstdCompressor::new(3, Some(&dict));
 
     let original = samples[0].clone();
     let compressed = compressor.compress(&original).expect("Compression failed");
@@ -165,7 +165,7 @@ fn test_zstd_with_dictionary() {
     assert_eq!(decompressed, original);
 }
 
-/// Test Zstandard decompress_into.
+/// Test Zstandard `decompress_into`.
 #[test]
 fn test_zstd_decompress_into() {
     let compressor = ZstdCompressor::new(3, None);
@@ -262,7 +262,7 @@ fn test_zstd_invalid_data() {
     assert!(result.is_err());
 }
 
-/// Test buffer too small for decompress_into.
+/// Test buffer too small for `decompress_into`.
 #[test]
 fn test_decompress_into_buffer_too_small() {
     let compressor = Lz4Compressor::new();

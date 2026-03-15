@@ -4,20 +4,24 @@ use anyhow::{Context, Result};
 use hexz_fuse::fuse::Hexz;
 use std::path::PathBuf;
 use std::process::Command;
-use colored::*;
+use colored::Colorize;
 
 use super::mount::open_archive;
 
+/// Execute the `hexz shell` command to mount an archive and spawn a subshell.
+#[allow(unsafe_code)]
 pub fn run(
-    hexz_path: String,
+    hexz_path: &str,
     overlay: Option<PathBuf>,
     editable: bool,
-    cache_size: Option<String>,
+    cache_size: Option<&str>,
 ) -> Result<()> {
+    // SAFETY: getuid() is always safe to call
     let uid = unsafe { libc::getuid() };
+    // SAFETY: getgid() is always safe to call
     let gid = unsafe { libc::getgid() };
 
-    let snap = open_archive(&hexz_path, cache_size, None)?;
+    let snap = open_archive(hexz_path, cache_size, None)?;
 
     // Create temp mountpoint
     let tmp_dir = tempfile::tempdir().context("Failed to create temporary directory")?;
@@ -44,7 +48,7 @@ pub fn run(
     {
         let host_cwd = std::env::current_dir().ok();
         let config = crate::cmd::data::workspace::WorkspaceConfig {
-            base_archive: Some(std::fs::canonicalize(&hexz_path)?),
+            base_archive: Some(std::fs::canonicalize(hexz_path)?),
             overlay_path: overlay.clone(),
             host_cwd,
             remotes: std::collections::HashMap::new(),
@@ -54,7 +58,7 @@ pub fn run(
         serde_json::to_writer_pretty(f, &config)?;
     }
 
-    let fs = Hexz::new(snap, uid, gid, overlay.clone(), Some(metadata_dir))?;
+    let fs = Hexz::new(snap, uid, gid, overlay.clone(), Some(&metadata_dir))?;
     
     let mut options = vec![
         fuser::MountOption::FSName("hexz".to_string()),
@@ -73,9 +77,9 @@ pub fn run(
     // Mount in background thread
     let mountpoint_clone = mountpoint.clone();
     let options_clone = options.clone();
-    std::thread::spawn(move || {
+    drop(std::thread::spawn(move || {
         let _ = fuser::mount2(fs, mountpoint_clone, &options_clone);
-    });
+    }));
 
     // Give FUSE a moment to actually mount
     std::thread::sleep(std::time::Duration::from_millis(200));

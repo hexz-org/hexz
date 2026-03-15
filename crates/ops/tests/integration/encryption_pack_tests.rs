@@ -11,7 +11,7 @@ use hexz_core::algo::encryption::aes_gcm::AesGcmEncryptor;
 use hexz_core::format::header::Header;
 use hexz_core::format::magic::HEADER_SIZE;
 use hexz_core::{Archive, ArchiveStream};
-use hexz_ops::pack::{PackConfig, pack_archive};
+use hexz_ops::pack::{PackConfig, PackTransformFlags, pack_archive};
 use hexz_store::local::FileBackend;
 use std::fs;
 use std::io::Write;
@@ -34,14 +34,13 @@ fn create_encrypted_archive(
         input: disk_path,
         output: output_path.clone(),
         compression: compression.to_string(),
-        encrypt: true,
         password: Some(password.to_string()),
-        train_dict: false,
+        transform: PackTransformFlags { encrypt: true, train_dict: false, ..Default::default() },
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).expect("Encrypted packing failed");
+    pack_archive(&config, None::<&fn(u64, u64)>).expect("Encrypted packing failed");
     output_path
 }
 
@@ -152,14 +151,13 @@ fn test_encrypted_varied_data() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: true,
         password: Some(password.to_string()),
-        train_dict: false,
+        transform: PackTransformFlags { encrypt: true, train_dict: false, ..Default::default() },
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let archive = open_encrypted_archive(&output_path, password);
 
@@ -170,9 +168,7 @@ fn test_encrypted_varied_data() {
             .unwrap();
         assert!(
             read.iter().all(|&b| b == expected),
-            "Block {} mismatch: expected 0x{:02X}",
-            i,
-            expected
+            "Block {i} mismatch: expected 0x{expected:02X}"
         );
     }
 }
@@ -194,14 +190,13 @@ fn test_encrypted_dual_stream() {
         input: input_dir,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: true,
         password: Some(password.to_string()),
-        train_dict: false,
+        transform: PackTransformFlags { encrypt: true, train_dict: false, ..Default::default() },
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let archive = open_encrypted_archive(&output_path, password);
 
@@ -230,14 +225,13 @@ fn test_encrypted_pack_no_password_fails() {
         input: disk_path,
         output: output_path,
         compression: "lz4".to_string(),
-        encrypt: true,
         password: None, // Missing password
-        train_dict: false,
+        transform: PackTransformFlags { encrypt: true, train_dict: false, ..Default::default() },
         block_size: 65536,
         ..Default::default()
     };
 
-    let result = pack_archive(config, None::<fn(u64, u64)>);
+    let result = pack_archive(&config, None::<&fn(u64, u64)>);
     assert!(result.is_err(), "Should fail without password");
 }
 
@@ -263,8 +257,7 @@ fn test_encrypted_sequential_read() {
         assert_eq!(
             &chunk[..],
             &data[offset as usize..offset as usize + to_read],
-            "Mismatch at offset {}",
-            offset
+            "Mismatch at offset {offset}"
         );
         offset += to_read as u64;
     }

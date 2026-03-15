@@ -5,7 +5,13 @@ edition.workspace = true
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 description = "HTTP server for streaming Hexz data blocks"
+
+[lints]
+workspace = true
 
 [dependencies]
 hexz-core.workspace = true

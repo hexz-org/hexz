@@ -1,9 +1,9 @@
-use crate::common::*;
+use crate::common::{cargo, cmd, find_workspace_root, maturin, python, CYAN, GREEN, RESET};
 use anyhow::Result;
 
 const COV_IGNORE_REGEX: &str = "(tests/|benches/|py_interface/|cmd/vm/boot\\.rs|cmd/vm/install\\.rs|cmd/vm/unmount\\.rs|cmd/sys/serve\\.rs|loader/src/lib\\.rs|tensor/numpy\\.rs|tools/xtask/)";
 
-#[derive(clap::Subcommand)]
+#[derive(Clone, Copy, clap::Subcommand)]
 pub enum CoverageCmd {
     /// Run both Rust and Python coverage
     All,

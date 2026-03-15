@@ -1,7 +1,7 @@
 //! HTTP backend tests with a real mock HTTP server.
 //!
-//! Uses std::net::TcpListener for a lightweight mock server to test
-//! the sync HTTP backend's read_exact and len methods.
+//! Uses `std::net::TcpListener` for a lightweight mock server to test
+//! the sync HTTP backend's `read_exact` and len methods.
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
@@ -11,7 +11,7 @@ use hexz_store::StorageBackend;
 use hexz_store::http::HttpBackend;
 
 /// Start a simple HTTP server that responds to HEAD and GET requests.
-/// Returns (address, join_handle).
+/// Returns (address, `join_handle`).
 fn start_mock_server(data: Vec<u8>) -> (String, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
@@ -20,10 +20,7 @@ fn start_mock_server(data: Vec<u8>) -> (String, thread::JoinHandle<()>) {
     let handle = thread::spawn(move || {
         // Handle up to 20 requests then exit
         for _ in 0..20 {
-            let stream = match listener.accept() {
-                Ok((s, _)) => s,
-                Err(_) => break,
-            };
+            let Ok((stream, _)) = listener.accept() else { break };
             handle_request(stream, &data);
         }
     });
@@ -115,10 +112,10 @@ fn handle_request(stream: std::net::TcpStream, data: &[u8]) {
 #[test]
 fn test_http_backend_with_mock_server() {
     let data = vec![0x42u8; 1024];
-    let (url, _handle) = start_mock_server(data.clone());
+    let (url, _handle) = start_mock_server(data);
 
     // allow_restricted=true since we're connecting to localhost
-    let backend = HttpBackend::new(url, true).unwrap();
+    let backend = HttpBackend::new(&url, true).unwrap();
 
     assert_eq!(backend.len(), 1024);
 }
@@ -129,7 +126,7 @@ fn test_http_backend_read_exact() {
     let data: Vec<u8> = (0..4096).map(|i| (i % 256) as u8).collect();
     let (url, _handle) = start_mock_server(data.clone());
 
-    let backend = HttpBackend::new(url, true).unwrap();
+    let backend = HttpBackend::new(&url, true).unwrap();
 
     // Read first 100 bytes
     let result = backend.read_exact(0, 100).unwrap();
@@ -143,7 +140,7 @@ fn test_http_backend_read_various_offsets() {
     let data: Vec<u8> = (0..8192).map(|i| (i % 256) as u8).collect();
     let (url, _handle) = start_mock_server(data.clone());
 
-    let backend = HttpBackend::new(url, true).unwrap();
+    let backend = HttpBackend::new(&url, true).unwrap();
 
     // Read from middle
     let result = backend.read_exact(1000, 500).unwrap();
@@ -151,13 +148,13 @@ fn test_http_backend_read_various_offsets() {
     assert_eq!(&result[..], &data[1000..1500]);
 }
 
-/// Test HTTP backend len() returns correct size.
+/// Test HTTP backend `len()` returns correct size.
 #[test]
 fn test_http_backend_len() {
     let data = vec![0xAA; 4096];
     let (url, _handle) = start_mock_server(data);
 
-    let backend = HttpBackend::new(url, true).unwrap();
+    let backend = HttpBackend::new(&url, true).unwrap();
     assert_eq!(backend.len(), 4096);
 }
 
@@ -167,7 +164,7 @@ fn test_http_backend_full_read() {
     let data: Vec<u8> = (0..2048).map(|i| (i % 256) as u8).collect();
     let (url, _handle) = start_mock_server(data.clone());
 
-    let backend = HttpBackend::new(url, true).unwrap();
+    let backend = HttpBackend::new(&url, true).unwrap();
 
     let result = backend.read_exact(0, 2048).unwrap();
     assert_eq!(result.len(), 2048);
@@ -209,7 +206,7 @@ fn test_http_backend_missing_content_length() {
 
     thread::sleep(std::time::Duration::from_millis(10));
 
-    let result = HttpBackend::new(url, true);
+    let result = HttpBackend::new(&url, true);
     assert!(result.is_err(), "Should fail without Content-Length header");
 }
 
@@ -238,17 +235,17 @@ fn test_http_backend_404_response() {
 
     thread::sleep(std::time::Duration::from_millis(10));
 
-    let result = HttpBackend::new(url, true);
+    let result = HttpBackend::new(&url, true);
     assert!(result.is_err(), "Should fail with 404 response");
 }
 
-/// Test HTTP backend error status during read_exact.
+/// Test HTTP backend error status during `read_exact`.
 #[test]
 fn test_http_backend_error_status_on_read() {
     let data = vec![0x42u8; 1024];
     let (url, _handle) = start_mock_server(data);
 
-    let backend = HttpBackend::new(url, true).unwrap();
+    let backend = HttpBackend::new(&url, true).unwrap();
 
     // Now spin up a server that returns 500 for GET requests.
     // We can't easily change the running server, so instead we test
@@ -268,7 +265,7 @@ fn test_http_backend_short_read() {
     let data = vec![0xBB; 512];
     let (url, _handle) = start_mock_server(data);
 
-    let backend = HttpBackend::new(url, true).unwrap();
+    let backend = HttpBackend::new(&url, true).unwrap();
     assert_eq!(backend.len(), 512);
 
     // Request more bytes than available — the range will be clamped

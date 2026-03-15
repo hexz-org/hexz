@@ -57,13 +57,10 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let command = match cli.command {
-        Some(c) => c,
-        None => {
-            let mut printer = Printer::new(Cli::command());
-            printer.print_help();
-            return Ok(());
-        }
+    let Some(command) = cli.command else {
+        let mut printer = Printer::new(Cli::command());
+        printer.print_help();
+        return Ok(());
     };
 
     match command {
@@ -96,14 +93,14 @@ fn main() -> anyhow::Result<()> {
         ),
 
         Commands::Extract { input, output } => {
-            hexz_cli::cmd::data::extract::run(input, Some(output))
+            hexz_cli::cmd::data::extract::run(&input, Some(output))
         }
 
-        Commands::Show { snap, json } => hexz_cli::cmd::data::inspect::run(snap, json),
+        Commands::Show { snap, json } => hexz_cli::cmd::data::inspect::run(&snap, json),
 
-        Commands::Diff { a, b } => hexz_cli::cmd::data::diff::run(a, b),
+        Commands::Diff { a, b } => hexz_cli::cmd::data::diff::run(&a, &b),
 
-        Commands::Log { dir } => hexz_cli::cmd::data::ls::run(dir),
+        Commands::Log { dir } => hexz_cli::cmd::data::ls::run(&dir),
 
         Commands::Convert {
             format,
@@ -113,10 +110,10 @@ fn main() -> anyhow::Result<()> {
             block_size,
             silent,
         } => hexz_cli::cmd::data::convert::run(
-            format,
-            input,
-            output,
-            compression,
+            &format,
+            &input,
+            &output,
+            &compression,
             block_size,
             silent,
         ),
@@ -143,11 +140,11 @@ fn main() -> anyhow::Result<()> {
             uid,
             gid,
         } => hexz_cli::cmd::data::mount::run(
-            snap, mountpoint, daemon, cache_size, uid, gid, overlay, editable, None,
+            &snap, &mountpoint, daemon, cache_size.as_deref(), uid, gid, overlay, editable, None,
         ),
 
         #[cfg(feature = "fuse")]
-        Commands::Unmount { mountpoint } => hexz_cli::cmd::data::unmount::run(mountpoint),
+        Commands::Unmount { mountpoint } => hexz_cli::cmd::data::unmount::run(&mountpoint),
 
         #[cfg(feature = "fuse")]
         Commands::Shell {
@@ -155,7 +152,7 @@ fn main() -> anyhow::Result<()> {
             overlay,
             editable,
             cache_size,
-        } => hexz_cli::cmd::data::shell::run(snap, overlay, editable, cache_size),
+        } => hexz_cli::cmd::data::shell::run(&snap, overlay, editable, cache_size.as_deref()),
 
         #[cfg(feature = "fuse")]
         Commands::Commit {
@@ -165,7 +162,7 @@ fn main() -> anyhow::Result<()> {
         } => hexz_cli::cmd::data::commit::run(output, mountpoint, base),
 
         #[cfg(feature = "fuse")]
-        Commands::Checkout { archive, path } => hexz_cli::cmd::data::checkout::run(archive, path),
+        Commands::Checkout { archive, path } => hexz_cli::cmd::data::checkout::run(&archive, &path),
 
         #[cfg(feature = "fuse")]
         Commands::Status { path } => hexz_cli::cmd::data::status::run(path),
@@ -177,10 +174,10 @@ fn main() -> anyhow::Result<()> {
         Commands::Remote { action } => hexz_cli::cmd::data::remote::run(action),
 
         #[cfg(feature = "fuse")]
-        Commands::Push { remote, archive } => hexz_cli::cmd::data::push::run(remote, archive),
+        Commands::Push { remote, archive } => hexz_cli::cmd::data::push::run(&remote, archive),
 
         #[cfg(feature = "fuse")]
-        Commands::Pull { remote } => hexz_cli::cmd::data::pull::run(remote),
+        Commands::Pull { remote } => hexz_cli::cmd::data::pull::run(&remote),
 
         #[cfg(feature = "server")]
         Commands::Serve {
@@ -188,16 +185,16 @@ fn main() -> anyhow::Result<()> {
             port,
             bind,
             daemon,
-        } => hexz_cli::cmd::sys::serve::run(snap, port, bind, daemon, false),
+        } => hexz_cli::cmd::sys::serve::run(&snap, port, &bind, daemon, false),
 
         #[cfg(feature = "signing")]
         Commands::Keygen { output_dir } => hexz_cli::cmd::sys::keygen::run(output_dir),
 
         #[cfg(feature = "signing")]
-        Commands::Sign { key, image } => hexz_cli::cmd::sys::sign::run(key, image),
+        Commands::Sign { key, image } => hexz_cli::cmd::sys::sign::run(&key, &image),
 
         #[cfg(feature = "signing")]
-        Commands::Verify { key, image } => hexz_cli::cmd::sys::verify::run(key, image),
+        Commands::Verify { key, image } => hexz_cli::cmd::sys::verify::run(&key, &image),
 
         Commands::Doctor => hexz_cli::cmd::sys::doctor::run(),
     }

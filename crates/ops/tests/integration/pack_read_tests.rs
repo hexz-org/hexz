@@ -9,7 +9,7 @@ use common::*;
 use hexz_core::algo::compression::lz4::Lz4Compressor;
 use hexz_core::algo::compression::zstd::ZstdCompressor;
 use hexz_core::{Archive, ArchiveStream};
-use hexz_ops::pack::{PackConfig, pack_archive};
+use hexz_ops::pack::{PackConfig, PackTransformFlags, pack_archive};
 use hexz_store::local::FileBackend;
 use std::fs;
 use std::io::Write;
@@ -37,12 +37,10 @@ fn test_pack_and_read_lz4() {
 
     // Pack the archive
     let config = PackConfig {
-        input: disk_path.clone(),
+        input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         min_chunk: Some(16384),
         avg_chunk: Some(65536),
@@ -50,7 +48,7 @@ fn test_pack_and_read_lz4() {
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).expect("Packing failed");
+    pack_archive(&config, None::<&fn(u64, u64)>).expect("Packing failed");
 
     // Verify archive was created
     assert!(output_path.exists());
@@ -100,14 +98,12 @@ fn test_pack_disk_and_memory() {
         input: input_dir,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).expect("Packing failed");
+    pack_archive(&config, None::<&fn(u64, u64)>).expect("Packing failed");
 
     // Read back
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
@@ -152,14 +148,12 @@ fn test_pack_varied_data() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).expect("Packing failed");
+    pack_archive(&config, None::<&fn(u64, u64)>).expect("Packing failed");
 
     // Read back and verify
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
@@ -175,8 +169,7 @@ fn test_pack_varied_data() {
             .unwrap();
         assert!(
             data.iter().all(|&b| b == expected_pattern),
-            "Block {} has wrong pattern",
-            i
+            "Block {i} has wrong pattern"
         );
     }
 }
@@ -192,14 +185,12 @@ fn test_random_access_patterns() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).expect("Packing failed");
+    pack_archive(&config, None::<&fn(u64, u64)>).expect("Packing failed");
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -222,9 +213,7 @@ fn test_random_access_patterns() {
         assert_eq!(
             data.len(),
             length,
-            "Read at {} with length {} failed",
-            offset,
-            length
+            "Read at {offset} with length {length} failed"
         );
         assert!(data.iter().all(|&b| b == 0x55));
     }
@@ -241,14 +230,12 @@ fn test_read_beyond_end() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).expect("Packing failed");
+    pack_archive(&config, None::<&fn(u64, u64)>).expect("Packing failed");
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -278,14 +265,12 @@ fn test_empty_archive() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).expect("Packing failed");
+    pack_archive(&config, None::<&fn(u64, u64)>).expect("Packing failed");
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -308,14 +293,12 @@ fn test_small_archive() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).expect("Packing failed");
+    pack_archive(&config, None::<&fn(u64, u64)>).expect("Packing failed");
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -340,14 +323,12 @@ fn test_pack_with_zstd_level1() {
         input: disk_path,
         output: output_path.clone(),
         compression: "zstd".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(ZstdCompressor::new(1, None));
@@ -368,14 +349,12 @@ fn test_pack_with_zstd_level9() {
         input: disk_path,
         output: output_path.clone(),
         compression: "zstd".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(ZstdCompressor::new(9, None));
@@ -406,14 +385,13 @@ fn test_pack_with_zstd_dictionary() {
         input: disk_path,
         output: output_path.clone(),
         compression: "zstd".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: true, // Enable dictionary training
+        transform: PackTransformFlags { encrypt: false, train_dict: true, ..Default::default() },
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     // Note: Reading with dictionary requires the dict to be embedded in archive
     // For now, just verify the archive was created
@@ -432,14 +410,12 @@ fn test_pack_with_4kb_blocks() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 4096, // Small blocks
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -461,14 +437,12 @@ fn test_pack_with_256kb_blocks() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 256 * 1024, // Large blocks
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -487,14 +461,12 @@ fn test_pack_with_1mb_blocks() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 1024 * 1024, // 1MB blocks
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -522,14 +494,12 @@ fn test_pack_random_data() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -555,14 +525,12 @@ fn test_pack_sparse_data() {
         input: disk_path,
         output: output_path.clone(),
         compression: "zstd".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(ZstdCompressor::new(3, None));
@@ -588,14 +556,12 @@ fn test_pack_structured_data() {
         input: disk_path,
         output: output_path.clone(),
         compression: "zstd".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(ZstdCompressor::new(3, None));
@@ -619,14 +585,12 @@ fn test_pack_10mb_file() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -646,7 +610,7 @@ fn test_pack_10mb_file() {
 }
 
 #[test]
-#[ignore] // Slow test - only run when needed
+#[ignore = "slow: 100 MiB archive round-trip"]
 fn test_pack_100mb_file() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 100 * 1024 * 1024, 0xAA);
@@ -656,14 +620,12 @@ fn test_pack_100mb_file() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -688,14 +650,12 @@ fn test_sequential_reads_full_file() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -741,14 +701,12 @@ fn test_pack_large_disk_small_memory() {
         input: input_dir,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -776,14 +734,12 @@ fn test_pack_equal_disk_and_memory() {
         input: input_dir,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -810,14 +766,12 @@ fn test_compression_ratio_zeros() {
         input: disk_path.clone(),
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let original_size = fs::metadata(&disk_path).unwrap().len();
     let compressed_size = fs::metadata(&output_path).unwrap().len();
@@ -842,14 +796,12 @@ fn test_pack_file_not_multiple_of_block_size() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -872,14 +824,12 @@ fn test_pack_single_block_file() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -908,14 +858,12 @@ fn test_pack_verify_all_patterns() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -934,8 +882,9 @@ fn test_pack_verify_all_patterns() {
 
 // --- read_at_into_uninit tests -------------------------------------------------
 
-/// read_at_into_uninit must return the same bytes as read_at for the same (offset, len).
+/// `read_at_into_uninit` must return the same bytes as `read_at` for the same (offset, len).
 #[test]
+#[allow(unsafe_code)]
 fn test_read_at_into_uninit_matches_read_at() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 1024 * 1024, 0x42);
@@ -945,13 +894,11 @@ fn test_read_at_into_uninit_matches_read_at() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
-    pack_archive(config, None::<fn(u64, u64)>).expect("Packing failed");
+    pack_archive(&config, None::<&fn(u64, u64)>).expect("Packing failed");
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -973,15 +920,17 @@ fn test_read_at_into_uninit_matches_read_at() {
         archive
             .read_at_into_uninit(ArchiveStream::Main, offset, &mut uninit_buf)
             .unwrap();
+        // SAFETY: `read_at_into_uninit` initialises every byte of the buffer on success.
         let actual: &[u8] = unsafe {
-            std::slice::from_raw_parts(uninit_buf.as_ptr() as *const u8, uninit_buf.len())
+            std::slice::from_raw_parts(uninit_buf.as_ptr().cast::<u8>(), uninit_buf.len())
         };
-        assert_eq!(actual, expected.as_slice(), "offset={} len={}", offset, len);
+        assert_eq!(actual, expected.as_slice(), "offset={offset} len={len}");
     }
 }
 
-/// read_at_into_uninit: offset past end zero-fills buffer; empty buffer is no-op.
+/// `read_at_into_uninit`: offset past end zero-fills buffer; empty buffer is no-op.
 #[test]
+#[allow(unsafe_code)]
 fn test_read_at_into_uninit_edge_cases() {
     let temp_dir = TempDir::new().unwrap();
     let disk_path = create_test_file(&temp_dir, "disk.img", 4096, 0xAB);
@@ -991,13 +940,11 @@ fn test_read_at_into_uninit_edge_cases() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 4096,
         ..Default::default()
     };
-    pack_archive(config, None::<fn(u64, u64)>).expect("Packing failed");
+    pack_archive(&config, None::<&fn(u64, u64)>).expect("Packing failed");
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -1014,8 +961,9 @@ fn test_read_at_into_uninit_edge_cases() {
     archive
         .read_at_into_uninit(ArchiveStream::Main, 10000, &mut buf_past_end)
         .unwrap();
+    // SAFETY: `read_at_into_uninit` initialises every byte of the buffer on success.
     let read_back: &[u8] = unsafe {
-        std::slice::from_raw_parts(buf_past_end.as_ptr() as *const u8, buf_past_end.len())
+        std::slice::from_raw_parts(buf_past_end.as_ptr().cast::<u8>(), buf_past_end.len())
     };
     assert_eq!(read_back, &[0u8; 8]);
 
@@ -1024,13 +972,14 @@ fn test_read_at_into_uninit_edge_cases() {
     archive
         .read_at_into_uninit(ArchiveStream::Main, 4080, &mut buf_over)
         .unwrap();
+    // SAFETY: `read_at_into_uninit` initialises every byte of the buffer on success.
     let read_back: &[u8] =
-        unsafe { std::slice::from_raw_parts(buf_over.as_ptr() as *const u8, buf_over.len()) };
+        unsafe { std::slice::from_raw_parts(buf_over.as_ptr().cast::<u8>(), buf_over.len()) };
     assert_eq!(read_back.len(), 16);
     assert_eq!(&read_back[..16], &[0xABu8; 16]); // stream is 4096, we read from 4080 so 16 bytes
 }
 
-/// read_at_into_uninit_bytes (&mut [u8] wrapper) matches read_at.
+/// `read_at_into_uninit_bytes` (&mut [u8] wrapper) matches `read_at`.
 #[test]
 fn test_read_at_into_uninit_bytes_matches_read_at() {
     let temp_dir = TempDir::new().unwrap();
@@ -1041,13 +990,11 @@ fn test_read_at_into_uninit_bytes_matches_read_at() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 4096,
         ..Default::default()
     };
-    pack_archive(config, None::<fn(u64, u64)>).expect("Packing failed");
+    pack_archive(&config, None::<&fn(u64, u64)>).expect("Packing failed");
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -1063,7 +1010,7 @@ fn test_read_at_into_uninit_bytes_matches_read_at() {
 
 // --- parallel read path tests -------------------------------------------------
 
-/// read_at and read_at_into_uninit_bytes return consistent data for multi-block reads.
+/// `read_at` and `read_at_into_uninit_bytes` return consistent data for multi-block reads.
 #[test]
 fn test_parallel_read_consistency() {
     let temp_dir = TempDir::new().unwrap();
@@ -1074,13 +1021,11 @@ fn test_parallel_read_consistency() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
-    pack_archive(config, None::<fn(u64, u64)>).expect("Packing failed");
+    pack_archive(&config, None::<&fn(u64, u64)>).expect("Packing failed");
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -1103,9 +1048,7 @@ fn test_parallel_read_consistency() {
         assert_eq!(
             &buf[..expected.len()],
             expected.as_slice(),
-            "offset={} len={}",
-            offset,
-            len
+            "offset={offset} len={len}"
         );
     }
 }

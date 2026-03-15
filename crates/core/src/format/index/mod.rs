@@ -147,12 +147,12 @@ pub const ENTRIES_PER_PAGE: usize = 4096;
 ///
 /// - **offset**: Physical byte offset in the archive file (where compressed data starts)
 /// - **length**: Compressed size in bytes (0 for sparse/zero blocks)
-/// - **logical_len**: Uncompressed size in bytes (original data size)
+/// - **`logical_len`**: Uncompressed size in bytes (original data size)
 /// - **checksum**: CRC32 of compressed data (for integrity verification)
 ///
 /// # Special Values
 ///
-/// - `offset = BLOCK_OFFSET_PARENT` (u64::MAX): Block stored in parent archive (thin archives)
+/// - `offset = BLOCK_OFFSET_PARENT` (`u64::MAX)`: Block stored in parent archive (thin archives)
 /// - `length = 0`: Sparse block (all zeros, not stored on disk)
 ///
 /// # Size
@@ -239,7 +239,7 @@ impl BlockInfo {
     /// // When reading this block, reader fills output buffer with zeros
     /// // without performing any I/O.
     /// ```
-    pub fn sparse(len: u32) -> Self {
+    pub const fn sparse(len: u32) -> Self {
         Self {
             offset: 0,
             length: 0,
@@ -273,14 +273,14 @@ impl BlockInfo {
     /// };
     /// assert!(!normal.is_sparse());
     /// ```
-    pub fn is_sparse(&self) -> bool {
+    pub const fn is_sparse(&self) -> bool {
         self.length == 0 && self.offset != u64::MAX
     }
 
     /// Tests whether this block is stored in the parent archive.
     ///
     /// For thin archives, blocks that haven't been modified are marked with
-    /// `offset = BLOCK_OFFSET_PARENT` (u64::MAX) and must be read from the
+    /// `offset = BLOCK_OFFSET_PARENT` (`u64::MAX`) and must be read from the
     /// parent archive instead of the current file.
     ///
     /// # Returns
@@ -301,7 +301,7 @@ impl BlockInfo {
     /// };
     /// assert!(parent_block.is_parent_ref());
     /// ```
-    pub fn is_parent_ref(&self) -> bool {
+    pub const fn is_parent_ref(&self) -> bool {
         self.offset == u64::MAX
     }
 }
@@ -316,8 +316,8 @@ impl BlockInfo {
 ///
 /// - **offset**: Physical byte offset of the serialized index page
 /// - **length**: Size of the serialized page in bytes
-/// - **start_block**: Global block index of the first block in this page
-/// - **start_logical**: Logical byte offset where this page's coverage begins
+/// - **`start_block`**: Global block index of the first block in this page
+/// - **`start_logical`**: Logical byte offset where this page's coverage begins
 ///
 /// # Usage
 ///
@@ -366,10 +366,10 @@ pub struct PageEntry {
 ///
 /// # Structure
 ///
-/// - **main_pages**: Index entries for the main stream (persistent storage)
-/// - **auxiliary_pages**: Index entries for the auxiliary stream (volatile state)
-/// - **main_size**: Total logical size of main stream (uncompressed bytes)
-/// - **auxiliary_size**: Total logical size of auxiliary stream (uncompressed bytes)
+/// - **`main_pages`**: Index entries for the main stream (persistent storage)
+/// - **`auxiliary_pages`**: Index entries for the auxiliary stream (volatile state)
+/// - **`main_size`**: Total logical size of main stream (uncompressed bytes)
+/// - **`auxiliary_size`**: Total logical size of auxiliary stream (uncompressed bytes)
 ///
 /// # Location
 ///
@@ -449,7 +449,7 @@ impl MasterIndex {
         reader: &mut R,
         index_offset: u64,
     ) -> hexz_common::Result<Self> {
-        reader.seek(std::io::SeekFrom::Start(index_offset))?;
+        _ = reader.seek(std::io::SeekFrom::Start(index_offset))?;
         let end = reader.seek(std::io::SeekFrom::End(0))?;
         let index_size = end.saturating_sub(index_offset);
         if index_size > Self::MAX_INDEX_SIZE {
@@ -459,10 +459,10 @@ impl MasterIndex {
                 Self::MAX_INDEX_SIZE
             )));
         }
-        reader.seek(std::io::SeekFrom::Start(index_offset))?;
+        _ = reader.seek(std::io::SeekFrom::Start(index_offset))?;
         let mut index_bytes = Vec::new();
-        reader.read_to_end(&mut index_bytes)?;
-        let master: MasterIndex = bincode::deserialize(&index_bytes)?;
+        _ = reader.read_to_end(&mut index_bytes)?;
+        let master: Self = bincode::deserialize(&index_bytes)?;
         Ok(master)
     }
 
@@ -472,10 +472,10 @@ impl MasterIndex {
         index_offset: u64,
         length: u64,
     ) -> hexz_common::Result<Self> {
-        reader.seek(std::io::SeekFrom::Start(index_offset))?;
+        _ = reader.seek(std::io::SeekFrom::Start(index_offset))?;
         let mut index_bytes = vec![0u8; length as usize];
         reader.read_exact(&mut index_bytes)?;
-        let master: MasterIndex = bincode::deserialize(&index_bytes)?;
+        let master: Self = bincode::deserialize(&index_bytes)?;
         Ok(master)
     }
 
@@ -497,7 +497,7 @@ impl MasterIndex {
             )));
         }
         let index_bytes = backend.read_exact(index_offset, index_size as usize)?;
-        let master: MasterIndex = bincode::deserialize(&index_bytes)?;
+        let master: Self = bincode::deserialize(&index_bytes)?;
         Ok(master)
     }
 }
@@ -538,14 +538,14 @@ impl MasterIndex {
 ///             offset: 4096,
 ///             length: 2048,
 ///             logical_len: 4096,
-///             checksum: 0x12345678,
+///             checksum: 0x1234_5678,
 ///             hash: [0u8; 32],
 ///         },
 ///         BlockInfo {
 ///             offset: 6144,
 ///             length: 1024,
 ///             logical_len: 4096,
-///             checksum: 0x9ABCDEF0,
+///             checksum: 0x9ABC_DEF0,
 ///             hash: [0u8; 32],
 ///         },
 ///     ],
@@ -580,7 +580,7 @@ mod tests {
 
     #[test]
     fn test_block_info_sparse_various_sizes() {
-        for size in [128, 1024, 4096, 65536, 1048576] {
+        for size in [128, 1024, 4096, 65536, 1_048_576] {
             let sparse = BlockInfo::sparse(size);
             assert_eq!(sparse.logical_len, size);
             assert!(sparse.is_sparse());
@@ -608,7 +608,7 @@ mod tests {
             offset: 4096,
             length: 2048,
             logical_len: 4096,
-            checksum: 0x12345678,
+            checksum: 0x1234_5678,
             hash: [0u8; 32],
         };
         assert!(!normal.is_sparse());
@@ -644,7 +644,7 @@ mod tests {
             offset: 4096,
             length: 2048,
             logical_len: 4096,
-            checksum: 0x12345678,
+            checksum: 0x1234_5678,
             hash: [0u8; 32],
         };
         assert!(!normal.is_parent_ref());
@@ -669,7 +669,7 @@ mod tests {
             offset: 4096,
             length: 2048,
             logical_len: 4096,
-            checksum: 0x12345678,
+            checksum: 0x1234_5678,
             hash: [0u8; 32],
         };
 
@@ -685,13 +685,13 @@ mod tests {
     #[test]
     fn test_page_entry_creation() {
         let entry = PageEntry {
-            offset: 1048576,
+            offset: 1_048_576,
             length: 65536,
             start_block: 0,
             start_logical: 0,
         };
 
-        assert_eq!(entry.offset, 1048576);
+        assert_eq!(entry.offset, 1_048_576);
         assert_eq!(entry.length, 65536);
         assert_eq!(entry.start_block, 0);
         assert_eq!(entry.start_logical, 0);
@@ -700,10 +700,10 @@ mod tests {
     #[test]
     fn test_page_entry_serialization() {
         let entry = PageEntry {
-            offset: 1048576,
+            offset: 1_048_576,
             length: 65536,
             start_block: 100,
-            start_logical: 409600,
+            start_logical: 409_600,
         };
 
         let bytes = bincode::serialize(&entry).unwrap();
@@ -738,7 +738,7 @@ mod tests {
                     offset: 69632,
                     length: 65536,
                     start_block: 4096,
-                    start_logical: 16777216,
+                    start_logical: 16_777_216,
                 },
             ],
             auxiliary_pages: vec![],
@@ -786,14 +786,14 @@ mod tests {
                     offset: 4096,
                     length: 2048,
                     logical_len: 4096,
-                    checksum: 0x12345678,
+                    checksum: 0x1234_5678,
                     hash: [0u8; 32],
                 },
                 BlockInfo {
                     offset: 6144,
                     length: 1024,
                     logical_len: 4096,
-                    checksum: 0x9ABCDEF0,
+                    checksum: 0x9ABC_DEF0,
                     hash: [0u8; 32],
                 },
             ],
@@ -812,14 +812,14 @@ mod tests {
                     offset: 4096,
                     length: 2048,
                     logical_len: 4096,
-                    checksum: 0x12345678,
+                    checksum: 0x1234_5678,
                     hash: [0u8; 32],
                 },
                 BlockInfo {
                     offset: 6144,
                     length: 1024,
                     logical_len: 4096,
-                    checksum: 0x9ABCDEF0,
+                    checksum: 0x9ABC_DEF0,
                     hash: [0u8; 32],
                 },
             ],

@@ -5,7 +5,13 @@ edition.workspace = true
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 description = "Python bindings for Hexz - high-performance deduplicated archives"
+
+[lints]
+workspace = true
 
 [lib]
 name = "hexz"

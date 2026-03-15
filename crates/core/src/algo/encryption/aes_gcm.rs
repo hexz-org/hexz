@@ -469,7 +469,7 @@ use std::fmt;
 ///
 /// # Implementation Details
 ///
-/// Internally uses the `aes-gcm` crate (RustCrypto), which provides:
+/// Internally uses the `aes-gcm` crate (`RustCrypto`), which provides:
 /// - **Hardware Acceleration**: AES-NI and PCLMULQDQ instructions on x86-64 (if available)
 /// - **Constant-Time Operations**: Timing-attack resistant implementation (subject to CPU
 ///   microarchitecture side channels)
@@ -742,6 +742,7 @@ impl AesGcmEncryptor {
     /// Minimum allowed salt length in bytes.
     const MIN_SALT_LENGTH: usize = 8;
 
+    /// Creates a new AES-256-GCM encryptor by deriving a key from the given password using PBKDF2.
     pub fn new(password: &[u8], salt: &[u8], iterations: u32) -> Result<Self> {
         use zeroize::Zeroize;
 
@@ -762,7 +763,7 @@ impl AesGcmEncryptor {
 
         let mut key = [0u8; AES_KEY_LENGTH];
         pbkdf2::<Hmac<Sha256>>(password, salt, iterations, &mut key)
-            .map_err(|e| Error::Encryption(format!("Key derivation failed: {}", e)))?;
+            .map_err(|e| Error::Encryption(format!("Key derivation failed: {e}")))?;
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key));
         key.zeroize();
         Ok(Self { cipher })
@@ -796,7 +797,7 @@ impl AesGcmEncryptor {
     ///
     /// # Parameters
     ///
-    /// - `block_idx`: The logical block index within the archive (0 to u64::MAX-1). Each
+    /// - `block_idx`: The logical block index within the archive (0 to `u64::MAX-1`). Each
     ///   index must be unique within a archive to ensure nonce uniqueness.
     ///
     /// # Returns
@@ -850,12 +851,12 @@ impl AesGcmEncryptor {
     /// # use hexz_core::algo::encryption::AesGcmEncryptor;
     /// # let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 100_000)?;
     /// // Internal usage (not directly callable, but conceptually):
-    /// // let nonce = encryptor.generate_nonce(42);
+    /// // let nonce = AesGcmEncryptor::generate_nonce(42);
     /// // Result: [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2A]
     /// //          └─── Reserved (4 bytes) ──┘ └──────── Block Index 42 (8 bytes) ──────┘
     /// # Ok::<(), hexz_common::Error>(())
     /// ```
-    fn generate_nonce(&self, block_idx: u64) -> GenericArray<u8, U12> {
+    fn generate_nonce(block_idx: u64) -> GenericArray<u8, U12> {
         let mut bytes = [0u8; AES_NONCE_LENGTH];
         bytes[4..].copy_from_slice(&block_idx.to_be_bytes());
         *GenericArray::from_slice(&bytes)
@@ -1014,7 +1015,7 @@ impl Encryptor for AesGcmEncryptor {
     /// # }
     /// ```
     fn encrypt(&self, data: &[u8], block_idx: u64) -> Result<Vec<u8>> {
-        let nonce = self.generate_nonce(block_idx);
+        let nonce = Self::generate_nonce(block_idx);
         self.cipher
             .encrypt(&nonce, data)
             .map_err(|e| Error::Encryption(e.to_string()))
@@ -1223,7 +1224,7 @@ impl Encryptor for AesGcmEncryptor {
     /// # }
     /// ```
     fn decrypt(&self, data: &[u8], block_idx: u64) -> Result<Vec<u8>> {
-        let nonce = self.generate_nonce(block_idx);
+        let nonce = Self::generate_nonce(block_idx);
         self.cipher
             .decrypt(&nonce, data)
             .map_err(|e| Error::Encryption(e.to_string()))
@@ -1232,7 +1233,7 @@ impl Encryptor for AesGcmEncryptor {
     fn encrypt_into(&self, data: &[u8], block_idx: u64, out: &mut Vec<u8>) -> Result<()> {
         use aes_gcm::aead::AeadInPlace;
 
-        let nonce = self.generate_nonce(block_idx);
+        let nonce = Self::generate_nonce(block_idx);
         out.clear();
         out.extend_from_slice(data);
         self.cipher
@@ -1243,7 +1244,7 @@ impl Encryptor for AesGcmEncryptor {
     fn decrypt_into(&self, data: &[u8], block_idx: u64, out: &mut Vec<u8>) -> Result<()> {
         use aes_gcm::aead::AeadInPlace;
 
-        let nonce = self.generate_nonce(block_idx);
+        let nonce = Self::generate_nonce(block_idx);
         out.clear();
         out.extend_from_slice(data);
         self.cipher
@@ -1453,7 +1454,7 @@ mod tests {
         let encryptor =
             AesGcmEncryptor::new(b"secret_password", b"salt_16_bytes___", 100_000).unwrap();
 
-        let debug_str = format!("{:?}", encryptor);
+        let debug_str = format!("{encryptor:?}");
 
         // Debug output should not contain the password or key material
         assert!(!debug_str.contains("secret_password"));
@@ -1475,7 +1476,7 @@ mod tests {
         for i in 0..4 {
             let enc = Arc::clone(&encryptor);
             let handle = thread::spawn(move || {
-                let data = format!("Thread {} data", i).into_bytes();
+                let data = format!("Thread {i} data").into_bytes();
                 enc.encrypt(&data, i as u64).unwrap()
             });
             handles.push(handle);
@@ -1489,7 +1490,7 @@ mod tests {
 
         // Verify each can be decrypted
         for (i, ct) in ciphertexts.iter().enumerate() {
-            let expected = format!("Thread {} data", i).into_bytes();
+            let expected = format!("Thread {i} data").into_bytes();
             let decrypted = encryptor.decrypt(ct, i as u64).expect("Decryption failed");
             assert_eq!(decrypted, expected);
         }
@@ -1513,8 +1514,7 @@ mod tests {
             for j in (i + 1)..ciphertexts.len() {
                 assert_ne!(
                     ciphertexts[i], ciphertexts[j],
-                    "Ciphertexts at indices {} and {} should be different",
-                    i, j
+                    "Ciphertexts at indices {i} and {j} should be different"
                 );
             }
         }

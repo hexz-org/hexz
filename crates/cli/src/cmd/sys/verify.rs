@@ -54,8 +54,9 @@
 //! - **Non-zero**: Verification failed (invalid signature or archive not signed)
 
 use anyhow::Result;
+use colored::Colorize;
 use hexz_ops::sign::verify_archive;
-use std::path::PathBuf;
+use std::path::Path;
 
 /// Verify the Ed25519 signature on a signed Hexz archive.
 ///
@@ -73,7 +74,7 @@ use std::path::PathBuf;
 /// 1. Opens the archive and reads the header
 /// 2. Checks that signature metadata exists in header
 /// 3. Reads the 64-byte signature from the file
-/// 4. Reads the Master Index (from header.index_offset to signature offset)
+/// 4. Reads the Master Index (from `header.index_offset` to signature offset)
 /// 5. Computes SHA-256 digest of the index
 /// 6. Verifies the Ed25519 signature against the digest
 ///
@@ -94,19 +95,18 @@ use std::path::PathBuf;
 /// let key = PathBuf::from("~/.hexz/keys/public.key");
 /// let archive = PathBuf::from("archive.hxz");
 ///
-/// match verify::run(key, archive) {
+/// match verify::run(&key, &archive) {
 ///     Ok(()) => println!("✓ Signature valid"),
 ///     Err(e) => eprintln!("✗ Verification failed: {}", e),
 /// }
 /// # Ok::<(), anyhow::Error>(())
 /// ```
-pub fn run(key_path: PathBuf, image_path: PathBuf) -> Result<()> {
-    use colored::*;
+pub fn run(key_path: &Path, image_path: &Path) -> Result<()> {
     println!("{} Verifying archive", "╭".dimmed());
     println!("{} Image     {}", "│".dimmed(), image_path.display().to_string().cyan());
     println!("{} Key       {}", "╰".dimmed(), key_path.display().to_string().bright_black());
 
-    verify_archive(&image_path, &key_path)?;
+    verify_archive(image_path, key_path)?;
     println!("\n  {} Signature verified. The index is authentic.", "✓".green());
     Ok(())
 }

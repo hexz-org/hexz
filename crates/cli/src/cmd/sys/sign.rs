@@ -24,7 +24,7 @@
 //!
 //! # Signature Format
 //!
-//! - **Algorithm**: Ed25519 (EdDSA on Curve25519)
+//! - **Algorithm**: Ed25519 (`EdDSA` on Curve25519)
 //! - **Digest**: SHA-256 of Master Index
 //! - **Signature Size**: 64 bytes
 //! - **Storage**: Appended to end of archive file
@@ -65,8 +65,9 @@
 //! ```
 
 use anyhow::Result;
+use colored::Colorize;
 use hexz_ops::sign::sign_archive;
-use std::path::PathBuf;
+use std::path::Path;
 
 /// Sign a Hexz archive with an Ed25519 private key.
 ///
@@ -109,16 +110,15 @@ use std::path::PathBuf;
 /// # use hexz_cli::cmd::sys::sign;
 /// let key = PathBuf::from("~/.hexz/keys/private.key");
 /// let archive = PathBuf::from("archive.hxz");
-/// sign::run(key, archive)?;
+/// sign::run(&key, &archive)?;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
-pub fn run(key_path: PathBuf, image_path: PathBuf) -> Result<()> {
-    use colored::*;
+pub fn run(key_path: &Path, image_path: &Path) -> Result<()> {
     println!("{} Signing archive", "╭".dimmed());
     println!("{} Image     {}", "│".dimmed(), image_path.display().to_string().cyan());
     println!("{} Key       {}", "╰".dimmed(), key_path.display().to_string().bright_black());
 
-    sign_archive(&image_path, &key_path)?;
+    sign_archive(image_path, key_path)?;
     println!("\n  {} Signature written successfully.", "✓".green());
     Ok(())
 }

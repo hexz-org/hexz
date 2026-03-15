@@ -1,4 +1,4 @@
-use crate::common::*;
+use crate::common::{cargo, cmd, find_workspace_root, BOLD, CYAN, GREEN, RESET};
 use anyhow::Result;
 use walkdir::WalkDir;
 
@@ -37,7 +37,7 @@ const AI_BENCHES: &[&str] = &[
 
 const HTTP_BENCHES: &[&str] = &["http_throughput"];
 
-#[derive(clap::Subcommand)]
+#[derive(Clone, Copy, clap::Subcommand)]
 pub enum BenchCmd {
     /// List available benchmark categories
     List,
@@ -52,7 +52,7 @@ pub enum BenchCmd {
     },
 }
 
-#[derive(Clone, Debug, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
 pub enum BenchGroup {
     Micro,
     Macro,
@@ -61,7 +61,7 @@ pub enum BenchGroup {
     All,
 }
 
-#[derive(Clone, Debug, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
 pub enum BenchProfile {
     Quick,
     Full,
@@ -74,7 +74,7 @@ pub fn run(cmd: BenchCmd) -> Result<()> {
     }
 }
 
-fn bench_names(group: &BenchGroup) -> Vec<&'static str> {
+fn bench_names(group: BenchGroup) -> Vec<&'static str> {
     match group {
         BenchGroup::Micro => MICRO_BENCHES.to_vec(),
         BenchGroup::Macro => MACRO_BENCHES.to_vec(),
@@ -92,7 +92,7 @@ fn bench_names(group: &BenchGroup) -> Vec<&'static str> {
 }
 
 fn run_benches(group: BenchGroup, profile: BenchProfile) -> Result<()> {
-    let benches = bench_names(&group);
+    let benches = bench_names(group);
     let quick = matches!(profile, BenchProfile::Quick);
 
     println!(
@@ -128,7 +128,7 @@ fn list() -> Result<()> {
         let mut found = None;
         if let Ok(entries) = std::fs::read_dir(&bench_store) {
             for entry in entries.flatten() {
-                if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                if entry.file_type().is_ok_and(|t| t.is_dir()) {
                     found = Some(entry.path());
                     break;
                 }
@@ -154,7 +154,7 @@ fn list() -> Result<()> {
                 if let Some(relative) = path.strip_prefix(&prefix) {
                     let relative = relative.trim_start_matches('/');
                     if let Some(category) = relative.split('/').next() {
-                        categories.insert(category.to_string());
+                        let _ = categories.insert(category.to_string());
                     }
                 }
             }

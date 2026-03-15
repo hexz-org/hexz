@@ -7,9 +7,13 @@
 use std::io::IsTerminal;
 
 /// A set of ANSI escape sequences (or empty strings when color is disabled).
+#[derive(Debug)]
 pub struct Palette {
+    /// Bold text.
     pub bold: &'static str,
+    /// Dim text.
     pub dim: &'static str,
+    /// Reset all attributes.
     pub reset: &'static str,
     /// Bright cyan — used for label keys.
     pub cyan: &'static str,

@@ -32,6 +32,16 @@ pub struct BufferPool {
     max_buffers: usize,
 }
 
+impl std::fmt::Debug for BufferPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let pooled = self.buffers.lock().map_or(0, |b| b.len());
+        f.debug_struct("BufferPool")
+            .field("max_buffers", &self.max_buffers)
+            .field("pooled", &pooled)
+            .finish()
+    }
+}
+
 impl BufferPool {
     /// Creates a new buffer pool.
     ///

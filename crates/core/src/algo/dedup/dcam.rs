@@ -19,7 +19,7 @@
 //!   deduplication (misses small duplicates)
 //!
 //! DCAM solves this by modeling:
-//! 1. **Chunk size distribution** based on FastCDC boundary detection probability
+//! 1. **Chunk size distribution** based on `FastCDC` boundary detection probability
 //! 2. **Duplicate detection probability** based on dataset change rate
 //! 3. **Metadata overhead** vs. **storage savings** tradeoff
 //!
@@ -29,7 +29,7 @@
 //!
 //! ### 1. Chunk Boundary Probability
 //!
-//! FastCDC uses a rolling hash with a fingerprint mask to detect chunk boundaries.
+//! `FastCDC` uses a rolling hash with a fingerprint mask to detect chunk boundaries.
 //! The probability of a boundary at any byte position is:
 //!
 //! ```text
@@ -222,7 +222,7 @@
 //! 1. **Uniform change distribution**: Changes are evenly distributed across the file.
 //!    Real data often has localized changes, which can improve deduplication.
 //!
-//! 2. **Independent chunk boundaries**: FastCDC boundary decisions are independent.
+//! 2. **Independent chunk boundaries**: `FastCDC` boundary decisions are independent.
 //!    This is a good approximation in practice.
 //!
 //! 3. **Perfect hash collision resistance**: No false duplicates from hash collisions.
@@ -311,11 +311,11 @@
 //!
 //! - Randall et al., "Optimizing Deduplication Parameters via a Change-Estimation
 //!   Analytical Model", 2025.
-//! - Xia et al., "FastCDC: A Fast and Efficient Content-Defined Chunking Approach
+//! - Xia et al., "`FastCDC`: A Fast and Efficient Content-Defined Chunking Approach
 //!   for Data Deduplication", USENIX ATC 2016.
 //! - Muthitacharoen et al., "A Low-bandwidth Network File System", SOSP 2001 (LBFS).
 
-/// FastCDC and deduplication parameters.
+/// `FastCDC` and deduplication parameters.
 ///
 /// This structure encapsulates all parameters needed for Content-Defined Chunking (CDC)
 /// and deduplication analysis. The parameters control both the **chunking behavior**
@@ -511,7 +511,7 @@ pub struct DedupeParams {
     /// Minimum chunk length in bytes ($m$).
     ///
     /// Prevents excessively small chunks that would cause metadata overhead to
-    /// dominate. FastCDC will not create chunks smaller than this size.
+    /// dominate. `FastCDC` will not create chunks smaller than this size.
     ///
     /// **Typical values**: 1024-4096 (1KB to 4KB)
     pub m: u32,
@@ -519,7 +519,7 @@ pub struct DedupeParams {
     /// Maximum chunk length in bytes ($z$).
     ///
     /// Caps the largest possible chunk to bound memory usage and ensure reasonable
-    /// chunk distribution. FastCDC will force a boundary at this size.
+    /// chunk distribution. `FastCDC` will force a boundary at this size.
     ///
     /// **Typical values**: 16384-131072 (16KB to 128KB)
     pub z: u32,
@@ -552,7 +552,7 @@ impl DedupeParams {
     /// LBFS Baseline parameters used as the reference point in the DCAM paper.
     ///
     /// These are well-tested parameters originally from the Low-Bandwidth Network File
-    /// System (LBFS) and used as the baseline configuration in FastCDC and DCAM research.
+    /// System (LBFS) and used as the baseline configuration in `FastCDC` and DCAM research.
     /// They represent a balanced tradeoff suitable for general-purpose deduplication.
     ///
     /// # Parameter Values
@@ -599,9 +599,9 @@ impl DedupeParams {
     /// # References
     ///
     /// - Muthitacharoen et al., "A Low-bandwidth Network File System", SOSP 2001
-    /// - Xia et al., "FastCDC: A Fast and Efficient Content-Defined Chunking
+    /// - Xia et al., "`FastCDC`: A Fast and Efficient Content-Defined Chunking
     ///   Approach for Data Deduplication", USENIX ATC 2016
-    pub fn lbfs_baseline() -> Self {
+    pub const fn lbfs_baseline() -> Self {
         Self {
             f: 13,
             m: 2048,
@@ -625,7 +625,7 @@ impl DedupeParams {
     ///
     /// # Mathematical Interpretation
     ///
-    /// The boundary probability `p` models FastCDC's fingerprint matching as a
+    /// The boundary probability `p` models `FastCDC`'s fingerprint matching as a
     /// geometric distribution:
     /// - At each byte position (after min chunk size), there's probability `p`
     ///   of finding a boundary
@@ -690,7 +690,7 @@ impl DedupeParams {
 ///
 /// # Algorithm
 ///
-/// FastCDC generates variable-size chunks through a boundary detection process:
+/// `FastCDC` generates variable-size chunks through a boundary detection process:
 /// 1. After reaching minimum size `m`, check each byte position for a boundary
 /// 2. Boundary occurs with probability `p = 1 / 2^f` at each position
 /// 3. If no boundary found by maximum size `z`, force a boundary
@@ -702,7 +702,7 @@ impl DedupeParams {
 ///
 /// # Parameters
 ///
-/// - `params`: FastCDC parameters (`f`, `m`, `z`)
+/// - `params`: `FastCDC` parameters (`f`, `m`, `z`)
 ///
 /// # Returns
 ///
@@ -805,6 +805,8 @@ impl DedupeParams {
 /// # Reference
 ///
 /// Equation 3 in DCAM paper (Randall et al., 2025).
+// Variable names (p, m, z) match the mathematical notation in the DCAM paper (Eq. 3).
+#[allow(clippy::many_single_char_names)]
 pub fn expected_chunk_length(params: &DedupeParams) -> f64 {
     assert!(
         params.m < params.z,
@@ -824,7 +826,7 @@ pub fn expected_chunk_length(params: &DedupeParams) -> f64 {
     let mut term1 = 0.0_f64;
     for i in 0..(params.z - params.m) {
         let i_f = i as f64;
-        term1 += power * p * (m + i_f);
+        term1 = (power * p).mul_add(m + i_f, term1);
         power *= one_minus_p;
     }
 
@@ -858,7 +860,7 @@ pub fn expected_chunk_length(params: &DedupeParams) -> f64 {
 ///
 /// - `c`: Change rate (probability that a byte differs from previous version),
 ///   range [0.0, 1.0]. Lower values indicate higher redundancy.
-/// - `params`: FastCDC parameters (`f`, `m`, `z`, `w`)
+/// - `params`: `FastCDC` parameters (`f`, `m`, `z`, `w`)
 ///
 /// # Returns
 ///
@@ -913,7 +915,7 @@ pub fn expected_chunk_length(params: &DedupeParams) -> f64 {
 /// # Parameters
 ///
 /// - `c`: Change rate (probability that a byte differs from previous version)
-/// - `params`: FastCDC parameters (f, m, z, w)
+/// - `params`: `FastCDC` parameters (f, m, z, w)
 ///
 /// # Returns
 ///
@@ -996,6 +998,8 @@ pub fn expected_chunk_length(params: &DedupeParams) -> f64 {
 /// # Reference
 ///
 /// Equation 9 in DCAM paper (Randall et al., 2025).
+// Variable names (p, m, z, w, c) match the mathematical notation in the DCAM paper (Eq. 9).
+#[allow(clippy::many_single_char_names)]
 pub fn expected_duplicate_bytes(c: f64, params: &DedupeParams) -> f64 {
     let p = params.p();
     let m = params.m as f64;
@@ -1014,7 +1018,7 @@ pub fn expected_duplicate_bytes(c: f64, params: &DedupeParams) -> f64 {
     let mut term1 = 0.0_f64;
     for i in 0..(params.z - params.m) {
         let i_f = i as f64;
-        term1 += p_power * p * (m + i_f) * c_power;
+        term1 = (p_power * p * (m + i_f)).mul_add(c_power, term1);
         p_power *= one_minus_p;
         c_power *= one_minus_c;
     }
@@ -1096,7 +1100,7 @@ pub fn expected_duplicate_bytes(c: f64, params: &DedupeParams) -> f64 {
 /// - `c`: Change rate (probability a byte differs), range [0.0, 1.0]. Estimate
 ///   this using `calculate_c()` from a dry-run CDC analysis.
 ///
-/// - `params`: FastCDC parameters to evaluate. Try multiple parameter sets to
+/// - `params`: `FastCDC` parameters to evaluate. Try multiple parameter sets to
 ///   find the optimal configuration.
 ///
 /// # Returns
@@ -1119,7 +1123,7 @@ pub fn expected_duplicate_bytes(c: f64, params: &DedupeParams) -> f64 {
 ///    the file. Real data often has **localized changes** which can improve
 ///    deduplication beyond predictions.
 ///
-/// 2. **Independent chunk boundaries**: FastCDC boundary decisions are independent.
+/// 2. **Independent chunk boundaries**: `FastCDC` boundary decisions are independent.
 ///    This is empirically accurate for well-designed rolling hash functions.
 ///
 /// 3. **Perfect hash collision resistance**: No false positives/negatives from
@@ -1272,6 +1276,8 @@ pub fn expected_duplicate_bytes(c: f64, params: &DedupeParams) -> f64 {
 /// # Reference
 ///
 /// Derived from Equations 5, 10, 11, and 14 in DCAM paper (Randall et al., 2025).
+// Variable names (l, n, y, s, h, d) match the mathematical notation in the DCAM paper (Eqs. 5, 10, 11, 14).
+#[allow(clippy::many_single_char_names)]
 pub fn predict_ratio(file_size: u64, c: f64, params: &DedupeParams) -> f64 {
     let l = expected_chunk_length(params);
     let n = file_size as f64;
@@ -1538,7 +1544,7 @@ pub fn predict_ratio(file_size: u64, c: f64, params: &DedupeParams) -> f64 {
 ///
 /// # Edge Cases
 ///
-/// ## ndb >= file_size (All Unique)
+/// ## ndb >= `file_size` (All Unique)
 ///
 /// Returns `c = 1.0`, indicating no redundancy. This can occur with:
 /// - Compressed or encrypted data

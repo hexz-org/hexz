@@ -3,14 +3,12 @@ use std::sync::Arc;
 
 /// Enhanced byte comparison with better error messages
 pub fn assert_bytes_equal(actual: &[u8], expected: &[u8], context: &str) {
-    if actual.len() != expected.len() {
-        panic!(
-            "{}: Length mismatch: actual={}, expected={}",
-            context,
-            actual.len(),
-            expected.len()
-        );
-    }
+    assert!(actual.len() == expected.len(), 
+        "{}: Length mismatch: actual={}, expected={}",
+        context,
+        actual.len(),
+        expected.len()
+    );
 
     for (i, (a, e)) in actual.iter().zip(expected.iter()).enumerate() {
         if a != e {
@@ -61,7 +59,7 @@ pub fn calculate_entropy(data: &[u8]) -> f64 {
     for &count in &counts {
         if count > 0 {
             let p = count as f64 / len;
-            entropy -= p * p.log2();
+            entropy = p.mul_add(-p.log2(), entropy);
         }
     }
 
@@ -88,6 +86,7 @@ impl MockBackend {
         self.data.is_empty()
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     pub fn read(&self, offset: usize, buf: &mut [u8]) -> std::io::Result<usize> {
         if offset >= self.data.len() {
             return Ok(0);
@@ -105,8 +104,7 @@ pub fn verify_pattern(data: &[u8], pattern: u8) {
     for (i, &byte) in data.iter().enumerate() {
         assert_eq!(
             byte, pattern,
-            "Byte mismatch at offset {}: expected 0x{:02X}, got 0x{:02X}",
-            i, pattern, byte
+            "Byte mismatch at offset {i}: expected 0x{pattern:02X}, got 0x{byte:02X}"
         );
     }
 }
@@ -117,8 +115,7 @@ pub fn verify_sequential(data: &[u8]) {
         let expected = (i % 256) as u8;
         assert_eq!(
             byte, expected,
-            "Byte mismatch at offset {}: expected 0x{:02X}, got 0x{:02X}",
-            i, expected, byte
+            "Byte mismatch at offset {i}: expected 0x{expected:02X}, got 0x{byte:02X}"
         );
     }
 }
@@ -140,6 +137,7 @@ pub fn is_all_ones(data: &[u8]) -> bool {
 
 /// Count occurrences of a specific byte
 pub fn count_byte(data: &[u8], byte: u8) -> usize {
+    #[allow(clippy::naive_bytecount)]
     data.iter().filter(|&&b| b == byte).count()
 }
 
@@ -164,7 +162,7 @@ pub fn random_password() -> String {
         .collect()
 }
 
-/// Create a simple archive for testing using PackConfig
+/// Create a simple archive for testing using `PackConfig`
 pub fn create_simple_archive() -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn std::error::Error>>
 {
     use hexz_ops::pack::{PackConfig, pack_archive};
@@ -182,11 +180,9 @@ pub fn create_simple_archive() -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn 
 
     let config = PackConfig {
         input: disk_path,
-        output: snap_path.clone(),
+        output: snap_path,
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         min_chunk: Some(16384),
         avg_chunk: Some(65536),
@@ -194,7 +190,7 @@ pub fn create_simple_archive() -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn 
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>)?;
+    pack_archive(&config, None::<&fn(u64, u64)>)?;
 
     // Persist the temp dir by leaking it (files needed for test lifetime)
     let persisted = temp_dir.keep();
@@ -203,7 +199,7 @@ pub fn create_simple_archive() -> Result<(std::path::PathBuf, Vec<u8>), Box<dyn 
     Ok((final_snap, data))
 }
 
-/// Create a archive with memory data using PackConfig.
+/// Create a archive with memory data using `PackConfig`.
 ///
 /// Packs a directory containing `disk` (Main stream) and `memory` (Auxiliary stream).
 pub fn create_archive_with_memory()
@@ -228,11 +224,9 @@ pub fn create_archive_with_memory()
 
     let config = PackConfig {
         input: input_dir,
-        output: snap_path.clone(),
+        output: snap_path,
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         min_chunk: Some(16384),
         avg_chunk: Some(65536),
@@ -240,7 +234,7 @@ pub fn create_archive_with_memory()
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>)?;
+    pack_archive(&config, None::<&fn(u64, u64)>)?;
 
     let persisted = temp_dir.keep();
     let final_snap = persisted.join("archive.hxz");
@@ -266,11 +260,9 @@ pub fn create_multi_block_archive()
 
     let config = PackConfig {
         input: disk_path,
-        output: snap_path.clone(),
+        output: snap_path,
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         min_chunk: Some(16384),
         avg_chunk: Some(65536),
@@ -278,7 +270,7 @@ pub fn create_multi_block_archive()
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>)?;
+    pack_archive(&config, None::<&fn(u64, u64)>)?;
 
     let persisted = temp_dir.keep();
     let final_snap = persisted.join("archive.hxz");

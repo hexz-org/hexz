@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, unused_results))]
+
 //! Common types, configuration, and constants shared by Hexz crates.
 //!
 //! This crate centralizes configuration loading, error types, logging setup,

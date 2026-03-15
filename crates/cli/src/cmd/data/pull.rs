@@ -1,13 +1,16 @@
+//! Pull archives from a remote endpoint.
+
 use anyhow::{Context, Result};
-use colored::*;
+use colored::Colorize;
 use super::workspace::Workspace;
 
-pub fn run(remote: String) -> Result<()> {
+/// Execute the `hexz pull` command to fetch thin archives from a remote.
+pub fn run(remote: &str) -> Result<()> {
     let ws = Workspace::find(&std::env::current_dir()?)?
         .context("Not in a hexz workspace (no .hexz found)")?;
 
-    let url = ws.config.remotes.get(&remote).with_context(|| {
-        format!("Remote '{}' not found. Add it with `hexz remote add {} <url>`", remote, remote)
+    let url = ws.config.remotes.get(remote).with_context(|| {
+        format!("Remote '{remote}' not found. Add it with `hexz remote add {remote} <url>`")
     })?;
 
     println!("{} Pulling from  {}", "╭".dimmed(), remote.magenta());

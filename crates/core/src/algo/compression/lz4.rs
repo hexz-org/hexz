@@ -334,7 +334,7 @@ impl Lz4Compressor {
     ///
     /// - **Time complexity**: O(1)
     /// - **Space complexity**: 0 bytes (zero-sized type)
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self
     }
 }
@@ -404,7 +404,7 @@ impl Compressor for Lz4Compressor {
     /// - Input is shorter than 4 bytes (missing size header)
     /// - Compressed data is truncated or corrupted
     /// - LZ4 payload contains invalid backreferences or match lengths
-    /// - Decompressed size exceeds reasonable limits (potential DoS attack)
+    /// - Decompressed size exceeds reasonable limits (potential `DoS` attack)
     ///
     /// # Examples
     ///

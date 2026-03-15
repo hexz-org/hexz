@@ -2,29 +2,39 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
+/// Serializable workspace configuration stored in `config.json`.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WorkspaceConfig {
+    /// Path to the base archive this workspace derives from.
     pub base_archive: Option<PathBuf>,
+    /// Path to the overlay directory for writable changes.
     pub overlay_path: Option<PathBuf>,
+    /// Original working directory of the host when the workspace was created.
     pub host_cwd: Option<PathBuf>,
+    /// Named remote endpoints for push/pull operations.
     #[serde(default)]
     pub remotes: std::collections::HashMap<String, String>,
 }
 
+/// A Hexz workspace rooted at a directory with associated configuration.
+#[derive(Debug)]
 pub struct Workspace {
+    /// Root directory of the workspace.
     pub root: PathBuf,
+    /// Workspace configuration loaded from `config.json`.
     pub config: WorkspaceConfig,
 }
 
 impl Workspace {
+    /// Initialize a new workspace at the given path with an optional base archive.
     pub fn init(path: &Path, base_archive: Option<PathBuf>) -> Result<Self> {
         let abs_path = std::fs::canonicalize(path)?;
 
         // Centralized storage: ~/.hexz/workspaces/<hash_of_abs_path>
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
         let mut s = DefaultHasher::new();
         abs_path.hash(&mut s);
         let id = format!("{:x}", s.finish());
@@ -60,6 +70,7 @@ impl Workspace {
         })
     }
 
+    /// Persist the current workspace configuration to disk.
     pub fn save(&self) -> Result<()> {
         let config_path = self.metadata_dir().join("config.json");
         let f = std::fs::File::create(config_path)?;
@@ -67,6 +78,7 @@ impl Workspace {
         Ok(())
     }
 
+    /// Search upward from `start_path` to find an existing workspace.
     pub fn find(start_path: &Path) -> Result<Option<Self>> {
         let mut current = if start_path.exists() {
             std::fs::canonicalize(start_path)?
@@ -87,8 +99,6 @@ impl Workspace {
             }
 
             // Fallback: If not mounted, calculate the global hash to check if it's a known workspace
-            use std::collections::hash_map::DefaultHasher;
-            use std::hash::{Hash, Hasher};
             let mut s = DefaultHasher::new();
             current.hash(&mut s);
             let id = format!("{:x}", s.finish());
@@ -115,6 +125,7 @@ impl Workspace {
         Ok(None)
     }
 
+    /// Return the path to the overlay directory for this workspace.
     pub fn overlay_path(&self) -> PathBuf {
         if let Some(ref p) = self.config.overlay_path {
             return p.clone();
@@ -122,13 +133,12 @@ impl Workspace {
         self.metadata_dir().join("overlay")
     }
 
+    /// Return the path to the centralized metadata directory for this workspace.
     pub fn metadata_dir(&self) -> PathBuf {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
         let mut s = DefaultHasher::new();
         self.root.hash(&mut s);
         let id = format!("{:x}", s.finish());
-        let home = std::env::var("HOME").unwrap();
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
         PathBuf::from(home).join(".hexz").join("workspaces").join(id)
     }
 }

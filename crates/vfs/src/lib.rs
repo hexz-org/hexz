@@ -1,15 +1,18 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, unused_results))]
+
 //! Platform-agnostic virtual filesystem logic for Hexz.
 
 use fuser::FileType;
 use hexz_core::api::manifest::{ArchiveManifest, FileEntry};
 use hexz_core::{Archive, ArchiveStream};
-use serde_json;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
+/// A unique identifier for a node in the virtual filesystem.
 pub type Inode = u64;
 
+/// The inode number of the root directory.
 pub const ROOT_INODE: Inode = 1;
 
 /// Permission bits for the root directory (owner rwx, group/other rx).
@@ -21,47 +24,79 @@ pub const PERM_FILE: u16 = 0o644;
 /// Block size in bytes reported for `stat` block counts (512).
 pub const VFS_BLOCK_SIZE: u64 = 512;
 
+/// A single entry within a directory listing.
+#[derive(Debug)]
 pub struct DirEntry {
+    /// The inode number of this entry.
     pub inode: Inode,
+    /// The file type (directory, regular file, etc.).
     pub kind: FileType,
+    /// The name of this entry within its parent directory.
     pub name: String,
 }
 
+/// A node in the virtual filesystem tree.
 #[derive(Debug, Clone)]
 pub enum Node {
+    /// A directory node containing named children.
     Directory {
+        /// Map from child name to child inode.
         children: BTreeMap<String, Inode>,
+        /// The parent directory's inode, if any.
         parent: Option<Inode>,
     },
+    /// A regular file node backed by archive data.
     File {
+        /// Byte offset of this file's data within the archive stream.
         offset: u64,
+        /// Size of the file in bytes.
         size: u64,
+        /// Unix file mode bits.
         mode: u32,
+        /// Modification time as seconds since the Unix epoch.
         mtime: u64,
+        /// The parent directory's inode, if any.
         parent: Option<Inode>,
     },
 }
 
+/// Attributes of a virtual filesystem node, analogous to `stat`.
 #[derive(Debug, Clone)]
 pub struct VfsAttr {
+    /// Inode number.
     pub ino: Inode,
+    /// File size in bytes.
     pub size: u64,
+    /// Number of 512-byte blocks allocated.
     pub blocks: u64,
+    /// Last access time.
     pub atime: std::time::SystemTime,
+    /// Last modification time.
     pub mtime: std::time::SystemTime,
+    /// Last status change time.
     pub ctime: std::time::SystemTime,
+    /// Creation time.
     pub crtime: std::time::SystemTime,
+    /// File type (directory, regular file, etc.).
     pub kind: FileType,
+    /// Permission bits.
     pub perm: u16,
+    /// Number of hard links.
     pub nlink: u32,
+    /// Owner user ID.
     pub uid: u32,
+    /// Owner group ID.
     pub gid: u32,
+    /// Device ID (for special files).
     pub rdev: u32,
+    /// File flags.
     pub flags: u32,
+    /// Preferred I/O block size.
     pub blksize: u32,
 }
 
-pub fn make_attr(ino: Inode, size: u64, uid: u32, gid: u32) -> VfsAttr {
+/// Creates a default [`VfsAttr`] for the given inode and size.
+pub const fn make_attr(ino: Inode, size: u64, uid: u32, gid: u32) -> VfsAttr {
     VfsAttr {
         ino,
         size,
@@ -89,20 +124,38 @@ pub fn make_attr(ino: Inode, size: u64, uid: u32, gid: u32) -> VfsAttr {
     }
 }
 
+/// Maps inodes to virtual filesystem nodes, providing path-based lookups and
+/// directory traversal for a mounted archive.
 pub struct InodeMap {
     nodes: BTreeMap<Inode, Node>,
     path_to_ino: BTreeMap<PathBuf, Inode>,
     ino_to_path: BTreeMap<Inode, PathBuf>,
+    /// Maps inodes to real filesystem paths for passthrough reads.
     pub passthrough_paths: BTreeMap<Inode, PathBuf>,
     next_inode: Inode,
     uid: u32,
     gid: u32,
 }
 
+impl std::fmt::Debug for InodeMap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InodeMap")
+            .field("nodes", &self.nodes)
+            .field("path_to_ino", &self.path_to_ino)
+            .field("ino_to_path", &self.ino_to_path)
+            .field("passthrough_paths", &self.passthrough_paths)
+            .field("next_inode", &self.next_inode)
+            .field("uid", &self.uid)
+            .field("gid", &self.gid)
+            .finish()
+    }
+}
+
 impl InodeMap {
+    /// Creates a new `InodeMap` populated from the given archive snapshot.
     pub fn new(snap: &Archive, uid: u32, gid: u32) -> Self {
         let mut nodes = BTreeMap::new();
-        nodes.insert(
+        _ = nodes.insert(
             ROOT_INODE,
             Node::Directory {
                 children: BTreeMap::new(),
@@ -119,7 +172,7 @@ impl InodeMap {
             uid,
             gid,
         };
-        map.ino_to_path.insert(ROOT_INODE, PathBuf::new());
+        _ = map.ino_to_path.insert(ROOT_INODE, PathBuf::new());
 
         // Parse manifest from metadata
         if let Some(metadata) = &snap.metadata {
@@ -140,20 +193,25 @@ impl InodeMap {
         map
     }
 
+    /// Registers a file or directory at the given path, creating parent directories as needed.
+    /// Returns the inode assigned to the path.
     pub fn add_file_at_path(&mut self, path: &Path, is_dir: bool) -> Inode {
         if let Some(&ino) = self.path_to_ino.get(path) {
             return ino;
         }
 
         let parent_path = path.parent().unwrap_or_else(|| Path::new(""));
-        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        let Some(name) = path.file_name() else {
+            return ROOT_INODE;
+        };
+        let name = name.to_string_lossy().to_string();
         let parent_ino = self.get_or_create_dir(parent_path);
 
         let ino = self.next_inode;
         self.next_inode += 1;
 
         if is_dir {
-            self.nodes.insert(
+            _ = self.nodes.insert(
                 ino,
                 Node::Directory {
                     children: BTreeMap::new(),
@@ -161,7 +219,7 @@ impl InodeMap {
                 },
             );
         } else {
-            self.nodes.insert(
+            _ = self.nodes.insert(
                 ino,
                 Node::File {
                     offset: 0,
@@ -174,11 +232,11 @@ impl InodeMap {
         }
 
         let pb = path.to_path_buf();
-        self.path_to_ino.insert(pb.clone(), ino);
-        self.ino_to_path.insert(ino, pb);
+        _ = self.path_to_ino.insert(pb.clone(), ino);
+        _ = self.ino_to_path.insert(ino, pb);
 
         if let Some(Node::Directory { children, .. }) = self.nodes.get_mut(&parent_ino) {
-            children.insert(name, ino);
+            _ = children.insert(name, ino);
         }
         ino
     }
@@ -186,7 +244,7 @@ impl InodeMap {
     fn add_legacy_file(&mut self, name: &str, size: u64) {
         let ino = self.next_inode;
         self.next_inode += 1;
-        self.nodes.insert(
+        _ = self.nodes.insert(
             ino,
             Node::File {
                 offset: 0,
@@ -197,11 +255,11 @@ impl InodeMap {
             },
         );
         let pb = PathBuf::from(name);
-        self.path_to_ino.insert(pb.clone(), ino);
-        self.ino_to_path.insert(ino, pb);
+        _ = self.path_to_ino.insert(pb.clone(), ino);
+        _ = self.ino_to_path.insert(ino, pb);
 
         if let Some(Node::Directory { children, .. }) = self.nodes.get_mut(&ROOT_INODE) {
-            children.insert(name.to_string(), ino);
+            _ = children.insert(name.to_string(), ino);
         }
     }
 
@@ -209,25 +267,25 @@ impl InodeMap {
         let mut current_ino = ROOT_INODE;
         let mut current_path = PathBuf::new();
 
-        for component in path.iter() {
+        for component in path {
             let name = component.to_string_lossy().to_string();
             current_path.push(&name);
 
-            let mut create_new = false;
-            if let Some(Node::Directory { children, .. }) = self.nodes.get(&current_ino) {
+            let create_new = if let Some(Node::Directory { children, .. }) = self.nodes.get(&current_ino) {
                 if let Some(&child_ino) = children.get(&name) {
                     current_ino = child_ino;
                     continue;
-                } else {
-                    create_new = true;
                 }
-            }
+                true
+            } else {
+                false
+            };
 
             if create_new {
                 let new_ino = self.next_inode;
                 self.next_inode += 1;
 
-                self.nodes.insert(
+                _ = self.nodes.insert(
                     new_ino,
                     Node::Directory {
                         children: BTreeMap::new(),
@@ -236,11 +294,11 @@ impl InodeMap {
                 );
 
                 let pb = current_path.clone();
-                self.path_to_ino.insert(pb.clone(), new_ino);
-                self.ino_to_path.insert(new_ino, pb);
+                _ = self.path_to_ino.insert(pb.clone(), new_ino);
+                _ = self.ino_to_path.insert(new_ino, pb);
 
                 if let Some(Node::Directory { children, .. }) = self.nodes.get_mut(&current_ino) {
-                    children.insert(name, new_ino);
+                    _ = children.insert(name, new_ino);
                 }
 
                 current_ino = new_ino;
@@ -250,18 +308,19 @@ impl InodeMap {
         current_ino
     }
 
+    /// Populates the virtual `.hexz` metadata directory from real filesystem entries.
     pub fn populate_from_metadata_dir(&mut self, metadata_dir: &Path) {
         if !metadata_dir.exists() {
             return;
         }
 
         let base = Path::new(".hexz");
-        self.get_or_create_dir(base);
+        _ = self.get_or_create_dir(base);
 
         let walk = walkdir::WalkDir::new(metadata_dir);
         for entry in walk
             .into_iter()
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
         {
             if entry.path() == metadata_dir {
                 continue;
@@ -270,24 +329,25 @@ impl InodeMap {
                 let virtual_path = base.join(rel_path);
                 let is_dir = entry.file_type().is_dir();
                 let ino = self.add_file_at_path(&virtual_path, is_dir);
-                self.passthrough_paths
+                _ = self.passthrough_paths
                     .insert(ino, entry.path().to_path_buf());
             }
         }
     }
 
+    /// Populates the virtual filesystem from an overlay directory on the real filesystem.
     pub fn populate_from_overlay(&mut self, base: &Path) {
         let walk = walkdir::WalkDir::new(base);
         for entry in walk
             .into_iter()
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
         {
             if entry.path() == base {
                 continue;
             }
             if let Ok(rel_path) = entry.path().strip_prefix(base) {
                 let is_dir = entry.file_type().is_dir();
-                self.add_file_at_path(rel_path, is_dir);
+                _ = self.add_file_at_path(rel_path, is_dir);
             }
         }
     }
@@ -295,14 +355,17 @@ impl InodeMap {
     fn add_file(&mut self, entry: &FileEntry) {
         let path = Path::new(&entry.path);
         let parent_path = path.parent().unwrap_or_else(|| Path::new(""));
-        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        let Some(name) = path.file_name() else {
+            return;
+        };
+        let name = name.to_string_lossy().to_string();
 
         let parent_ino = self.get_or_create_dir(parent_path);
 
         let file_ino = self.next_inode;
         self.next_inode += 1;
 
-        self.nodes.insert(
+        _ = self.nodes.insert(
             file_ino,
             Node::File {
                 offset: entry.offset,
@@ -314,14 +377,15 @@ impl InodeMap {
         );
 
         let pb = path.to_path_buf();
-        self.path_to_ino.insert(pb.clone(), file_ino);
-        self.ino_to_path.insert(file_ino, pb);
+        _ = self.path_to_ino.insert(pb.clone(), file_ino);
+        _ = self.ino_to_path.insert(file_ino, pb);
 
         if let Some(Node::Directory { children, .. }) = self.nodes.get_mut(&parent_ino) {
-            children.insert(name, file_ino);
+            _ = children.insert(name, file_ino);
         }
     }
 
+    /// Looks up a child entry by name within the given parent directory.
     pub fn lookup(&self, parent: u64, name: &std::ffi::OsStr) -> Option<Inode> {
         let s = name.to_str()?;
         if let Some(Node::Directory { children, .. }) = self.nodes.get(&parent) {
@@ -331,26 +395,31 @@ impl InodeMap {
         }
     }
 
+    /// Returns `true` if the given inode exists in this map.
     pub fn is_valid_inode(&self, ino: u64) -> bool {
         self.nodes.contains_key(&ino)
     }
 
+    /// Returns the inode for the given path, if it exists.
     pub fn get_inode(&self, path: &Path) -> Option<Inode> {
         self.path_to_ino.get(path).copied()
     }
 
+    /// Returns the path associated with the given inode, if it exists.
     pub fn get_path(&self, ino: u64) -> Option<PathBuf> {
         self.ino_to_path.get(&ino).cloned()
     }
 
+    /// Renames a path and updates all descendant paths accordingly.
+    /// Returns `true` if the rename succeeded.
     pub fn rename_path(&mut self, old_path: &Path, new_path: &Path) -> bool {
         if let Some(ino) = self.path_to_ino.remove(old_path) {
-            self.path_to_ino.insert(new_path.to_path_buf(), ino);
-            self.ino_to_path.insert(ino, new_path.to_path_buf());
-            
+            _ = self.path_to_ino.insert(new_path.to_path_buf(), ino);
+            _ = self.ino_to_path.insert(ino, new_path.to_path_buf());
+
             // If it's a directory, we need to update all children
-            // This is simplified: in a real VFS we'd walk the tree, 
-            // but for hexz shell we can just clear child caches or 
+            // This is simplified: in a real VFS we'd walk the tree,
+            // but for hexz shell we can just clear child caches or
             // rely on the fact that rename is usually for files.
             // Let's do a basic child update.
             let old_prefix = old_path.to_path_buf();
@@ -361,33 +430,38 @@ impl InodeMap {
                 }
             }
             for (old_child_path, child_ino) in to_update {
-                let rel = old_child_path.strip_prefix(&old_prefix).unwrap();
-                let new_child_path = new_path.join(rel);
-                self.path_to_ino.remove(&old_child_path);
-                self.path_to_ino.insert(new_child_path.clone(), child_ino);
-                self.ino_to_path.insert(child_ino, new_child_path);
+                if let Ok(rel) = old_child_path.strip_prefix(&old_prefix) {
+                    let new_child_path = new_path.join(rel);
+                    _ = self.path_to_ino.remove(&old_child_path);
+                    _ = self.path_to_ino.insert(new_child_path.clone(), child_ino);
+                    _ = self.ino_to_path.insert(child_ino, new_child_path);
+                }
             }
             return true;
         }
         false
     }
 
+    /// Removes the given path from the inode map.
     pub fn remove_path(&mut self, path: &Path) {
         if let Some(ino) = self.path_to_ino.remove(path) {
             // We keep the ino_to_path for a bit to avoid immediate reuse
             // but effectively the path is gone.
-            self.ino_to_path.remove(&ino);
+            _ = self.ino_to_path.remove(&ino);
         }
     }
 
-    pub fn uid(&self) -> u32 {
+    /// Returns the owner user ID.
+    pub const fn uid(&self) -> u32 {
         self.uid
     }
 
-    pub fn gid(&self) -> u32 {
+    /// Returns the owner group ID.
+    pub const fn gid(&self) -> u32 {
         self.gid
     }
 
+    /// Returns the archive stream, offset, and size for the given file inode.
     pub fn file_info(&self, ino: u64) -> Option<(ArchiveStream, u64, u64)> {
         match self.nodes.get(&ino) {
             Some(Node::File { offset, size, .. }) => {
@@ -397,6 +471,7 @@ impl InodeMap {
         }
     }
 
+    /// Returns the directory listing for the given directory inode.
     pub fn readdir(&self, ino: u64) -> Vec<DirEntry> {
         let mut entries = Vec::new();
 
@@ -429,6 +504,7 @@ impl InodeMap {
         entries
     }
 
+    /// Returns the filesystem attributes for the given inode.
     pub fn getattr(&self, ino: u64) -> VfsAttr {
         match self.nodes.get(&ino) {
             Some(Node::Directory { .. }) => {
@@ -447,6 +523,7 @@ impl InodeMap {
         }
     }
 
+    /// Returns the file type of the given inode, if it exists.
     pub fn node_type(&self, ino: u64) -> Option<FileType> {
         match self.nodes.get(&ino) {
             Some(Node::Directory { .. }) => Some(FileType::Directory),
@@ -455,6 +532,7 @@ impl InodeMap {
         }
     }
 
+    /// Returns the size, mode, and mtime of the given file inode.
     pub fn file_metadata(&self, ino: u64) -> Option<(u64, u32, u64)> {
         match self.nodes.get(&ino) {
             Some(Node::File { size, mode, mtime, .. }) => Some((*size, *mode, *mtime)),

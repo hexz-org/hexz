@@ -1,4 +1,5 @@
-//! Unit tests for VFS layer: make_attr, InodeType, and Overlay.
+#![allow(clippy::unwrap_used, clippy::expect_used, unused_results, clippy::unreadable_literal, clippy::significant_drop_tightening, clippy::needless_pass_by_value, clippy::float_cmp)]
+//! Unit tests for VFS layer: `make_attr`, `InodeType`, and Overlay.
 
 use fuser::FileType;
 use hexz_fuse::vfs::make_attr;

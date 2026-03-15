@@ -1,8 +1,8 @@
-use crate::common::*;
-use anyhow::Result;
+use crate::common::{cargo, cmd, find_workspace_root, CYAN, GREEN, RESET};
+use anyhow::{Result, anyhow};
 use std::collections::BTreeSet;
 
-#[derive(clap::Subcommand)]
+#[derive(Clone, Copy, clap::Subcommand)]
 pub enum TestCmd {
     /// List Rust test categories for filtering
     List,
@@ -31,7 +31,7 @@ fn list() -> Result<()> {
     for line in output.lines() {
         if let Some(rest) = line.strip_suffix(": test") {
             if let Some(category) = rest.split("::").next() {
-                categories.insert(category.to_string());
+                let _ = categories.insert(category.to_string());
             }
         }
     }
@@ -57,7 +57,7 @@ fn commands() -> Result<()> {
 
     let tmp = tempfile::tempdir()?;
     let tmp_path = tmp.path();
-    let bin_str = bin.to_str().unwrap();
+    let bin_str = bin.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?;
 
     // 1. Create test file and directory
     let test_file = tmp_path.join("test.bin");
@@ -76,9 +76,9 @@ fn commands() -> Result<()> {
     cmd(bin_str)
         .args([
             "pack",
-            file_hxz.to_str().unwrap(),
+            file_hxz.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
             "--input",
-            test_file.to_str().unwrap(),
+            test_file.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
         ])
         .run()?;
 
@@ -88,16 +88,16 @@ fn commands() -> Result<()> {
     cmd(bin_str)
         .args([
             "pack",
-            dir_hxz.to_str().unwrap(),
+            dir_hxz.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
             "--input",
-            test_dir.to_str().unwrap(),
+            test_dir.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
         ])
         .run()?;
 
     // [3] Show/Inspect
     println!("{CYAN}[3] Show archive{RESET}");
     cmd(bin_str)
-        .args(["show", dir_hxz.to_str().unwrap()])
+        .args(["show", dir_hxz.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?])
         .run()?;
 
     // [4] Extract
@@ -106,8 +106,8 @@ fn commands() -> Result<()> {
     cmd(bin_str)
         .args([
             "extract",
-            dir_hxz.to_str().unwrap(),
-            extracted_dir.to_str().unwrap(),
+            dir_hxz.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
+            extracted_dir.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
         ])
         .run()?;
     
@@ -121,25 +121,25 @@ fn commands() -> Result<()> {
     cmd(bin_str)
         .args([
             "pack",
-            delta_hxz.to_str().unwrap(),
+            delta_hxz.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
             "--input",
-            test_dir.to_str().unwrap(),
+            test_dir.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
             "--base",
-            dir_hxz.to_str().unwrap(),
+            dir_hxz.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
         ])
         .run()?;
 
     // [6] Log
     println!("{CYAN}[6] Log lineage{RESET}");
-    cmd(bin_str).args(["log", tmp_path.to_str().unwrap()]).run()?;
+    cmd(bin_str).args(["log", tmp_path.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?]).run()?;
 
     // [7] Diff
     println!("{CYAN}[7] Diff archives{RESET}");
     cmd(bin_str)
         .args([
             "diff",
-            dir_hxz.to_str().unwrap(),
-            delta_hxz.to_str().unwrap(),
+            dir_hxz.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
+            delta_hxz.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
         ])
         .run()?;
 

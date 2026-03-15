@@ -1,14 +1,15 @@
 //! Show status of local changes in a workspace.
 
-use anyhow::Result;
-use colored::*;
+use anyhow::{Context, Result};
+use colored::Colorize;
 use std::path::PathBuf;
 use walkdir::WalkDir;
 
 use super::workspace::Workspace;
 
+/// Execute the `hexz status` command to show workspace changes.
 pub fn run(path: Option<PathBuf>) -> Result<()> {
-    let start_path = path.unwrap_or_else(|| std::env::current_dir().unwrap());
+    let start_path = path.unwrap_or(std::env::current_dir().context("Failed to get current directory")?);
 
     let ws = Workspace::find(&start_path)?
         .ok_or_else(|| anyhow::anyhow!("Not in a hexz workspace (no .hexz found)"))?;
@@ -23,7 +24,7 @@ pub fn run(path: Option<PathBuf>) -> Result<()> {
     }
 
     let mut changes = Vec::new();
-    for entry in WalkDir::new(&overlay).into_iter().filter_map(|e| e.ok()) {
+    for entry in WalkDir::new(&overlay).into_iter().filter_map(std::result::Result::ok) {
         if entry.path() == overlay { continue; }
 
         let rel = entry.path().strip_prefix(&overlay)?;
@@ -39,7 +40,7 @@ pub fn run(path: Option<PathBuf>) -> Result<()> {
     } else {
         println!("  {} Changes detected:", "→".yellow());
         for change in changes {
-            println!("{}", change);
+            println!("{change}");
         }
     }
 

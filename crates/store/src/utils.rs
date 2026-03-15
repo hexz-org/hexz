@@ -32,7 +32,7 @@ pub fn validate_url(url_str: &str, allow_restricted: bool) -> Result<String> {
     let url = Url::parse(url_str).map_err(|e| {
         Error::Io(IoError::new(
             ErrorKind::InvalidInput,
-            format!("Invalid URL: {}", e),
+            format!("Invalid URL: {e}"),
         ))
     })?;
 
@@ -56,7 +56,7 @@ pub fn validate_url(url_str: &str, allow_restricted: bool) -> Result<String> {
             if is_restricted_ip(IpAddr::V4(ip)) {
                 return Err(Error::Io(IoError::new(
                     ErrorKind::PermissionDenied,
-                    format!("Access to internal/private IP denied: {}", ip),
+                    format!("Access to internal/private IP denied: {ip}"),
                 )));
             }
         }
@@ -64,7 +64,7 @@ pub fn validate_url(url_str: &str, allow_restricted: bool) -> Result<String> {
             if is_restricted_ip(IpAddr::V6(ip)) {
                 return Err(Error::Io(IoError::new(
                     ErrorKind::PermissionDenied,
-                    format!("Access to internal/private IP denied: {}", ip),
+                    format!("Access to internal/private IP denied: {ip}"),
                 )));
             }
         }
@@ -79,7 +79,7 @@ pub fn validate_url(url_str: &str, allow_restricted: bool) -> Result<String> {
                 if is_restricted_ip(ip) {
                     return Err(Error::Io(IoError::new(
                         ErrorKind::PermissionDenied,
-                        format!("Access to internal/private IP denied: {}", ip),
+                        format!("Access to internal/private IP denied: {ip}"),
                     )));
                 }
                 return Ok(url.to_string());
@@ -88,8 +88,7 @@ pub fn validate_url(url_str: &str, allow_restricted: bool) -> Result<String> {
             let port = url.port_or_known_default().unwrap_or(80);
             let addrs = (clean, port).to_socket_addrs().map_err(|e| {
                 Error::Io(IoError::other(format!(
-                    "DNS resolution failed for '{}': {}",
-                    clean, e
+                    "DNS resolution failed for '{clean}': {e}"
                 )))
             })?;
 

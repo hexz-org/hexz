@@ -1,3 +1,6 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, unused_results))]
+//! Hexz development task runner.
+
 use clap::{Parser, Subcommand};
 
 mod baseline;
@@ -64,7 +67,7 @@ enum Command {
     #[command(subcommand)]
     Perf(perf::PerfCmd),
 
-    /// Manage local MinIO (S3-compatible) server
+    /// Manage local `MinIO` (S3-compatible) server
     #[command(subcommand)]
     Minio(minio::MinioCmd),
 }

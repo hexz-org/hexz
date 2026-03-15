@@ -4,7 +4,7 @@
 //! correct output and works with various configurations.
 
 use hexz_core::algo::compression::lz4::Lz4Compressor;
-use hexz_ops::pack::PackConfig;
+use hexz_ops::pack::{PackConfig, PackAnalysisFlags, PackTransformFlags};
 use hexz_ops::parallel_pack::{
     CompressedChunk, ParallelPackConfig, RawChunk, process_chunks_parallel,
 };
@@ -26,7 +26,7 @@ fn test_parallel_chunks_correctness() {
     };
 
     let mut results: Vec<(u64, usize, [u8; 32])> = Vec::new();
-    let result = process_chunks_parallel(chunks, compressor, config, |chunk: CompressedChunk| {
+    let result = process_chunks_parallel(chunks, compressor, &config, |chunk: CompressedChunk| {
         results.push((chunk.logical_offset, chunk.original_size, chunk.hash));
         Ok(())
     });
@@ -41,7 +41,7 @@ fn test_parallel_chunks_correctness() {
 
     // Hashes should be unique for unique inputs
     let mut hashes: Vec<[u8; 32]> = results.iter().map(|(_, _, h)| *h).collect();
-    hashes.sort();
+    hashes.sort_unstable();
     hashes.dedup();
     assert_eq!(
         hashes.len(),
@@ -68,7 +68,7 @@ fn test_parallel_chunks_with_duplicates() {
     };
 
     let mut hashes = Vec::new();
-    let result = process_chunks_parallel(chunks, compressor, config, |chunk: CompressedChunk| {
+    let result = process_chunks_parallel(chunks, compressor, &config, |chunk: CompressedChunk| {
         hashes.push(chunk.hash);
         Ok(())
     });
@@ -77,8 +77,8 @@ fn test_parallel_chunks_with_duplicates() {
     assert_eq!(hashes.len(), 20);
 
     // Should only have 2 unique hashes
-    let mut unique_hashes = hashes.clone();
-    unique_hashes.sort();
+    let mut unique_hashes = hashes;
+    unique_hashes.sort_unstable();
     unique_hashes.dedup();
     assert_eq!(
         unique_hashes.len(),
@@ -104,7 +104,7 @@ fn test_parallel_single_worker() {
     };
 
     let mut count = 0;
-    let result = process_chunks_parallel(chunks, compressor, config, |_chunk: CompressedChunk| {
+    let result = process_chunks_parallel(chunks, compressor, &config, |_chunk: CompressedChunk| {
         count += 1;
         Ok(())
     });
@@ -130,7 +130,7 @@ fn test_parallel_many_workers() {
     };
 
     let mut count = 0;
-    let result = process_chunks_parallel(chunks, compressor, config, |_chunk: CompressedChunk| {
+    let result = process_chunks_parallel(chunks, compressor, &config, |_chunk: CompressedChunk| {
         count += 1;
         Ok(())
     });
@@ -156,7 +156,7 @@ fn test_parallel_writer_error_propagation() {
     };
 
     let mut count = 0;
-    let result = process_chunks_parallel(chunks, compressor, config, |_chunk: CompressedChunk| {
+    let result = process_chunks_parallel(chunks, compressor, &config, |_chunk: CompressedChunk| {
         count += 1;
         if count >= 3 {
             Err(hexz_common::Error::Io(std::io::Error::other(
@@ -173,6 +173,8 @@ fn test_parallel_writer_error_propagation() {
 /// Test that the compressed data is actually valid LZ4.
 #[test]
 fn test_parallel_compression_validity() {
+    use hexz_core::algo::compression::Compressor;
+
     let original_data = vec![0x42u8; 8192];
     let chunks = vec![RawChunk {
         data: original_data.clone(),
@@ -186,7 +188,7 @@ fn test_parallel_compression_validity() {
     };
 
     let mut compressed_data = None;
-    let result = process_chunks_parallel(chunks, compressor, config, |chunk: CompressedChunk| {
+    let result = process_chunks_parallel(chunks, compressor, &config, |chunk: CompressedChunk| {
         compressed_data = Some(chunk.compressed);
         Ok(())
     });
@@ -196,36 +198,35 @@ fn test_parallel_compression_validity() {
 
     // Verify the compressed data can be decompressed back
     let decompressor = Lz4Compressor::new();
-    use hexz_core::algo::compression::Compressor;
     let decompressed = decompressor.decompress(&compressed).unwrap();
     assert_eq!(decompressed, original_data);
 }
 
-/// Test PackConfig parallel defaults are set correctly.
+/// Test `PackConfig` parallel defaults are set correctly.
 #[test]
 fn test_pack_config_parallel_defaults() {
     let config = PackConfig::default();
-    assert!(config.parallel, "parallel should default to true");
+    assert!(config.transform.parallel, "parallel should default to true");
     assert_eq!(
         config.num_workers, 0,
         "num_workers should default to 0 (auto-detect)"
     );
-    assert!(config.show_progress, "show_progress should default to true");
+    assert!(config.analysis.show_progress, "show_progress should default to true");
 }
 
-/// Test PackConfig can be constructed with parallel settings.
+/// Test `PackConfig` can be constructed with parallel settings.
 #[test]
 fn test_pack_config_with_parallel_settings() {
     let config = PackConfig {
         input: std::path::PathBuf::from("test.img"),
         output: std::path::PathBuf::from("test.hxz"),
-        parallel: false,
         num_workers: 4,
-        show_progress: false,
+        transform: PackTransformFlags { parallel: false, ..Default::default() },
+        analysis: PackAnalysisFlags { show_progress: false, ..Default::default() },
         ..Default::default()
     };
 
-    assert!(!config.parallel);
+    assert!(!config.transform.parallel);
     assert_eq!(config.num_workers, 4);
-    assert!(!config.show_progress);
+    assert!(!config.analysis.show_progress);
 }

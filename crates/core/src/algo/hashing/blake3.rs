@@ -19,7 +19,7 @@
 //!
 //! ## Core Design Principles
 //!
-//! BLAKE3 builds upon the ChaCha permutation and merkle tree construction to achieve:
+//! BLAKE3 builds upon the `ChaCha` permutation and merkle tree construction to achieve:
 //!
 //! 1. **Chunk-then-hash**: Input is divided into 1 KB chunks, each hashed independently
 //! 2. **Tree structure**: Chunk hashes are combined in a binary tree for parallelism
@@ -167,7 +167,7 @@ impl Blake3Hasher {
     /// Computes the BLAKE3 hash of the given data and returns it as a 32-byte array.
     ///
     /// **Architectural intent:** Provides a type-safe, fixed-size hash output that can
-    /// be used directly as a HashMap key for deduplication without allocations.
+    /// be used directly as a `HashMap` key for deduplication without allocations.
     ///
     /// **Performance:** ~3200 MB/s for data >1KB. For very small inputs (<100 bytes),
     /// overhead is ~200ns per hash operation.
@@ -310,6 +310,12 @@ pub struct IncrementalHasher {
     inner: blake3::Hasher,
 }
 
+impl std::fmt::Debug for IncrementalHasher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IncrementalHasher").finish_non_exhaustive()
+    }
+}
+
 impl IncrementalHasher {
     /// Adds more data to the hash state.
     ///
@@ -334,7 +340,7 @@ impl IncrementalHasher {
     /// let hash = inc.finalize();
     /// ```
     pub fn update(&mut self, data: &[u8]) {
-        self.inner.update(data);
+        _ = self.inner.update(data);
     }
 
     /// Finalizes the hash and returns the 32-byte output.
@@ -603,8 +609,7 @@ mod tests {
         // Allow range 100-156 bits (reasonable avalanche)
         assert!(
             (100..=156).contains(&diff_bits),
-            "Expected 100-156 different bits, got {}",
-            diff_bits
+            "Expected 100-156 different bits, got {diff_bits}"
         );
     }
 

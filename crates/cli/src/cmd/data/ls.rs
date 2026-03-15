@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
+use colored::Colorize;
 use crate::ui::color::{Palette, palette};
 
 struct ArchiveInfo {
@@ -20,8 +21,9 @@ struct ArchiveInfo {
 }
 
 fn read_archive_info(path: &Path) -> Result<ArchiveInfo> {
-    use hexz_core::format::index::IndexPage;
     use std::io::{Read, Seek, SeekFrom};
+
+    use hexz_core::format::index::IndexPage;
 
     let mut f = File::open(path)?;
     let file_size = f.metadata()?.len();
@@ -32,7 +34,7 @@ fn read_archive_info(path: &Path) -> Result<ArchiveInfo> {
 
     let mut data_blocks = 0usize;
     for page_meta in &master.main_pages {
-        f.seek(SeekFrom::Start(page_meta.offset))?;
+        let _ = f.seek(SeekFrom::Start(page_meta.offset))?;
         let mut buf = vec![0u8; page_meta.length as usize];
         f.read_exact(&mut buf)?;
         let page: IndexPage = bincode::deserialize(&buf)?;
@@ -70,14 +72,14 @@ fn print_tree(
             .unwrap_or_default()
             .to_string_lossy()
             .into_owned();
-        (format!("← {} (external)", parent_name), p.gray)
+        (format!("← {parent_name} (external)"), p.gray)
     } else if a.parent.is_none() {
         ("standalone".to_string(), p.gray)
     } else {
         (format!("+{} new blocks", a.data_blocks), p.dim)
     };
 
-    let name_padded = format!("{:<32}", name);
+    let name_padded = format!("{name:<32}");
     let size_str = format!("{:>10}", HumanBytes(a.file_size));
 
     println!(
@@ -105,7 +107,7 @@ fn print_tree(
     } else {
         format!("{}│{}   ", p.gray, p.reset)
     };
-    let child_prefix = format!("{}{}", prefix, segment);
+    let child_prefix = format!("{prefix}{segment}");
 
     for (j, &child) in kids.iter().enumerate() {
         let last = j == kids.len() - 1;
@@ -121,10 +123,11 @@ fn print_tree(
     }
 }
 
-pub fn run(dir: PathBuf) -> Result<()> {
-    let entries: Vec<ArchiveInfo> = std::fs::read_dir(&dir)
+/// Execute the `hexz log` command to list archives and their lineage.
+pub fn run(dir: &Path) -> Result<()> {
+    let entries: Vec<ArchiveInfo> = std::fs::read_dir(dir)
         .with_context(|| format!("Cannot read directory: {}", dir.display()))?
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .filter(|e| e.path().extension().is_some_and(|ext| ext == "hxz"))
         .map(|e| {
             let p = e.path();
@@ -182,7 +185,7 @@ pub fn run(dir: PathBuf) -> Result<()> {
     for (i, p) in parent_idx.iter().enumerate() {
         if let Some(pi) = p {
             children.entry(*pi).or_default().push(i);
-            has_parent.insert(i);
+            let _ = has_parent.insert(i);
         }
     }
 
@@ -192,7 +195,6 @@ pub fn run(dir: PathBuf) -> Result<()> {
     roots.sort_by_key(|&i| &entries[i].path);
 
     let p = palette();
-    use colored::*;
     let total_size: u64 = entries.iter().map(|a| a.file_size).sum();
 
     let dir_str = dir.to_string_lossy();

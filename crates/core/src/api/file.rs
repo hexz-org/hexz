@@ -34,7 +34,7 @@ static ZEROS_64K: [u8; DEFAULT_BLOCK_SIZE as usize] = [0u8; DEFAULT_BLOCK_SIZE a
 /// A map from block hash to its location in the archive.
 type HashIndex = HashMap<[u8; 32], (ArchiveStream, u64, BlockInfo)>;
 
-/// Work item for block decompression: (block_idx, info, buf_offset, offset_in_block, to_copy)
+/// Work item for block decompression: (`block_idx`, info, `buf_offset`, `offset_in_block`, `to_copy`)
 type WorkItem = (u64, BlockInfo, usize, usize, usize);
 
 /// Result of fetching a block from cache or storage.
@@ -113,8 +113,8 @@ pub struct Archive {
     encryptor: Option<Box<dyn Encryptor>>,
 
     /// Optional parent archive for thin (incremental) archives.
-    /// When a block's offset is BLOCK_OFFSET_PARENT, data is fetched from parent.
-    parents: Vec<Arc<Archive>>,
+    /// When a block's offset is `BLOCK_OFFSET_PARENT`, data is fetched from parent.
+    parents: Vec<Arc<Self>>,
 
     /// L1 Cache: Decompressed data blocks (sharded for concurrency)
     cache_l1: Arc<BlockCache>,
@@ -122,15 +122,26 @@ pub struct Archive {
     /// L2 Cache: Deserialized index pages (sharded for concurrency)
     page_cache: Arc<ShardedPageCache>,
 
-    /// Buffer pool for reusing decompression buffers
-    #[allow(dead_code)]
-    buffer_pool: Arc<BufferPool>,
+    /// Buffer pool for reusing decompression buffers (constructed for future use)
+    _buffer_pool: Arc<BufferPool>,
 
     /// Sequential prefetch controller
     prefetcher: Option<Arc<Prefetcher>>,
 
-    /// Lazy hash index for resolving ParentRef by content rather than offset.
+    /// Lazy hash index for resolving `ParentRef` by content rather than offset.
     hash_index: Mutex<Option<Arc<HashIndex>>>,
+}
+
+impl std::fmt::Debug for Archive {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Archive")
+            .field("version", &self.header.version)
+            .field("block_size", &self.header.block_size)
+            .field("compression", &self.header.compression)
+            .field("encrypted", &self.header.encryption.is_some())
+            .field("parents", &self.parents.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl Archive {
@@ -191,7 +202,7 @@ impl Archive {
         let dictionary = header.load_dictionary(backend.as_ref())?;
 
         // 4. Initialize compressor
-        let compressor = create_compressor(header.compression, None, dictionary);
+        let compressor = create_compressor(header.compression, None, dictionary.as_deref());
 
         // 5. Recursively open with all settings
         // Note: For now we pass None for parent loader; higher-level crates
@@ -306,7 +317,7 @@ impl Archive {
             parents,
             cache_l1,
             page_cache,
-            buffer_pool,
+            _buffer_pool: buffer_pool,
             prefetcher,
             hash_index: Mutex::new(None),
         }))
@@ -336,7 +347,7 @@ impl Archive {
     /// println!("Auxiliary: {} MB", mem_bytes / (1024 * 1024));
     /// # }
     /// ```
-    pub fn size(&self, stream: ArchiveStream) -> u64 {
+    pub const fn size(&self, stream: ArchiveStream) -> u64 {
         match stream {
             ArchiveStream::Main => self.master.main_size,
             ArchiveStream::Auxiliary => self.master.auxiliary_size,
@@ -359,13 +370,13 @@ impl Archive {
         let fetch_result = self.fetch_raw_block(stream, block_idx, info)?;
         match fetch_result {
             FetchResult::Decompressed(d) => Ok(d),
-            FetchResult::Compressed(raw) => self.decompress_and_verify(raw, block_idx, info),
+            FetchResult::Compressed(raw) => self.decompress_and_verify(&raw, block_idx, info),
         }
     }
 
     /// Lazily builds and returns the hash index for this archive.
     fn get_hash_index(&self) -> Result<Arc<HashIndex>> {
-        let mut index_guard = self.hash_index.lock().unwrap();
+        let mut index_guard = self.hash_index.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(index) = &*index_guard {
             return Ok(index.clone());
         }
@@ -379,7 +390,7 @@ impl Archive {
             for (i, block) in page.blocks.iter().enumerate() {
                 if !block.is_sparse() && block.offset != BLOCK_OFFSET_PARENT {
                     let global_idx = page_entry.start_block + i as u64;
-                    map.insert(block.hash, (ArchiveStream::Main, global_idx, *block));
+                    _ = map.insert(block.hash, (ArchiveStream::Main, global_idx, *block));
                 }
             }
         }
@@ -390,13 +401,14 @@ impl Archive {
             for (i, block) in page.blocks.iter().enumerate() {
                 if !block.is_sparse() && block.offset != BLOCK_OFFSET_PARENT {
                     let global_idx = page_entry.start_block + i as u64;
-                    map.insert(block.hash, (ArchiveStream::Auxiliary, global_idx, *block));
+                    _ = map.insert(block.hash, (ArchiveStream::Auxiliary, global_idx, *block));
                 }
             }
         }
 
         let index = Arc::new(map);
         *index_guard = Some(index.clone());
+        drop(index_guard);
         Ok(index)
     }
 
@@ -406,7 +418,7 @@ impl Archive {
         hash: &[u8; 32],
     ) -> Result<Option<(ArchiveStream, u64, BlockInfo)>> {
         let index = self.get_hash_index()?;
-        Ok(index.get(hash).cloned())
+        Ok(index.get(hash).copied())
     }
 
     /// Iterates all non-sparse block hashes for the given stream.
@@ -527,7 +539,7 @@ impl Archive {
         // SAFETY: &mut [u8] and &mut [MaybeUninit<u8>] have identical layout (both
         // are slices of single-byte types). Initialized u8 values are valid MaybeUninit<u8>.
         // The borrow is derived from `buffer` so no aliasing occurs.
-        let uninit = unsafe { &mut *(buffer as *mut [u8] as *mut [MaybeUninit<u8>]) };
+        let uninit = unsafe { &mut *(std::ptr::from_mut::<[u8]>(buffer) as *mut [MaybeUninit<u8>]) };
         self.read_at_into_uninit(stream, offset, uninit)
     }
 
@@ -592,7 +604,7 @@ impl Archive {
                                 let src = &data[offset_in_block..offset_in_block + to_copy];
                                 // SAFETY: distinct ranges
                                 unsafe {
-                                    let dst_ptr = target.as_mut_ptr().add(buf_offset) as *mut u8;
+                                    let dst_ptr = target.as_mut_ptr().add(buf_offset).cast::<u8>();
                                     ptr::copy_nonoverlapping(src.as_ptr(), dst_ptr, to_copy);
                                 }
                                 
@@ -643,7 +655,7 @@ impl Archive {
                 let fetch_result = self.fetch_raw_block(stream, block_idx, info)?;
                 let data = match fetch_result {
                     FetchResult::Decompressed(d) => d,
-                    FetchResult::Compressed(raw) => self.decompress_and_verify(raw, block_idx, info)?,
+                    FetchResult::Compressed(raw) => self.decompress_and_verify(&raw, block_idx, info)?,
                 };
 
                 // Copy to target
@@ -676,13 +688,13 @@ impl Archive {
             let fetch_result = self.fetch_raw_block(stream, block_idx, info)?;
             let data = match fetch_result {
                 FetchResult::Decompressed(d) => d,
-                FetchResult::Compressed(raw) => self.decompress_and_verify(raw, block_idx, info)?,
+                FetchResult::Compressed(raw) => self.decompress_and_verify(&raw, block_idx, info)?,
             };
 
             let src = &data[offset_in_block..offset_in_block + to_copy];
             // SAFETY: Serial execution, distinct ranges.
             unsafe {
-                let dst_ptr = target.as_mut_ptr().add(buf_offset) as *mut u8;
+                let dst_ptr = target.as_mut_ptr().add(buf_offset).cast::<u8>();
                 ptr::copy_nonoverlapping(src.as_ptr(), dst_ptr, to_copy);
             }
         }
@@ -691,16 +703,18 @@ impl Archive {
 
     /// Fills uninitialized memory with zeros.
     fn zero_fill_uninit(buffer: &mut [MaybeUninit<u8>]) {
-        // SAFETY: u8 has no invalid bit patterns, and ZEROS_64K is always initialized.
-        // Copying in 64K chunks is fast and handles any size.
         let mut remaining = buffer.len();
         let mut offset = 0;
         while remaining > 0 {
             let to_copy = std::cmp::min(remaining, ZEROS_64K.len());
+            // SAFETY: `ZEROS_64K` is a static initialized array; `buffer` is a valid mutable
+            // slice of `MaybeUninit<u8>`. `offset + to_copy <= buffer.len()` is maintained by
+            // the loop, and `to_copy <= ZEROS_64K.len()`. Writing initialized bytes into
+            // `MaybeUninit<u8>` is always valid since `u8` has no invalid bit patterns.
             unsafe {
                 ptr::copy_nonoverlapping(
                     ZEROS_64K.as_ptr(),
-                    buffer.as_mut_ptr().add(offset) as *mut u8,
+                    buffer.as_mut_ptr().add(offset).cast::<u8>(),
                     to_copy,
                 );
             }
@@ -893,7 +907,7 @@ impl Archive {
                         if let Ok(FetchResult::Compressed(raw)) =
                             self.fetch_raw_block(stream, global_idx, block)
                         {
-                            if let Ok(data) = self.decompress_and_verify(raw, global_idx, block) {
+                            if let Ok(data) = self.decompress_and_verify(&raw, global_idx, block) {
                                 self.cache_l1.insert(stream, global_idx, data);
                             }
                         }
@@ -923,7 +937,7 @@ impl Archive {
         // SAFETY: &mut [u8] and &mut [MaybeUninit<u8>] have identical layout (both
         // are slices of single-byte types). Initialized u8 values are valid MaybeUninit<u8>.
         // The borrow is derived from `buf` so no aliasing occurs.
-        let uninit = unsafe { &mut *(buf as *mut [u8] as *mut [MaybeUninit<u8>]) };
+        let uninit = unsafe { &mut *(std::ptr::from_mut::<[u8]>(buf) as *mut [MaybeUninit<u8>]) };
         self.read_at_into_uninit(stream, offset, uninit)
     }
 
@@ -1000,12 +1014,11 @@ impl Archive {
             // Check if we can use the shared 64K zero block
             if info.logical_len == DEFAULT_BLOCK_SIZE {
                 return Ok(FetchResult::Decompressed(Bytes::from_static(&ZEROS_64K)));
-            } else {
-                return Ok(FetchResult::Decompressed(Bytes::from(vec![
-                    0u8;
-                    info.logical_len as usize
-                ])));
             }
+            return Ok(FetchResult::Decompressed(Bytes::from(vec![
+                0u8;
+                info.logical_len as usize
+            ])));
         }
 
         // Read raw data from backend
@@ -1017,12 +1030,12 @@ impl Archive {
     /// Validates the block checksum after decompression/decryption.
     fn decompress_and_verify(
         &self,
-        raw: Bytes,
+        raw: &[u8],
         block_idx: u64,
         info: &BlockInfo,
     ) -> Result<Bytes> {
         // Verify checksum of final data (compressed + encrypted)
-        let actual_checksum = crc32_hash(&raw);
+        let actual_checksum = crc32_hash(raw);
         if actual_checksum != info.checksum {
             return Err(Error::Format(format!(
                 "Block {} checksum mismatch: expected {:08x}, got {:08x}",
@@ -1033,10 +1046,10 @@ impl Archive {
         let mut out = vec![0u8; info.logical_len as usize];
 
         if let Some(ref enc) = self.encryptor {
-            let compressed = enc.decrypt(&raw, block_idx)?;
-            self.compressor.decompress_into(&compressed, &mut out)?;
+            let compressed = enc.decrypt(raw, block_idx)?;
+            _ = self.compressor.decompress_into(&compressed, &mut out)?;
         } else {
-            self.compressor.decompress_into(raw.as_ref(), &mut out)?;
+            _ = self.compressor.decompress_into(raw, &mut out)?;
         }
 
         Ok(Bytes::from(out))

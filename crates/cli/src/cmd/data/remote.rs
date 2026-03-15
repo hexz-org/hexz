@@ -1,24 +1,27 @@
+//! Manage remote endpoints for push/pull operations.
+
 use anyhow::{Context, Result};
-use colored::*;
+use colored::Colorize;
 use super::workspace::Workspace;
 use crate::args::RemoteCommand;
 
+/// Execute the `hexz remote` command to manage remote endpoints.
 pub fn run(action: RemoteCommand) -> Result<()> {
     let mut ws = Workspace::find(&std::env::current_dir()?)?
         .context("Not in a hexz workspace (no .hexz found)")?;
 
     match action {
         RemoteCommand::Add { name, url } => {
-            ws.config.remotes.insert(name.clone(), url.clone());
+            let _ = ws.config.remotes.insert(name.clone(), url.clone());
             ws.save()?;
-            println!("  {} Added remote {} {}", "✓".green(), name.magenta(), format!("({})", url).bright_black());
+            println!("  {} Added remote {} {}", "✓".green(), name.magenta(), format!("({url})").bright_black());
         }
         RemoteCommand::Remove { name } => {
             if ws.config.remotes.remove(&name).is_some() {
                 ws.save()?;
                 println!("  {} Removed remote {}", "✓".green(), name.magenta());
             } else {
-                anyhow::bail!("Remote '{}' not found", name);
+                anyhow::bail!("Remote '{name}' not found");
             }
         }
         RemoteCommand::List => {

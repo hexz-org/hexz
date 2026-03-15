@@ -6,12 +6,15 @@ const YELLOW: &str = "\x1b[33m";
 const GREEN: &str = "\x1b[32m";
 const CYAN: &str = "\x1b[36m";
 
+/// Custom help output printer for the Hexz CLI.
+#[derive(Debug)]
 pub struct Printer {
     cmd: Command,
 }
 
 impl Printer {
-    pub fn new(cmd: Command) -> Self {
+    /// Create a new `Printer` wrapping the given clap `Command`.
+    pub const fn new(cmd: Command) -> Self {
         Self { cmd }
     }
 
@@ -20,12 +23,11 @@ impl Printer {
         let bin_name = self.cmd.get_bin_name().unwrap_or("hexz").to_string();
 
         println!(
-            "{}Usage:{} {}{}{} {}[OPTIONS]{} {}COMMAND{}",
-            BOLD, RESET, GREEN, bin_name, RESET, CYAN, RESET, YELLOW, RESET
+            "{BOLD}Usage:{RESET} {GREEN}{bin_name}{RESET} {CYAN}[OPTIONS]{RESET} {YELLOW}COMMAND{RESET}"
         );
         println!();
         if let Some(about) = self.cmd.get_about() {
-            println!("{}", about);
+            println!("{about}");
         }
         println!();
 
@@ -42,7 +44,7 @@ impl Printer {
                 continue;
             }
 
-            let about = sub.get_about().map(|a| a.to_string()).unwrap_or_default();
+            let about = sub.get_about().map(ToString::to_string).unwrap_or_default();
             let item = (name.clone(), about);
 
             match name.as_str() {
@@ -59,58 +61,54 @@ impl Printer {
         self.print_section("networking & cloud collaboration", network_cmds);
         self.print_section("security & system health", infra_cmds);
 
-        println!("{}Options:{}", BOLD, RESET);
-        println!("  {}{:<15}{} Print help", GREEN, "-h, --help", RESET);
-        println!("  {}{:<15}{} Print version", GREEN, "-V, --version", RESET);
+        println!("{BOLD}Options:{RESET}");
+        println!("  {GREEN}{:<15}{RESET} Print help", "-h, --help");
+        println!("  {GREEN}{:<15}{RESET} Print version", "-V, --version");
         println!();
         println!(
-            "Run '{}{}{} COMMAND --help{}' for more information on a command.",
-            BOLD, YELLOW, bin_name, RESET
+            "Run '{BOLD}{YELLOW}{bin_name} COMMAND --help{RESET}' for more information on a command."
         );
     }
 
+    #[allow(clippy::unused_self)]
     fn print_section(&self, header: &str, cmds: Vec<(String, String)>) {
         if cmds.is_empty() {
             return;
         }
 
-        println!("{}{}{}:{}", BOLD, YELLOW, header, RESET);
+        println!("{BOLD}{YELLOW}{header}:{RESET}");
 
         for (name, about) in cmds {
-            println!("  {}{:<12}{} {}", GREEN, name, RESET, about);
+            println!("  {GREEN}{name:<12}{RESET} {about}");
         }
         println!();
     }
 
     /// Prints detailed help for a specific subcommand
     pub fn print_subcommand_help(&mut self, sub_name: &str) {
-        let sub = match self.cmd.find_subcommand(sub_name) {
-            Some(s) => s,
-            None => return,
+        let Some(sub) = self.cmd.find_subcommand(sub_name) else {
+            return;
         };
 
         let bin_name = self.cmd.get_bin_name().unwrap_or("hexz");
 
         // 1. Usage
         println!(
-            "{}Usage:{} {} {} {} {} {}[OPTIONS] [ARGS]{}",
-            BOLD, RESET, GREEN, bin_name, sub_name, RESET, CYAN, RESET
+            "{BOLD}Usage:{RESET} {GREEN} {bin_name} {sub_name} {RESET} {CYAN}[OPTIONS] [ARGS]{RESET}"
         );
         println!();
 
         // 2. Detailed Description (long_about)
         if let Some(about) = sub.get_long_about().or_else(|| sub.get_about()) {
-            println!("{}", about);
+            println!("{about}");
         }
         println!();
 
         // Collect all arguments
-        let args: Vec<_> = sub.get_arguments().collect();
-
         // Partition into Positionals (Arguments) and Options (Flags)
         // Robust check: Positionals are arguments that have NO short flag AND NO long flag.
-        let (mut positionals, mut flags): (Vec<_>, Vec<_>) = args
-            .into_iter()
+        let (mut positionals, mut flags): (Vec<_>, Vec<_>) = sub
+            .get_arguments()
             .filter(|a| a.get_id() != "help" && a.get_id() != "version")
             .partition(|a| a.get_short().is_none() && a.get_long().is_none());
 
@@ -123,34 +121,34 @@ impl Printer {
 
         // 3. Arguments Section (Positional)
         if !positionals.is_empty() {
-            println!("{}Arguments:{}", BOLD, RESET);
+            println!("{BOLD}Arguments:{RESET}");
             for arg in positionals {
                 let name = arg.get_id().as_str().to_uppercase();
-                let help = arg.get_help().map(|h| h.to_string()).unwrap_or_default();
+                let help = arg.get_help().map(ToString::to_string).unwrap_or_default();
 
                 // Check if required
                 let required_note = if arg.is_required_set() {
-                    format!("{} (required){}", YELLOW, RESET)
+                    format!("{YELLOW} (required){RESET}")
                 } else {
                     String::new()
                 };
 
-                println!("  {}{:<28}{} {}{}", GREEN, name, RESET, help, required_note);
+                println!("  {GREEN}{name:<28}{RESET} {help}{required_note}");
             }
             println!();
         }
 
         // 4. Options Section (Flags)
-        println!("{}Options:{}", BOLD, RESET);
+        println!("{BOLD}Options:{RESET}");
 
         for arg in flags {
             let short = arg
                 .get_short()
-                .map(|s| format!("-{},", s))
+                .map(|s| format!("-{s},"))
                 .unwrap_or_default();
             let long = arg
                 .get_long()
-                .map(|l| format!("--{}", l))
+                .map(|l| format!("--{l}"))
                 .unwrap_or_default();
 
             // Handle values like <OUTPUT>
@@ -158,42 +156,37 @@ impl Printer {
                 let val_name = arg
                     .get_value_names()
                     .and_then(|names| names.first())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| "VAL".to_string());
+                    .map_or_else(|| "VAL".to_string(), ToString::to_string);
                 format!(" <{}>", val_name.to_uppercase())
             } else {
                 String::new()
             };
 
-            let flag_str = format!("{} {}{}", short, long, value);
-            let help_text = arg.get_help().map(|h| h.to_string()).unwrap_or_default();
+            let flag_str = format!("{short} {long}{value}");
+            let help_text = arg.get_help().map(ToString::to_string).unwrap_or_default();
 
             let required_note = if arg.is_required_set() {
-                format!("{} (required){}", YELLOW, RESET)
+                format!("{YELLOW} (required){RESET}")
             } else {
                 String::new()
             };
 
+            let trimmed = flag_str.trim();
             println!(
-                "  {}{:<28}{} {}{}",
-                GREEN,
-                flag_str.trim(),
-                RESET,
-                help_text,
-                required_note
+                "  {GREEN}{trimmed:<28}{RESET} {help_text}{required_note}"
             );
         }
 
         // Always show help flag
-        println!("  {}{:<28}{} Print help", GREEN, "-h, --help", RESET);
+        println!("  {GREEN}{:<28}{RESET} Print help", "-h, --help");
         println!();
 
         // 5. Example Usage
-        println!("{}Example:{}", BOLD, RESET);
+        println!("{BOLD}Example:{RESET}");
         if let Some(example) = sub.get_after_help() {
-            println!("  {}", example);
+            println!("  {example}");
         } else {
-            println!("  {} {} [flags] [args]", bin_name, sub_name);
+            println!("  {bin_name} {sub_name} [flags] [args]");
         }
         println!();
     }

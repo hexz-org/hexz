@@ -8,7 +8,7 @@ use common::*;
 use hexz_core::algo::compression::lz4::Lz4Compressor;
 use hexz_core::algo::compression::zstd::ZstdCompressor;
 use hexz_core::{Archive, ArchiveStream};
-use hexz_ops::pack::{PackConfig, pack_archive};
+use hexz_ops::pack::{PackConfig, PackAnalysisFlags, PackTransformFlags, pack_archive};
 use hexz_store::local::FileBackend;
 use std::fs;
 use std::sync::Arc;
@@ -34,9 +34,7 @@ fn test_cdc_pack_lz4() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         min_chunk: Some(16384),
         avg_chunk: Some(65536),
@@ -44,7 +42,7 @@ fn test_cdc_pack_lz4() {
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).expect("CDC packing failed");
+    pack_archive(&config, None::<&fn(u64, u64)>).expect("CDC packing failed");
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -74,9 +72,7 @@ fn test_cdc_pack_zstd() {
         input: disk_path,
         output: output_path.clone(),
         compression: "zstd".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         min_chunk: Some(16384),
         avg_chunk: Some(65536),
@@ -84,7 +80,7 @@ fn test_cdc_pack_zstd() {
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(ZstdCompressor::new(3, None));
@@ -99,6 +95,11 @@ fn test_cdc_pack_zstd() {
 /// Test CDC with encrypted archive.
 #[test]
 fn test_cdc_encrypted() {
+    use hexz_core::algo::encryption::aes_gcm::AesGcmEncryptor;
+    use hexz_core::format::header::Header;
+    use hexz_core::format::magic::HEADER_SIZE;
+    use hexz_store::StorageBackend;
+
     let temp_dir = TempDir::new().unwrap();
     let disk_path = temp_dir.path().join("disk.img");
 
@@ -112,9 +113,8 @@ fn test_cdc_encrypted() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: true,
         password: Some(password.to_string()),
-        train_dict: false,
+        transform: PackTransformFlags { encrypt: true, train_dict: false, ..Default::default() },
         block_size: 65536,
         min_chunk: Some(16384),
         avg_chunk: Some(65536),
@@ -122,14 +122,10 @@ fn test_cdc_encrypted() {
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     // Read back with encryption
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
-    use hexz_core::algo::encryption::aes_gcm::AesGcmEncryptor;
-    use hexz_core::format::header::Header;
-    use hexz_core::format::magic::HEADER_SIZE;
-    use hexz_store::StorageBackend;
 
     let header_bytes = backend.read_exact(0, HEADER_SIZE).unwrap();
     let header: Header = bincode::deserialize(&header_bytes).unwrap();
@@ -162,9 +158,7 @@ fn test_cdc_small_chunks() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         min_chunk: Some(4096),
         avg_chunk: Some(16384),
@@ -172,7 +166,7 @@ fn test_cdc_small_chunks() {
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -204,9 +198,7 @@ fn test_cdc_deduplication() {
         input: disk_path.clone(),
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         min_chunk: Some(16384),
         avg_chunk: Some(65536),
@@ -214,16 +206,14 @@ fn test_cdc_deduplication() {
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     // The compressed file should be significantly smaller than the original
     let original_size = fs::metadata(&disk_path).unwrap().len();
     let compressed_size = fs::metadata(&output_path).unwrap().len();
     assert!(
         compressed_size < original_size / 2,
-        "Dedup should significantly reduce size: {} vs {}",
-        compressed_size,
-        original_size
+        "Dedup should significantly reduce size: {compressed_size} vs {original_size}"
     );
 
     // Verify data integrity
@@ -255,9 +245,7 @@ fn test_cdc_dual_stream() {
         input: input_dir,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         min_chunk: Some(16384),
         avg_chunk: Some(65536),
@@ -265,7 +253,7 @@ fn test_cdc_dual_stream() {
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -296,30 +284,25 @@ fn test_pack_with_progress_callback() {
     let last_progress = Arc::new(AtomicU64::new(0));
     let callback_count = Arc::new(AtomicU64::new(0));
 
-    let lp = last_progress.clone();
+    let lp = last_progress;
     let cc = callback_count.clone();
 
     let config = PackConfig {
         input: disk_path,
-        output: output_path.clone(),
+        output: output_path,
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(
-        config,
-        Some(move |current: u64, total: u64| {
-            lp.store(current, Ordering::SeqCst);
-            cc.fetch_add(1, Ordering::SeqCst);
-            assert!(total > 0);
-            assert!(current <= total);
-        }),
-    )
-    .unwrap();
+    let cb = move |current: u64, total: u64| {
+        lp.store(current, Ordering::SeqCst);
+        cc.fetch_add(1, Ordering::SeqCst);
+        assert!(total > 0);
+        assert!(current <= total);
+    };
+    pack_archive(&config, Some(&cb)).unwrap();
 
     assert!(
         callback_count.load(Ordering::SeqCst) > 0,
@@ -354,14 +337,14 @@ fn test_cdc_dcam_zstd_high_compression() {
         input: input_path,
         output: output_path.clone(),
         compression: "zstd".to_string(),
-        use_dcam: true, // Enable DCAM
         min_chunk: None, // Let DCAM decide
         avg_chunk: None,
         max_chunk: None,
+        analysis: PackAnalysisFlags { use_dcam: true, ..Default::default() },
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).expect("CDC+DCAM packing failed");
+    pack_archive(&config, None::<&fn(u64, u64)>).expect("CDC+DCAM packing failed");
 
     // 3. Verify high compression/deduplication
     let metadata = fs::metadata(&output_path).unwrap();
@@ -371,7 +354,7 @@ fn test_cdc_dcam_zstd_high_compression() {
     // With 1024x redundancy, the pattern part should dedup to ~1KB compressed.
     // Unique data is 24KB.
     // Expected size should be well under 100KB including metadata.
-    assert!(archive_size < 100 * 1024, "Archive size too large: {} bytes", archive_size);
+    assert!(archive_size < 100 * 1024, "Archive size too large: {archive_size} bytes");
 
     // 4. Verify Integrity
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());

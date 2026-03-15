@@ -54,7 +54,7 @@ impl StorageBackend for FileBackend {
         // SAFETY: read_exact_at initialises all bytes before we read them.
         unsafe { buffer.set_len(len) }
         match read_exact_at(&self.inner, &mut buffer, offset) {
-            Ok(_) => Ok(buffer.freeze()),
+            Ok(()) => Ok(buffer.freeze()),
             Err(e) => Err(hexz_common::Error::Io(e)),
         }
     }

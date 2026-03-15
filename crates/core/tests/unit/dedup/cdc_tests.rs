@@ -134,7 +134,7 @@ fn test_cdc_localized_changes() {
     let stats1 = analyze_stream(Cursor::new(data.clone()), &params).unwrap();
 
     // Modify 100 bytes in the middle
-    let mut modified = data.clone();
+    let mut modified = data;
     for item in &mut modified[25000..25100] {
         *item ^= 0xFF;
     }
@@ -343,6 +343,6 @@ fn test_cdc_parameter_variations() {
         params.f = f;
         let stats = analyze_stream(Cursor::new(data.clone()), &params).unwrap();
 
-        assert!(stats.chunk_count > 0, "Should produce chunks with f={}", f);
+        assert!(stats.chunk_count > 0, "Should produce chunks with f={f}");
     }
 }

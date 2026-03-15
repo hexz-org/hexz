@@ -1,7 +1,7 @@
-use crate::common::*;
-use anyhow::{Result, bail};
+use crate::common::{cargo, check_mark, cmd, find_workspace_root, BOLD, CYAN, GREEN, RED, RESET};
+use anyhow::{Result, anyhow, bail};
 
-#[derive(clap::Subcommand)]
+#[derive(Clone, Copy, clap::Subcommand)]
 pub enum SetupCmd {
     /// Check that required system dependencies are present
     Check,
@@ -94,8 +94,7 @@ fn check_fuse() -> bool {
         .arg("--exists")
         .arg("fuse")
         .run_with_status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+        .is_ok_and(|s| s.success())
     {
         return true;
     }
@@ -109,8 +108,7 @@ fn check_fuse() -> bool {
                     .arg("-s")
                     .arg("libfuse-dev")
                     .run_with_status()
-                    .map(|s| s.success())
-                    .unwrap_or(false)
+                    .is_ok_and(|s| s.success())
             {
                 return true;
             }
@@ -120,8 +118,7 @@ fn check_fuse() -> bool {
                     .arg("-Q")
                     .arg("fuse3")
                     .run_with_status()
-                    .map(|s| s.success())
-                    .unwrap_or(false)
+                    .is_ok_and(|s| s.success())
                 {
                     return true;
                 }
@@ -129,8 +126,7 @@ fn check_fuse() -> bool {
                     .arg("-Q")
                     .arg("fuse2")
                     .run_with_status()
-                    .map(|s| s.success())
-                    .unwrap_or(false)
+                    .is_ok_and(|s| s.success())
                 {
                     return true;
                 }
@@ -143,8 +139,7 @@ fn check_fuse() -> bool {
                     .arg("list")
                     .arg("macfuse")
                     .run_with_status()
-                    .map(|s| s.success())
-                    .unwrap_or(false)
+                    .is_ok_and(|s| s.success())
         }
         _ => false,
     }
@@ -177,8 +172,7 @@ fn install() -> Result<()> {
         let ok = cmd(cargo())
             .args(["install", tool])
             .run_with_status()
-            .map(|s| s.success())
-            .unwrap_or(false);
+            .is_ok_and(|s| s.success());
         if ok {
             println!("{}", check_mark(true));
         } else {
@@ -202,8 +196,7 @@ fn install() -> Result<()> {
             .args(["-m", "venv"])
             .arg(&venv)
             .run_with_status()
-            .map(|s| s.success())
-            .unwrap_or(false);
+            .is_ok_and(|s| s.success());
         if !ok {
             cmd("python").args(["-m", "venv"]).arg(&venv).run()?;
         }
@@ -215,7 +208,7 @@ fn install() -> Result<()> {
         let loader = root.join("crates/loader");
         if loader.join("pyproject.toml").exists() {
             println!("{GREEN}Installing Python dev dependencies\u{2026}{RESET}");
-            cmd(pip.to_str().unwrap())
+            cmd(pip.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?)
                 .args(["install", "-q", "-e"])
                 .arg(format!("{}[dev,test,numpy]", loader.display()))
                 .run()?;
@@ -224,9 +217,9 @@ fn install() -> Result<()> {
         // Docs requirements (if present)
         let req_file = root.join("docs/requirements.txt");
         if req_file.exists() {
-            let _ = cmd(pip.to_str().unwrap())
+            let _ = cmd(pip.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?)
                 .args(["install", "-q", "-r"])
-                .arg(req_file.to_str().unwrap())
+                .arg(req_file.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?)
                 .run_with_status();
         }
     }

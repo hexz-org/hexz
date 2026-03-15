@@ -34,9 +34,7 @@ fn test_fixtures_create_compressible_data() {
     let entropy_high = calculate_entropy(&high_entropy);
     assert!(
         entropy_high > entropy_low,
-        "Expected high > low, but got low={:.2}, high={:.2}",
-        entropy_low,
-        entropy_high
+        "Expected high > low, but got low={entropy_low:.2}, high={entropy_high:.2}"
     );
 }
 

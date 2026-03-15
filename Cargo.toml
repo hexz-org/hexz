@@ -19,6 +19,74 @@ edition = "2024"
 authors = ["Will McCallion"]
 repository = "https://github.com/hexz-org/hexz"
 license = "Apache-2.0"
+keywords = ["archive", "deduplication", "storage", "snapshot"]
+categories = ["compression", "filesystem"]
+readme = "README.md"
+
+[profile.release]
+opt-level     = 3
+lto           = "fat"
+codegen-units = 1
+panic         = "abort"
+strip         = "symbols"
+incremental   = false
+
+# Optimize dependencies in dev — compression/crypto libs don't need debug codegen.
+[profile.dev.package."*"]
+opt-level = 3
+
+[workspace.lints.rust]
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+unused_results = "warn"
+unsafe_code = "deny"
+rust_2018_idioms = { level = "deny", priority = -1 }
+
+[workspace.lints.clippy]
+# Strong baseline
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+
+# Every unsafe block must have a `// SAFETY:` comment explaining correctness
+undocumented_unsafe_blocks = "deny"
+
+# Strictness on panics/WIP code — production code only; tests use
+# #[cfg_attr(test, allow(...))] at crate roots.
+unwrap_used = "deny"
+expect_used = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+# Style/naming allows
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+similar_names = "allow"
+inline_always = "allow"
+
+# Cast allows: archive offset arithmetic and block size calculations require
+# intentional conversions between u32/u64/usize throughout the codebase.
+cast_precision_loss = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+cast_possible_wrap = "allow"
+cast_lossless = "allow"
+
+# These fire on reasonable code patterns in this codebase
+too_many_lines = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+redundant_pub_crate = "allow"
+option_if_let_else = "allow"
+# Multiple crates legitimately depend on many features
+multiple_crate_versions = "allow"
+# Match arms with identical bodies are often clearer listed separately
+match_same_arms = "allow"
+
+[workspace.lints.rustdoc]
+all = "deny"
+missing_crate_level_docs = "deny"
+broken_intra_doc_links = "deny"
 
 [workspace.dependencies]
 hexz-common = { path = "crates/common", version = "0.7.0", default-features = false }

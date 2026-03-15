@@ -477,7 +477,7 @@ fn test_batch_encrypt_many_blocks() {
 
     // Encrypt 100 small blocks
     for i in 0..100 {
-        let plaintext = format!("Block number {}", i).into_bytes();
+        let plaintext = format!("Block number {i}").into_bytes();
         let ciphertext = encryptor.encrypt(&plaintext, i as u64).unwrap();
         let decrypted = encryptor.decrypt(&ciphertext, i as u64).unwrap();
         assert_eq!(decrypted, plaintext);

@@ -1,7 +1,7 @@
-use crate::common::*;
-use anyhow::Result;
+use crate::common::{cargo, cmd, find_workspace_root, require_cmd, BOLD, CYAN, GREEN, RESET};
+use anyhow::{Result, anyhow};
 
-#[derive(clap::Subcommand)]
+#[derive(Clone, Copy, clap::Subcommand)]
 pub enum PerfCmd {
     /// Profile Rust CLI data pack via samply
     Rust {
@@ -49,7 +49,7 @@ fn rust(size_mb: u32) -> Result<()> {
         .args([
             "record",
             "--",
-            root.join("target/release/hexz").to_str().unwrap(),
+            root.join("target/release/hexz").to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
             "data",
             "pack",
             "--input",

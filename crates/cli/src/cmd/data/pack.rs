@@ -2,13 +2,13 @@
 
 use crate::ui::progress::create_progress_bar;
 use anyhow::Result;
-use hexz_ops::pack::{PackConfig, pack_archive};
+use hexz_ops::pack::{PackConfig, PackAnalysisFlags, PackTransformFlags, pack_archive};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use colored::*;
+use colored::Colorize;
 
 /// Execute the pack command to create a Hexz archive archive.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
 pub fn run(
     input: Option<PathBuf>,
     base: Option<PathBuf>,
@@ -41,12 +41,12 @@ pub fn run(
     let total_size = if input_path.is_dir() {
         walkdir::WalkDir::new(&input_path)
             .into_iter()
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .filter(|e: &walkdir::DirEntry| e.file_type().is_file())
-            .map(|e: walkdir::DirEntry| e.metadata().map(|m| m.len()).unwrap_or(0))
+            .map(|e: walkdir::DirEntry| e.metadata().map_or(0, |m| m.len()))
             .sum()
     } else {
-        std::fs::metadata(&input_path).map(|m| m.len()).unwrap_or(0)
+        std::fs::metadata(&input_path).map_or(0, |m| m.len())
     };
 
     // Setup UI
@@ -60,11 +60,11 @@ pub fn run(
     }
 
     // Create progress bar
-    let pb = if !silent {
+    let pb = if silent {
+        None
+    } else {
         let pb = create_progress_bar(total_size);
         Some(Arc::new(Mutex::new(pb)))
-    } else {
-        None
     };
     let pb_clone = pb.clone();
 
@@ -76,33 +76,35 @@ pub fn run(
     let config = PackConfig {
         input: input_path,
         base,
-        output: output.clone(),
+        output,
         compression,
-        encrypt,
         password,
-        train_dict,
         block_size,
         min_chunk,
         avg_chunk,
         max_chunk,
-        parallel: workers != Some(1),
         num_workers: workers.unwrap_or(0),
-        use_dcam: dcam,
-        dcam_optimal,
-        ..Default::default()
+        transform: PackTransformFlags {
+            encrypt,
+            train_dict,
+            parallel: workers != Some(1),
+        },
+        analysis: PackAnalysisFlags {
+            show_progress: true,
+            use_dcam: dcam,
+            dcam_optimal,
+        },
     };
 
     // Run the packing operation with progress callback
-    pack_archive(
-        config,
-        Some(move |current, _| {
-            if let Some(ref pb) = pb_clone {
-                if let Ok(pb) = pb.lock() {
-                    pb.set_position(current);
-                }
+    let cb = move |current: u64, _: u64| {
+        if let Some(ref pb) = pb_clone {
+            if let Ok(pb) = pb.lock() {
+                pb.set_position(current);
             }
-        }),
-    )?;
+        }
+    };
+    pack_archive(&config, Some(&cb))?;
 
     if let Some(ref pb) = pb {
         if let Ok(pb) = pb.lock() {

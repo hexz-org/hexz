@@ -5,7 +5,13 @@ edition.workspace = true
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 description = "Platform-agnostic virtual filesystem logic for Hexz"
+
+[lints]
+workspace = true
 
 [dependencies]
 hexz-core.workspace = true

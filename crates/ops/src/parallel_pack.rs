@@ -31,7 +31,7 @@ use hexz_core::algo::compression::Compressor;
 const MAX_CHUNKS_IN_FLIGHT: usize = 1000;
 
 /// Raw chunk data from input
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct RawChunk {
     /// Chunk data (uncompressed)
     pub data: Vec<u8>,
@@ -40,6 +40,7 @@ pub struct RawChunk {
 }
 
 /// Compressed chunk with hash for deduplication
+#[derive(Debug)]
 pub struct CompressedChunk {
     /// Compressed data
     pub compressed: Vec<u8>,
@@ -71,9 +72,9 @@ impl Default for ParallelPackConfig {
 
 /// Compress worker: receives raw chunks, compresses them, computes hashes
 fn compress_worker(
-    rx_chunks: Receiver<RawChunk>,
-    tx_compressed: Sender<CompressedChunk>,
-    compressor: Arc<Box<dyn Compressor + Send + Sync>>,
+    rx_chunks: &Receiver<RawChunk>,
+    tx_compressed: &Sender<CompressedChunk>,
+    compressor: &(dyn Compressor + Send + Sync),
 ) -> Result<()> {
     for chunk in rx_chunks {
         // Compress the chunk
@@ -116,7 +117,7 @@ fn compress_worker(
 pub fn process_chunks_parallel<W>(
     chunks: Vec<RawChunk>,
     compressor: Box<dyn Compressor + Send + Sync>,
-    config: ParallelPackConfig,
+    config: &ParallelPackConfig,
     mut writer: W,
 ) -> Result<()>
 where
@@ -140,7 +141,7 @@ where
             let tx = tx_compressed.clone();
             let comp = compressor.clone();
 
-            thread::spawn(move || compress_worker(rx, tx, comp))
+            thread::spawn(move || compress_worker(&rx, &tx, comp.as_ref().as_ref()))
         })
         .collect();
 
@@ -193,7 +194,7 @@ mod tests {
         let compressor = Box::new(Lz4Compressor::new());
         let config = ParallelPackConfig::default();
 
-        let result = process_chunks_parallel(chunks, compressor, config, |_| Ok(()));
+        let result = process_chunks_parallel(chunks, compressor, &config, |_| Ok(()));
         assert!(result.is_ok());
     }
 
@@ -211,7 +212,7 @@ mod tests {
         };
 
         let mut received = Vec::new();
-        let result = process_chunks_parallel(chunks, compressor, config, |chunk| {
+        let result = process_chunks_parallel(chunks, compressor, &config, |chunk| {
             received.push(chunk.original_size);
             Ok(())
         });
@@ -237,7 +238,7 @@ mod tests {
         };
 
         let mut count = 0;
-        let result = process_chunks_parallel(chunks, compressor, config, |_chunk| {
+        let result = process_chunks_parallel(chunks, compressor, &config, |_chunk| {
             count += 1;
             Ok(())
         });

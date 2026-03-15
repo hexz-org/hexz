@@ -5,7 +5,13 @@ edition.workspace = true
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 description = "Core engine for high-performance data streaming and compression"
+
+[lints]
+workspace = true
 
 [dependencies]
 hexz-common.workspace = true

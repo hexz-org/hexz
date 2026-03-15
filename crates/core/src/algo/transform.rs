@@ -32,7 +32,7 @@ pub fn byte_shuffle(data: &mut [u8], element_size: usize, scratch: &mut Vec<u8>)
     }
 }
 
-/// Byte-unshuffle: inverse of byte_shuffle.
+/// Byte-unshuffle: inverse of `byte_shuffle`.
 ///
 /// Groups bytes by their position within each element. For `element_size=4`:
 /// input  `[A0 B0 C0 D0  A1 B1 C1 D1]` (interleaved)

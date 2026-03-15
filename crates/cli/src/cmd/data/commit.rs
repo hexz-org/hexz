@@ -3,13 +3,14 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::process::Command;
-use colored::*;
+use colored::Colorize;
 use indicatif::HumanBytes;
 
-use hexz_ops::pack::{PackConfig, pack_archive};
+use hexz_ops::pack::{PackConfig, PackAnalysisFlags, pack_archive};
 
 use super::workspace::Workspace;
 
+/// Execute the commit command to save workspace changes as a new thin archive.
 pub fn run(
     mut output: PathBuf,
     mountpoint: Option<PathBuf>,
@@ -66,17 +67,20 @@ pub fn run(
         base,
         output: output.clone(),
         compression: "zstd".to_string(), // Default to zstd for commits
-        use_dcam: true,
-        show_progress: true,
+        analysis: PackAnalysisFlags {
+            use_dcam: true,
+            show_progress: true,
+            ..Default::default()
+        },
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).context("Commit failed during packing")?;
+    pack_archive(&config, None::<&fn(u64, u64)>).context("Commit failed during packing")?;
 
-    let file_size = std::fs::metadata(&output).map(|m| m.len()).unwrap_or(0);
+    let file_size = std::fs::metadata(&output).map_or(0, |m| m.len());
     let size_str = HumanBytes(file_size).to_string();
 
-    println!("\n  {} Commit complete {}", "✓".green(), format!("({} delta)", size_str).bright_black());
+    println!("\n  {} Commit complete {}", "✓".green(), format!("({size_str} delta)").bright_black());
     Ok(())
 }
 fn infer_base_archive(mountpoint: &std::path::Path) -> Option<PathBuf> {

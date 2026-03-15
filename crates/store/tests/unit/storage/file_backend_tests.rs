@@ -1,4 +1,4 @@
-//! Unit tests for FileBackend storage
+//! Unit tests for `FileBackend` storage
 
 use super::common;
 use common::*;
@@ -160,7 +160,7 @@ fn test_file_backend_concurrent_reads() {
             assert_bytes_equal(
                 &chunk,
                 &data[offset as usize..(offset + 1000) as usize],
-                &format!("concurrent read thread {}", i),
+                &format!("concurrent read thread {i}"),
             );
         });
 
@@ -194,7 +194,7 @@ fn test_file_backend_concurrent_overlapping_reads() {
             assert_bytes_equal(
                 &chunk,
                 &data[offset as usize..(offset + 2000) as usize],
-                &format!("overlapping read thread {}", i),
+                &format!("overlapping read thread {i}"),
             );
         });
 
@@ -242,7 +242,7 @@ fn test_file_backend_many_small_reads() {
         assert_bytes_equal(
             &chunk,
             &data[offset..offset + 100],
-            &format!("small read {}", i),
+            &format!("small read {i}"),
         );
     }
 }
@@ -259,7 +259,7 @@ fn test_file_backend_different_sizes() {
 
         if size > 0 {
             let read = backend.read_exact(0, size).unwrap();
-            assert_bytes_equal(&read, &data, &format!("file size {}", size));
+            assert_bytes_equal(&read, &data, &format!("file size {size}"));
         }
     }
 }
@@ -285,7 +285,7 @@ fn test_file_backend_pattern_verification() {
             DataPattern::Ones => assert!(is_all_ones(&data)),
             DataPattern::Sequential => verify_sequential(&data),
             DataPattern::Repeating(b) => verify_pattern(&data, b),
-            _ => {} // Skip verification for other patterns
+            DataPattern::Alternating => {} // Skip verification for alternating
         }
     }
 }

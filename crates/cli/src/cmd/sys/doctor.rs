@@ -14,10 +14,11 @@
 
 use anyhow::Result;
 use std::process::Command;
-use colored::*;
+use colored::Colorize;
 
 use crate::ui::color::{Palette, palette};
 
+/// Execute the `hexz doctor` command to run system health checks.
 pub fn run() -> Result<()> {
     let p = palette();
     println!("{} Hexz Doctor", "╭".dimmed());

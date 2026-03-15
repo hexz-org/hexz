@@ -8,7 +8,7 @@
 //! # Core Capabilities
 //!
 //! - **Dictionary Training**: Intelligent sampling and Zstd dictionary optimization
-//! - **Chunking Strategies**: Fixed-size blocks or content-defined (FastCDC) for better deduplication
+//! - **Chunking Strategies**: Fixed-size blocks or content-defined (`FastCDC`) for better deduplication
 //! - **Compression**: LZ4 (fast) or Zstd (high-ratio) with optional dictionary support
 //! - **Encryption**: Per-block AES-256-GCM authenticated encryption
 //! - **Deduplication**: BLAKE3 based content deduplication (disabled for encrypted data)
@@ -86,7 +86,7 @@
 //! structured data (file systems, databases) by building a Zstd shared dictionary:
 //!
 //! 1. **Stratified Sampling**: Sample blocks evenly across input to capture diversity
-//!    - Step size = file_size / target_samples (typically 4000 samples)
+//!    - Step size = `file_size` / `target_samples` (typically 4000 samples)
 //!    - Ensures coverage of different file system regions
 //!
 //! 2. **Quality Filtering**: Exclude unsuitable blocks
@@ -104,7 +104,7 @@
 //!
 //! - **Hash Table**: Maps BLAKE3 hash → physical offset for each unique compressed block
 //! - **Collision Handling**: BLAKE3 collisions are astronomically unlikely (2^128 blocks)
-//! - **Memory Usage**: ~48 bytes per unique block (32-byte hash + 8-byte offset + HashMap overhead)
+//! - **Memory Usage**: ~48 bytes per unique block (32-byte hash + 8-byte offset + `HashMap` overhead)
 //! - **Write Behavior**: Only write each unique block once; reuse offset for duplicates
 //! - **Encryption Interaction**: Disabled when encrypting (each block gets unique nonce/ciphertext)
 //!
@@ -120,7 +120,7 @@
 //!   - Prevents memory growth during large packs
 //!   - Enables streaming operation (constant memory)
 //!
-//! - **Master Index**: Array of PageEntry records
+//! - **Master Index**: Array of `PageEntry` records
 //!   - Binary search for O(log N) page lookup
 //!   - Typical overhead: 1 KiB per GB of data
 //!
@@ -131,8 +131,8 @@
 //! - **Chunking Buffer**: 1 block (64 KiB default)
 //! - **Compression Output**: ~1.5× block size (worst case: incompressible data)
 //! - **Current Index Page**: Up to 4096 × 20 bytes = 80 KiB
-//! - **Deduplication Map**: ~48 bytes × unique_blocks
-//!   - Example: 10 GB image with 50% dedup = ~80 MB HashMap
+//! - **Deduplication Map**: ~48 bytes × `unique_blocks`
+//!   - Example: 10 GB image with 50% dedup = ~80 MB `HashMap`
 //! - **Dictionary**: 110 KiB (if trained)
 //!
 //! Total typical memory: 100-200 MB for dedup hash table + ~1 MB working set.
@@ -175,7 +175,7 @@
 //!     ..Default::default()
 //! };
 //!
-//! pack_archive::<fn(u64, u64)>(config, None)?;
+//! pack_archive::<fn(u64, u64)>(&config, None)?;
 //! # Ok(())
 //! # }
 //! ```
@@ -183,7 +183,7 @@
 //! ## Advanced Packing (Zstd with Dictionary, CDC, Encryption)
 //!
 //! ```no_run
-//! use hexz_ops::pack::{pack_archive, PackConfig};
+//! use hexz_ops::pack::{pack_archive, PackConfig, PackTransformFlags};
 //! use std::path::PathBuf;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -191,16 +191,19 @@
 //!     input: PathBuf::from("ubuntu.qcow2"),
 //!     output: PathBuf::from("ubuntu.hxz"),
 //!     compression: "zstd".to_string(),
-//!     train_dict: true,         // Train dictionary for better ratio
-//!     encrypt: true,
 //!     password: Some("secure_passphrase".to_string()),
 //!     min_chunk: Some(16384),   // 16 KiB minimum chunk
 //!     avg_chunk: Some(65536),   // 64 KiB average chunk
 //!     max_chunk: Some(262144),  // 256 KiB maximum chunk
+//!     transform: PackTransformFlags {
+//!         train_dict: true,     // Train dictionary for better ratio
+//!         encrypt: true,
+//!         ..Default::default()
+//!     },
 //!     ..Default::default()
 //! };
 //!
-//! pack_archive::<fn(u64, u64)>(config, None)?;
+//! pack_archive::<fn(u64, u64)>(&config, None)?;
 //! # Ok(())
 //! # }
 //! ```
@@ -219,10 +222,11 @@
 //! };
 //!
 //! // Callback receives (current_logical_pos, total_size)
-//! pack_archive(config, Some(|pos, total| {
+//! let cb = |pos: u64, total: u64| {
 //!     let pct = (pos as f64 / total as f64) * 100.0;
 //!     println!("Packing: {:.1}%", pct);
-//! }))?;
+//! };
+//! pack_archive(&config, Some(&cb))?;
 //! # Ok(())
 //! # }
 //! ```
@@ -239,7 +243,7 @@
 //! - **Zstd Level 3 Decompression**: 12.9 GB/s
 //! - **BLAKE3 Hashing**: 5.3 GB/s (2.2× faster than SHA-256)
 //! - **SHA-256 Hashing**: 2.5 GB/s
-//! - **FastCDC Chunking**: 2.7 GB/s (gear-based rolling hash)
+//! - **`FastCDC` Chunking**: 2.7 GB/s (gear-based rolling hash)
 //! - **AES-256-GCM Encryption**: 2.1 GB/s (hardware AES-NI acceleration)
 //! - **Pack Throughput (LZ4, no CDC)**: 4.9 GB/s (64KB blocks)
 //! - **Pack Throughput (LZ4 + CDC)**: 1.9 GB/s (CDC adds 2.6× overhead)
@@ -320,14 +324,38 @@ use std::os::unix::fs::MetadataExt;
 ///     input: PathBuf::from("data/"),
 ///     output: PathBuf::from("archive.hxz"),
 ///     compression: "zstd".to_string(),
-///     encrypt: true,
 ///     password: Some("secret".to_string()),
 ///     min_chunk: Some(16384),
 ///     avg_chunk: Some(65536),
 ///     max_chunk: Some(131072),
+///     transform: hexz_ops::pack::PackTransformFlags { encrypt: true, ..Default::default() },
 ///     ..Default::default()
 /// };
 /// ```
+/// Feature flags controlling how data is transformed during packing.
+#[derive(Debug, Clone, Default)]
+pub struct PackTransformFlags {
+    /// Enable encryption.
+    pub encrypt: bool,
+    /// Train a compression dictionary (zstd only).
+    pub train_dict: bool,
+    /// Enable parallel compression (use multiple CPU cores).
+    pub parallel: bool,
+}
+
+/// Feature flags controlling analysis and UI during packing.
+#[derive(Debug, Clone, Default)]
+pub struct PackAnalysisFlags {
+    /// Show progress bar (if no callback provided).
+    pub show_progress: bool,
+    /// Run DCAM analysis to auto-detect optimal CDC parameters.
+    /// When false (default), uses fixed global defaults: min=16 KiB, avg=64 KiB, max=256 KiB.
+    pub use_dcam: bool,
+    /// If true, DCAM will sweep a wider range of parameters (up to 16MB average chunks).
+    pub dcam_optimal: bool,
+}
+
+/// Configuration for archive packing operations.
 #[derive(Debug, Clone)]
 pub struct PackConfig {
     /// Input path (file or directory).
@@ -338,12 +366,8 @@ pub struct PackConfig {
     pub output: PathBuf,
     /// Compression algorithm ("lz4" or "zstd").
     pub compression: String,
-    /// Enable encryption.
-    pub encrypt: bool,
     /// Encryption password (required if encrypt=true).
     pub password: Option<String>,
-    /// Train a compression dictionary (zstd only).
-    pub train_dict: bool,
     /// Block size in bytes.
     pub block_size: u32,
     /// Minimum chunk size for CDC (auto-detected if None).
@@ -352,17 +376,12 @@ pub struct PackConfig {
     pub avg_chunk: Option<u32>,
     /// Maximum chunk size for CDC (auto-detected if None).
     pub max_chunk: Option<u32>,
-    /// Enable parallel compression (use multiple CPU cores).
-    pub parallel: bool,
     /// Number of worker threads (0 = auto-detect).
     pub num_workers: usize,
-    /// Show progress bar (if no callback provided).
-    pub show_progress: bool,
-    /// Run DCAM analysis to auto-detect optimal CDC parameters.
-    /// When false (default), uses fixed global defaults: min=16 KiB, avg=64 KiB, max=256 KiB.
-    pub use_dcam: bool,
-    /// If true, DCAM will sweep a wider range of parameters (up to 16MB average chunks).
-    pub dcam_optimal: bool,
+    /// Data transformation flags (encryption, dictionary, parallelism).
+    pub transform: PackTransformFlags,
+    /// Analysis and UI flags (progress, DCAM).
+    pub analysis: PackAnalysisFlags,
 }
 
 impl Default for PackConfig {
@@ -372,18 +391,22 @@ impl Default for PackConfig {
             base: None,
             output: PathBuf::from("output.hxz"),
             compression: "lz4".to_string(),
-            encrypt: false,
             password: None,
-            train_dict: false,
             block_size: 65536,
             min_chunk: None,
             avg_chunk: None,
             max_chunk: None,
-            parallel: true,      // Enable by default for performance
             num_workers: 0,      // Auto-detect CPU cores
-            show_progress: true, // Show progress by default
-            use_dcam: false,     // Use fixed defaults; opt-in DCAM with --dcam
-            dcam_optimal: false,
+            transform: PackTransformFlags {
+                encrypt: false,
+                train_dict: false,
+                parallel: true,      // Enable by default for performance
+            },
+            analysis: PackAnalysisFlags {
+                show_progress: true, // Show progress by default
+                use_dcam: false,     // Use fixed defaults; opt-in DCAM with --dcam
+                dcam_optimal: false,
+            },
         }
     }
 }
@@ -443,10 +466,10 @@ pub fn calculate_entropy(data: &[u8]) -> f64 {
     let len = data.len() as f64;
     let mut entropy = 0.0;
 
-    for &count in frequencies.iter() {
+    for &count in &frequencies {
         if count > 0 {
             let p = count as f64 / len;
-            entropy -= p * p.log2();
+            entropy = p.mul_add(-p.log2(), entropy);
         }
     }
 
@@ -459,14 +482,16 @@ pub fn calculate_entropy(data: &[u8]) -> f64 {
 /// - avg: 64 KiB  — good balance of dedup granularity vs. metadata overhead
 /// - max: 256 KiB — caps pathologically large chunks from low-entropy regions
 pub const CDC_DEFAULT_MIN: u32 = 16_384; // 16 KiB
+/// Default CDC average chunk size (64 KiB, f = 16).
 pub const CDC_DEFAULT_AVG: u32 = 65_536; // 64 KiB  (f = 16)
+/// Default CDC maximum chunk size (256 KiB).
 pub const CDC_DEFAULT_MAX: u32 = 262_144; // 256 KiB
 
 /// Resolve CDC parameters for packing.
 ///
 /// Resolution order (highest to lowest priority):
 /// 1. Explicit user flags (`--min-chunk`, `--avg-chunk`, `--max-chunk`)
-/// 2. DCAM analysis (only when `config.use_dcam = true`) — scans the full file
+/// 2. DCAM analysis (only when `config.analysis.use_dcam = true`) — scans the full file
 /// 3. Global defaults: min=16 KiB, avg=64 KiB, max=256 KiB
 ///
 /// Partial overrides are supported at every level: e.g. only `--min-chunk`
@@ -506,7 +531,7 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
     }
 
     // Determine the base (min, avg, max) triple, either from DCAM or defaults.
-    let (base_min, base_avg, base_max) = if config.use_dcam {
+    let (base_min, base_avg, base_max) = if config.analysis.use_dcam {
         // DCAM: scan the entire file to find data-adaptive optimal params.
         let baseline = DedupeParams::lbfs_baseline();
         let file = File::open(path)?;
@@ -516,7 +541,7 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
             (CDC_DEFAULT_MIN, CDC_DEFAULT_AVG, CDC_DEFAULT_MAX)
         } else {
             let stats = analyze_stream(file, &baseline)?;
-            let optimized = optimize_params(file_size, stats.unique_bytes, &baseline, config.dcam_optimal);
+            let optimized = optimize_params(file_size, stats.unique_bytes, &baseline, config.analysis.dcam_optimal);
             let p = &optimized.params;
             let avg = (2u32).pow(p.f);
             tracing::debug!(
@@ -557,7 +582,7 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 /// 6. **Encryptor Initialization**: If requested, derive key from password using PBKDF2
 /// 7. **Stream Processing**: Process main stream (if provided), then auxiliary stream (if provided)
 ///    - Each stream independently chunks, compresses, encrypts, deduplicates, and indexes
-/// 8. **Master Index Writing**: Serialize master index (all PageEntry records) to end of file
+/// 8. **Master Index Writing**: Serialize master index (all `PageEntry` records) to end of file
 /// 9. **Header Writing**: Seek to start, write complete header with metadata and offsets
 /// 10. **Flush**: Ensure all data is written to disk
 ///
@@ -615,7 +640,7 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 ///     ..Default::default()
 /// };
 ///
-/// pack_archive::<fn(u64, u64)>(config, None)?;
+/// pack_archive::<fn(u64, u64)>(&config, None)?;
 /// # Ok(())
 /// # }
 /// ```
@@ -623,7 +648,7 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 /// ## With Progress Reporting
 ///
 /// ```no_run
-/// use hexz_ops::pack::{pack_archive, PackConfig};
+/// use hexz_ops::pack::{pack_archive, PackConfig, PackTransformFlags};
 /// use std::path::PathBuf;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -631,13 +656,14 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 ///     input: PathBuf::from("ubuntu.qcow2"),
 ///     output: PathBuf::from("ubuntu.hxz"),
 ///     compression: "zstd".to_string(),
-///     train_dict: true,
+///     transform: PackTransformFlags { train_dict: true, ..Default::default() },
 ///     ..Default::default()
 /// };
 ///
-/// pack_archive(config, Some(|pos, total| {
+/// let cb = |pos: u64, total: u64| {
 ///     eprint!("\rPacking: {:.1}%", (pos as f64 / total as f64) * 100.0);
-/// }))?;
+/// };
+/// pack_archive(&config, Some(&cb))?;
 /// eprintln!("\nDone!");
 /// # Ok(())
 /// # }
@@ -646,19 +672,19 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 /// ## Encrypted Archive
 ///
 /// ```no_run
-/// use hexz_ops::pack::{pack_archive, PackConfig};
+/// use hexz_ops::pack::{pack_archive, PackConfig, PackTransformFlags};
 /// use std::path::PathBuf;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = PackConfig {
 ///     input: PathBuf::from("sensitive.raw"),
 ///     output: PathBuf::from("sensitive.hxz"),
-///     encrypt: true,
 ///     password: Some("strong_passphrase".to_string()),
+///     transform: PackTransformFlags { encrypt: true, ..Default::default() },
 ///     ..Default::default()
 /// };
 ///
-/// pack_archive::<fn(u64, u64)>(config, None)?;
+/// pack_archive::<fn(u64, u64)>(&config, None)?;
 /// println!("Encrypted archive created");
 /// # Ok(())
 /// # }
@@ -680,7 +706,7 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 ///     ..Default::default()
 /// };
 ///
-/// pack_archive::<fn(u64, u64)>(config, None)?;
+/// pack_archive::<fn(u64, u64)>(&config, None)?;
 /// # Ok(())
 /// # }
 /// ```
@@ -689,7 +715,7 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 ///
 /// See module-level documentation for detailed performance characteristics.
 ///
-/// Typical throughput for a 64 GB VM image on modern hardware (Intel i7, NVMe SSD):
+/// Typical throughput for a 64 GB VM image on modern hardware (Intel i7, `NVMe` SSD):
 ///
 /// - **LZ4, no encryption**: ~2 GB/s (~30 seconds total)
 /// - **Zstd level 3, no encryption**: ~500 MB/s (~2 minutes total)
@@ -715,7 +741,7 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 ///     ..Default::default()
 /// };
 ///
-/// pack_archive::<fn(u64, u64)>(config, None)?;
+/// pack_archive::<fn(u64, u64)>(&config, None)?;
 /// fs::rename("archive.hxz.tmp", "archive.hxz")?;
 /// # Ok(())
 /// # }
@@ -729,7 +755,7 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
 ///
 /// The progress callback must be `Send + Sync` if you want to call this function
 /// from a non-main thread.
-pub fn pack_archive<F>(config: PackConfig, progress_callback: Option<F>) -> Result<()>
+pub fn pack_archive<F>(config: &PackConfig, progress_callback: Option<&F>) -> Result<()>
 where
     F: Fn(u64, u64) + Send + Sync,
 {
@@ -744,12 +770,12 @@ where
     };
 
     // 3. Train compression dictionary if requested
-    let dictionary = if config.compression == "zstd" && config.train_dict {
+    let dictionary = if config.compression == "zstd" && config.transform.train_dict {
         let sample_path = if input_path.is_dir() {
             // Sample from the first file in the directory
             WalkDir::new(input_path)
                 .into_iter()
-                .filter_map(|e| e.ok())
+                .filter_map(std::result::Result::ok)
                 .find(|e| e.file_type().is_file())
                 .ok_or_else(|| Error::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "No files found for dictionary training")))?
                 .path()
@@ -764,9 +790,9 @@ where
 
     // 4. Initialize compressor & encryptor
     let (compressor, compression_type) =
-        create_compressor_from_str(&config.compression, None, dictionary.clone())?;
+        create_compressor_from_str(&config.compression, None, dictionary.as_deref())?;
 
-    let (encryptor, enc_params): (Option<Box<dyn Encryptor>>, _) = if config.encrypt {
+    let (encryptor, enc_params): (Option<Box<dyn Encryptor>>, _) = if config.transform.encrypt {
         let password = config.password.clone().ok_or_else(|| {
             Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -782,7 +808,7 @@ where
 
     // 5. Resolve CDC parameters
     let cdc_params = if input_path.is_file() {
-        resolve_cdc_params(input_path, &config)?
+        resolve_cdc_params(input_path, config)?
     } else {
         DedupeParams::lbfs_baseline()
     };
@@ -808,19 +834,19 @@ where
     }
 
     // 7. Process input
-    let mut manifest = None;
-    if input_path.is_dir() {
-        manifest = Some(pack_directory(
+    let dict_ref = dictionary.as_deref();
+    let manifest = if input_path.is_dir() {
+        Some(pack_directory(
             input_path,
             &mut writer,
             &cdc_params,
-            &config,
-            dictionary,
+            config,
+            dict_ref,
             progress_callback,
-        )?);
+        )?)
     } else {
         let total_size = input_path.metadata()?.len();
-        let progress_bar = if config.show_progress && progress_callback.is_none() && total_size > 0 {
+        let progress_bar = if config.analysis.show_progress && progress_callback.is_none() && total_size > 0 {
             Some(crate::progress::PackProgress::new(total_size, "Packing"))
         } else {
             None
@@ -836,19 +862,20 @@ where
         };
 
         process_stream(
-            input_path.clone(),
+            input_path,
             true,
             &mut writer,
             &cdc_params,
-            &config,
-            dictionary,
+            config,
+            dict_ref,
             Some(&cb),
         )?;
 
         if let Some(ref pb) = progress_bar {
             pb.finish();
         }
-    }
+        None
+    };
 
     // 8. Finalize
     let metadata = if let Some(m) = manifest {
@@ -877,8 +904,8 @@ fn pack_directory<F>(
     writer: &mut ArchiveWriter,
     cdc_params: &DedupeParams,
     config: &PackConfig,
-    dictionary: Option<Vec<u8>>,
-    progress_callback: Option<F>,
+    dictionary: Option<&[u8]>,
+    progress_callback: Option<&F>,
 ) -> Result<ArchiveManifest>
 where
     F: Fn(u64, u64) + Send + Sync,
@@ -893,7 +920,7 @@ where
         .hidden(false)
         .build();
 
-    for entry in walker.filter_map(|e| e.ok()) {
+    for entry in walker.filter_map(std::result::Result::ok) {
         if !entry.file_type().is_some_and(|ft| ft.is_file()) {
             continue;
         }
@@ -901,7 +928,9 @@ where
         if path.components().any(|c| c.as_os_str() == ".hexz") {
             continue;
         }
-        let rel_path = path.strip_prefix(root).unwrap().to_string_lossy().into_owned();
+        let rel_path = path.strip_prefix(root)
+            .map_err(|e| Error::Format(e.to_string()))?
+            .to_string_lossy().into_owned();
         let metadata = entry.metadata().map_err(|e| Error::Io(std::io::Error::other(e.to_string())))?;
 
         // A file named "memory" at the directory root goes to the Auxiliary stream
@@ -916,7 +945,7 @@ where
     let aux_size: u64 = aux_entries.iter().map(|(_, _, m)| m.len()).sum();
     let total_size = main_size + aux_size;
 
-    let progress_bar = if config.show_progress && progress_callback.is_none() && total_size > 0 {
+    let progress_bar = if config.analysis.show_progress && progress_callback.is_none() && total_size > 0 {
         Some(crate::progress::PackProgress::new(total_size, "Packing Directory"))
     } else {
         None
@@ -936,7 +965,7 @@ where
             offset: current_logical_offset,
             size,
             mode: { #[cfg(unix)] { metadata.mode() } #[cfg(not(unix))] { 0o644 } },
-            mtime: metadata.modified()?.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+            mtime: metadata.modified()?.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
         };
 
         let cur_offset = current_logical_offset;
@@ -950,7 +979,7 @@ where
             }
         };
 
-        pack_file_to_stream(path, writer, cdc_params, config, dictionary.clone(), Some(&cb))?;
+        pack_file_to_stream(path, writer, cdc_params, config, dictionary, Some(&cb))?;
         writer.flush_stream()?;
 
         files.push(file_entry);
@@ -971,7 +1000,7 @@ where
                 offset: 0,
                 size,
                 mode: { #[cfg(unix)] { metadata.mode() } #[cfg(not(unix))] { 0o644 } },
-                mtime: metadata.modified()?.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+                mtime: metadata.modified()?.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
             };
 
             let cb = |pos: u64, _total: u64| {
@@ -984,7 +1013,7 @@ where
                 }
             };
 
-            pack_file_to_stream(path, writer, cdc_params, config, dictionary.clone(), Some(&cb))?;
+            pack_file_to_stream(path, writer, cdc_params, config, dictionary, Some(&cb))?;
             writer.flush_stream()?;
 
             files.push(file_entry);
@@ -1001,13 +1030,13 @@ where
     Ok(ArchiveManifest { files })
 }
 
-/// Packs a single file into the current active stream of the ArchiveWriter.
+/// Packs a single file into the current active stream of the `ArchiveWriter`.
 fn pack_file_to_stream<F>(
     path: &Path,
     writer: &mut ArchiveWriter,
     cdc_params: &DedupeParams,
     config: &PackConfig,
-    dictionary: Option<Vec<u8>>,
+    dictionary: Option<&[u8]>,
     progress_callback: Option<&F>,
 ) -> Result<()>
 where
@@ -1016,7 +1045,7 @@ where
     let f = File::open(path)?;
     let len = f.metadata()?.len();
 
-    if config.parallel && !config.encrypt {
+    if config.transform.parallel && !config.transform.encrypt {
         process_stream_parallel(
             f,
             len,
@@ -1060,7 +1089,7 @@ pub fn extract_archive(
     };
 
     let dictionary = header.load_dictionary(backend.as_ref())?;
-    let compressor = create_compressor(header.compression, None, dictionary);
+    let compressor = create_compressor(header.compression, None, dictionary.as_deref());
 
     // Provide a parent loader that resolves relative to the input archive
     let archive_dir = input_path.parent().unwrap_or_else(|| Path::new(".")).to_path_buf();
@@ -1157,7 +1186,7 @@ pub fn extract_archive(
 ///    - Rationale: High-entropy data (encrypted, random) doesn't benefit from dictionaries
 ///
 /// 3. **Dictionary Training**: Feed filtered samples to Zstd
-///    - Uses Zstd's COVER algorithm (fast_cover variant)
+///    - Uses Zstd's COVER algorithm (`fast_cover` variant)
 ///    - Analyzes n-grams to find common subsequences
 ///    - Outputs dictionary up to `DICT_TRAINING_SIZE` (110 KiB)
 ///
@@ -1218,7 +1247,7 @@ fn train_dictionary(input_path: &Path, block_size: u32) -> Result<Vec<u8>> {
             break;
         }
 
-        f.seek(SeekFrom::Start(offset))?;
+        _ = f.seek(SeekFrom::Start(offset))?;
         let n = f.read(&mut buffer)?;
         if n == 0 {
             break;
@@ -1247,24 +1276,24 @@ fn train_dictionary(input_path: &Path, block_size: u32) -> Result<Vec<u8>> {
 
 /// Processes a single input stream (disk or memory) via the [`ArchiveWriter`].
 fn process_stream<F>(
-    path: PathBuf,
+    path: &Path,
     is_disk: bool,
     writer: &mut ArchiveWriter,
     cdc_params: &DedupeParams,
     config: &PackConfig,
-    dictionary: Option<Vec<u8>>,
+    dictionary: Option<&[u8]>,
     progress_callback: Option<&F>,
 ) -> Result<()>
 where
     F: Fn(u64, u64),
 {
-    let f = File::open(&path)?;
+    let f = File::open(path)?;
     let len = f.metadata()?.len();
 
     writer.begin_stream(is_disk, len);
 
     // Use parallel path when enabled and not encrypting (encryption needs sequential nonces)
-    if config.parallel && !config.encrypt {
+    if config.transform.parallel && !config.transform.encrypt {
         process_stream_parallel(
             f,
             len,
@@ -1314,7 +1343,7 @@ where
 /// Architecture:
 /// - Reader thread: reads input file, chunks it, sends to workers
 /// - N worker threads: compress + BLAKE3 hash chunks in parallel
-/// - Main thread: receives compressed chunks, reorders via BTreeMap, writes sequentially
+/// - Main thread: receives compressed chunks, reorders via `BTreeMap`, writes sequentially
 ///
 /// This avoids per-batch thread pool creation overhead (the old approach created
 /// ~2800 thread pools for a 180GB file).
@@ -1324,7 +1353,7 @@ fn process_stream_parallel<F>(
     writer: &mut ArchiveWriter,
     cdc_params: &DedupeParams,
     config: &PackConfig,
-    dictionary: Option<Vec<u8>>,
+    dictionary: Option<&[u8]>,
     progress_callback: Option<&F>,
 ) -> Result<()>
 where
@@ -1416,8 +1445,8 @@ where
     let mut reorder_buf: BTreeMap<u64, CompressedChunk> = BTreeMap::new();
     let mut write_error: Option<Error> = None;
 
-    for (seq, compressed) in rx_compressed.iter() {
-        reorder_buf.insert(seq, compressed);
+    for (seq, compressed) in &rx_compressed {
+        _ = reorder_buf.insert(seq, compressed);
 
         // Drain all consecutive chunks ready to write
         while let Some(chunk) = reorder_buf.remove(&next_seq) {
@@ -1453,7 +1482,7 @@ where
         .map_err(|_| Error::Io(std::io::Error::other("Reader thread panicked")))?;
 
     for worker in workers {
-        worker
+        _ = worker
             .join()
             .map_err(|_| Error::Io(std::io::Error::other("Worker thread panicked")))?
             .ok(); // Ignore worker errors if we already have a write error
@@ -1469,6 +1498,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 
@@ -1507,8 +1537,7 @@ mod tests {
         let entropy = calculate_entropy(&data);
         assert!(
             entropy > 7.5,
-            "Entropy should be high for all byte values: got {}",
-            entropy
+            "Entropy should be high for all byte values: got {entropy}"
         );
     }
 
@@ -1529,9 +1558,9 @@ mod tests {
         let config = PackConfig::default();
 
         assert_eq!(config.compression, "lz4");
-        assert!(!config.encrypt);
+        assert!(!config.transform.encrypt);
         assert_eq!(config.password, None);
-        assert!(!config.train_dict);
+        assert!(!config.transform.train_dict);
         assert_eq!(config.block_size, 65536);
         assert_eq!(config.min_chunk, None);
         assert_eq!(config.avg_chunk, None);
@@ -1544,8 +1573,8 @@ mod tests {
             input: PathBuf::from("/dev/sda"),
             output: PathBuf::from("output.hxz"),
             compression: "zstd".to_string(),
-            encrypt: true,
             password: Some("secret".to_string()),
+            transform: PackTransformFlags { encrypt: true, ..Default::default() },
             ..Default::default()
         };
 
@@ -1554,14 +1583,14 @@ mod tests {
         assert_eq!(config2.input, config1.input);
         assert_eq!(config2.output, config1.output);
         assert_eq!(config2.compression, config1.compression);
-        assert_eq!(config2.encrypt, config1.encrypt);
+        assert_eq!(config2.transform.encrypt, config1.transform.encrypt);
         assert_eq!(config2.password, config1.password);
     }
 
     #[test]
     fn test_pack_config_debug() {
         let config = PackConfig::default();
-        let debug_str = format!("{:?}", config);
+        let debug_str = format!("{config:?}");
 
         assert!(debug_str.contains("PackConfig"));
         assert!(debug_str.contains("lz4"));

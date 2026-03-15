@@ -6,7 +6,13 @@ autobenches = false
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 description = "CLI tool for managing Hexz deduplicated archives"
+
+[lints]
+workspace = true
 
 [dependencies]
 hexz-core = { workspace = true }

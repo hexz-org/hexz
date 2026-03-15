@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, unused_results))]
+
 //! Library crate for the Hexz command-line interface.
 //!
 //! Re-exports the command handlers and argument definitions for the `hexz`

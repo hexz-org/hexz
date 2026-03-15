@@ -216,7 +216,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 /// # Performance
 ///
 /// - **Memory footprint**: 8 bytes (one `AtomicU32`)
-/// - **Computation cost**: O(window_size) per call to `get_prefetch_targets`
+/// - **Computation cost**: `O(window_size)` per call to `get_prefetch_targets`
 /// - **Contention**: None (lock-free atomic operations)
 ///
 /// # Examples
@@ -282,7 +282,7 @@ impl Prefetcher {
     /// let no_prefetch = Prefetcher::new(0);
     /// assert!(no_prefetch.get_prefetch_targets(100).is_empty());
     /// ```
-    pub fn new(window_size: u32) -> Self {
+    pub const fn new(window_size: u32) -> Self {
         Self {
             window_size: AtomicU32::new(window_size),
             in_flight: AtomicBool::new(false),
@@ -299,7 +299,7 @@ impl Prefetcher {
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
             .is_ok();
         if acquired {
-            self.spawn_count.fetch_add(1, Ordering::Relaxed);
+            _ = self.spawn_count.fetch_add(1, Ordering::Relaxed);
         }
         acquired
     }
@@ -338,9 +338,9 @@ impl Prefetcher {
     ///
     /// # Performance
     ///
-    /// - **Time complexity**: O(window_size) to allocate and populate the vector
-    /// - **Space complexity**: O(window_size) for the returned vector
-    /// - **Typical cost**: < 1 µs for window_size ≤ 32
+    /// - **Time complexity**: `O(window_size)` to allocate and populate the vector
+    /// - **Space complexity**: `O(window_size)` for the returned vector
+    /// - **Typical cost**: < 1 µs for `window_size` ≤ 32
     ///
     /// # Integer Overflow
     ///
@@ -489,7 +489,7 @@ mod tests {
     #[test]
     fn test_debug_format() {
         let prefetcher = Prefetcher::new(8);
-        let debug_str = format!("{:?}", prefetcher);
+        let debug_str = format!("{prefetcher:?}");
 
         assert!(debug_str.contains("Prefetcher"));
         assert!(debug_str.contains("window_size"));

@@ -61,7 +61,7 @@
 //! **Protocol:** S3-compatible REST API
 //! **Status:** Not yet implemented
 //! **Planned Features:**
-//! - S3 GetObject with range support
+//! - S3 `GetObject` with range support
 //! - Bucket/object listing
 //! - Compatible with S3 storage backend
 //!
@@ -114,7 +114,7 @@
 //!
 //! **Network:**
 //! - Performance limited by network bandwidth and latency
-//! - Use 10 GbE or faster for multi-GB archives
+//! - Use 10 Gbps Ethernet or faster for multi-GB archives
 //! - Consider proximity to clients (same datacenter/region)
 //!
 //! # Common Usage Patterns
@@ -137,6 +137,7 @@
 //! ```
 
 use anyhow::Result;
+use colored::Colorize;
 use daemonize::Daemonize;
 use hexz_core::Archive as HexzFile;
 use hexz_store::local::MmapBackend;
@@ -202,31 +203,31 @@ use std::sync::Arc;
 ///
 /// // Start HTTP server on port 8080
 /// serve::run(
-///     "archive.hxz".to_string(),
+///     "archive.hxz",
 ///     8080,
-///     "127.0.0.1".to_string(),
+///     "127.0.0.1",
 ///     false, // not daemon
 ///     false, // HTTP mode
 /// )?;
 ///
 /// // Start NBD server as daemon
 /// serve::run(
-///     "archive.hxz".to_string(),
+///     "archive.hxz",
 ///     10809,
-///     "127.0.0.1".to_string(),
+///     "127.0.0.1",
 ///     true,  // daemon mode
 ///     true,  // NBD mode
 /// )?;
 /// # Ok::<(), anyhow::Error>(())
 /// ```
-pub fn run(hexz_path: String, port: u16, bind: String, daemon: bool, nbd: bool) -> Result<()> {
+pub fn run(hexz_path: &str, port: u16, bind: &str, daemon: bool, nbd: bool) -> Result<()> {
     if daemon {
         let log_dir = std::env::var("XDG_RUNTIME_DIR")
             .or_else(|_| std::env::var("TMPDIR"))
             .unwrap_or_else(|_| "/tmp".to_string());
-        let stdout = File::create(format!("{}/hexz-serve.log", log_dir))
+        let stdout = File::create(format!("{log_dir}/hexz-serve.log"))
             .or_else(|_| File::create("/dev/null"))?;
-        let stderr = File::create(format!("{}/hexz-serve.err", log_dir))
+        let stderr = File::create(format!("{log_dir}/hexz-serve.err"))
             .or_else(|_| File::create("/dev/null"))?;
 
         Daemonize::new()
@@ -237,7 +238,6 @@ pub fn run(hexz_path: String, port: u16, bind: String, daemon: bool, nbd: bool) 
     }
 
     if !daemon {
-        use colored::*;
         println!("{} Starting Hexz server", "╭".dimmed());
         println!("{} Port      {}", "│".dimmed(), port.to_string().cyan());
         println!("{} Bind      {}", "│".dimmed(), bind.cyan());
@@ -253,9 +253,9 @@ pub fn run(hexz_path: String, port: u16, bind: String, daemon: bool, nbd: bool) 
             let snap = HexzFile::open(backend, None)?;
 
             if nbd {
-                hexz_server::serve_nbd(snap, port, &bind).await
+                hexz_server::serve_nbd(snap, port, bind).await
             } else {
-                hexz_server::serve_http(snap, port, &bind).await
+                hexz_server::serve_http(snap, port, bind).await
             }
         })
 }

@@ -1,6 +1,6 @@
 //! Content-Defined Chunking (CDC) for deduplication analysis.
 //!
-//! This module implements the FastCDC (Fast Content-Defined Chunking) algorithm,
+//! This module implements the `FastCDC` (Fast Content-Defined Chunking) algorithm,
 //! a state-of-the-art variable-length chunking algorithm that splits data streams
 //! into content-defined chunks for efficient deduplication. Unlike fixed-size
 //! chunking, CDC adapts chunk boundaries to data content, enabling detection of
@@ -20,9 +20,9 @@
 //! invalidates every chunk. With CDC, only the chunks containing the insertion
 //! are affected; chunks after the insertion point remain identical and deduplicatable.
 //!
-//! # FastCDC Algorithm Details
+//! # `FastCDC` Algorithm Details
 //!
-//! FastCDC improves upon earlier CDC algorithms (Rabin fingerprinting, basic CDC)
+//! `FastCDC` improves upon earlier CDC algorithms (Rabin fingerprinting, basic CDC)
 //! by using a normalized chunking approach that reduces chunk size variance while
 //! maintaining content-sensitivity.
 //!
@@ -36,7 +36,7 @@
 //!
 //! ## Gear Hash Function
 //!
-//! FastCDC uses the Gear hash, a simple rolling hash that provides:
+//! `FastCDC` uses the Gear hash, a simple rolling hash that provides:
 //! - **O(1) update time** per byte (critical for performance)
 //! - **Good avalanche properties** (small changes → large hash changes)
 //! - **CPU-friendly operations** (no expensive modulo or division)
@@ -75,7 +75,7 @@
 //!
 //! ## Normalization Zones
 //!
-//! FastCDC divides each chunk into regions with different cut-point masks
+//! `FastCDC` divides each chunk into regions with different cut-point masks
 //! to achieve a more uniform chunk size distribution than basic CDC:
 //!
 //! - **[0, m)**: No cutting allowed (enforces minimum size)
@@ -107,7 +107,7 @@
 //! |-------------------|------|---------|-----|
 //! | Fixed-size | 16 KB | 0 KB | 0.0 |
 //! | Basic CDC | 16 KB | 16 KB | 1.0 |
-//! | FastCDC (normalized) | 16 KB | 10 KB | 0.6 |
+//! | `FastCDC` (normalized) | 16 KB | 10 KB | 0.6 |
 //!
 //! **Benefits:**
 //! - More consistent chunk sizes → better index density
@@ -125,7 +125,7 @@
 //!
 //! ## Parallelization
 //!
-//! FastCDC is fundamentally sequential (each byte depends on previous hash state),
+//! `FastCDC` is fundamentally sequential (each byte depends on previous hash state),
 //! but can be parallelized across independent data streams:
 //!
 //! - **Multiple files**: Chunk each file in a separate thread/task
@@ -288,8 +288,8 @@
 //! ## Edge Cases
 //!
 //! - **Empty input**: Returns zero chunks (not an error)
-//! - **Tiny files** (< min_size): Single chunk containing entire file
-//! - **Huge files** (> max_size × chunk_count): Automatic chunking prevents
+//! - **Tiny files** (< `min_size)`: Single chunk containing entire file
+//! - **Huge files** (> `max_size` × `chunk_count)`: Automatic chunking prevents
 //!   unbounded memory growth
 //! - **Adversarial input**: Maximum chunk size enforced regardless of hash values
 //!
@@ -351,7 +351,7 @@
 //!
 //! # References
 //!
-//! - Xia, W. et al. "FastCDC: a Fast and Efficient Content-Defined Chunking
+//! - Xia, W. et al. "`FastCDC`: a Fast and Efficient Content-Defined Chunking
 //!   Approach for Data Deduplication." USENIX ATC 2016.
 //!   [https://www.usenix.org/conference/atc16/technical-sessions/presentation/xia](https://www.usenix.org/conference/atc16/technical-sessions/presentation/xia)
 //! - Muthitacharoen, A. et al. "A Low-bandwidth Network File System." SOSP 2001.
@@ -475,7 +475,7 @@ pub struct CdcStats {
     ///   `unique_chunk_count * max_chunk_size`
     pub unique_bytes: u64,
 
-    /// Total number of chunks identified by FastCDC.
+    /// Total number of chunks identified by `FastCDC`.
     ///
     /// Includes both unique and duplicate chunks. This represents how many chunks
     /// would be created if the data were processed through the chunking pipeline.
@@ -510,7 +510,7 @@ pub struct CdcStats {
 
 /// Streaming iterator that yields content-defined chunks from a reader.
 ///
-/// `StreamChunker` is the main interface for applying FastCDC to data streams
+/// `StreamChunker` is the main interface for applying `FastCDC` to data streams
 /// in a memory-efficient manner. It reads data incrementally from any `Read`
 /// source and applies content-defined chunking to produce variable-sized chunks
 /// suitable for compression, deduplication, and storage.
@@ -683,21 +683,21 @@ pub struct StreamChunker<R> {
     /// `[filled, buffer.len())` are unused scratch space.
     filled: usize,
 
-    /// Minimum chunk size in bytes (FastCDC parameter `m`).
+    /// Minimum chunk size in bytes (`FastCDC` parameter `m`).
     ///
     /// No chunk will be smaller than this (except possibly the final chunk
     /// if EOF is reached). Prevents tiny chunks that would increase metadata
     /// overhead disproportionately.
     min_size: usize,
 
-    /// Average chunk size in bytes (FastCDC parameter `2^f`).
+    /// Average chunk size in bytes (`FastCDC` parameter `2^f`).
     ///
     /// This is the statistical expectation of chunk sizes. Actual chunks follow
     /// a bounded exponential distribution around this value due to the rolling
     /// hash cut-point probability.
     avg_size: usize,
 
-    /// Maximum chunk size in bytes (FastCDC parameter `z`).
+    /// Maximum chunk size in bytes (`FastCDC` parameter `z`).
     ///
     /// Chunks are forcibly cut at this size regardless of hash values. Bounds
     /// worst-case memory usage and ensures progress even in adversarial inputs
@@ -711,11 +711,24 @@ pub struct StreamChunker<R> {
     eof: bool,
 }
 
+impl<R> std::fmt::Debug for StreamChunker<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StreamChunker")
+            .field("min_size", &self.min_size)
+            .field("avg_size", &self.avg_size)
+            .field("max_size", &self.max_size)
+            .field("cursor", &self.cursor)
+            .field("filled", &self.filled)
+            .field("eof", &self.eof)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<R: Read> StreamChunker<R> {
     /// Creates a new streaming chunker with the specified deduplication parameters.
     ///
     /// This constructor initializes the chunker's internal buffer and extracts the
-    /// relevant FastCDC parameters. The chunker is ready to begin iteration immediately
+    /// relevant `FastCDC` parameters. The chunker is ready to begin iteration immediately
     /// after construction; no separate initialization step is required.
     ///
     /// # Parameters
@@ -726,7 +739,7 @@ impl<R: Read> StreamChunker<R> {
     ///   - `BufReader<File>` for buffered I/O (redundant but not harmful)
     ///   - Any other `Read` implementation (network streams, pipes, etc.)
     ///
-    /// - `params`: FastCDC parameters controlling chunk size distribution. Key fields:
+    /// - `params`: `FastCDC` parameters controlling chunk size distribution. Key fields:
     ///   - `params.f`: Fingerprint bits (average chunk size = 2^f)
     ///   - `params.m`: Minimum chunk size in bytes
     ///   - `params.z`: Maximum chunk size in bytes
@@ -980,13 +993,13 @@ impl<R: Read> Iterator for StreamChunker<R> {
     /// 1. **Check for data**: If buffer is empty and EOF not reached, refill
     /// 2. **Handle EOF**: If no data available after refill, return `None`
     /// 3. **Determine available window**: Compute bytes available for chunking
-    /// 4. **Apply FastCDC**:
+    /// 4. **Apply `FastCDC`**:
     ///    - If available < `min_size`: Return all available bytes (last chunk)
-    ///    - Else: Run FastCDC on window `[cursor..min(cursor+max_size, filled)]`
+    ///    - Else: Run `FastCDC` on window `[cursor..min(cursor+max_size, filled)]`
     /// 5. **Extract chunk**: Copy chunk bytes to new `Vec<u8>`, advance cursor
     /// 6. **Return**: Yield `Some(Ok(chunk))`
     ///
-    /// # FastCDC Integration
+    /// # `FastCDC` Integration
     ///
     /// The method delegates to the `fastcdc` crate's `FastCDC::new()` constructor,
     /// which implements the normalized chunking algorithm. The returned chunk length
@@ -1003,7 +1016,7 @@ impl<R: Read> Iterator for StreamChunker<R> {
     /// | Condition | Action |
     /// |-----------|--------|
     /// | `available < min_size` | Return all available bytes |
-    /// | FastCDC finds cut point | Use FastCDC-determined length |
+    /// | `FastCDC` finds cut point | Use FastCDC-determined length |
     /// | `available >= max_size` && no cut point | Force cut at `max_size` |
     /// | EOF reached && no cut point | Return all remaining bytes |
     /// | Buffer full && no cut point | Force cut at `max_size` |
@@ -1068,8 +1081,8 @@ impl<R: Read> Iterator for StreamChunker<R> {
     ///
     /// # Performance Characteristics
     ///
-    /// - **Amortized time**: O(chunk_size) per chunk (dominated by copying)
-    /// - **Space**: O(chunk_size) allocation per chunk yielded
+    /// - **Amortized time**: `O(chunk_size)` per chunk (dominated by copying)
+    /// - **Space**: `O(chunk_size)` allocation per chunk yielded
     /// - **Throughput**: ~500 MB/s on modern CPUs (bottlenecked by Gear hash)
     fn next(&mut self) -> Option<Self::Item> {
         let len = match self.next_chunk_len()? {
@@ -1084,14 +1097,14 @@ impl<R: Read> Iterator for StreamChunker<R> {
 
 /// Performs a single-pass deduplication analysis on a data stream.
 ///
-/// This function applies FastCDC chunking to a data stream and tracks unique chunks
+/// This function applies `FastCDC` chunking to a data stream and tracks unique chunks
 /// via hash-based deduplication. It is designed as a lightweight analysis pass for
 /// the DCAM model to estimate deduplication potential before committing to full
 /// archive packing.
 ///
 /// # Algorithm
 ///
-/// 1. **Chunk the input** using `StreamChunker` with the provided FastCDC parameters
+/// 1. **Chunk the input** using `StreamChunker` with the provided `FastCDC` parameters
 /// 2. **Hash each chunk** using CRC32 (fast, non-cryptographic)
 /// 3. **Track uniqueness** via a `HashSet<u64>` of seen hashes
 /// 4. **Accumulate statistics**:
@@ -1106,7 +1119,7 @@ impl<R: Read> Iterator for StreamChunker<R> {
 ///   - `Cursor<Vec<u8>>` for in-memory data
 ///   - Network streams, pipes, or other I/O sources
 ///
-/// - `params`: FastCDC parameters controlling chunking behavior:
+/// - `params`: `FastCDC` parameters controlling chunking behavior:
 ///   - `params.f`: Fingerprint bits (average chunk size = 2^f bytes)
 ///   - `params.m`: Minimum chunk size in bytes
 ///   - `params.z`: Maximum chunk size in bytes
@@ -1144,14 +1157,14 @@ impl<R: Read> Iterator for StreamChunker<R> {
 ///
 /// ## Space Complexity
 ///
-/// - **Hash set**: O(unique chunks) × 8 bytes per hash ≈ O(N / avg_chunk_size) × 8
+/// - **Hash set**: O(unique chunks) × 8 bytes per hash ≈ O(N / `avg_chunk_size`) × 8
 /// - **Example**: 1GB input, 16KB avg chunks → ~65K unique chunks → ~520 KB hash set
 /// - **Streaming buffer**: Fixed at `2 * params.z` (typically ~128 KB)
 ///
 /// ## Memory Optimization
 ///
 /// For extremely large datasets where hash set size becomes prohibitive, consider:
-/// - Using a probabilistic data structure (Bloom filter, HyperLogLog)
+/// - Using a probabilistic data structure (Bloom filter, `HyperLogLog`)
 /// - Sampling (analyze every Nth chunk instead of all chunks)
 /// - External deduplication index (disk-based hash storage)
 ///
@@ -1245,7 +1258,7 @@ impl<R: Read> Iterator for StreamChunker<R> {
 /// # Use Cases
 ///
 /// - **DCAM Model Input**: Feeds statistics into analytical formulas to predict
-///   optimal FastCDC parameters for a given dataset
+///   optimal `FastCDC` parameters for a given dataset
 /// - **Capacity Planning**: Estimates storage requirements before provisioning
 ///   deduplication infrastructure
 /// - **Parameter Tuning**: Compares deduplication effectiveness across different

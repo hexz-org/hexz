@@ -1,18 +1,31 @@
+//! Data management command handlers (pack, extract, mount, etc.).
+
+#[cfg(feature = "fuse")]
 pub mod checkout;
+#[cfg(feature = "fuse")]
 pub mod commit;
 pub mod convert;
 pub mod diff;
 pub mod extract;
+#[cfg(feature = "fuse")]
 pub mod init;
 pub mod inspect;
 pub mod ls;
+#[cfg(feature = "fuse")]
 pub mod mount;
 pub mod pack;
 pub mod predict;
+#[cfg(feature = "fuse")]
 pub mod pull;
+#[cfg(feature = "fuse")]
 pub mod push;
+#[cfg(feature = "fuse")]
 pub mod remote;
+#[cfg(feature = "fuse")]
 pub mod shell;
+#[cfg(feature = "fuse")]
 pub mod status;
+#[cfg(feature = "fuse")]
 pub mod unmount;
+#[cfg(feature = "fuse")]
 pub mod workspace;

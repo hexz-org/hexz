@@ -8,17 +8,17 @@ use anyhow::{Context, Result, bail};
 use hexz_core::algo::compression::create_compressor_from_str;
 use hexz_ops::archive_writer::ArchiveWriter;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
-use colored::*;
+use colored::Colorize;
 
 /// Execute the convert command.
 #[allow(clippy::too_many_arguments)]
 pub fn run(
-    format: String,
-    input: PathBuf,
-    output: PathBuf,
-    compression: String,
+    format: &str,
+    input: &Path,
+    output: &Path,
+    compression: &str,
     block_size: u32,
     silent: bool,
 ) -> Result<()> {
@@ -36,12 +36,12 @@ pub fn run(
 
 /// Convert a tar archive to a Hexz archive using pure Rust.
 ///
-/// Streams tar entries directly through the ArchiveWriter without
+/// Streams tar entries directly through the `ArchiveWriter` without
 /// extracting to disk. Stores a file manifest in archive metadata.
 fn convert_tar(
-    input: PathBuf,
-    output: PathBuf,
-    compression: String,
+    input: &Path,
+    output: &Path,
+    compression: &str,
     block_size: u32,
     silent: bool,
 ) -> Result<()> {
@@ -50,29 +50,29 @@ fn convert_tar(
     // Actually let's try to replace the whole file to be safe with all formatting.
 
     // Calculate total size for progress bar
-    let total_size = std::fs::metadata(&input)
+    let total_size = std::fs::metadata(input)
         .with_context(|| format!("Cannot read input file: {}", input.display()))?
         .len();
 
     // Set up progress bar
-    let pb = if !silent {
+    let pb = if silent {
+        None
+    } else {
         let pb = create_progress_bar(total_size);
         Some(Arc::new(Mutex::new(pb)))
-    } else {
-        None
     };
 
     // Create compressor and archive writer
     let (compressor, compression_type) =
-        create_compressor_from_str(&compression, None, None).map_err(|e| anyhow::anyhow!("{e}"))?;
+        create_compressor_from_str(compression, None, None).map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    let mut writer = ArchiveWriter::builder(&output, compressor, compression_type)
+    let mut writer = ArchiveWriter::builder(output, compressor, compression_type)
         .block_size(block_size)
         .build()
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     // Open tar archive (supports .tar, .tar.gz, .tar.bz2, .tar.xz)
-    let file = std::fs::File::open(&input)
+    let file = std::fs::File::open(input)
         .with_context(|| format!("Cannot open tar file: {}", input.display()))?;
 
     let mut archive = tar::Archive::new(file);

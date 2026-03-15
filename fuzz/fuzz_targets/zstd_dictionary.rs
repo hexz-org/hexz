@@ -8,7 +8,7 @@ fuzz_target!(|data: &[u8]| {
     let dict_data = &data[..data.len().min(256 * 1024)];
 
     // Constructing a ZstdCompressor with arbitrary dictionary bytes — should not panic
-    let compressor = ZstdCompressor::new(3, Some(dict_data.to_vec()));
+    let compressor = ZstdCompressor::new(3, Some(dict_data));
 
     // Attempt to decompress garbage with this dictionary-loaded compressor
     let _ = compressor.decompress(data);

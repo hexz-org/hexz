@@ -11,6 +11,7 @@ use hexz_core::api::file::Archive;
 ///
 /// Used during the `pack` operation to identify blocks that can be stored
 /// as `parent_ref` instead of being re-written.
+#[derive(Debug)]
 pub struct ParentIndex {
     /// Set of BLAKE3 hashes available in the parent archive(s)
     pub hashes: HashSet<[u8; 32]>,
@@ -22,7 +23,7 @@ impl ParentIndex {
         let mut hashes = HashSet::new();
         for parent in parents {
             for hash in parent.iter_block_hashes(ArchiveStream::Main)? {
-                hashes.insert(hash);
+                _ = hashes.insert(hash);
             }
         }
         Ok(Self { hashes })

@@ -285,15 +285,15 @@ use std::hash::{BuildHasher, Hasher};
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
-/// FxHash constant: a large odd prime with good bit-mixing properties.
-/// From Firefox/rustc's FxHash (based on a hash by Glenn Fowler, Landon Noll, and Phong Vo).
-const FX_SEED: u64 = 0x517cc1b727220a95;
+/// `FxHash` constant: a large odd prime with good bit-mixing properties.
+/// From Firefox/rustc's `FxHash` (based on a hash by Glenn Fowler, Landon Noll, and Phong Vo).
+const FX_SEED: u64 = 0x517c_c1b7_2722_0a95;
 
 /// Fast non-cryptographic hasher for integer keys.
 ///
 /// Replaces `DefaultHasher` (SipHash-1-3) for cache shard selection and
-/// LRU internal lookups. SipHash provides HashDoS resistance which is
-/// unnecessary for internal caches with non-adversarial keys. FxHash
+/// LRU internal lookups. `SipHash` provides `HashDoS` resistance which is
+/// unnecessary for internal caches with non-adversarial keys. `FxHash`
 /// reduces per-lookup overhead from ~15-20ns to ~2-3ns.
 struct FxHasher(u64);
 
@@ -400,8 +400,8 @@ type CacheKey = (u8, u64);
 /// by caching hot blocks in auxiliary, while sharding to minimize lock
 /// contention under concurrent access.
 ///
-/// **Constraints:** For capacity > SHARD_COUNT, total capacity is divided
-/// evenly across shards. For 0 < capacity <= SHARD_COUNT, a single shard is
+/// **Constraints:** For capacity > `SHARD_COUNT`, total capacity is divided
+/// evenly across shards. For 0 < capacity <= `SHARD_COUNT`, a single shard is
 /// used so global LRU semantics and exact capacity are preserved.
 ///
 /// **Side effects:** Uses per-shard `Mutex`es, so high write or miss rates can
@@ -483,8 +483,8 @@ impl BlockCache {
     ///
     /// # Performance
     ///
-    /// - **Time complexity**: O(num_shards) ≈ O(1) (at most 16 shards)
-    /// - **Space complexity**: O(num_shards + capacity)
+    /// - **Time complexity**: `O(num_shards)` ≈ O(1) (at most 16 shards)
+    /// - **Space complexity**: `O(num_shards` + capacity)
     /// - **No I/O**: Purely in-auxiliary allocation
     ///
     /// # Examples
@@ -583,15 +583,15 @@ impl BlockCache {
 
     /// Deterministically selects the shard responsible for a given cache key.
     ///
-    /// Uses FxHash (multiply-xor) instead of SipHash for fast shard selection.
+    /// Uses `FxHash` (multiply-xor) instead of `SipHash` for fast shard selection.
     /// Cryptographic hash resistance is unnecessary for internal cache keys.
     #[inline]
     fn get_shard(
         &self,
         key: &CacheKey,
     ) -> Option<&Mutex<LruCache<CacheKey, Bytes, FxBuildHasher>>> {
-        let shards = self.shards.as_ref()?;
         use std::hash::Hash;
+        let shards = self.shards.as_ref()?;
         let mut hasher = FxHasher(0);
         key.hash(&mut hasher);
         let idx = (hasher.finish() as usize) & (shards.len() - 1);
@@ -881,7 +881,7 @@ impl BlockCache {
         if let Some(shard) = self.get_shard(&key) {
             match shard.lock() {
                 Ok(mut guard) => {
-                    guard.put(key, data);
+                    _ = guard.put(key, data);
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -1056,7 +1056,7 @@ impl ShardedPageCache {
     pub fn insert(&self, key: u64, page: Arc<IndexPage>) {
         let shard = self.get_shard(key);
         if let Ok(mut guard) = shard.lock() {
-            guard.put(key, page);
+            _ = guard.put(key, page);
         }
     }
 }
@@ -1209,7 +1209,7 @@ mod tests {
         let cache = BlockCache::with_capacity(10);
 
         let data = Bytes::from(vec![0u8; 65536]); // 64 KiB
-        cache.insert(ArchiveStream::Main, 0, data.clone());
+        cache.insert(ArchiveStream::Main, 0, data);
 
         // Multiple gets should all return the same data
         let get1 = cache.get(ArchiveStream::Main, 0).unwrap();
@@ -1328,7 +1328,7 @@ mod tests {
     #[test]
     fn test_debug_format() {
         let cache = BlockCache::with_capacity(10);
-        let debug_str = format!("{:?}", cache);
+        let debug_str = format!("{cache:?}");
 
         assert!(debug_str.contains("BlockCache"));
     }
@@ -1347,7 +1347,7 @@ mod tests {
                 checksum: 0,
             }],
         });
-        cache.insert(42, page.clone());
+        cache.insert(42, page);
         let retrieved = cache.get(42);
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().blocks.len(), 1);
@@ -1399,7 +1399,7 @@ mod tests {
     fn test_page_cache_default() {
         let cache = ShardedPageCache::default();
         let page = Arc::new(IndexPage { blocks: vec![] });
-        cache.insert(0, page.clone());
+        cache.insert(0, page);
         assert!(cache.get(0).is_some());
     }
 }

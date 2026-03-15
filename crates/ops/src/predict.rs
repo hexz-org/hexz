@@ -51,46 +51,67 @@ impl Default for PredictConfig {
 /// Results from analyzing a raw file for hexz packing potential.
 #[derive(Debug, Serialize)]
 pub struct PredictReport {
+    /// Path to the analyzed file.
     pub file_path: String,
+    /// Total file size in bytes.
     pub file_size: u64,
+    /// Block size used for sampling.
     pub block_size: usize,
+    /// Number of blocks sampled.
     pub blocks_sampled: usize,
 
-    // Data characteristics
+    /// Percentage of sampled blocks that are all-zero.
     pub zero_block_pct: f64,
+    /// Mean Shannon entropy of non-zero blocks.
     pub mean_entropy: f64,
+    /// Percentage of non-zero blocks with entropy > 6.0.
     pub high_entropy_pct: f64,
 
-    // Compression estimates
+    /// LZ4 compression ratio (compressed / raw).
     pub lz4_ratio: f64,
+    /// LZ4 savings as a percentage.
     pub lz4_savings_pct: f64,
+    /// Zstd compression ratio (compressed / raw).
     pub zstd_ratio: f64,
+    /// Zstd savings as a percentage.
     pub zstd_savings_pct: f64,
+    /// Estimated file size after LZ4 compression.
     pub estimated_lz4_size: u64,
+    /// Estimated file size after Zstd compression.
     pub estimated_zstd_size: u64,
 
-    // Fixed-size dedup (from sampled blocks)
+    /// Fixed-block dedup ratio (unique / total sampled bytes).
     pub fixed_dedup_ratio: f64,
+    /// Fixed-block dedup savings as a percentage.
     pub fixed_dedup_savings_pct: f64,
 
-    // CDC dedup (from analyze_stream with user's params)
+    /// Number of bytes scanned for CDC analysis.
     pub cdc_scan_bytes: u64,
+    /// CDC minimum chunk size in bytes.
     pub cdc_min_chunk: u32,
+    /// CDC average chunk size in bytes.
     pub cdc_avg_chunk: u32,
+    /// CDC maximum chunk size in bytes.
     pub cdc_max_chunk: u32,
+    /// Total CDC chunks found.
     pub cdc_chunks_total: u64,
+    /// Unique CDC chunks found.
     pub cdc_chunks_unique: u64,
+    /// CDC dedup ratio (unique / total).
     pub cdc_dedup_ratio: f64,
+    /// CDC dedup savings as a percentage.
     pub cdc_dedup_savings_pct: f64,
 
-    // Combined estimates
+    /// Estimated packed size with LZ4 + fixed-block dedup.
     pub estimated_packed_size_lz4_fixed: u64,
+    /// Estimated packed size with Zstd + CDC dedup.
     pub estimated_packed_size_zstd_cdc: u64,
+    /// Best achievable savings as a percentage.
     pub overall_best_savings_pct: f64,
 }
 
 /// Analyze a raw data file and estimate hexz packing savings.
-pub fn predict(config: PredictConfig) -> Result<PredictReport> {
+pub fn predict(config: &PredictConfig) -> Result<PredictReport> {
     let mut f = File::open(&config.path)?;
     let file_size = f.metadata()?.len();
 
@@ -124,7 +145,7 @@ pub fn predict(config: PredictConfig) -> Result<PredictReport> {
             break;
         }
 
-        f.seek(SeekFrom::Start(offset))?;
+        _ = f.seek(SeekFrom::Start(offset))?;
         let n = f.read(&mut buf)?;
         if n == 0 {
             break;
@@ -135,7 +156,9 @@ pub fn predict(config: PredictConfig) -> Result<PredictReport> {
 
         // Dedup tracking for all blocks (including zeros)
         let digest = *blake3::hash(chunk).as_bytes();
-        let hash = u64::from_le_bytes(digest[..8].try_into().unwrap());
+        let hash = u64::from_le_bytes(
+            digest[..8].try_into().map_err(|_| Error::Format("hash slice conversion failed".to_string()))?
+        );
         if seen_hashes.insert(hash) {
             unique_sampled_bytes += n as u64;
         }
@@ -217,7 +240,7 @@ pub fn predict(config: PredictConfig) -> Result<PredictReport> {
     let fixed_dedup_savings_pct = (1.0 - fixed_dedup_ratio) * 100.0;
 
     // Phase 2: CDC analysis — auto-detect params via DCAM if not specified
-    f.seek(SeekFrom::Start(0))?;
+    _ = f.seek(SeekFrom::Start(0))?;
 
     // First pass: analyze with LBFS baseline to get change rate
     let baseline = DedupeParams::lbfs_baseline();
@@ -253,7 +276,7 @@ pub fn predict(config: PredictConfig) -> Result<PredictReport> {
 
     // Second pass: analyze with resolved params
     let scan_limit = config.dedup_scan_limit.min(file_size);
-    f.seek(SeekFrom::Start(0))?;
+    _ = f.seek(SeekFrom::Start(0))?;
     let reader = f.by_ref().take(scan_limit);
 
     let cdc_stats = analyze_stream(reader, &cdc_params)?;

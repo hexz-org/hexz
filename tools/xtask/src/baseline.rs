@@ -1,4 +1,6 @@
-use crate::common::*;
+use crate::common::{
+    cargo, cmd, copy_dir_recursive, find_workspace_root, require_cmd, BOLD, CYAN, GREEN, RESET,
+};
 use anyhow::{Result, bail};
 
 const BENCH_PACKAGE: &str = "hexz";

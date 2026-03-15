@@ -1,34 +1,37 @@
 //! Checkout an archive into a writable workspace.
 
 use anyhow::Result;
-use std::path::PathBuf;
-use colored::*;
+use std::path::Path;
+use colored::Colorize;
 use super::workspace::Workspace;
 use super::mount;
 
 /// Initializes a workspace and mounts the base archive.
-pub fn run(archive: PathBuf, path: PathBuf) -> Result<()> {
-    if path.exists() && std::fs::read_dir(&path)?.next().is_some() {
-        anyhow::bail!("Directory {:?} is not empty.", path);
+#[allow(unsafe_code)]
+pub fn run(archive: &Path, path: &Path) -> Result<()> {
+    if path.exists() && std::fs::read_dir(path)?.next().is_some() {
+        anyhow::bail!("Directory {} is not empty.", path.display());
     }
 
-    std::fs::create_dir_all(&path)?;
+    std::fs::create_dir_all(path)?;
 
     println!("{} Initializing workspace at {}", "╭".dimmed(), path.display().to_string().cyan());
-    let ws = Workspace::init(&path, Some(archive.clone()))?;
+    let ws = Workspace::init(path, Some(archive.to_path_buf()))?;
     let overlay = ws.overlay_path();
 
     println!("{} Mounting base archive {}", "╰".dimmed(), archive.display().to_string().bright_black());
     mount::run(
-        archive.to_string_lossy().to_string(),
+        &archive.to_string_lossy(),
         path,
         true, // daemon
         None, // cache_size
-        unsafe { libc::getuid() }, // uid
-        unsafe { libc::getgid() }, // gid
+        // SAFETY: getuid() is always safe to call
+        unsafe { libc::getuid() },
+        // SAFETY: getgid() is always safe to call
+        unsafe { libc::getgid() },
         Some(overlay),
         false, // editable (we already have an overlay)
-        Some(ws.metadata_dir()),
+        Some(&ws.metadata_dir()),
     )?;
 
     println!("\n  {} Workspace ready.", "✓".green());

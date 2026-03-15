@@ -4,13 +4,11 @@ use super::Hexz;
 use fuser::ReplyData;
 use libc::{EIO, ENOENT};
 
-pub fn handle_read(fs: &mut Hexz, ino: u64, offset: i64, size: u32, reply: ReplyData) {
-    let (stream, file_offset, file_size) = match fs.inodes.file_info(ino) {
-        Some(info) => info,
-        None => {
-            reply.error(ENOENT);
-            return;
-        }
+/// Reads data from the archive for the given inode and replies via FUSE.
+pub fn handle_read(fs: &Hexz, ino: u64, offset: i64, size: u32, reply: ReplyData) {
+    let Some((stream, file_offset, file_size)) = fs.inodes.file_info(ino) else {
+        reply.error(ENOENT);
+        return;
     };
 
     if size == 0 {

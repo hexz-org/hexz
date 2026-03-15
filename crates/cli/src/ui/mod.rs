@@ -13,6 +13,9 @@
 //!
 //! - [`progress`]: Progress bars and spinners for operation feedback
 
+/// ANSI color palette utilities.
 pub mod color;
+/// Custom help output formatting.
 pub mod help;
+/// Progress bar and spinner utilities.
 pub mod progress;

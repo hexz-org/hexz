@@ -71,6 +71,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 /// }
 /// pb.finish_with_message("Download complete");
 /// ```
+#[allow(clippy::literal_string_with_formatting_args)]
 pub fn create_progress_bar(total: u64) -> ProgressBar {
     let pb = ProgressBar::new(total);
     pb.set_style(

@@ -1,4 +1,4 @@
-/// Unit tests for Header::read_from() and format-level roundtrips.
+/// Unit tests for `Header::read_from()` and format-level roundtrips.
 ///
 /// The inline tests in `format/header.rs` cover field access and bincode
 /// serialize/deserialize directly.  These tests exercise the public

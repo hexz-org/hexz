@@ -12,7 +12,7 @@ pub const YELLOW: &str = "\x1b[33m";
 pub const BOLD: &str = "\x1b[1m";
 pub const RESET: &str = "\x1b[0m";
 
-pub fn check_mark(ok: bool) -> &'static str {
+pub const fn check_mark(ok: bool) -> &'static str {
     if ok {
         "\x1b[32m\u{2713}\x1b[0m"
     } else {
@@ -40,8 +40,7 @@ struct WorkspacePackage {
 
 pub fn find_workspace_root() -> Result<PathBuf> {
     let start = std::env::var("CARGO_MANIFEST_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| std::env::current_dir().unwrap());
+        .map_or_else(|_| std::env::current_dir().context("cannot determine current directory"), |v| Ok(PathBuf::from(v)))?;
 
     let mut dir = start.as_path();
     loop {
@@ -127,12 +126,12 @@ pub struct Cmd {
 
 impl Cmd {
     pub fn env(mut self, key: &str, val: &str) -> Self {
-        self.inner.env(key, val);
+        let _ = self.inner.env(key, val);
         self
     }
 
     pub fn arg<S: AsRef<OsStr>>(mut self, arg: S) -> Self {
-        self.inner.arg(arg);
+        let _ = self.inner.arg(arg);
         self
     }
 
@@ -141,12 +140,12 @@ impl Cmd {
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
     {
-        self.inner.args(args);
+        let _ = self.inner.args(args);
         self
     }
 
     pub fn current_dir<P: AsRef<Path>>(mut self, dir: P) -> Self {
-        self.inner.current_dir(dir);
+        let _ = self.inner.current_dir(dir);
         self
     }
 
@@ -240,7 +239,7 @@ pub fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
         if ty.is_dir() {
             copy_dir_recursive(&entry.path(), &dest_path)?;
         } else {
-            std::fs::copy(entry.path(), &dest_path)?;
+            let _ = std::fs::copy(entry.path(), &dest_path)?;
         }
     }
     Ok(())

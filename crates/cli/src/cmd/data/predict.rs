@@ -1,9 +1,12 @@
+//! Predict compression and deduplication potential.
+
 use anyhow::Result;
 use hexz_ops::predict::{PredictConfig, predict};
 use indicatif::HumanBytes;
 use std::path::PathBuf;
-use colored::*;
+use colored::Colorize;
 
+/// Execute the `hexz predict` command to estimate compression and deduplication potential.
 pub fn run(
     path: PathBuf,
     block_size: u32,
@@ -21,7 +24,7 @@ pub fn run(
         ..Default::default()
     };
 
-    let report = predict(config)?;
+    let report = predict(&config)?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);

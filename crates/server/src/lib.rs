@@ -1,10 +1,12 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, unused_results))]
+
 //! HTTP, NBD, and S3 gateway server implementations for exposing Hexz archives.
 //!
 //! This module provides network-facing interfaces for accessing compressed Hexz
 //! archive data over standard protocols. It supports three distinct serving modes:
 //!
 //! 1. **HTTP Range Server** (`serve_http`): Exposes disk and auxiliary streams via
-//!    HTTP 1.1 range requests with DoS protection and partial content support.
+//!    HTTP 1.1 range requests with `DoS` protection and partial content support.
 //! 2. **NBD (Network Block Device) Server** (`serve_nbd`): Allows mounting archives
 //!    as Linux block devices using the standard NBD protocol.
 //! 3. **S3 Gateway** (`serve_s3_gateway`): Planned S3-compatible API for cloud
@@ -24,7 +26,7 @@
 //! |----------|----------|----------------|----------------|
 //! | HTTP     | Browser/API access | Range requests | None (planned) |
 //! | NBD      | Linux block device mount | Block-level reads | None |
-//! | S3       | Cloud integration | Object API | AWS SigV4 (planned) |
+//! | S3       | Cloud integration | Object API | AWS `SigV4` (planned) |
 //!
 //! # Design Decisions
 //!
@@ -67,7 +69,7 @@
 //! ### Attack Surface
 //!
 //! The current implementation has a minimal attack surface:
-//! 1. **DoS via large reads**: Mitigated by `MAX_CHUNK_SIZE` clamping (32 MiB)
+//! 1. **`DoS` via large reads**: Mitigated by `MAX_CHUNK_SIZE` clamping (32 MiB)
 //! 2. **Range header parsing**: Simplified parser with strict validation
 //! 3. **Connection exhaustion**: Limited by OS socket limits, no artificial cap
 //! 4. **Path traversal**: N/A (no filesystem access, only fixed `/disk` and `/memory` routes)
@@ -255,13 +257,13 @@ use tokio::net::TcpListener;
 /// can be added in a future version without breaking existing clients.
 const RANGE_PREFIX_LEN: usize = 6;
 
-/// Maximum allowed read size per HTTP request to prevent DoS attacks.
+/// Maximum allowed read size per HTTP request to prevent `DoS` attacks.
 ///
 /// # Value
 ///
 /// 32 MiB (33,554,432 bytes)
 ///
-/// # DoS Protection Rationale
+/// # `DoS` Protection Rationale
 ///
 /// Without a limit, a malicious client could request the entire archive in a single
 /// HTTP request (e.g., `Range: bytes=0-`), forcing the server to:
@@ -410,7 +412,7 @@ struct AppState {
 /// is acceptable, but for remote access consider:
 ///
 /// - **SSH tunnel**: `ssh -L 10809:localhost:10809 user@server`
-/// - **VPN**: WireGuard, OpenVPN, etc.
+/// - **VPN**: `WireGuard`, `OpenVPN`, etc.
 /// - **TLS wrapper**: `stunnel` or similar
 ///
 /// ## No Authentication
@@ -438,13 +440,12 @@ struct AppState {
 /// This function does not panic under normal operation. Client errors are logged
 /// and handled gracefully.
 pub async fn serve_nbd(snap: Arc<Archive>, port: u16, bind: &str) -> anyhow::Result<()> {
-    let addr: SocketAddr = format!("{}:{}", bind, port).parse()?;
+    let addr: SocketAddr = format!("{bind}:{port}").parse()?;
     let listener = TcpListener::bind(addr).await?;
 
     tracing::info!("NBD server listening on {}", addr);
     println!(
-        "NBD server started on {}. Use 'nbd-client localhost {} /dev/nbd0' to mount.",
-        addr, port
+        "NBD server started on {addr}. Use 'nbd-client localhost {port} /dev/nbd0' to mount."
     );
 
     loop {
@@ -459,7 +460,7 @@ pub async fn serve_nbd(snap: Arc<Archive>, port: u16, bind: &str) -> anyhow::Res
         tracing::debug!("Accepted NBD connection from {}", remote_addr);
 
         let snap_clone = snap.clone();
-        tokio::spawn(async move {
+        _ = tokio::spawn(async move {
             if let Err(e) = nbd::handle_client(socket, snap_clone).await {
                 tracing::error!("NBD client error: {}", e);
             }
@@ -482,16 +483,16 @@ pub async fn serve_nbd(snap: Arc<Archive>, port: u16, bind: &str) -> anyhow::Res
 /// ## Supported Operations (Planned)
 ///
 /// - `GET /<bucket>/<key>`: Retrieve archive data as an S3 object
-/// - `HEAD /<bucket>/<key>`: Get object metadata (size, ETag)
+/// - `HEAD /<bucket>/<key>`: Get object metadata (size, `ETag`)
 /// - `GET /<bucket>/<key>?range=bytes=<start>-<end>`: Partial object retrieval
 /// - `GET /<bucket>?list-type=2`: List objects (future: multi-archive support)
 ///
 /// ## S3 API Compatibility Goals
 ///
-/// - **Authentication**: AWS Signature Version 4 (SigV4) for production use
+/// - **Authentication**: AWS Signature Version 4 (`SigV4`) for production use
 /// - **Authorization**: IAM-style policies (read-only by default)
 /// - **Error responses**: Standard S3 XML error responses
-/// - **Metadata**: ETag (CRC32 of archive header), Content-Type, Last-Modified
+/// - **Metadata**: `ETag` (CRC32 of archive header), Content-Type, Last-Modified
 ///
 /// ## Mapping Hexz Concepts to S3
 ///
@@ -529,7 +530,7 @@ pub async fn serve_nbd(snap: Arc<Archive>, port: u16, bind: &str) -> anyhow::Res
 /// Future configuration options (not yet implemented):
 ///
 /// - **Bind address**: CLI flag `--s3-bind 0.0.0.0:9000` (default: `127.0.0.1`)
-/// - **Authentication**: `--s3-access-key` and `--s3-secret-key` for SigV4
+/// - **Authentication**: `--s3-access-key` and `--s3-secret-key` for `SigV4`
 /// - **Bucket name**: `--s3-bucket-name <name>` (default: derived from archive filename)
 /// - **Anonymous access**: `--s3-allow-anonymous` flag (dangerous, for testing only)
 ///
@@ -537,16 +538,16 @@ pub async fn serve_nbd(snap: Arc<Archive>, port: u16, bind: &str) -> anyhow::Res
 ///
 /// S3 is a de facto standard for object storage. Supporting the S3 API enables:
 ///
-/// 1. **Cloud integration**: Use Hexz with existing cloud infrastructure (AWS, MinIO, etc.)
+/// 1. **Cloud integration**: Use Hexz with existing cloud infrastructure (AWS, `MinIO`, etc.)
 /// 2. **Tool compatibility**: Any S3-compatible tool (s3cmd, rclone, boto3) works with Hexz
-/// 3. **Caching CDNs**: Front the gateway with CloudFront or similar for caching
+/// 3. **Caching CDNs**: Front the gateway with `CloudFront` or similar for caching
 /// 4. **Lifecycle policies**: Future support for automated archive expiration
 ///
 /// # Security Considerations (Planned)
 ///
 /// When implemented, the S3 gateway will require authentication by default:
 ///
-/// - **SigV4 authentication**: All requests must include valid AWS Signature V4 headers
+/// - **`SigV4` authentication**: All requests must include valid AWS Signature V4 headers
 /// - **Read-only mode**: No PUT/DELETE operations to prevent accidental modification
 /// - **Rate limiting**: Per-access-key request throttling to prevent abuse
 /// - **TLS requirement**: Production deployments must use HTTPS (enforced by CLI flag check)
@@ -610,7 +611,7 @@ pub async fn serve_nbd(snap: Arc<Archive>, port: u16, bind: &str) -> anyhow::Res
 /// # Implementation Roadmap
 ///
 /// 1. **Phase 1**: Basic GET/HEAD operations with no authentication (localhost-only)
-/// 2. **Phase 2**: AWS SigV4 authentication and bucket listing
+/// 2. **Phase 2**: AWS `SigV4` authentication and bucket listing
 /// 3. **Phase 3**: Multi-archive support (multiple buckets)
 /// 4. **Phase 4**: TLS support and network binding options
 /// 5. **Phase 5**: IAM-style policies and access control
@@ -624,8 +625,7 @@ pub async fn serve_nbd(snap: Arc<Archive>, port: u16, bind: &str) -> anyhow::Res
 pub async fn serve_s3_gateway(_snap: Arc<Archive>, port: u16) -> anyhow::Result<()> {
     tracing::info!("Starting S3 Gateway on port {}", port);
     println!(
-        "S3 Gateway started on port {} (Not fully implemented)",
-        port
+        "S3 Gateway started on port {port} (Not fully implemented)"
     );
     std::future::pending::<()>().await; // Keep alive
     unreachable!();
@@ -712,7 +712,7 @@ pub async fn serve_s3_gateway(_snap: Arc<Archive>, port: u16) -> anyhow::Result<
 /// Rationale: These are rarely used and add significant implementation complexity.
 /// Standard range requests cover 99% of real-world use cases.
 ///
-/// # DoS Protection Mechanisms
+/// # `DoS` Protection Mechanisms
 ///
 /// ## Request Size Clamping
 ///
@@ -848,7 +848,7 @@ pub async fn serve_s3_gateway(_snap: Arc<Archive>, port: u16) -> anyhow::Result<
 /// - **Localhost-only**: Binds to `127.0.0.1`, not accessible from network
 /// - **No authentication**: Anyone with local access can read archive data
 /// - **No TLS**: Plaintext HTTP (acceptable for loopback)
-/// - **DoS protection**: Request size clamping, but no rate limiting
+/// - **`DoS` protection**: Request size clamping, but no rate limiting
 ///
 /// ## Threat Model
 ///
@@ -870,7 +870,7 @@ pub async fn serve_s3_gateway(_snap: Arc<Archive>, port: u16) -> anyhow::Result<
 /// This function does not panic under normal operation. Request handling errors
 /// are converted to HTTP error responses.
 pub async fn serve_http(snap: Arc<Archive>, port: u16, bind: &str) -> anyhow::Result<()> {
-    let addr: SocketAddr = format!("{}:{}", bind, port).parse()?;
+    let addr: SocketAddr = format!("{bind}:{port}").parse()?;
     let listener = TcpListener::bind(addr).await?;
     tracing::info!("HTTP server listening on {}", addr);
     serve_http_with_listener(snap, listener).await
@@ -925,7 +925,7 @@ pub async fn serve_http_with_listener(
 ///
 /// See `serve_http` for client usage examples.
 async fn get_disk(headers: HeaderMap, State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    handle_request(headers, &state.snap, ArchiveStream::Main)
+    handle_request(&headers, &state.snap, ArchiveStream::Main)
 }
 
 /// HTTP handler for the `/memory` endpoint.
@@ -957,7 +957,7 @@ async fn get_disk(headers: HeaderMap, State(state): State<Arc<AppState>>) -> imp
 ///
 /// See `serve_http` for client usage examples.
 async fn get_memory(headers: HeaderMap, State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    handle_request(headers, &state.snap, ArchiveStream::Auxiliary)
+    handle_request(&headers, &state.snap, ArchiveStream::Auxiliary)
 }
 
 /// Core HTTP request handler that translates `Range` headers into archive reads.
@@ -966,7 +966,7 @@ async fn get_memory(headers: HeaderMap, State(state): State<Arc<AppState>>) -> i
 /// endpoints. It performs the following steps:
 ///
 /// 1. Parse the `Range` header (if present) or default to full stream access
-/// 2. Clamp the requested range to `MAX_CHUNK_SIZE` to prevent DoS
+/// 2. Clamp the requested range to `MAX_CHUNK_SIZE` to prevent `DoS`
 /// 3. Read the data from the archive via `Archive::read_at`
 /// 4. Return HTTP 206 with `Content-Range` header, or error status codes
 ///
@@ -1011,7 +1011,7 @@ async fn get_memory(headers: HeaderMap, State(state): State<Arc<AppState>>) -> i
 /// Range: bytes=999999999999-  → Start beyond EOF - out of bounds
 /// ```
 ///
-/// # DoS Protection: Range Clamping Algorithm
+/// # `DoS` Protection: Range Clamping Algorithm
 ///
 /// To prevent a malicious client from requesting gigabytes of data in a single
 /// request, the handler clamps the effective range:
@@ -1046,7 +1046,7 @@ async fn get_memory(headers: HeaderMap, State(state): State<Arc<AppState>>) -> i
 ///
 /// ## Range Parsing Errors
 ///
-/// If `parse_range` returns `Err(())`, the handler returns HTTP 416 (Range Not
+/// If `parse_range` returns `None`, the handler returns HTTP 416 (Range Not
 /// Satisfiable). This occurs when:
 ///
 /// - The `Range` header does not start with `"bytes="`
@@ -1097,20 +1097,20 @@ async fn get_memory(headers: HeaderMap, State(state): State<Arc<AppState>>) -> i
 ///
 /// - **No authentication**: This function does not check credentials (handled by
 ///   future middleware or reverse proxy)
-/// - **DoS mitigation**: Request size clamping prevents memory exhaustion
+/// - **`DoS` mitigation**: Request size clamping prevents memory exhaustion
 /// - **Information leakage**: Error responses do not reveal internal details
 ///   (e.g., "decompression failed" is hidden behind HTTP 500)
 ///
 /// # Examples
 ///
 /// See `serve_http`, `get_disk`, and `get_memory` for usage context.
-fn handle_request(headers: HeaderMap, snap: &Arc<Archive>, stream: ArchiveStream) -> Response {
+fn handle_request(headers: &HeaderMap, snap: &Arc<Archive>, stream: ArchiveStream) -> Response {
     let total_size = snap.size(stream);
 
     let (start, mut end) = if let Some(range) = headers.get(header::RANGE) {
         match parse_range(range.to_str().unwrap_or(""), total_size) {
-            Ok(r) => r,
-            Err(_) => return StatusCode::RANGE_NOT_SATISFIABLE.into_response(),
+            Some(r) => r,
+            None => return StatusCode::RANGE_NOT_SATISFIABLE.into_response(),
         }
     } else {
         (0, total_size.saturating_sub(1))
@@ -1139,7 +1139,7 @@ fn handle_request(headers: HeaderMap, snap: &Arc<Archive>, stream: ArchiveStream
                 (header::CONTENT_TYPE, "application/octet-stream"),
                 (
                     header::CONTENT_RANGE,
-                    &format!("bytes {}-{}/{}", start, end, total_size),
+                    &format!("bytes {start}-{end}/{total_size}"),
                 ),
                 (header::ACCEPT_RANGES, "bytes"),
             ],
@@ -1165,9 +1165,9 @@ fn handle_request(headers: HeaderMap, snap: &Arc<Archive>, stream: ArchiveStream
 /// # Unsupported Syntax
 ///
 /// - **Suffix range**: `bytes=-<length>` (last N bytes)
-///   - Example: `bytes=-1024` → Returns `Err(())`
+///   - Example: `bytes=-1024` → Returns `None`
 /// - **Multi-part range**: `bytes=0-100,200-300`
-///   - Example: `bytes=0-100,200-300` → Returns `Err(())`
+///   - Example: `bytes=0-100,200-300` → Returns `None`
 ///
 /// These are rejected because:
 /// 1. They are rarely used in practice (<1% of range requests)
@@ -1181,12 +1181,12 @@ fn handle_request(headers: HeaderMap, snap: &Arc<Archive>, stream: ArchiveStream
 ///
 /// # Returns
 ///
-/// - `Ok((start, end))`: Valid range with absolute byte offsets (both inclusive)
-/// - `Err(())`: Invalid syntax or out-of-bounds range
+/// - `Some((start, end))`: Valid range with absolute byte offsets (both inclusive)
+/// - `None`: Invalid syntax or out-of-bounds range
 ///
 /// # Error Conditions
 ///
-/// Returns `Err(())` if:
+/// Returns `None` if:
 ///
 /// 1. **Missing prefix**: Header does not start with `"bytes="`
 ///    - Example: `"items=0-100"` → Error
@@ -1216,7 +1216,7 @@ fn handle_request(headers: HeaderMap, snap: &Arc<Archive>, stream: ArchiveStream
 /// Range: bytes=
 /// ```
 ///
-/// Returns `Err(())` because there is no start offset.
+/// Returns `None` because there is no start offset.
 ///
 /// ## Single Byte Range
 ///
@@ -1224,7 +1224,7 @@ fn handle_request(headers: HeaderMap, snap: &Arc<Archive>, stream: ArchiveStream
 /// Range: bytes=0-0
 /// ```
 ///
-/// Returns `Ok((0, 0))` (valid, requests exactly 1 byte).
+/// Returns `Some((0, 0))` (valid, requests exactly 1 byte).
 ///
 /// ## Range at EOF
 ///
@@ -1232,7 +1232,7 @@ fn handle_request(headers: HeaderMap, snap: &Arc<Archive>, stream: ArchiveStream
 /// Range: bytes=0-999 (size = 1000)
 /// ```
 ///
-/// Returns `Ok((0, 999))` (valid, end is inclusive and equals `size - 1`).
+/// Returns `Some((0, 999))` (valid, end is inclusive and equals `size - 1`).
 ///
 /// ## Range Beyond EOF
 ///
@@ -1240,16 +1240,16 @@ fn handle_request(headers: HeaderMap, snap: &Arc<Archive>, stream: ArchiveStream
 /// Range: bytes=0-1000 (size = 1000)
 /// ```
 ///
-/// Returns `Err(())` because offset 1000 does not exist (valid range is 0-999).
+/// Returns `None` because offset 1000 does not exist (valid range is 0-999).
 ///
 /// # Examples
 ///
 /// ```text
-/// parse_range("bytes=0-1023", 10000)  -> Ok((0, 1023))
-/// parse_range("bytes=1024-", 10000)   -> Ok((1024, 9999))
-/// parse_range("0-1023", 10000)        -> Err(())   // missing "bytes=" prefix
-/// parse_range("bytes=0-10000", 10000) -> Err(())   // out of bounds
-/// parse_range("bytes=1000-500", 10000)-> Err(())   // inverted range
+/// parse_range("bytes=0-1023", 10000)  -> Some((0, 1023))
+/// parse_range("bytes=1024-", 10000)   -> Some((1024, 9999))
+/// parse_range("0-1023", 10000)        -> None   // missing "bytes=" prefix
+/// parse_range("bytes=0-10000", 10000) -> None   // out of bounds
+/// parse_range("bytes=1000-500", 10000)-> None   // inverted range
 /// ```
 ///
 /// # Performance
@@ -1266,20 +1266,19 @@ fn handle_request(headers: HeaderMap, snap: &Arc<Archive>, stream: ArchiveStream
 /// - **Unbounded length**: The `Range` header is bounded by HTTP header size limits
 ///   (typically 8 KB, enforced by the HTTP server)
 /// - **No allocation attacks**: Uses only one small allocation for splitting
-#[allow(clippy::result_unit_err)]
-pub fn parse_range(range: &str, size: u64) -> Result<(u64, u64), ()> {
+pub fn parse_range(range: &str, size: u64) -> Option<(u64, u64)> {
     if !range.starts_with("bytes=") {
-        return Err(());
+        return None;
     }
     let parts: Vec<&str> = range[RANGE_PREFIX_LEN..].split('-').collect();
-    let start = parts[0].parse::<u64>().map_err(|_| ())?;
+    let start = parts[0].parse::<u64>().ok()?;
     let end = if parts.len() > 1 && !parts[1].is_empty() {
-        parts[1].parse::<u64>().map_err(|_| ())?
+        parts[1].parse::<u64>().ok()?
     } else {
         size.saturating_sub(1)
     };
     if start > end || end >= size {
-        return Err(());
+        return None;
     }
-    Ok((start, end))
+    Some((start, end))
 }

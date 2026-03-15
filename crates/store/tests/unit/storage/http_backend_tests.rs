@@ -48,7 +48,7 @@ fn test_http_backend_read_full_content() {
     });
 
     let url = format!("{}/test.bin", mock_server.uri());
-    let backend = HttpBackend::new(url, true).expect("Failed to create HTTP backend");
+    let backend = HttpBackend::new(&url, true).expect("Failed to create HTTP backend");
 
     assert_eq!(backend.len(), TEST_DATA.len() as u64);
     let data = backend
@@ -84,7 +84,7 @@ fn test_http_backend_read_partial_range() {
     });
 
     let url = format!("{}/test.bin", mock_server.uri());
-    let backend = HttpBackend::new(url, true).expect("Failed to create HTTP backend");
+    let backend = HttpBackend::new(&url, true).expect("Failed to create HTTP backend");
 
     let data = backend
         .read_exact(7, 12)
@@ -106,7 +106,7 @@ fn test_http_backend_404_error() {
     });
 
     let url = format!("{}/notfound.bin", mock_server.uri());
-    let result = HttpBackend::new(url, true);
+    let result = HttpBackend::new(&url, true);
     assert!(result.is_err(), "Should fail with 404");
 }
 
@@ -133,7 +133,7 @@ fn test_http_backend_500_error() {
     });
 
     let url = format!("{}/test.bin", mock_server.uri());
-    let backend = HttpBackend::new(url, true).expect("Failed to create HTTP backend");
+    let backend = HttpBackend::new(&url, true).expect("Failed to create HTTP backend");
 
     let result = backend.read_exact(0, 10);
     assert!(result.is_err(), "Should fail with 500 error");
@@ -141,13 +141,13 @@ fn test_http_backend_500_error() {
 
 #[test]
 fn test_http_backend_url_validation_localhost() {
-    let result = HttpBackend::new("http://localhost:8080/test.bin".to_string(), false);
+    let result = HttpBackend::new("http://localhost:8080/test.bin", false);
     assert!(
         result.is_err(),
         "Should block localhost without allow_restricted"
     );
 
-    let result = HttpBackend::new("http://localhost:8080/test.bin".to_string(), true);
+    let result = HttpBackend::new("http://localhost:8080/test.bin", true);
     assert!(result.is_err()); // Connection error, not validation error
 }
 
@@ -160,8 +160,8 @@ fn test_http_backend_url_validation_private_networks() {
     ];
 
     for url in private_ips {
-        let result = HttpBackend::new(url.to_string(), false);
-        assert!(result.is_err(), "Should block private IP: {}", url);
+        let result = HttpBackend::new(url, false);
+        assert!(result.is_err(), "Should block private IP: {url}");
     }
 }
 
@@ -189,7 +189,7 @@ fn test_http_backend_content_length_mismatch() {
     });
 
     let url = format!("{}/test.bin", mock_server.uri());
-    let backend = HttpBackend::new(url, true).expect("Failed to create HTTP backend");
+    let backend = HttpBackend::new(&url, true).expect("Failed to create HTTP backend");
     assert_eq!(backend.len(), 1000);
 }
 
@@ -224,7 +224,7 @@ fn test_http_backend_concurrent_reads() {
     });
 
     let url = format!("{}/test.bin", mock_server.uri());
-    let backend = Arc::new(HttpBackend::new(url, true).expect("Failed to create HTTP backend"));
+    let backend = Arc::new(HttpBackend::new(&url, true).expect("Failed to create HTTP backend"));
 
     let handles: Vec<_> = (0..3)
         .map(|_| {

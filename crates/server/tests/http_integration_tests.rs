@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, unused_results, clippy::unreadable_literal, clippy::significant_drop_tightening, clippy::needless_pass_by_value, clippy::float_cmp)]
 //! Integration tests for the HTTP server.
 //!
 //! These tests spin up a real HTTP server on a random port and use `reqwest`
@@ -6,7 +7,7 @@
 //! - Range request handling (bounded, unbounded, no range header)
 //! - Response headers (Content-Range, Content-Type, Accept-Ranges)
 //! - Error responses (416 Range Not Satisfiable, 404 Not Found)
-//! - DoS protection (MAX_CHUNK_SIZE clamping)
+//! - Denial-of-service protection (`MAX_CHUNK_SIZE` clamping)
 //! - Concurrent client access
 //! - Data integrity across block boundaries
 
@@ -40,16 +41,14 @@ impl DiskOnlyFixture {
             input: disk_path,
             output: snap_path.clone(),
             compression: "lz4".to_string(),
-            encrypt: false,
             password: None,
-            train_dict: false,
             block_size: 65536,
             min_chunk: Some(16384),
             avg_chunk: Some(65536),
             max_chunk: Some(131072),
             ..Default::default()
         };
-        pack_archive(config, None::<fn(u64, u64)>).unwrap();
+        pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
         let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
         let snap = Archive::open(backend, None).unwrap();
@@ -89,16 +88,14 @@ impl DualStreamFixture {
             input: input_dir,
             output: snap_path.clone(),
             compression: "lz4".to_string(),
-            encrypt: false,
             password: None,
-            train_dict: false,
             block_size: 65536,
             min_chunk: Some(16384),
             avg_chunk: Some(65536),
             max_chunk: Some(131072),
             ..Default::default()
         };
-        pack_archive(config, None::<fn(u64, u64)>).unwrap();
+        pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
         let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
         let snap = Archive::open(backend, None).unwrap();

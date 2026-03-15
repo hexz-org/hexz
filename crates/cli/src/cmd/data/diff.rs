@@ -18,7 +18,7 @@ use indicatif::HumanBytes;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::ui::color::palette;
 
@@ -45,7 +45,7 @@ fn scan(path: &Path) -> Result<BlockSummary> {
     let mut parent_ref_blocks = 0usize;
 
     for page_meta in &master.main_pages {
-        f.seek(SeekFrom::Start(page_meta.offset))?;
+        let _ = f.seek(SeekFrom::Start(page_meta.offset))?;
         let mut buf = vec![0u8; page_meta.length as usize];
         f.read_exact(&mut buf)?;
         let page: IndexPage = bincode::deserialize(&buf)?;
@@ -56,7 +56,7 @@ fn scan(path: &Path) -> Result<BlockSummary> {
             } else if !block.is_sparse() && block.hash != [0u8; 32] {
                 // or_insert keeps the first logical_len seen for a given hash;
                 // blocks with the same hash always have the same content/size.
-                data.entry(block.hash).or_insert(block.logical_len as u64);
+                let _ = data.entry(block.hash).or_insert(block.logical_len as u64);
             }
         }
     }
@@ -90,7 +90,7 @@ fn parse_checkpoint_delta(
     parent_paths_b: &[String],
 ) -> Option<CheckpointDelta> {
     let obj: serde_json::Value = serde_json::from_str(meta_b).ok()?;
-    obj.get("hexz_checkpoint")?; // must be a checkpoint manifest
+    let _ = obj.get("hexz_checkpoint")?; // must be a checkpoint manifest
     let tensors = obj.get("tensors")?.as_object()?;
 
     let mut xor_delta_count = 0usize;
@@ -103,7 +103,7 @@ fn parse_checkpoint_delta(
             .unwrap_or("raw");
         let base_length = tensor
             .get("base_length")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0);
 
         if storage == "xor_delta" {
@@ -132,14 +132,14 @@ fn parse_checkpoint_delta(
 }
 
 /// Compare two archives and report shared vs. unique block data.
-pub fn run(a: PathBuf, b: PathBuf) -> Result<()> {
-    let info_a = inspect_archive(&a).with_context(|| format!("Failed to read {}", a.display()))?;
-    let info_b = inspect_archive(&b).with_context(|| format!("Failed to read {}", b.display()))?;
+pub fn run(a: &Path, b: &Path) -> Result<()> {
+    let info_a = inspect_archive(a).with_context(|| format!("Failed to read {}", a.display()))?;
+    let info_b = inspect_archive(b).with_context(|| format!("Failed to read {}", b.display()))?;
 
     let summary_a =
-        scan(&a).with_context(|| format!("Failed to read blocks from {}", a.display()))?;
+        scan(a).with_context(|| format!("Failed to read blocks from {}", a.display()))?;
     let summary_b =
-        scan(&b).with_context(|| format!("Failed to read blocks from {}", b.display()))?;
+        scan(b).with_context(|| format!("Failed to read blocks from {}", b.display()))?;
 
     // Set operations on unique hashes — consistent with the header counts.
     // parent-ref blocks in B are counted as "shared" (they point at A's data).
@@ -206,8 +206,8 @@ pub fn run(a: PathBuf, b: PathBuf) -> Result<()> {
 
     // Pre-format all alignment-sensitive strings as plain text so ANSI codes
     // don't skew column widths.
-    let name_a_col = format!("{:<w$}", name_a_str, w = max_name);
-    let name_b_col = format!("{:<w$}", name_b_str, w = max_name);
+    let name_a_col = format!("{name_a_str:<max_name$}");
+    let name_b_col = format!("{name_b_str:<max_name$}");
     let size_a_col = format!("{:>10}", HumanBytes(info_a.file_size));
     let size_b_col = format!("{:>10}", HumanBytes(info_b.file_size));
     let blk_a_col = format!("{:>6}", summary_a.data.len() + summary_a.parent_ref_blocks);
@@ -215,15 +215,15 @@ pub fn run(a: PathBuf, b: PathBuf) -> Result<()> {
 
     // Label column: wide enough for "Only in <longest_name>:"
     let lbl_w = "Only in ".len() + max_name + 1;
-    let shared_lbl = format!("{:<w$}", "Shared:", w = lbl_w);
-    let new_b_lbl = format!("{:<w$}", format!("New in {}:", name_b_str), w = lbl_w);
-    let only_a_lbl = format!("{:<w$}", format!("Only in {}:", name_a_str), w = lbl_w);
+    let shared_lbl = format!("{:<lbl_w$}", "Shared:");
+    let new_b_lbl = format!("{:<lbl_w$}", format!("New in {name_b_str}:"));
+    let only_a_lbl = format!("{:<lbl_w$}", format!("Only in {name_a_str}:"));
     let shared_size_col = format!("{:>10}", HumanBytes(shared_bytes));
     let new_b_size_col = format!("{:>10}", HumanBytes(new_b_bytes));
     let only_a_size_col = format!("{:>10}", HumanBytes(only_a_bytes));
-    let shared_blk_col = format!("{:>6}", shared_blocks);
-    let new_b_blk_col = format!("{:>6}", new_b_blocks);
-    let only_a_blk_col = format!("{:>6}", only_a_blocks);
+    let shared_blk_col = format!("{shared_blocks:>6}");
+    let new_b_blk_col = format!("{new_b_blocks:>6}");
+    let only_a_blk_col = format!("{only_a_blocks:>6}");
 
     let total_b_bytes = (shared_bytes + new_b_bytes).max(1);
     let pct = |n: u64| n as f64 / total_b_bytes as f64 * 100.0;
@@ -251,7 +251,7 @@ pub fn run(a: PathBuf, b: PathBuf) -> Result<()> {
     } else {
         ("Storage saved:", shared_bytes)
     };
-    let saved_lbl = format!("{:<w$}", saved_label, w = lbl_w);
+    let saved_lbl = format!("{saved_label:<lbl_w$}");
     let saved_size_col = format!("{:>10}", HumanBytes(saved_bytes));
 
     // B header tag.

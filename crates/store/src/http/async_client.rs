@@ -75,9 +75,9 @@ pub struct HttpBackend {
 
 impl HttpBackend {
     /// Creates an HTTP backend, validates the URL, and fetches file length via HEAD.
-    pub fn new(url: String, allow_restricted: bool) -> Result<Self> {
-        let safe_url = validate_url(&url, allow_restricted)?;
-        let handle = global_handle();
+    pub fn new(url: &str, allow_restricted: bool) -> Result<Self> {
+        let safe_url = validate_url(url, allow_restricted)?;
+        let handle = global_handle().map_err(Error::Io)?;
         let client = Client::builder()
             .redirect(Policy::none())
             .build()
@@ -121,9 +121,13 @@ impl StorageBackend for HttpBackend {
         }
         let end = offset + len as u64 - 1;
         let mut headers = HeaderMap::new();
-        headers.insert(
+        _ = headers.insert(
             reqwest::header::RANGE,
-            format!("bytes={offset}-{end}").parse().unwrap(),
+            format!("bytes={offset}-{end}")
+                .parse()
+                .map_err(|e: reqwest::header::InvalidHeaderValue| {
+                    Error::Io(IoError::other(e))
+                })?,
         );
 
         tokio::task::block_in_place(|| {

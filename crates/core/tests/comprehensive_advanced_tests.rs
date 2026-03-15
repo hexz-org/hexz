@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, unused_results, clippy::unreadable_literal, clippy::significant_drop_tightening, clippy::needless_pass_by_value, clippy::float_cmp)]
 //! Comprehensive Advanced Testing
 //!
 //! Real, working advanced tests for the Hexz codebase covering:
@@ -171,7 +172,7 @@ mod edge_case_tests {
 
     /// Test large data compression (16MB)
     #[test]
-    #[ignore] // Slow test, run with --ignored
+    #[ignore = "slow: 16 MiB compression round-trip"]
     fn edge_case_large_data_compression() {
         let compressor = Lz4Compressor::new();
         let large = vec![0xAAu8; 16 * 1024 * 1024]; // 16MB
@@ -212,7 +213,7 @@ mod edge_case_tests {
 
     /// Test hash of large data
     #[test]
-    #[ignore] // Slow test
+    #[ignore = "slow: large data hash"]
     fn edge_case_large_hash() {
         let hasher = Blake3Hasher::new();
         let large = vec![0xAAu8; 100 * 1024 * 1024]; // 100MB
@@ -235,7 +236,7 @@ mod edge_case_tests {
         assert_eq!(hash.len(), 32);
     }
 
-    /// Test hash_fixed returns 32 bytes
+    /// Test `hash_fixed` returns 32 bytes
     #[test]
     fn edge_case_hash_fixed() {
         let hasher = Blake3Hasher::new();
@@ -446,8 +447,7 @@ mod performance_regression_tests {
         // LZ4 should compress 10MB in under 1 second
         assert!(
             elapsed.as_secs() < 1,
-            "Compression took too long: {:?}",
-            elapsed
+            "Compression took too long: {elapsed:?}"
         );
     }
 
@@ -466,8 +466,7 @@ mod performance_regression_tests {
         // Decompression should be even faster than compression
         assert!(
             elapsed.as_secs() < 1,
-            "Decompression took too long: {:?}",
-            elapsed
+            "Decompression took too long: {elapsed:?}"
         );
     }
 
@@ -484,8 +483,7 @@ mod performance_regression_tests {
         // Blake3 should hash 100MB in under 1 second
         assert!(
             elapsed.as_secs() < 1,
-            "Hashing took too long: {:?}",
-            elapsed
+            "Hashing took too long: {elapsed:?}"
         );
     }
 
@@ -505,15 +503,13 @@ mod performance_regression_tests {
         }
 
         // First and last operations should have similar performance
-        let first_avg: u128 = times[0..10].iter().map(|d| d.as_micros()).sum::<u128>() / 10;
-        let last_avg: u128 = times[90..100].iter().map(|d| d.as_micros()).sum::<u128>() / 10;
+        let first_avg: u128 = times[0..10].iter().map(std::time::Duration::as_micros).sum::<u128>() / 10;
+        let last_avg: u128 = times[90..100].iter().map(std::time::Duration::as_micros).sum::<u128>() / 10;
 
         // Last operations should not be more than 2x slower
         assert!(
             last_avg < first_avg * 2,
-            "Performance degraded: first_avg={:?}µs, last_avg={:?}µs",
-            first_avg,
-            last_avg
+            "Performance degraded: first_avg={first_avg:?}µs, last_avg={last_avg:?}µs"
         );
     }
 }

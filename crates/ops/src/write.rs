@@ -13,7 +13,7 @@
 //! - **Block Writing**: Transform raw chunks into compressed, encrypted blocks
 //! - **Deduplication**: Detect and eliminate redundant blocks via content hashing
 //! - **Zero Optimization**: Handle sparse data efficiently without storage
-//! - **Metadata Generation**: Create BlockInfo descriptors for index building
+//! - **Metadata Generation**: Create `BlockInfo` descriptors for index building
 //!
 //! # Design Philosophy
 //!
@@ -108,7 +108,7 @@
 //!
 //! When deduplication detects a duplicate block:
 //! - **No physical write**: Block is not written to disk
-//! - **Offset reuse**: BlockInfo references the existing block's offset
+//! - **Offset reuse**: `BlockInfo` references the existing block's offset
 //! - **Space savings**: Multiple logical blocks share one physical block
 //! - **Transparency**: Readers cannot distinguish between deduplicated and unique blocks
 //!
@@ -248,7 +248,7 @@
 //!
 //! - **Input chunk**: Caller-provided (typically 64 KiB)
 //! - **Compression output**: ~1.5× chunk size worst case (incompressible data)
-//! - **Encryption output**: compression_size + 28 bytes (AES-GCM overhead)
+//! - **Encryption output**: `compression_size` + 28 bytes (AES-GCM overhead)
 //! - **Dedup hash**: 32 bytes (BLAKE3 digest)
 //!
 //! Total temporary allocation per write: ~100-150 KiB (released immediately after write).
@@ -275,6 +275,33 @@ use hexz_core::algo::encryption::Encryptor;
 use hexz_core::algo::hashing::ContentHasher;
 use hexz_core::format::index::BlockInfo;
 
+/// Reusable context for block write operations.
+///
+/// Bundles the compressor, encryptor, hasher, and scratch buffers needed by
+/// [`write_block`] so that callers do not have to pass many individual arguments.
+pub struct WriteContext<'a> {
+    /// Compressor used to compress block data.
+    pub compressor: &'a dyn Compressor,
+    /// Optional encryptor for per-block encryption.
+    pub encryptor: Option<&'a dyn Encryptor>,
+    /// Content hasher for deduplication.
+    pub hasher: &'a dyn ContentHasher,
+    /// Scratch buffer for hash output.
+    pub hash_buf: &'a mut [u8; 32],
+    /// Scratch buffer for compressed data.
+    pub compress_buf: &'a mut Vec<u8>,
+    /// Scratch buffer for encrypted data.
+    pub encrypt_buf: &'a mut Vec<u8>,
+}
+
+impl std::fmt::Debug for WriteContext<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WriteContext")
+            .field("encryptor", &self.encryptor.as_ref().map(|_| ".."))
+            .finish_non_exhaustive()
+    }
+}
+
 /// Writes a compressed and optionally encrypted block to the output stream.
 ///
 /// This function implements the complete block transformation pipeline: compression,
@@ -284,15 +311,15 @@ use hexz_core::format::index::BlockInfo;
 /// # Transformation Pipeline
 ///
 /// 1. **Compression**: Compress raw chunk using provided compressor (LZ4 or Zstd)
-/// 2. **Encryption** (optional): Encrypt compressed data with AES-256-GCM using block_idx as nonce
+/// 2. **Encryption** (optional): Encrypt compressed data with AES-256-GCM using `block_idx` as nonce
 /// 3. **Checksum**: Compute CRC32 of final data for integrity verification
 /// 4. **Deduplication** (optional, not for encrypted):
 ///    - Compute BLAKE3 hash of final data
-///    - Check dedup_map for existing block with same hash
+///    - Check `dedup_map` for existing block with same hash
 ///    - If found: Reuse existing offset, skip write
-///    - If new: Write block, record offset in dedup_map
-/// 5. **Write**: Append final data to output at current_offset
-/// 6. **Metadata**: Create and return BlockInfo with offset, length, checksum
+///    - If new: Write block, record offset in `dedup_map`
+/// 5. **Write**: Append final data to output at `current_offset`
+/// 6. **Metadata**: Create and return `BlockInfo` with offset, length, checksum
 ///
 /// # Parameters
 ///
@@ -332,7 +359,7 @@ use hexz_core::format::index::BlockInfo;
 /// - `hasher`: Content hasher for deduplication
 ///   - Typically `Blake3Hasher`
 ///   - Must implement [`ContentHasher`] trait
-///   - Used only when dedup_map is Some and encryptor is None
+///   - Used only when `dedup_map` is Some and encryptor is None
 ///
 /// - `hash_buf`: Reusable buffer for hash output (must be ≥32 bytes)
 ///   - Avoids allocation on every hash computation
@@ -361,7 +388,7 @@ use hexz_core::format::index::BlockInfo;
 /// ## Basic Usage (No Encryption, No Dedup)
 ///
 /// ```no_run
-/// use hexz_ops::write::write_block;
+/// use hexz_ops::write::{WriteContext, write_block};
 /// use hexz_core::algo::compression::Lz4Compressor;
 /// use hexz_core::algo::hashing::blake3::Blake3Hasher;
 /// use hexz_core::algo::dedup::hash_table::StandardHashTable;
@@ -378,18 +405,22 @@ use hexz_core::format::index::BlockInfo;
 /// let mut compress_buf = Vec::new();
 /// let mut encrypt_buf = Vec::new();
 ///
+/// let mut ctx = WriteContext {
+///     compressor: &compressor,
+///     encryptor: None,
+///     hasher: &hasher,
+///     hash_buf: &mut hash_buf,
+///     compress_buf: &mut compress_buf,
+///     encrypt_buf: &mut encrypt_buf,
+/// };
+///
 /// let info = write_block(
 ///     &mut out,
 ///     &chunk,
 ///     0,              // block_idx
 ///     &mut offset,
 ///     None::<&mut StandardHashTable>, // No dedup
-///     &compressor,
-///     None,           // No encryption
-///     &hasher,
-///     &mut hash_buf,
-///     &mut compress_buf,
-///     &mut encrypt_buf,
+///     &mut ctx,
 /// )?;
 ///
 /// println!("Block written at offset {}, size {}", info.offset, info.length);
@@ -400,7 +431,7 @@ use hexz_core::format::index::BlockInfo;
 /// ## With Deduplication
 ///
 /// ```no_run
-/// use hexz_ops::write::write_block;
+/// use hexz_ops::write::{WriteContext, write_block};
 /// use hexz_core::algo::compression::Lz4Compressor;
 /// use hexz_core::algo::hashing::blake3::Blake3Hasher;
 /// use hexz_core::algo::dedup::hash_table::StandardHashTable;
@@ -416,6 +447,15 @@ use hexz_core::format::index::BlockInfo;
 /// let mut compress_buf = Vec::new();
 /// let mut encrypt_buf = Vec::new();
 ///
+/// let mut ctx = WriteContext {
+///     compressor: &compressor,
+///     encryptor: None,
+///     hasher: &hasher,
+///     hash_buf: &mut hash_buf,
+///     compress_buf: &mut compress_buf,
+///     encrypt_buf: &mut encrypt_buf,
+/// };
+///
 /// // Write first block
 /// let chunk1 = vec![0xAA; 65536];
 /// let info1 = write_block(
@@ -424,12 +464,7 @@ use hexz_core::format::index::BlockInfo;
 ///     0,
 ///     &mut offset,
 ///     Some(&mut dedup_map),
-///     &compressor,
-///     None,
-///     &hasher,
-///     &mut hash_buf,
-///     &mut compress_buf,
-///     &mut encrypt_buf,
+///     &mut ctx,
 /// )?;
 /// println!("Block 0: offset={}, written", info1.offset);
 ///
@@ -441,12 +476,7 @@ use hexz_core::format::index::BlockInfo;
 ///     1,
 ///     &mut offset,
 ///     Some(&mut dedup_map),
-///     &compressor,
-///     None,
-///     &hasher,
-///     &mut hash_buf,
-///     &mut compress_buf,
-///     &mut encrypt_buf,
+///     &mut ctx,
 /// )?;
 /// println!("Block 1: offset={}, deduplicated (no write)", info2.offset);
 /// assert_eq!(info1.offset, info2.offset); // Same offset, block reused
@@ -457,7 +487,7 @@ use hexz_core::format::index::BlockInfo;
 /// ## With Encryption
 ///
 /// ```no_run
-/// use hexz_ops::write::write_block;
+/// use hexz_ops::write::{WriteContext, write_block};
 /// use hexz_core::algo::compression::Lz4Compressor;
 /// use hexz_core::algo::encryption::AesGcmEncryptor;
 /// use hexz_core::algo::hashing::blake3::Blake3Hasher;
@@ -483,6 +513,15 @@ use hexz_core::format::index::BlockInfo;
 /// let mut compress_buf = Vec::new();
 /// let mut encrypt_buf = Vec::new();
 ///
+/// let mut ctx = WriteContext {
+///     compressor: &compressor,
+///     encryptor: Some(&encryptor),
+///     hasher: &hasher,
+///     hash_buf: &mut hash_buf,
+///     compress_buf: &mut compress_buf,
+///     encrypt_buf: &mut encrypt_buf,
+/// };
+///
 /// let chunk = vec![0x42; 65536];
 /// let info = write_block(
 ///     &mut out,
@@ -490,12 +529,7 @@ use hexz_core::format::index::BlockInfo;
 ///     0,
 ///     &mut offset,
 ///     None::<&mut StandardHashTable>, // Dedup disabled (encryption prevents it)
-///     &compressor,
-///     Some(&encryptor),
-///     &hasher,
-///     &mut hash_buf,
-///     &mut compress_buf,
-///     &mut encrypt_buf,
+///     &mut ctx,
 /// )?;
 ///
 /// println!("Encrypted block: offset={}, length={}", info.offset, info.length);
@@ -546,30 +580,24 @@ use hexz_core::format::index::BlockInfo;
 ///
 /// For parallel writing, use separate output files or implement external synchronization.
 ///
-/// The dedup_map must also be externally synchronized for concurrent access.
-#[allow(clippy::too_many_arguments)]
+/// The `dedup_map` must also be externally synchronized for concurrent access.
 pub fn write_block<W: Write>(
     out: &mut W,
     chunk: &[u8],
     block_idx: u64,
     current_offset: &mut u64,
     dedup_map: Option<&mut StandardHashTable>,
-    compressor: &dyn Compressor,
-    encryptor: Option<&dyn Encryptor>,
-    hasher: &dyn ContentHasher,
-    hash_buf: &mut [u8; 32],
-    compress_buf: &mut Vec<u8>,
-    encrypt_buf: &mut Vec<u8>,
+    ctx: &mut WriteContext<'_>,
 ) -> Result<BlockInfo> {
     // Compress the chunk into reusable buffer
-    compressor.compress_into(chunk, compress_buf)?;
+    ctx.compressor.compress_into(chunk, ctx.compress_buf)?;
 
     // Encrypt if requested, using reusable buffer
-    let final_data: &[u8] = if let Some(enc) = encryptor {
-        enc.encrypt_into(compress_buf, block_idx, encrypt_buf)?;
-        encrypt_buf
+    let final_data: &[u8] = if let Some(enc) = ctx.encryptor {
+        enc.encrypt_into(ctx.compress_buf, block_idx, ctx.encrypt_buf)?;
+        ctx.encrypt_buf
     } else {
-        compress_buf
+        ctx.compress_buf
     };
 
     let checksum = crc32fast::hash(final_data);
@@ -577,7 +605,7 @@ pub fn write_block<W: Write>(
     let final_len = final_data.len() as u32;
 
     // Handle deduplication (only if not encrypting)
-    let offset = if encryptor.is_some() {
+    let offset = if ctx.encryptor.is_some() {
         // No dedup for encrypted data
         let off = *current_offset;
         out.write_all(final_data)?;
@@ -586,15 +614,15 @@ pub fn write_block<W: Write>(
     } else if let Some(map) = dedup_map {
         // Hash directly into the fixed-size buffer (no runtime bounds check).
         // Hash the UNCOMPRESSED data for consistent deduplication across compression algorithms.
-        *hash_buf = hasher.hash_fixed(chunk);
+        *ctx.hash_buf = ctx.hasher.hash_fixed(chunk);
 
-        if let Some(existing_offset) = map.get(hash_buf) {
+        if let Some(existing_offset) = map.get(ctx.hash_buf) {
             // Block already exists, reuse it — no copy needed on hit
             existing_offset
         } else {
             // New block: copy hash_buf only on miss (insert needs owned key)
             let off = *current_offset;
-            map.insert(*hash_buf, off);
+            _ = map.insert(*ctx.hash_buf, off);
             out.write_all(final_data)?;
             *current_offset += final_len as u64;
             off
@@ -612,7 +640,7 @@ pub fn write_block<W: Write>(
         length: final_len,
         logical_len: chunk_len,
         checksum,
-        hash: *hash_buf,
+        hash: *ctx.hash_buf,
     })
 }
 
@@ -638,7 +666,7 @@ pub fn write_block<W: Write>(
 ///
 /// # Descriptor Format
 ///
-/// Zero blocks are identified by a special BlockInfo signature:
+/// Zero blocks are identified by a special `BlockInfo` signature:
 /// - `offset = 0`: Invalid physical offset (data region starts at ≥512)
 /// - `length = 0`: No physical storage
 /// - `logical_len = N`: Original zero block size in bytes
@@ -649,7 +677,7 @@ pub fn write_block<W: Write>(
 /// # Parameters
 ///
 /// - `logical_len`: Size of the zero block in bytes
-///   - Typically matches block_size (e.g., 65536 for 64 KiB blocks)
+///   - Typically matches `block_size` (e.g., 65536 for 64 KiB blocks)
 ///   - Can vary with content-defined chunking
 ///   - Must be > 0 (zero-length blocks are invalid)
 ///
@@ -683,7 +711,7 @@ pub fn write_block<W: Write>(
 /// ## Usage in Packing Loop
 ///
 /// ```no_run
-/// # use hexz_ops::write::{is_zero_chunk, create_zero_block, write_block};
+/// # use hexz_ops::write::{is_zero_chunk, create_zero_block, write_block, WriteContext};
 /// # use hexz_core::algo::compression::Lz4Compressor;
 /// # use hexz_core::algo::hashing::blake3::Blake3Hasher;
 /// # use hexz_core::algo::dedup::hash_table::StandardHashTable;
@@ -697,13 +725,15 @@ pub fn write_block<W: Write>(
 /// # let mut compress_buf = Vec::new();
 /// # let mut encrypt_buf = Vec::new();
 /// # let chunks: Vec<Vec<u8>> = vec![];
+/// let mut ctx = WriteContext {
+///     compressor: &compressor, encryptor: None, hasher: &hasher,
+///     hash_buf: &mut hash_buf, compress_buf: &mut compress_buf, encrypt_buf: &mut encrypt_buf,
+/// };
 /// for (idx, chunk) in chunks.iter().enumerate() {
 ///     let info = if is_zero_chunk(chunk) {
-///         // Optimize: No compression, no write
 ///         create_zero_block(chunk.len() as u32)
 ///     } else {
-///         // Normal path: Compress and write
-///         write_block(&mut out, chunk, idx as u64, &mut offset, None::<&mut StandardHashTable>, &compressor, None, &hasher, &mut hash_buf, &mut compress_buf, &mut encrypt_buf)?
+///         write_block(&mut out, chunk, idx as u64, &mut offset, None::<&mut StandardHashTable>, &mut ctx)?
 ///     };
 ///     // Add info to index page...
 /// }
@@ -750,7 +780,7 @@ pub fn write_block<W: Write>(
 ///
 /// If a non-zero chunk is incorrectly marked as a zero block, readers will return
 /// zeros instead of the original data (silent data corruption).
-pub fn create_zero_block(logical_len: u32) -> BlockInfo {
+pub const fn create_zero_block(logical_len: u32) -> BlockInfo {
     BlockInfo {
         offset: 0,
         length: 0,
@@ -764,7 +794,7 @@ pub fn create_zero_block(logical_len: u32) -> BlockInfo {
 ///
 /// This is a simpler API for tests and one-off writes. For hot paths (like archive
 /// packing loops), use `write_block` directly with a reused hasher and buffer.
-#[allow(dead_code)]
+#[cfg(test)]
 fn write_block_simple<W: Write>(
     out: &mut W,
     chunk: &[u8],
@@ -779,18 +809,21 @@ fn write_block_simple<W: Write>(
     let mut hash_buf = [0u8; 32];
     let mut compress_buf = Vec::new();
     let mut encrypt_buf = Vec::new();
+    let mut ctx = WriteContext {
+        compressor,
+        encryptor,
+        hasher: &hasher,
+        hash_buf: &mut hash_buf,
+        compress_buf: &mut compress_buf,
+        encrypt_buf: &mut encrypt_buf,
+    };
     write_block(
         out,
         chunk,
         block_idx,
         current_offset,
         dedup_map,
-        compressor,
-        encryptor,
-        &hasher,
-        &mut hash_buf,
-        &mut compress_buf,
-        &mut encrypt_buf,
+        &mut ctx,
     )
 }
 
@@ -848,7 +881,7 @@ fn write_block_simple<W: Write>(
 /// ## Packing Loop Integration
 ///
 /// ```no_run
-/// # use hexz_ops::write::{is_zero_chunk, create_zero_block, write_block};
+/// # use hexz_ops::write::{is_zero_chunk, create_zero_block, write_block, WriteContext};
 /// # use hexz_core::algo::compression::Lz4Compressor;
 /// # use hexz_core::algo::hashing::blake3::Blake3Hasher;
 /// # use hexz_core::format::index::BlockInfo;
@@ -864,13 +897,15 @@ fn write_block_simple<W: Write>(
 /// # let mut encrypt_buf = Vec::new();
 /// # let mut index_blocks = Vec::new();
 /// # let chunks: Vec<Vec<u8>> = vec![];
+/// let mut ctx = WriteContext {
+///     compressor: &compressor, encryptor: None, hasher: &hasher,
+///     hash_buf: &mut hash_buf, compress_buf: &mut compress_buf, encrypt_buf: &mut encrypt_buf,
+/// };
 /// for (idx, chunk) in chunks.iter().enumerate() {
 ///     let info = if is_zero_chunk(chunk) {
-///         // Fast path: No compression, no write, just metadata
 ///         create_zero_block(chunk.len() as u32)
 ///     } else {
-///         // Slow path: Compress, write, create metadata
-///         write_block(&mut out, chunk, idx as u64, &mut offset, None::<&mut StandardHashTable>, &compressor, None, &hasher, &mut hash_buf, &mut compress_buf, &mut encrypt_buf)?
+///         write_block(&mut out, chunk, idx as u64, &mut offset, None::<&mut StandardHashTable>, &mut ctx)?
 ///     };
 ///     index_blocks.push(info);
 /// }
@@ -948,7 +983,7 @@ mod tests {
     use hexz_core::algo::encryption::AesGcmEncryptor;
     use std::io::Cursor;
 
-    /// Convenience wrapper that calls write_block_simple with no dedup map.
+    /// Convenience wrapper that calls `write_block_simple` with no dedup map.
     fn write_block_no_dedup<W: Write>(
         out: &mut W,
         chunk: &[u8],
@@ -1018,7 +1053,7 @@ mod tests {
 
     #[test]
     fn test_create_zero_block_various_sizes() {
-        for size in [1, 16, 1024, 4096, 65536, 1048576] {
+        for size in [1, 16, 1024, 4096, 65536, 1_048_576] {
             let info = create_zero_block(size);
             assert_eq!(info.offset, 0);
             assert_eq!(info.length, 0);
@@ -1190,7 +1225,7 @@ mod tests {
 
         // Create encryptor
         let salt = [0u8; 32];
-        let encryptor = AesGcmEncryptor::new(b"test_password", &salt, 100000).unwrap();
+        let encryptor = AesGcmEncryptor::new(b"test_password", &salt, 100_000).unwrap();
 
         let result = write_block_no_dedup(
             &mut output,
@@ -1216,7 +1251,7 @@ mod tests {
         let mut dedup_map = StandardHashTable::new();
         let compressor = Lz4Compressor::new();
         let salt = [0u8; 32];
-        let encryptor = AesGcmEncryptor::new(b"test_password", &salt, 100000).unwrap();
+        let encryptor = AesGcmEncryptor::new(b"test_password", &salt, 100_000).unwrap();
 
         // Write first encrypted block
         let chunk1 = vec![0xAAu8; 4096];

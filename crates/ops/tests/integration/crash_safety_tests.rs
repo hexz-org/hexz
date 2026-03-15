@@ -2,7 +2,7 @@
 //!
 //! These tests verify that readers correctly reject archives where the write
 //! process was interrupted (simulated by truncation or header corruption).
-//! The write path uses a header-last design: the header (with index_offset)
+//! The write path uses a header-last design: the header (with `index_offset`)
 //! is written only after all blocks and indices are on disk, so a crash at
 //! any prior stage leaves a zeroed header that readers can detect.
 
@@ -32,16 +32,14 @@ fn create_valid_archive() -> (std::path::PathBuf, TempDir) {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         min_chunk: Some(16384),
         avg_chunk: Some(65536),
         max_chunk: Some(131072),
         ..Default::default()
     };
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     // Sanity check: the archive is valid
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
@@ -100,11 +98,11 @@ fn test_crash_truncated_mid_header() {
 
 #[test]
 fn test_crash_truncated_during_block_write() {
-    let (archive_path, _temp_dir) = create_valid_archive();
+    let (archive_path, temp_dir) = create_valid_archive();
     let full_data = fs::read(&archive_path).unwrap();
 
     // Truncate to header + half a block (simulates crash mid-block-write)
-    let truncated_path = _temp_dir.path().join("truncated_blocks.hxz");
+    let truncated_path = temp_dir.path().join("truncated_blocks.hxz");
     let truncate_at = HEADER_SIZE + 1000;
     assert!(truncate_at < full_data.len());
 
@@ -121,7 +119,7 @@ fn test_crash_truncated_during_block_write() {
 
 #[test]
 fn test_crash_truncated_before_master_index() {
-    let (archive_path, _temp_dir) = create_valid_archive();
+    let (archive_path, temp_dir) = create_valid_archive();
     let full_data = fs::read(&archive_path).unwrap();
 
     // Read the real header to find the index offset
@@ -129,7 +127,7 @@ fn test_crash_truncated_before_master_index() {
 
     // Truncate just before the master index, but keep zeroed header
     // (simulates: all blocks written, index pages written, crash before master index)
-    let truncated_path = _temp_dir.path().join("no_master_index.hxz");
+    let truncated_path = temp_dir.path().join("no_master_index.hxz");
     let mut truncated = vec![0u8; HEADER_SIZE]; // zeroed header
     truncated.extend_from_slice(&full_data[HEADER_SIZE..header.index_offset as usize]);
     fs::write(&truncated_path, &truncated).unwrap();
@@ -144,13 +142,13 @@ fn test_crash_truncated_before_master_index() {
 
 #[test]
 fn test_crash_wrong_magic_bytes() {
-    let (archive_path, _temp_dir) = create_valid_archive();
+    let (archive_path, temp_dir) = create_valid_archive();
     let mut data = fs::read(&archive_path).unwrap();
 
     // Corrupt magic bytes (simulate partial header write)
     data[0] = 0x00;
     data[1] = 0x00;
-    let corrupted_path = _temp_dir.path().join("bad_magic.hxz");
+    let corrupted_path = temp_dir.path().join("bad_magic.hxz");
     fs::write(&corrupted_path, &data).unwrap();
 
     assert!(
@@ -161,7 +159,7 @@ fn test_crash_wrong_magic_bytes() {
 
 #[test]
 fn test_crash_header_written_but_index_truncated() {
-    let (archive_path, _temp_dir) = create_valid_archive();
+    let (archive_path, temp_dir) = create_valid_archive();
     let mut data = fs::read(&archive_path).unwrap();
 
     // Read header to get index_offset
@@ -173,7 +171,7 @@ fn test_crash_header_written_but_index_truncated() {
     // header write before index write).
     let truncate_at = header.index_offset as usize + 2; // just 2 bytes of index
     data.truncate(truncate_at);
-    let corrupted_path = _temp_dir.path().join("truncated_index.hxz");
+    let corrupted_path = temp_dir.path().join("truncated_index.hxz");
     fs::write(&corrupted_path, &data).unwrap();
 
     assert!(
@@ -184,7 +182,7 @@ fn test_crash_header_written_but_index_truncated() {
 
 #[test]
 fn test_crash_index_offset_points_past_eof() {
-    let (archive_path, _temp_dir) = create_valid_archive();
+    let (archive_path, temp_dir) = create_valid_archive();
     let mut data = fs::read(&archive_path).unwrap();
 
     // Modify header to point index_offset past end of file
@@ -193,7 +191,7 @@ fn test_crash_index_offset_points_past_eof() {
     let header_bytes = bincode::serialize(&header).unwrap();
     data[..header_bytes.len()].copy_from_slice(&header_bytes);
 
-    let corrupted_path = _temp_dir.path().join("index_past_eof.hxz");
+    let corrupted_path = temp_dir.path().join("index_past_eof.hxz");
     fs::write(&corrupted_path, &data).unwrap();
 
     assert!(
@@ -206,14 +204,14 @@ fn test_crash_index_offset_points_past_eof() {
 
 #[test]
 fn test_corruption_single_bitflip_in_block_data() {
-    let (archive_path, _temp_dir) = create_valid_archive();
+    let (archive_path, temp_dir) = create_valid_archive();
     let mut data = fs::read(&archive_path).unwrap();
 
     // Flip a bit in the first data block (just past the header)
     let flip_offset = HEADER_SIZE + 10;
     data[flip_offset] ^= 0x01;
 
-    let corrupted_path = _temp_dir.path().join("bitflip_block.hxz");
+    let corrupted_path = temp_dir.path().join("bitflip_block.hxz");
     fs::write(&corrupted_path, &data).unwrap();
 
     let backend = Arc::new(FileBackend::new(&corrupted_path).unwrap());
@@ -229,7 +227,7 @@ fn test_corruption_single_bitflip_in_block_data() {
 
 #[test]
 fn test_corruption_zeroed_block_data() {
-    let (archive_path, _temp_dir) = create_valid_archive();
+    let (archive_path, temp_dir) = create_valid_archive();
     let mut data = fs::read(&archive_path).unwrap();
 
     // Zero out a chunk of block data after the header
@@ -239,7 +237,7 @@ fn test_corruption_zeroed_block_data() {
         *byte = 0;
     }
 
-    let corrupted_path = _temp_dir.path().join("zeroed_block.hxz");
+    let corrupted_path = temp_dir.path().join("zeroed_block.hxz");
     fs::write(&corrupted_path, &data).unwrap();
 
     let backend = Arc::new(FileBackend::new(&corrupted_path).unwrap());
@@ -256,7 +254,7 @@ fn test_corruption_zeroed_block_data() {
 
 #[test]
 fn test_corruption_bitflip_in_master_index() {
-    let (archive_path, _temp_dir) = create_valid_archive();
+    let (archive_path, temp_dir) = create_valid_archive();
     let mut data = fs::read(&archive_path).unwrap();
 
     let header: Header = bincode::deserialize(&data[..HEADER_SIZE]).unwrap();
@@ -265,7 +263,7 @@ fn test_corruption_bitflip_in_master_index() {
     if flip_offset < data.len() {
         data[flip_offset] ^= 0x80;
 
-        let corrupted_path = _temp_dir.path().join("bitflip_index.hxz");
+        let corrupted_path = temp_dir.path().join("bitflip_index.hxz");
         fs::write(&corrupted_path, &data).unwrap();
 
         // Should either fail to open (deserialization error) or produce wrong results

@@ -64,7 +64,7 @@ proptest! {
 
         // Pick a byte to flip within the compressed data
         let flip_byte = flip_byte % compressed.len();
-        let mut corrupted = compressed.clone();
+        let mut corrupted = compressed;
         corrupted[flip_byte] ^= 1 << flip_bit;
 
         match compressor.decompress(&corrupted) {
@@ -132,7 +132,7 @@ mod encryption_props {
             let encrypted = encryptor.encrypt(&data, block_idx).unwrap();
 
             let flip_byte = flip_byte % encrypted.len();
-            let mut corrupted = encrypted.clone();
+            let mut corrupted = encrypted;
             corrupted[flip_byte] ^= 1 << flip_bit;
 
             // AES-GCM MUST reject any modification
@@ -261,7 +261,7 @@ proptest! {
         let change_pos = change_pos % data.len();
         let original_hash = crc32fast::hash(&data);
 
-        let mut modified = data.clone();
+        let mut modified = data;
         modified[change_pos] = modified[change_pos].wrapping_add(1);
 
         let modified_hash = crc32fast::hash(&modified);

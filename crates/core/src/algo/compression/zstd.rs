@@ -203,7 +203,7 @@
 //! println!("Trained dictionary: {} bytes", dict.len());
 //!
 //! // Step 3: Create compressor with dictionary
-//! let compressor = ZstdCompressor::new(3, Some(dict));
+//! let compressor = ZstdCompressor::new(3, Some(&dict));
 //!
 //! // Step 4: Compress production data
 //! let data = b"Production data with similar structure to samples";
@@ -348,7 +348,7 @@ impl std::fmt::Debug for ZstdCompressor {
         f.debug_struct("ZstdCompressor")
             .field("level", &self.level)
             .field("has_dict", &self.encoder_dict.is_some())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -396,7 +396,7 @@ impl ZstdCompressor {
     ///
     /// // Balanced compression with dictionary
     /// let dict = vec![0u8; 1024]; // Placeholder dictionary
-    /// let balanced = ZstdCompressor::new(3, Some(dict));
+    /// let balanced = ZstdCompressor::new(3, Some(&dict));
     ///
     /// // Maximum compression for archival
     /// let max = ZstdCompressor::new(22, None);
@@ -406,8 +406,8 @@ impl ZstdCompressor {
     ///
     /// Creating a compressor is relatively expensive (~1 ms with dictionary due to parsing).
     /// Reuse compressor instances rather than creating them per-operation.
-    pub fn new(level: i32, dict: Option<Vec<u8>>) -> Self {
-        let (encoder_dict, decoder_dict) = if let Some(d) = &dict {
+    pub fn new(level: i32, dict: Option<&[u8]>) -> Self {
+        let (encoder_dict, decoder_dict) = if let Some(d) = dict {
             // EncoderDictionary::copy and DecoderDictionary::copy both copy the
             // dictionary data internally, so we only need a temporary reference.
             (
@@ -510,7 +510,7 @@ impl ZstdCompressor {
     /// println!("Trained dictionary: {} bytes", dict.len());
     ///
     /// // Use dictionary for compression
-    /// let compressor = ZstdCompressor::new(3, Some(dict));
+    /// let compressor = ZstdCompressor::new(3, Some(&dict));
     /// # Ok(())
     /// # }
     /// ```
@@ -556,7 +556,7 @@ impl ZstdCompressor {
     ///
     /// // Compare compression ratios
     /// let without_dict = ZstdCompressor::new(3, None);
-    /// let with_dict = ZstdCompressor::new(3, Some(dict));
+    /// let with_dict = ZstdCompressor::new(3, Some(&dict));
     ///
     /// let test_data = vec![42u8; 32768];
     /// let compressed_raw = without_dict.compress(&test_data)?;
@@ -589,11 +589,11 @@ impl ZstdCompressor {
     /// - **Working memory**: ~10x `max_size` (e.g., ~1.1 MB for 110 KB dict)
     /// - **Output dictionary**: `max_size` (e.g., 110 KB)
     ///
-    /// Total peak memory: input_size + 10×max_size. For typical usage (10 MB samples,
+    /// Total peak memory: `input_size` + `10×max_size`. For typical usage (10 MB samples,
     /// 110 KB dict), peak memory is ~12 MB.
     pub fn train(samples: &[Vec<u8>], max_size: usize) -> Result<Vec<u8>> {
         zstd::dict::from_samples(samples, max_size)
-            .map_err(|e| Error::Compression(format!("Failed to train dict: {}", e)))
+            .map_err(|e| Error::Compression(format!("Failed to train dict: {e}")))
     }
 }
 
@@ -799,7 +799,7 @@ impl Compressor for ZstdCompressor {
                     .map_err(|e| Error::Compression(e.to_string()))?;
 
             let mut out = Vec::with_capacity(prealloc_cap);
-            decoder
+            _ = decoder
                 .read_to_end(&mut out)
                 .map_err(|e| Error::Compression(e.to_string()))?;
             Ok(out)
@@ -942,7 +942,7 @@ impl Compressor for ZstdCompressor {
                 static DECOMPRESSOR: std::cell::RefCell<zstd::bulk::Decompressor<'static>> =
                     std::cell::RefCell::new(
                         zstd::bulk::Decompressor::new()
-                            .expect("failed to create zstd decompressor")
+                            .unwrap_or_else(|e| panic!("failed to create zstd decompressor: {e}"))
                     );
             }
 
@@ -1049,11 +1049,11 @@ mod tests {
             let compressor = ZstdCompressor::new(level, None);
             let compressed = compressor
                 .compress(&data)
-                .unwrap_or_else(|_| panic!("Level {} failed", level));
+                .unwrap_or_else(|_| panic!("Level {level} failed"));
             let decompressed = compressor
                 .decompress(&compressed)
-                .unwrap_or_else(|_| panic!("Level {} decompress failed", level));
-            assert_eq!(data, decompressed, "Level {} roundtrip failed", level);
+                .unwrap_or_else(|_| panic!("Level {level} decompress failed"));
+            assert_eq!(data, decompressed, "Level {level} roundtrip failed");
         }
     }
 
@@ -1092,7 +1092,7 @@ mod tests {
             .collect();
 
         let dict = ZstdCompressor::train(&samples, 2048).expect("Training failed");
-        let compressor = ZstdCompressor::new(3, Some(dict));
+        let compressor = ZstdCompressor::new(3, Some(&dict));
 
         let data = b"Sample data with repeated patterns and structures";
         let compressed = compressor
@@ -1121,7 +1121,7 @@ mod tests {
         let dict = ZstdCompressor::train(&samples, 2048).expect("Training failed");
 
         let without_dict = ZstdCompressor::new(3, None);
-        let with_dict = ZstdCompressor::new(3, Some(dict));
+        let with_dict = ZstdCompressor::new(3, Some(&dict));
 
         let test_data = {
             let mut data = Vec::with_capacity(1024);
@@ -1179,7 +1179,7 @@ mod tests {
         let samples: Vec<Vec<u8>> = (0..15).map(|_| vec![77u8; 512]).collect();
 
         let dict = ZstdCompressor::train(&samples, 1024).unwrap();
-        let compressor = ZstdCompressor::new(3, Some(dict));
+        let compressor = ZstdCompressor::new(3, Some(&dict));
 
         let data = vec![77u8; 512];
         let compressed = compressor.compress(&data).unwrap();
@@ -1207,8 +1207,8 @@ mod tests {
         let dict1 = ZstdCompressor::train(&samples1, 2048).unwrap();
         let dict2 = ZstdCompressor::train(&samples2, 2048).unwrap();
 
-        let compressor1 = ZstdCompressor::new(3, Some(dict1));
-        let compressor2 = ZstdCompressor::new(3, Some(dict2));
+        let compressor1 = ZstdCompressor::new(3, Some(&dict1));
+        let compressor2 = ZstdCompressor::new(3, Some(&dict2));
 
         let data = b"PREFIX1:data:SUFFIX1".repeat(50);
         let compressed = compressor1.compress(&data).unwrap();
@@ -1233,7 +1233,7 @@ mod tests {
             .collect();
         let dict = ZstdCompressor::train(&samples, 2048).unwrap();
 
-        let with_dict = ZstdCompressor::new(3, Some(dict));
+        let with_dict = ZstdCompressor::new(3, Some(&dict));
         let without_dict = ZstdCompressor::new(3, None);
 
         let data = b"HEADER:payload:FOOTER".repeat(100);
@@ -1261,11 +1261,11 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn test_compressor_debug_format() {
         let compressor_no_dict = ZstdCompressor::new(5, None);
-        let debug_str = format!("{:?}", compressor_no_dict);
+        let debug_str = format!("{compressor_no_dict:?}");
 
         assert!(debug_str.contains("ZstdCompressor"));
         assert!(debug_str.contains("level"));
-        assert!(debug_str.contains("5"));
+        assert!(debug_str.contains('5'));
         assert!(debug_str.contains("has_dict"));
         assert!(debug_str.contains("false"));
     }
@@ -1274,12 +1274,12 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn test_compressor_debug_format_with_dict() {
         let dict = vec![1u8; 512];
-        let compressor_with_dict = ZstdCompressor::new(3, Some(dict));
-        let debug_str = format!("{:?}", compressor_with_dict);
+        let compressor_with_dict = ZstdCompressor::new(3, Some(&dict));
+        let debug_str = format!("{compressor_with_dict:?}");
 
         assert!(debug_str.contains("ZstdCompressor"));
         assert!(debug_str.contains("level"));
-        assert!(debug_str.contains("3"));
+        assert!(debug_str.contains('3'));
         assert!(debug_str.contains("has_dict"));
         assert!(debug_str.contains("true"));
     }
@@ -1371,7 +1371,7 @@ mod tests {
             let data = vec![byte_value; 1000];
             let compressed = compressor.compress(&data).unwrap();
             let decompressed = compressor.decompress(&compressed).unwrap();
-            assert_eq!(data, decompressed, "Failed for byte value {}", byte_value);
+            assert_eq!(data, decompressed, "Failed for byte value {byte_value}");
         }
     }
 

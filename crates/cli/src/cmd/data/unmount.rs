@@ -1,18 +1,18 @@
 //! Unmounting of FUSE-mounted Hexz filesystems.
 
 use anyhow::{Context, Result};
-use std::path::PathBuf;
+use std::path::Path;
 use std::process::Command;
-use colored::*;
+use colored::Colorize;
 
 /// Unmounts a previously mounted Hexz filesystem.
-pub fn run(mountpoint: PathBuf) -> Result<()> {
+pub fn run(mountpoint: &Path) -> Result<()> {
     let path_str = mountpoint.to_string_lossy();
 
     if cfg!(target_os = "linux") {
         let output = Command::new("fusermount")
             .arg("-u")
-            .arg(&mountpoint)
+            .arg(mountpoint)
             .output();
 
         if let Ok(output) = output {
@@ -29,7 +29,7 @@ pub fn run(mountpoint: PathBuf) -> Result<()> {
     }
 
     let output = Command::new("umount")
-        .arg(&mountpoint)
+        .arg(mountpoint)
         .output()
         .context("Failed to execute unmount command")?;
 
@@ -42,7 +42,7 @@ pub fn run(mountpoint: PathBuf) -> Result<()> {
             return Ok(());
         }
 
-        eprint!("{}", stderr);
-        anyhow::bail!("Failed to unmount {}.", path_str);
+        eprint!("{stderr}");
+        anyhow::bail!("Failed to unmount {path_str}.");
     }
 }

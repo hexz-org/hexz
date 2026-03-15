@@ -20,8 +20,6 @@ pub enum BuildProfile {
     Eda,
     /// Embedded systems: high compression (Zstd), small blocks (4 KiB).
     Embedded,
-    /// Machine Learning: columnar alignment, large blocks (e.g., 1 MiB) or matched to tensor sizes.
-    Ml,
 }
 
 impl BuildProfile {
@@ -32,7 +30,6 @@ impl BuildProfile {
             Self::Generic => 65_536, // 64 KiB
             Self::Eda => 16_384,     // 16 KiB
             Self::Embedded => 4_096, // 4 KiB
-            Self::Ml => 1_048_576,    // 1 MiB
         }
     }
 
@@ -44,7 +41,6 @@ impl BuildProfile {
             Self::Generic => "lz4",
             Self::Eda => "zstd",
             Self::Embedded => "zstd",
-            Self::Ml => "lz4",
         }
     }
 
@@ -55,7 +51,6 @@ impl BuildProfile {
             Self::Generic => false,
             Self::Eda => true,
             Self::Embedded => true,
-            Self::Ml => false,
         }
     }
 }
@@ -142,19 +137,11 @@ mod tests {
     }
 
     #[test]
-    fn test_build_profile_ml() {
-        let profile = BuildProfile::Ml;
-        assert_eq!(profile.block_size(), 1_048_576);
-        assert_eq!(profile.compression_algo(), "lz4");
-        assert!(!profile.recommended_dict_training());
-    }
-
-    #[test]
     fn test_build_profile_equality() {
         assert_eq!(BuildProfile::Generic, BuildProfile::Generic);
         assert_eq!(BuildProfile::Eda, BuildProfile::Eda);
         assert_ne!(BuildProfile::Generic, BuildProfile::Eda);
-        assert_ne!(BuildProfile::Embedded, BuildProfile::Ml);
+        assert_ne!(BuildProfile::Embedded, BuildProfile::Generic);
     }
 
     #[test]
@@ -176,10 +163,10 @@ mod tests {
 
     #[test]
     fn test_build_profile_debug() {
-        let profile = BuildProfile::Ml;
+        let profile = BuildProfile::Generic;
         let debug_str = format!("{profile:?}");
 
-        assert!(debug_str.contains("Ml"));
+        assert!(debug_str.contains("Generic"));
     }
 
     #[test]
@@ -192,6 +179,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::redundant_clone)]
     fn test_config_clone() {
         let config1 = Config {
             cache_size_bytes: 1024 * 1024 * 1024,
@@ -232,19 +220,15 @@ mod tests {
 
     #[test]
     fn test_build_profile_all_variants() {
-        // Ensure all variants can be constructed
         let _ = BuildProfile::Generic;
         let _ = BuildProfile::Eda;
         let _ = BuildProfile::Embedded;
-        let _ = BuildProfile::Ml;
     }
 
     #[test]
     fn test_build_profile_block_sizes_ordered() {
-        // Verify block sizes make sense
         assert!(BuildProfile::Embedded.block_size() < BuildProfile::Eda.block_size());
         assert!(BuildProfile::Eda.block_size() < BuildProfile::Generic.block_size());
-        assert!(BuildProfile::Generic.block_size() < BuildProfile::Ml.block_size());
     }
 
     #[test]
@@ -252,16 +236,11 @@ mod tests {
         assert_eq!(BuildProfile::Generic.compression_algo(), "lz4");
         assert_eq!(BuildProfile::Eda.compression_algo(), "zstd");
         assert_eq!(BuildProfile::Embedded.compression_algo(), "zstd");
-        assert_eq!(BuildProfile::Ml.compression_algo(), "lz4");
     }
 
     #[test]
     fn test_dict_training_recommendations() {
-        // Generic and ML don't need dictionary training
         assert!(!BuildProfile::Generic.recommended_dict_training());
-        assert!(!BuildProfile::Ml.recommended_dict_training());
-
-        // EDA and Embedded benefit from dictionary training
         assert!(BuildProfile::Eda.recommended_dict_training());
         assert!(BuildProfile::Embedded.recommended_dict_training());
     }

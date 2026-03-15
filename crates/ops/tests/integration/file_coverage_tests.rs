@@ -1,6 +1,6 @@
 //! Tests targeting uncovered code paths in file.rs:
 //! - CRC32 corruption detection
-//! - Thin archive parent chain fallback (BLOCK_OFFSET_PARENT)
+//! - Thin archive parent chain fallback (`BLOCK_OFFSET_PARENT`)
 //! - Zero-length/sparse block handling
 //! - Encrypted archive read path
 
@@ -12,7 +12,7 @@ use hexz_core::format::header::Header;
 use hexz_core::format::index::MasterIndex;
 use hexz_core::format::magic::HEADER_SIZE;
 use hexz_core::{Archive, ArchiveStream};
-use hexz_ops::pack::{PackConfig, pack_archive};
+use hexz_ops::pack::{PackConfig, PackTransformFlags, pack_archive};
 use hexz_store::StorageBackend;
 use hexz_store::local::FileBackend;
 use std::fs;
@@ -55,13 +55,11 @@ fn test_crc32_corruption_detected() {
         input: disk_path,
         output: snap_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     // Read the header and index to find block offsets
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
@@ -110,15 +108,14 @@ fn test_crc32_corruption_detected() {
 
     // Verify it's specifically a corruption error
     if let Err(e) = result {
-        let err_str = format!("{}", e);
+        let err_str = format!("{e}");
         assert!(
             err_str.contains("Corrupt")
                 || err_str.contains("corrupt")
                 || err_str.contains("CRC")
                 || err_str.contains("checksum")
                 || err_str.contains("Checksum"),
-            "Error should indicate corruption, got: {}",
-            err_str
+            "Error should indicate corruption, got: {err_str}"
         );
     }
 }
@@ -137,13 +134,11 @@ fn test_crc32_valid_data_passes() {
         input: disk_path,
         output: snap_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     // Read without corruption — should succeed
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
@@ -174,13 +169,11 @@ fn test_zero_block_sparse_handling() {
         input: disk_path,
         output: snap_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -217,13 +210,11 @@ fn test_mixed_zero_nonzero_blocks() {
         input: disk_path,
         output: snap_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -268,7 +259,7 @@ fn test_mixed_zero_nonzero_blocks() {
 //  Read at Into with Various Buffer Patterns
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Test read_at_into when the read spans past the last page.
+/// Test `read_at_into` when the read spans past the last page.
 #[test]
 fn test_read_past_last_page_zeroes() {
     let temp_dir = TempDir::new().unwrap();
@@ -282,13 +273,11 @@ fn test_read_past_last_page_zeroes() {
         input: disk_path,
         output: snap_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -350,13 +339,11 @@ fn test_cross_boundary_reads() {
         input: disk_path,
         output: snap_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
     let compressor = Box::new(Lz4Compressor::new());
@@ -382,9 +369,7 @@ fn test_cross_boundary_reads() {
         let expected = 0x10 + i;
         assert!(
             full[start..start + 65536].iter().all(|&b| b == expected),
-            "Block {} should be 0x{:02X}",
-            i,
-            expected
+            "Block {i} should be 0x{expected:02X}"
         );
     }
 }
@@ -393,7 +378,7 @@ fn test_cross_boundary_reads() {
 //  Encrypted Read Path Tests
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Test that encrypted + compressed data round-trips through decompress_and_verify.
+/// Test that encrypted + compressed data round-trips through `decompress_and_verify`.
 #[test]
 fn test_encrypted_read_with_crc_check() {
     use hexz_core::algo::encryption::aes_gcm::AesGcmEncryptor;
@@ -410,13 +395,12 @@ fn test_encrypted_read_with_crc_check() {
         input: disk_path,
         output: snap_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: true,
         password: Some(password.to_string()),
-        train_dict: false,
+        transform: PackTransformFlags { encrypt: true, train_dict: false, ..Default::default() },
         block_size: 65536,
         ..Default::default()
     };
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     // Open with correct password
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());
@@ -457,13 +441,12 @@ fn test_encrypted_corruption_detected() {
         input: disk_path,
         output: snap_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: true,
         password: Some(password.to_string()),
-        train_dict: false,
+        transform: PackTransformFlags { encrypt: true, train_dict: false, ..Default::default() },
         block_size: 65536,
         ..Default::default()
     };
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     // Find a data block and corrupt it
     let backend = Arc::new(FileBackend::new(&snap_path).unwrap());

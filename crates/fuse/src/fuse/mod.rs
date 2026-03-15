@@ -5,13 +5,15 @@ mod read;
 use fuser::Filesystem;
 use hexz_core::Archive;
 use hexz_vfs::{InodeMap, VfsAttr, DirEntry};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+/// Default entry/attr TTL for FUSE replies.
 pub(crate) const TTL: Duration = Duration::from_secs(1);
 
-fn vfs_attr_to_fuser(attr: VfsAttr) -> fuser::FileAttr {
+/// Converts a [`VfsAttr`] to a [`fuser::FileAttr`].
+const fn vfs_attr_to_fuser(attr: &VfsAttr) -> fuser::FileAttr {
     fuser::FileAttr {
         ino: attr.ino,
         size: attr.size,
@@ -31,30 +33,47 @@ fn vfs_attr_to_fuser(attr: VfsAttr) -> fuser::FileAttr {
     }
 }
 
+/// FUSE filesystem backed by a Hexz [`Archive`] with optional copy-on-write overlay.
 pub struct Hexz {
+    /// The underlying archive providing read-only data.
     pub(crate) snap: Arc<Archive>,
+    /// Inode-to-path mapping for the virtual filesystem.
     pub(crate) inodes: InodeMap,
+    /// Optional directory for copy-on-write modifications.
     pub(crate) write_layer: Option<PathBuf>,
 }
 
+impl std::fmt::Debug for Hexz {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Hexz")
+            .field("write_layer", &self.write_layer)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Hexz {
+    /// Creates a new `Hexz` filesystem from the given archive.
+    ///
+    /// If `write_layer` is provided, writes are persisted to that directory
+    /// using a copy-on-write strategy. If `metadata_dir` is provided, extra
+    /// inode metadata is loaded from it.
     pub fn new(
         snap: Arc<Archive>,
         uid: u32,
         gid: u32,
         write_layer: Option<PathBuf>,
-        metadata_dir: Option<PathBuf>,
+        metadata_dir: Option<&Path>,
     ) -> anyhow::Result<Self> {
         let mut inodes = InodeMap::new(&snap, uid, gid);
         if let Some(ref base) = write_layer {
             inodes.populate_from_overlay(base);
         }
-        if let Some(ref m_dir) = metadata_dir {
+        if let Some(m_dir) = metadata_dir {
             inodes.populate_from_metadata_dir(m_dir);
         }
 
         Ok(Self {
-            snap: snap.clone(),
+            snap,
             inodes,
             write_layer,
         })
@@ -66,9 +85,8 @@ impl Hexz {
     }
 
     fn ensure_cow(&self, ino: u64) -> std::io::Result<()> {
-        let overlay = match self.overlay_path(ino) {
-            Some(p) => p,
-            None => return Ok(()),
+        let Some(overlay) = self.overlay_path(ino) else {
+            return Ok(());
         };
 
         if overlay.exists() {
@@ -90,35 +108,31 @@ impl Hexz {
     }
 
     fn is_whiteout(&self, parent_ino: u64, name: &std::ffi::OsStr) -> bool {
-        let base = match &self.write_layer {
-            Some(b) => b,
-            None => return false,
+        let Some(base) = &self.write_layer else {
+            return false;
         };
-        let parent_path = match self.inodes.get_path(parent_ino) {
-            Some(p) => p,
-            None => return false,
+        let Some(parent_path) = self.inodes.get_path(parent_ino) else {
+            return false;
         };
         let whiteout_path = base.join(parent_path).join(".hexz_whiteout").join(name);
         whiteout_path.exists()
     }
 
     fn create_whiteout(&self, parent_ino: u64, name: &std::ffi::OsStr) -> std::io::Result<()> {
-        let base = match &self.write_layer {
-            Some(b) => b,
-            None => return Err(std::io::Error::from_raw_os_error(libc::EROFS)),
+        let Some(base) = &self.write_layer else {
+            return Err(std::io::Error::from_raw_os_error(libc::EROFS));
         };
         let parent_path = self.inodes.get_path(parent_ino).ok_or_else(|| std::io::Error::from_raw_os_error(libc::ENOENT))?;
         let whiteout_dir = base.join(parent_path).join(".hexz_whiteout");
         std::fs::create_dir_all(&whiteout_dir)?;
         let whiteout_path = whiteout_dir.join(name);
-        std::fs::File::create(whiteout_path)?;
+        drop(std::fs::File::create(whiteout_path)?);
         Ok(())
     }
 
     fn remove_whiteout(&self, parent_ino: u64, name: &std::ffi::OsStr) -> std::io::Result<()> {
-        let base = match &self.write_layer {
-            Some(b) => b,
-            None => return Ok(()),
+        let Some(base) = &self.write_layer else {
+            return Ok(());
         };
         let parent_path = self.inodes.get_path(parent_ino).ok_or_else(|| std::io::Error::from_raw_os_error(libc::ENOENT))?;
         let whiteout_path = base.join(parent_path).join(".hexz_whiteout").join(name);
@@ -199,7 +213,7 @@ impl Hexz {
             }
         }
 
-        let mut attr = vfs_attr_to_fuser(self.inodes.getattr(ino));
+        let mut attr = vfs_attr_to_fuser(&self.inodes.getattr(ino));
         if self.write_layer.is_some() {
             attr.perm |= 0o222; // Add write bit
         }
@@ -208,13 +222,13 @@ impl Hexz {
 }
 
 impl Filesystem for Hexz {
-    fn access(&mut self, _req: &fuser::Request, _ino: u64, _mask: i32, reply: fuser::ReplyEmpty) {
+    fn access(&mut self, _req: &fuser::Request<'_>, _ino: u64, _mask: i32, reply: fuser::ReplyEmpty) {
         reply.ok();
     }
 
     fn lookup(
         &mut self,
-        _req: &fuser::Request,
+        _req: &fuser::Request<'_>,
         parent: u64,
         name: &std::ffi::OsStr,
         reply: fuser::ReplyEntry,
@@ -251,20 +265,20 @@ impl Filesystem for Hexz {
         reply.error(libc::ENOENT);
     }
 
-    fn open(&mut self, _req: &fuser::Request, ino: u64, _flags: i32, reply: fuser::ReplyOpen) {
+    fn open(&mut self, _req: &fuser::Request<'_>, ino: u64, _flags: i32, reply: fuser::ReplyOpen) {
         if self.write_layer.is_some() {
             let _ = self.ensure_cow(ino);
         }
         reply.opened(1, 0);
     }
 
-    fn opendir(&mut self, _req: &fuser::Request, _ino: u64, _flags: i32, reply: fuser::ReplyOpen) {
+    fn opendir(&mut self, _req: &fuser::Request<'_>, _ino: u64, _flags: i32, reply: fuser::ReplyOpen) {
         reply.opened(1, 0);
     }
 
     fn create(
         &mut self,
-        _req: &fuser::Request,
+        _req: &fuser::Request<'_>,
         parent: u64,
         name: &std::ffi::OsStr,
         mode: u32,
@@ -304,7 +318,7 @@ impl Filesystem for Hexz {
 
     fn mknod(
         &mut self,
-        _req: &fuser::Request,
+        _req: &fuser::Request<'_>,
         parent: u64,
         name: &std::ffi::OsStr,
         mode: u32,
@@ -343,7 +357,7 @@ impl Filesystem for Hexz {
 
     fn mkdir(
         &mut self,
-        _req: &fuser::Request,
+        _req: &fuser::Request<'_>,
         parent: u64,
         name: &std::ffi::OsStr,
         mode: u32,
@@ -358,7 +372,7 @@ impl Filesystem for Hexz {
                 let _ = self.remove_whiteout(parent, name);
 
                 match std::fs::create_dir_all(&full_path) {
-                    Ok(_) => {
+                    Ok(()) => {
                         use std::os::unix::fs::PermissionsExt;
                         let _ = std::fs::set_permissions(&full_path, std::fs::Permissions::from_mode(mode));
                         let ino = self.inodes.add_file_at_path(&rel_path, true);
@@ -376,7 +390,7 @@ impl Filesystem for Hexz {
         reply.error(libc::EROFS);
     }
 
-    fn getattr(&mut self, _req: &fuser::Request, ino: u64, reply: fuser::ReplyAttr) {
+    fn getattr(&mut self, _req: &fuser::Request<'_>, ino: u64, reply: fuser::ReplyAttr) {
         if !self.inodes.is_valid_inode(ino) {
             reply.error(libc::ENOENT);
             return;
@@ -385,15 +399,20 @@ impl Filesystem for Hexz {
         reply.attr(&TTL, &attr);
     }
 
-    fn statfs(&mut self, _req: &fuser::Request, _ino: u64, reply: fuser::ReplyStatfs) {
+    fn statfs(&mut self, _req: &fuser::Request<'_>, _ino: u64, reply: fuser::ReplyStatfs) {
         if let Some(ref base) = self.write_layer {
             use std::ffi::CString;
             use std::os::unix::ffi::OsStrExt;
 
-            let path = CString::new(base.as_os_str().as_bytes()).unwrap();
+            let Ok(path) = CString::new(base.as_os_str().as_bytes()) else {
+                reply.statfs(1, 0, 0, 1, 0, 4096, 255, 4096);
+                return;
+            };
+            // SAFETY: `path` is a valid C string and `stats` is zeroed before
+            // being passed to `statvfs`, which only writes into it on success.
             unsafe {
                 let mut stats = std::mem::zeroed();
-                if libc::statvfs(path.as_ptr(), &mut stats) == 0 {
+                if libc::statvfs(path.as_ptr(), &raw mut stats) == 0 {
                     reply.statfs(
                         stats.f_blocks as u64,
                         stats.f_bfree as u64,
@@ -413,7 +432,7 @@ impl Filesystem for Hexz {
 
     fn readdir(
         &mut self,
-        _req: &fuser::Request,
+        _req: &fuser::Request<'_>,
         ino: u64,
         _fh: u64,
         offset: i64,
@@ -463,7 +482,7 @@ impl Filesystem for Hexz {
 
     fn read(
         &mut self,
-        _req: &fuser::Request,
+        _req: &fuser::Request<'_>,
         ino: u64,
         _fh: u64,
         offset: i64,
@@ -474,24 +493,18 @@ impl Filesystem for Hexz {
     ) {
         if let Some(host_path) = self.inodes.passthrough_paths.get(&ino) {
             use std::io::{Read, Seek};
-            let mut f = match std::fs::File::open(host_path) {
-                Ok(f) => f,
-                Err(_) => {
-                    reply.error(libc::EIO);
-                    return;
-                }
+            let Ok(mut f) = std::fs::File::open(host_path) else {
+                reply.error(libc::EIO);
+                return;
             };
             if f.seek(std::io::SeekFrom::Start(offset as u64)).is_err() {
                 reply.error(libc::EIO);
                 return;
             }
             let mut buf = vec![0u8; size as usize];
-            let n = match f.read(&mut buf) {
-                Ok(n) => n,
-                Err(_) => {
-                    reply.error(libc::EIO);
-                    return;
-                }
+            let Ok(n) = f.read(&mut buf) else {
+                reply.error(libc::EIO);
+                return;
             };
             reply.data(&buf[..n]);
             return;
@@ -501,24 +514,18 @@ impl Filesystem for Hexz {
             let full_path = base.join(rel_path);
             if full_path.exists() && !full_path.is_dir() {
                 use std::io::{Read, Seek};
-                let mut f = match std::fs::File::open(full_path) {
-                    Ok(f) => f,
-                    Err(_) => {
-                        reply.error(libc::EIO);
-                        return;
-                    }
+                let Ok(mut f) = std::fs::File::open(full_path) else {
+                    reply.error(libc::EIO);
+                    return;
                 };
                 if f.seek(std::io::SeekFrom::Start(offset as u64)).is_err() {
                     reply.error(libc::EIO);
                     return;
                 }
                 let mut buf = vec![0u8; size as usize];
-                let n = match f.read(&mut buf) {
-                    Ok(n) => n,
-                    Err(_) => {
-                        reply.error(libc::EIO);
-                        return;
-                    }
+                let Ok(n) = f.read(&mut buf) else {
+                    reply.error(libc::EIO);
+                    return;
                 };
                 reply.data(&buf[..n]);
                 return;
@@ -529,7 +536,7 @@ impl Filesystem for Hexz {
 
     fn setattr(
         &mut self,
-        _req: &fuser::Request,
+        req: &fuser::Request<'_>,
         ino: u64,
         mode: Option<u32>,
         _uid: Option<u32>,
@@ -569,12 +576,12 @@ impl Filesystem for Hexz {
             }
         }
 
-        self.getattr(_req, ino, reply);
+        self.getattr(req, ino, reply);
     }
 
     fn write(
         &mut self,
-        _req: &fuser::Request,
+        _req: &fuser::Request<'_>,
         ino: u64,
         _fh: u64,
         offset: i64,
@@ -599,7 +606,7 @@ impl Filesystem for Hexz {
             let full_path = base.join(rel_path);
             let res: std::io::Result<usize> = (|| {
                 let mut f = std::fs::File::options().write(true).open(full_path)?;
-                f.seek(std::io::SeekFrom::Start(offset as u64))?;
+                let _ = f.seek(std::io::SeekFrom::Start(offset as u64))?;
                 f.write(data)
             })();
 
@@ -614,7 +621,7 @@ impl Filesystem for Hexz {
 
     fn unlink(
         &mut self,
-        _req: &fuser::Request,
+        _req: &fuser::Request<'_>,
         parent: u64,
         name: &std::ffi::OsStr,
         reply: fuser::ReplyEmpty,
@@ -648,7 +655,7 @@ impl Filesystem for Hexz {
 
     fn rmdir(
         &mut self,
-        _req: &fuser::Request,
+        _req: &fuser::Request<'_>,
         parent: u64,
         name: &std::ffi::OsStr,
         reply: fuser::ReplyEmpty,
@@ -683,7 +690,7 @@ impl Filesystem for Hexz {
 
     fn rename(
         &mut self,
-        _req: &fuser::Request,
+        _req: &fuser::Request<'_>,
         parent: u64,
         name: &std::ffi::OsStr,
         newparent: u64,
@@ -724,8 +731,8 @@ impl Filesystem for Hexz {
             }
 
             match std::fs::rename(old_full, new_full) {
-                Ok(_) => {
-                    self.inodes.rename_path(&old_rel, &new_rel);
+                Ok(()) => {
+                    let _ = self.inodes.rename_path(&old_rel, &new_rel);
                     let _ = self.create_whiteout(parent, name);
                     let _ = self.remove_whiteout(newparent, newname);
                     reply.ok();
@@ -739,7 +746,7 @@ impl Filesystem for Hexz {
 
     fn link(
         &mut self,
-        _req: &fuser::Request,
+        _req: &fuser::Request<'_>,
         ino: u64,
         newparent: u64,
         newname: &std::ffi::OsStr,
@@ -765,7 +772,7 @@ impl Filesystem for Hexz {
             let new_full = base.join(&new_rel);
 
             match std::fs::hard_link(old_full, new_full) {
-                Ok(_) => {
+                Ok(()) => {
                     // In our current InodeMap, we don't support true hardlinks (1 ino -> many paths)
                     // perfectly, but we can add the new path pointing to the same Inode.
                     // This is enough for most tools.
@@ -782,7 +789,7 @@ impl Filesystem for Hexz {
 
     fn symlink(
         &mut self,
-        _req: &fuser::Request,
+        _req: &fuser::Request<'_>,
         parent: u64,
         name: &std::ffi::OsStr,
         link: &std::path::Path,
@@ -801,7 +808,7 @@ impl Filesystem for Hexz {
 
                 #[cfg(unix)]
                 match std::os::unix::fs::symlink(link, &full_path) {
-                    Ok(_) => {
+                    Ok(()) => {
                         let ino = self.inodes.add_file_at_path(&rel_path, false);
                         let attr = self.getattr_internal(ino);
                         reply.entry(&TTL, &attr, 0);
@@ -816,7 +823,7 @@ impl Filesystem for Hexz {
         reply.error(libc::EROFS);
     }
 
-    fn readlink(&mut self, _req: &fuser::Request, ino: u64, reply: fuser::ReplyData) {
+    fn readlink(&mut self, _req: &fuser::Request<'_>, ino: u64, reply: fuser::ReplyData) {
         if let (Some(base), Some(rel_path)) = (&self.write_layer, self.inodes.get_path(ino)) {
             let full_path = base.join(rel_path);
             match std::fs::read_link(full_path) {

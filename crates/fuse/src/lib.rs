@@ -1,3 +1,8 @@
+// unsafe required for: FUSE filesystem reply buffer handling.
+// All unsafe blocks have individual SAFETY comments.
+#![allow(unsafe_code)]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, unused_results))]
+
 //! FUSE adapter for mounting Hexz archives as filesystems.
 //!
 //! This crate provides a FUSE (Filesystem in Userspace) implementation that
@@ -24,7 +29,7 @@ pub fn mount_fs(
     uid: u32,
     gid: u32,
     write_layer: Option<std::path::PathBuf>,
-    metadata_dir: Option<std::path::PathBuf>,
+    metadata_dir: Option<&std::path::Path>,
 ) -> anyhow::Result<()> {
     let mut options = vec![
         MountOption::FSName("hexz".to_string()),

@@ -1,4 +1,4 @@
-use crate::common::*;
+use crate::common::{cmd, CYAN, GREEN, RESET};
 use anyhow::Result;
 
 const CONTAINER_NAME: &str = "hexz-minio";
@@ -9,21 +9,27 @@ const DEFAULT_PASSWORD: &str = "minioadmin";
 const DEFAULT_BUCKET: &str = "hexz-test";
 const DEFAULT_DATA_DIR: &str = "/tmp/hexz-minio-data";
 
-#[derive(clap::Subcommand)]
+#[derive(Clone, Copy, clap::Subcommand)]
 pub enum MinioCmd {
-    /// Start MinIO container
+    /// Start `MinIO` container
     Start,
-    /// Stop and remove MinIO container
+    /// Stop and remove `MinIO` container
     Stop,
-    /// Show MinIO status and connection info
+    /// Show `MinIO` status and connection info
     Status,
 }
 
 pub fn run(cmd: MinioCmd) -> Result<()> {
     match cmd {
         MinioCmd::Start => start(),
-        MinioCmd::Stop => stop(),
-        MinioCmd::Status => status(),
+        MinioCmd::Stop => {
+            stop();
+            Ok(())
+        }
+        MinioCmd::Status => {
+            status();
+            Ok(())
+        }
     }
 }
 
@@ -35,8 +41,7 @@ fn is_running() -> bool {
     cmd("docker")
         .args(["ps", "--format", "{{.Names}}"])
         .capture()
-        .map(|out| out.lines().any(|line| line.trim() == CONTAINER_NAME))
-        .unwrap_or(false)
+        .is_ok_and(|out| out.lines().any(|line| line.trim() == CONTAINER_NAME))
 }
 
 fn start() -> Result<()> {
@@ -49,7 +54,8 @@ fn start() -> Result<()> {
 
     if is_running() {
         println!("{CYAN}[minio]{RESET} MinIO is already running");
-        return status();
+        status();
+        return Ok(());
     }
 
     // Clean up stopped container
@@ -117,20 +123,20 @@ fn start() -> Result<()> {
     }
 
     println!("{GREEN}[minio]{RESET} MinIO running");
-    status()
+    status();
+    Ok(())
 }
 
-fn stop() -> Result<()> {
+fn stop() {
     println!("{CYAN}[minio]{RESET} Stopping MinIO\u{2026}");
     let _ = cmd("docker")
         .args(["stop", CONTAINER_NAME])
         .run_with_status();
     let _ = cmd("docker").args(["rm", CONTAINER_NAME]).run_with_status();
     println!("{GREEN}[minio]{RESET} MinIO stopped");
-    Ok(())
 }
 
-fn status() -> Result<()> {
+fn status() {
     let port = env_or("MINIO_PORT", DEFAULT_PORT);
     let console_port = env_or("MINIO_CONSOLE_PORT", DEFAULT_CONSOLE_PORT);
     let user = env_or("MINIO_ROOT_USER", DEFAULT_USER);
@@ -148,5 +154,4 @@ fn status() -> Result<()> {
     } else {
         println!("{CYAN}[minio]{RESET} MinIO is not running");
     }
-    Ok(())
 }

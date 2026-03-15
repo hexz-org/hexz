@@ -23,12 +23,12 @@ pub struct S3Backend {
 impl S3Backend {
     /// Creates an S3 backend, verifies the object exists, and caches its length.
     pub fn new(
-        bucket_name: String,
+        bucket_name: &str,
         key: String,
         region_name: String,
         endpoint: Option<String>,
     ) -> Result<Self> {
-        let handle = global_handle();
+        let handle = global_handle().map_err(Error::Io)?;
 
         let region = if let Some(ep) = endpoint {
             Region::Custom {
@@ -39,7 +39,7 @@ impl S3Backend {
             Region::from_str(&region_name).map_err(|e| {
                 Error::Io(IoError::new(
                     ErrorKind::InvalidInput,
-                    format!("Invalid region: {}", e),
+                    format!("Invalid region: {e}"),
                 ))
             })?
         };
@@ -47,12 +47,12 @@ impl S3Backend {
         let credentials = Credentials::default().map_err(|e| {
             Error::Io(IoError::new(
                 ErrorKind::PermissionDenied,
-                format!("Missing credentials: {}", e),
+                format!("Missing credentials: {e}"),
             ))
         })?;
 
-        let bucket = Bucket::new(&bucket_name, region, credentials)
-            .map_err(|e| Error::Io(IoError::other(format!("Bucket error: {}", e))))?
+        let bucket = Bucket::new(bucket_name, region, credentials)
+            .map_err(|e| Error::Io(IoError::other(format!("Bucket error: {e}"))))?
             .with_path_style();
 
         let (head, code) = tokio::task::block_in_place(|| {
@@ -65,14 +65,14 @@ impl S3Backend {
                             "S3 connection timeout after 30 seconds",
                         ))
                     })?
-                    .map_err(|e| Error::Io(IoError::other(format!("S3 Head error: {}", e))))
+                    .map_err(|e| Error::Io(IoError::other(format!("S3 Head error: {e}"))))
             })
         })?;
 
         if code != 200 {
             return Err(Error::Io(IoError::new(
                 ErrorKind::NotFound,
-                format!("S3 object not found or error: {}", code),
+                format!("S3 object not found or error: {code}"),
             )));
         }
 
@@ -119,13 +119,12 @@ impl StorageBackend for S3Backend {
                         "S3 read timeout after 60 seconds",
                     ))
                 })?
-                .map_err(|e| Error::Io(IoError::other(format!("S3 Read error: {}", e))))?;
+                .map_err(|e| Error::Io(IoError::other(format!("S3 Read error: {e}"))))?;
 
                 let code = response_data.status_code();
                 if code != 200 && code != 206 {
                     return Err(Error::Io(IoError::other(format!(
-                        "S3 error code: {}",
-                        code
+                        "S3 error code: {code}"
                     ))));
                 }
 

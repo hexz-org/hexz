@@ -6,25 +6,24 @@ use hexz_core::format::header::Header;
 use hexz_core::format::magic::HEADER_SIZE;
 use hexz_store::local::MmapBackend;
 use hexz_store::StorageBackend;
-use std::path::PathBuf;
-use colored::*;
+use std::path::{Path, PathBuf};
+use colored::Colorize;
 
 /// Execute the `hexz extract` command.
-pub fn run(input: PathBuf, output: Option<PathBuf>) -> Result<()> {
+pub fn run(input: &Path, output: Option<PathBuf>) -> Result<()> {
     // 1. Resolve output path
-    let output = match output {
-        Some(p) => p,
-        None => {
-            // Default: if it has a manifest, use dir name, otherwise .bin
-            let mut out = input.clone();
-            out.set_extension("");
-            out
-        }
+    let output = if let Some(p) = output {
+        p
+    } else {
+        // Default: if it has a manifest, use dir name, otherwise .bin
+        let mut out = input.to_path_buf();
+        let _ = out.set_extension("");
+        out
     };
 
     // 2. Check for encryption
     let password = {
-        let backend = MmapBackend::new(&input)?;
+        let backend = MmapBackend::new(input)?;
         let header_bytes = backend.read_exact(0, HEADER_SIZE)?;
         let header: Header = bincode::deserialize(&header_bytes)?;
 
@@ -41,7 +40,7 @@ pub fn run(input: PathBuf, output: Option<PathBuf>) -> Result<()> {
     println!("{} Extracting {}", "╭".dimmed(), input.display().to_string().cyan());
     println!("{} Output     {}", "╰".dimmed(), output.display().to_string().bright_black());
 
-    extract_archive(&input, &output, password).context("Failed to extract archive")?;
+    extract_archive(input, &output, password).context("Failed to extract archive")?;
 
     println!("\n  {} Extraction complete.", "✓".green());
 

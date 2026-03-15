@@ -5,6 +5,9 @@ edition.workspace = true
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 description = "High-level snapshot operations: pack, write, inspect, sign"
 
 [dependencies]
@@ -42,3 +45,6 @@ default = ["compression-zstd", "encryption", "signing"]
 compression-zstd = ["hexz-core/compression-zstd"]
 encryption = ["hexz-core/encryption"]
 signing = ["hexz-common/signing", "hexz-core/signing"]
+
+[lints]
+workspace = true

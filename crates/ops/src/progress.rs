@@ -4,9 +4,15 @@
 
 use indicatif::{ProgressBar, ProgressStyle};
 
-/// Progress tracker for packing operations
+/// Progress tracker for packing operations.
 pub struct PackProgress {
     bar: ProgressBar,
+}
+
+impl std::fmt::Debug for PackProgress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PackProgress").finish_non_exhaustive()
+    }
 }
 
 impl PackProgress {
@@ -18,12 +24,11 @@ impl PackProgress {
     /// * `message` - Initial message to display
     pub fn new(total_bytes: u64, message: &str) -> Self {
         let bar = ProgressBar::new(total_bytes);
-        bar.set_style(
-            ProgressStyle::default_bar()
-                .template("{msg} {bar:40.cyan/blue} {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
-                .unwrap()
-                .progress_chars("█▓▒░ "),
-        );
+        if let Ok(style) = ProgressStyle::default_bar()
+            .template("{msg} {bar:40.cyan/blue} {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
+        {
+            bar.set_style(style.progress_chars("█▓▒░ "));
+        }
         bar.set_message(message.to_string());
 
         Self { bar }

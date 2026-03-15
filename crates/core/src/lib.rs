@@ -1,3 +1,17 @@
+// unsafe required for: MaybeUninit buffer writes in parallel decompression,
+// raw pointer copies in read_at_into_uninit, and hot-path hash table ops.
+// All unsafe blocks have individual SAFETY comments.
+#![allow(unsafe_code)]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::significant_drop_tightening,
+        unused_results
+    )
+)]
+
 //! Core archive engine: format, algorithms, cache, and read API.
 //!
 //! `hexz-core` is the minimal, dependency-light foundation for reading Hexz

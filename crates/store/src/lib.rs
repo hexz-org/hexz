@@ -1,3 +1,8 @@
+// unsafe required for: mmap-based file I/O and pread(2) syscalls.
+// All unsafe blocks have individual SAFETY comments.
+#![allow(unsafe_code)]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, unused_results))]
+
 //! Storage backend implementations for Hexz archives.
 //!
 //! This crate provides concrete implementations of `hexz_core::store::StorageBackend`
@@ -40,7 +45,7 @@ pub fn open_local_with_cache(
     let backend: Arc<dyn StorageBackend> = Arc::new(local::MmapBackend::new(path)?);
     let header = Header::read_from_backend(backend.as_ref())?;
     let dictionary = header.load_dictionary(backend.as_ref())?;
-    let compressor = create_compressor(header.compression, None, dictionary);
+    let compressor = create_compressor(header.compression, None, dictionary.as_deref());
 
     let archive_dir = path.parent().unwrap_or_else(|| std::path::Path::new(".")).to_path_buf();
     let loader: ParentLoader = Box::new(move |parent_path: &str| {

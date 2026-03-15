@@ -3,7 +3,7 @@
 //! This module provides a specialized hash table optimized for Hexz's block
 //! deduplication during archive packing. It wraps `std::collections::HashMap`
 //! with an identity hasher since keys are BLAKE3 hashes (already uniformly
-//! distributed), eliminating redundant SipHash overhead.
+//! distributed), eliminating redundant `SipHash` overhead.
 //!
 //! # Usage
 //!
@@ -61,14 +61,19 @@ impl TableStats {
 /// Identity hasher that uses the first 8 bytes of a BLAKE3 key directly.
 ///
 /// Since keys in the dedup table are BLAKE3 hashes (already uniformly distributed),
-/// there is no need for the default SipHash to re-hash them.
+/// there is no need for the default `SipHash` to re-hash them.
 struct IdentityHasher(u64);
 
 impl std::hash::Hasher for IdentityHasher {
     #[inline]
     fn write(&mut self, bytes: &[u8]) {
         if bytes.len() >= 8 {
-            self.0 = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
+            // The length check above guarantees bytes.len() >= 8, so this slice
+            // is exactly 8 bytes and try_into always succeeds.
+            let Ok(arr) = <[u8; 8]>::try_from(&bytes[0..8]) else {
+                unreachable!("length checked above")
+            };
+            self.0 = u64::from_le_bytes(arr);
         } else {
             self.0 = bytes
                 .iter()
@@ -97,7 +102,7 @@ impl std::hash::BuildHasher for BuildIdentityHasher {
 /// Hash table for block deduplication with identity hashing.
 ///
 /// Uses an identity hasher since keys are BLAKE3 hashes (already uniformly
-/// distributed), giving ~3-6x speedup over the default SipHash.
+/// distributed), giving ~3-6x speedup over the default `SipHash`.
 pub struct StandardHashTable {
     map: std::collections::HashMap<[u8; 32], u64, BuildIdentityHasher>,
     total_inserts: u64,
@@ -105,8 +110,19 @@ pub struct StandardHashTable {
     total_probes: std::cell::Cell<u64>,
 }
 
+impl std::fmt::Debug for StandardHashTable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StandardHashTable")
+            .field("len", &self.map.len())
+            .field("capacity", &self.map.capacity())
+            .field("total_inserts", &self.total_inserts)
+            .finish_non_exhaustive()
+    }
+}
+
 impl StandardHashTable {
-    pub fn new() -> Self {
+    /// Creates an empty hash table.
+    pub const fn new() -> Self {
         Self {
             map: std::collections::HashMap::with_hasher(BuildIdentityHasher),
             total_inserts: 0,
@@ -115,6 +131,7 @@ impl StandardHashTable {
         }
     }
 
+    /// Creates a hash table with pre-allocated capacity for `capacity` entries.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             map: std::collections::HashMap::with_capacity_and_hasher(capacity, BuildIdentityHasher),
@@ -124,25 +141,30 @@ impl StandardHashTable {
         }
     }
 
+    /// Returns the number of entries in the table.
     pub fn len(&self) -> usize {
         self.map.len()
     }
 
+    /// Returns `true` if the table contains no entries.
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
     }
 
+    /// Inserts a hash-to-offset mapping, returning the previous offset if the hash was already present.
     pub fn insert(&mut self, hash: [u8; 32], offset: u64) -> Option<u64> {
         self.total_inserts += 1;
         self.map.insert(hash, offset)
     }
 
+    /// Looks up the offset for a given hash, returning `None` if not found.
     pub fn get(&self, hash: &[u8; 32]) -> Option<u64> {
         self.total_lookups.set(self.total_lookups.get() + 1);
         self.total_probes.set(self.total_probes.get() + 1);
         self.map.get(hash).copied()
     }
 
+    /// Returns the ratio of entries to capacity (0.0 when empty).
     pub fn load_factor(&self) -> f64 {
         let cap = self.map.capacity();
         if cap == 0 {
@@ -152,10 +174,12 @@ impl StandardHashTable {
         }
     }
 
+    /// Returns the estimated memory usage of the table in bytes.
     pub fn memory_bytes(&self) -> usize {
         self.map.capacity() * 56
     }
 
+    /// Returns performance statistics for this table.
     pub fn stats(&self) -> TableStats {
         TableStats {
             total_inserts: self.total_inserts,

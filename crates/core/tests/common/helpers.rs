@@ -3,14 +3,12 @@ use std::sync::Arc;
 
 /// Enhanced byte comparison with better error messages
 pub fn assert_bytes_equal(actual: &[u8], expected: &[u8], context: &str) {
-    if actual.len() != expected.len() {
-        panic!(
-            "{}: Length mismatch: actual={}, expected={}",
-            context,
-            actual.len(),
-            expected.len()
-        );
-    }
+    assert!(actual.len() == expected.len(), 
+        "{}: Length mismatch: actual={}, expected={}",
+        context,
+        actual.len(),
+        expected.len()
+    );
 
     for (i, (a, e)) in actual.iter().zip(expected.iter()).enumerate() {
         if a != e {
@@ -61,7 +59,7 @@ pub fn calculate_entropy(data: &[u8]) -> f64 {
     for &count in &counts {
         if count > 0 {
             let p = count as f64 / len;
-            entropy -= p * p.log2();
+            entropy = p.mul_add(-p.log2(), entropy);
         }
     }
 
@@ -88,6 +86,7 @@ impl MockBackend {
         self.data.is_empty()
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     pub fn read(&self, offset: usize, buf: &mut [u8]) -> std::io::Result<usize> {
         if offset >= self.data.len() {
             return Ok(0);
@@ -105,8 +104,7 @@ pub fn verify_pattern(data: &[u8], pattern: u8) {
     for (i, &byte) in data.iter().enumerate() {
         assert_eq!(
             byte, pattern,
-            "Byte mismatch at offset {}: expected 0x{:02X}, got 0x{:02X}",
-            i, pattern, byte
+            "Byte mismatch at offset {i}: expected 0x{pattern:02X}, got 0x{byte:02X}"
         );
     }
 }
@@ -117,8 +115,7 @@ pub fn verify_sequential(data: &[u8]) {
         let expected = (i % 256) as u8;
         assert_eq!(
             byte, expected,
-            "Byte mismatch at offset {}: expected 0x{:02X}, got 0x{:02X}",
-            i, expected, byte
+            "Byte mismatch at offset {i}: expected 0x{expected:02X}, got 0x{byte:02X}"
         );
     }
 }
@@ -139,6 +136,7 @@ pub fn is_all_ones(data: &[u8]) -> bool {
 }
 
 /// Count occurrences of a specific byte
+#[allow(clippy::naive_bytecount)]
 pub fn count_byte(data: &[u8], byte: u8) -> usize {
     data.iter().filter(|&&b| b == byte).count()
 }

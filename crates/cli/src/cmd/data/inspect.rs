@@ -1,26 +1,28 @@
 //! Inspect archive metadata and display archive information.
 
 use anyhow::{Context, Result};
+use colored::Colorize;
 use hexz_ops::inspect::inspect_archive;
 use indicatif::HumanBytes;
-use std::path::PathBuf;
+use std::path::Path;
 
-pub fn run(snap: PathBuf, json: bool) -> Result<()> {
-    let info = inspect_archive(&snap).context("Failed to inspect archive")?;
+/// Execute the `hexz show` command to display archive metadata.
+pub fn run(snap: &Path, json: bool) -> Result<()> {
+    let info = inspect_archive(snap).context("Failed to inspect archive")?;
 
     let total_uncompressed = info.total_uncompressed();
     let ratio = info.compression_ratio();
 
     if json {
         let out = serde_json::json!({
-            "path": snap,
+            "path": snap.display().to_string(),
             "version": info.version,
             "compression": info.compression,
             "block_size": info.block_size,
-            "encrypted": info.encrypted,
-            "has_main": info.has_main,
-            "has_auxiliary": info.has_auxiliary,
-            "variable_blocks": info.variable_blocks,
+            "encrypted": info.features.encrypted,
+            "has_main": info.features.has_main,
+            "has_auxiliary": info.features.has_auxiliary,
+            "variable_blocks": info.features.variable_blocks,
             "original_size": total_uncompressed,
             "compressed_size": info.file_size,
             "compression_ratio": ratio,
@@ -35,17 +37,16 @@ pub fn run(snap: PathBuf, json: bool) -> Result<()> {
         return Ok(());
     }
 
-    let filename = snap
-        .file_name()
-        .map(|f| f.to_string_lossy().to_string())
-        .unwrap_or_else(|| snap.display().to_string());
+    let filename = snap.file_name().map_or_else(
+        || snap.display().to_string(),
+        |f| f.to_string_lossy().to_string(),
+    );
 
     let comp_name = match info.compression {
         hexz_core::format::header::CompressionType::Lz4 => "LZ4",
         hexz_core::format::header::CompressionType::Zstd => "Zstd",
     };
 
-    use colored::*;
     println!("{} {}", "╭".dimmed(), filename.cyan());
     
     let block_kib = info.block_size / 1024;
@@ -68,8 +69,7 @@ pub fn run(snap: PathBuf, json: bool) -> Result<()> {
     if !info.parent_paths.is_empty() {
         let parent_display = std::path::Path::new(&info.parent_paths[0])
             .file_name()
-            .map(|f| f.to_string_lossy().to_string())
-            .unwrap_or_else(|| info.parent_paths[0].clone());
+            .map_or_else(|| info.parent_paths[0].clone(), |f| f.to_string_lossy().to_string());
         println!(
             "{} parent      {}",
             "│".dimmed(),

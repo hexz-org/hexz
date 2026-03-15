@@ -7,7 +7,7 @@ use common::*;
 
 use hexz_core::algo::compression::lz4::Lz4Compressor;
 use hexz_core::{Archive, ArchiveStream};
-use hexz_ops::pack::{PackConfig, pack_archive};
+use hexz_ops::pack::{PackConfig, PackTransformFlags, pack_archive};
 use hexz_store::local::FileBackend;
 use std::fs;
 use std::sync::Arc;
@@ -28,13 +28,11 @@ fn test_thin_archive_basic() {
         input: base_disk,
         output: base_snap.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     // Verify base archive works
     let backend = Arc::new(FileBackend::new(&base_snap).unwrap());
@@ -70,14 +68,13 @@ fn test_zstd_dict_archive_read() {
         input: disk_path,
         output: output_path.clone(),
         compression: "zstd".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: true,
+        transform: PackTransformFlags { encrypt: false, train_dict: true, ..Default::default() },
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     // Read back the archive, loading the dictionary from the header
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());
@@ -94,7 +91,7 @@ fn test_zstd_dict_archive_read() {
         None
     };
 
-    let compressor = Box::new(ZstdCompressor::new(3, dict));
+    let compressor = Box::new(ZstdCompressor::new(3, dict.as_deref()));
     let archive = Archive::new(backend, compressor, None).unwrap();
 
     // Verify data integrity
@@ -117,14 +114,12 @@ fn test_version_check_on_open() {
         input: disk_path,
         output: output_path.clone(),
         compression: "lz4".to_string(),
-        encrypt: false,
         password: None,
-        train_dict: false,
         block_size: 65536,
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>).unwrap();
+    pack_archive(&config, None::<&fn(u64, u64)>).unwrap();
 
     // Open and verify the version check passes
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());

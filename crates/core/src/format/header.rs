@@ -9,28 +9,43 @@ use super::magic::{FORMAT_VERSION, MAGIC_BYTES};
 /// On-disk archive file header containing format metadata.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Header {
+    /// Magic bytes identifying the file as a Hexz archive.
     pub magic: [u8; 4],
+    /// Format version number for compatibility checks.
     pub version: u32,
+    /// Block size in bytes used for data segmentation.
     pub block_size: u32,
+    /// Byte offset of the master index within the archive.
     pub index_offset: u64,
 
+    /// Paths to parent archives for thin (incremental) archives.
     pub parent_paths: Vec<String>,
 
+    /// Byte offset of the compression dictionary, if present.
     pub dictionary_offset: Option<u64>,
+    /// Length in bytes of the compression dictionary, if present.
     pub dictionary_length: Option<u32>,
+    /// Byte offset of the metadata section, if present.
     pub metadata_offset: Option<u64>,
+    /// Length in bytes of the metadata section, if present.
     pub metadata_length: Option<u32>,
+    /// Byte offset of the digital signature, if present.
     pub signature_offset: Option<u64>,
+    /// Length in bytes of the digital signature, if present.
     pub signature_length: Option<u32>,
+    /// Key derivation parameters when the archive is encrypted.
     pub encryption: Option<KeyDerivationParams>,
+    /// Compression algorithm used for data blocks.
     pub compression: CompressionType,
+    /// Feature flags indicating enabled capabilities.
     pub features: FeatureFlags,
 
     /// Content-defined chunking parameters used for this archive.
-    /// (fingerprint_bits, min_chunk, max_chunk)
+    /// (`fingerprint_bits`, `min_chunk`, `max_chunk`)
     pub cdc_params: Option<(u32, u32, u32)>,
 }
 
+/// Supported compression algorithms for archive data blocks.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CompressionType {
     /// LZ4 compression algorithm (fast, lower ratio)
@@ -55,7 +70,7 @@ impl Header {
     pub fn read_from<R: std::io::Read>(reader: &mut R) -> hexz_common::Result<Self> {
         let mut header_bytes = [0u8; super::magic::HEADER_SIZE];
         reader.read_exact(&mut header_bytes)?;
-        let header: Header = bincode::deserialize(&header_bytes)?;
+        let header: Self = bincode::deserialize(&header_bytes)?;
         if &header.magic != MAGIC_BYTES {
             return Err(hexz_common::Error::Format("Invalid magic bytes".into()));
         }
@@ -67,7 +82,7 @@ impl Header {
         backend: &dyn crate::store::StorageBackend,
     ) -> hexz_common::Result<Self> {
         let header_bytes = backend.read_exact(0, super::magic::HEADER_SIZE)?;
-        let header: Header = bincode::deserialize(&header_bytes)?;
+        let header: Self = bincode::deserialize(&header_bytes)?;
         if &header.magic != MAGIC_BYTES {
             return Err(hexz_common::Error::Format("Invalid magic bytes".into()));
         }

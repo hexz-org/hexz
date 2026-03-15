@@ -5,7 +5,13 @@ edition.workspace = true
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 description = "Storage backends for Hexz snapshots (local file, HTTP, S3)"
+
+[lints]
+workspace = true
 
 [dependencies]
 hexz-common.workspace = true

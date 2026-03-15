@@ -1,15 +1,19 @@
+#![allow(missing_docs)]
+
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 /// High-performance, deduplicated data archives
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 #[command(name = "hexz", version, about = "High-performance, deduplicated data archives", long_about = None)]
-#[command(disable_help_flag = true)] 
+#[command(disable_help_flag = true)]
 #[command(styles = get_styles())]
 pub struct Cli {
+    /// Print help information.
     #[arg(short, long, action = clap::ArgAction::SetTrue)]
     pub help: bool,
 
+    /// Subcommand to execute.
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
@@ -27,18 +31,21 @@ fn get_styles() -> clap::builder::Styles {
 pub enum RemoteCommand {
     /// Add a new remote
     Add {
+        /// Name of the remote.
         name: String,
+        /// URL of the remote endpoint.
         url: String,
     },
     /// Remove a remote
     Remove {
+        /// Name of the remote to remove.
         name: String,
     },
     /// List all remotes
     List,
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum Commands {
     // ------------------------------------------------------------------------
     // Archive Operations

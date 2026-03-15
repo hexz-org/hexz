@@ -20,11 +20,11 @@ pub fn generate_keypair(private_out: &Path, public_out: &Path) -> Result<()> {
     let pub_bytes = verifying_key.to_bytes();
 
     let mut opts = OpenOptions::new();
-    opts.write(true).create(true).truncate(true);
+    let _ = opts.write(true).create(true).truncate(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        opts.mode(0o600);
+        let _ = opts.mode(0o600);
     }
     let mut priv_file = opts.open(private_out)?;
     priv_file.write_all(&priv_bytes)?;

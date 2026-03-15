@@ -21,27 +21,35 @@ use thiserror::Error;
 /// be relied upon for programmatic decisions.
 #[derive(Error, Debug)]
 pub enum Error {
+    /// Underlying I/O failure (file, network, or OS-level).
     #[error("IO Error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// Binary serialization/deserialization failure (bincode layer).
     #[error("Serialization Error: {0}")]
     Serialization(#[from] bincode::Error),
 
+    /// Compression or decompression failure.
     #[error("Compression Error: {0}")]
     Compression(String),
 
+    /// Encryption or decryption failure (wrong key, corrupted ciphertext).
     #[error("Encryption Error: {0}")]
     Encryption(String),
 
+    /// Integrity check failure — stored checksum does not match computed value.
     #[error("Corrupted Data: Checksum mismatch at block {0}")]
     Corruption(u64),
 
+    /// Archive format violation (bad magic, unsupported version, truncation).
     #[error("Invalid Format: {0}")]
     Format(String),
 
+    /// Block index exceeds the archive's block count.
     #[error("Block index {0} out of bounds")]
     OutOfBounds(u64),
 
+    /// Requested feature requires a build flag or version that is not present.
     #[error("Feature Not Supported: {0}")]
     NotSupported(String),
 }

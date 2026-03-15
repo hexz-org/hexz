@@ -83,9 +83,9 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-const NBD_MAGIC: u64 = 0x4e42444d41474943;
-const NBD_OPT_MAGIC: u64 = 0x49484156454F5054;
-const NBD_REP_MAGIC: u64 = 0x3e889045565a9;
+const NBD_MAGIC: u64 = 0x4e42_444d_4147_4943;
+const NBD_OPT_MAGIC: u64 = 0x4948_4156_454F_5054;
+const NBD_REP_MAGIC: u64 = 0x0003_e889_0455_65a9;
 
 const NBD_FLAG_FIXED_NEWSTYLE: u16 = 1 << 0;
 const NBD_FLAG_NO_ZEROES: u16 = 1 << 1;
@@ -109,11 +109,11 @@ const NBD_CMD_DISC: u16 = 2;
 const NBD_CMD_FLUSH: u16 = 3;
 const NBD_CMD_TRIM: u16 = 4;
 
-const NBD_REQUEST_MAGIC: u32 = 0x25609513;
-const NBD_REPLY_MAGIC: u32 = 0x67446698;
+const NBD_REQUEST_MAGIC: u32 = 0x2560_9513;
+const NBD_REPLY_MAGIC: u32 = 0x6744_6698;
 
 /// Maximum allowed option data or read/write length from a client (32 MiB).
-/// Matches Linux kernel's NBD_MAX_BUFFER_SIZE to prevent OOM from crafted packets.
+/// Matches Linux kernel's `NBD_MAX_BUFFER_SIZE` to prevent OOM from crafted packets.
 const NBD_MAX_BUFFER_SIZE: u32 = 32 * 1024 * 1024;
 
 /// Handle a single NBD client connection.
@@ -121,7 +121,7 @@ const NBD_MAX_BUFFER_SIZE: u32 = 32 * 1024 * 1024;
 /// This function implements the complete NBD server lifecycle for one client:
 /// 1. Performs the NBD handshake and option negotiation
 /// 2. Enters the transmission phase to serve read requests
-/// 3. Handles disconnect when the client sends NBD_CMD_DISC
+/// 3. Handles disconnect when the client sends `NBD_CMD_DISC`
 ///
 /// The connection is read-only and blocks are served directly from the archive's
 /// main stream. Write, flush, and trim commands return error responses.
@@ -176,12 +176,12 @@ pub async fn handle_client(mut socket: TcpStream, snap: Arc<Archive>) -> Result<
         let opt_len = socket.read_u32().await?;
 
         if opt_len > NBD_MAX_BUFFER_SIZE {
-            anyhow::bail!("NBD option data too large: {} bytes", opt_len);
+            anyhow::bail!("NBD option data too large: {opt_len} bytes");
         }
 
         // Read option data
         let mut opt_data = vec![0u8; opt_len as usize];
-        socket.read_exact(&mut opt_data).await?;
+        _ = socket.read_exact(&mut opt_data).await?;
 
         match opt_id {
             NBD_OPT_ABORT => return Ok(()),
@@ -225,7 +225,7 @@ pub async fn handle_client(mut socket: TcpStream, snap: Arc<Archive>) -> Result<
                 // Unsupported option: Reply ERR_UNSUP (0x80000001 = 2^31 + 1)
                 socket.write_u64(NBD_REP_MAGIC).await?;
                 socket.write_u32(opt_id).await?;
-                socket.write_u32(0x80000001).await?;
+                socket.write_u32(0x8000_0001).await?;
                 socket.write_u32(0).await?;
             }
         }
@@ -236,7 +236,7 @@ pub async fn handle_client(mut socket: TcpStream, snap: Arc<Archive>) -> Result<
     loop {
         let magic = socket.read_u32().await?;
         if magic != NBD_REQUEST_MAGIC {
-            anyhow::bail!("Invalid request magic: {:x}", magic);
+            anyhow::bail!("Invalid request magic: {magic:x}");
         }
 
         let _flags = socket.read_u16().await?;
@@ -246,7 +246,7 @@ pub async fn handle_client(mut socket: TcpStream, snap: Arc<Archive>) -> Result<
         let length = socket.read_u32().await?;
 
         if length > NBD_MAX_BUFFER_SIZE {
-            anyhow::bail!("NBD request length too large: {} bytes", length);
+            anyhow::bail!("NBD request length too large: {length} bytes");
         }
 
         match type_ {
@@ -285,7 +285,7 @@ pub async fn handle_client(mut socket: TcpStream, snap: Arc<Archive>) -> Result<
                 // We are read-only. Read payload if write to drain socket
                 if type_ == NBD_CMD_WRITE {
                     let mut buf = vec![0u8; length as usize];
-                    socket.read_exact(&mut buf).await?;
+                    _ = socket.read_exact(&mut buf).await?;
                 }
 
                 // Return EPERM (1)

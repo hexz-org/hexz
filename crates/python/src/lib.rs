@@ -1,10 +1,13 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, unused_results))]
+//! Python bindings for hexz archive operations.
+
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3::exceptions::{PyIOError, PyValueError};
 use hexz_core::api::file::{Archive as CoreArchive, ArchiveStream};
 use hexz_core::api::manifest::{ArchiveManifest, FileEntry};
 use hexz_store::local::MmapBackend;
-use hexz_ops::pack::{pack_archive, PackConfig};
+use hexz_ops::pack::{pack_archive, PackConfig, PackAnalysisFlags};
 use std::sync::Arc;
 use std::path::PathBuf;
 
@@ -18,10 +21,11 @@ struct Archive {
 impl Archive {
     #[new]
     #[pyo3(signature = (path, cache_size=None))]
+    #[allow(clippy::needless_pass_by_value)]
     fn new(path: String, cache_size: Option<String>) -> PyResult<Self> {
         let backend = Arc::new(MmapBackend::new(path.as_ref())
-            .map_err(|e| PyIOError::new_err(format!("Failed to open archive: {}", e)))?);
-        
+            .map_err(|e| PyIOError::new_err(format!("Failed to open archive: {e}")))?);
+
         let cache_capacity = if let Some(s) = cache_size {
             parse_size(&s).map_err(PyValueError::new_err)?
         } else {
@@ -33,7 +37,7 @@ impl Archive {
             None, // Auto-detect encryptor (needs password if encrypted)
             if cache_capacity > 0 { Some(cache_capacity) } else { None },
             None, // Default prefetch
-        ).map_err(|e| PyIOError::new_err(format!("Failed to initialize archive: {}", e)))?;
+        ).map_err(|e| PyIOError::new_err(format!("Failed to initialize archive: {e}")))?;
 
         let manifest = inner.metadata.as_ref().and_then(|m| {
             serde_json::from_slice::<ArchiveManifest>(m).ok()
@@ -51,10 +55,11 @@ impl Archive {
             .unwrap_or_default()
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     fn read(&self, py: Python<'_>, name: String) -> PyResult<PyObject> {
         let entry = self.manifest.as_ref()
             .and_then(|m| m.find_file(&name))
-            .ok_or_else(|| PyValueError::new_err(format!("File not found: {}", name)))?;
+            .ok_or_else(|| PyValueError::new_err(format!("File not found: {name}")))?;
 
         let data = self.inner.read_at(ArchiveStream::Main, entry.offset, entry.size as usize)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
@@ -62,10 +67,11 @@ impl Archive {
         Ok(PyBytes::new(py, &data).into())
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     fn open(&self, name: String) -> PyResult<File> {
         let entry = self.manifest.as_ref()
             .and_then(|m| m.find_file(&name))
-            .ok_or_else(|| PyValueError::new_err(format!("File not found: {}", name)))?;
+            .ok_or_else(|| PyValueError::new_err(format!("File not found: {name}")))?;
 
         Ok(File {
             archive: self.inner.clone(),
@@ -74,10 +80,12 @@ impl Archive {
         })
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     fn __enter__(slf: Py<Self>) -> Py<Self> {
         slf
     }
 
+    #[allow(clippy::unused_self)]
     fn __exit__(&self, _exc_type: PyObject, _exc_value: PyObject, _traceback: PyObject) {}
 }
 
@@ -127,31 +135,35 @@ impl File {
         Ok(self.pos)
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     fn tell(&self) -> u64 {
         self.pos
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     fn __enter__(slf: Py<Self>) -> Py<Self> {
         slf
     }
 
+    #[allow(clippy::unused_self)]
     fn __exit__(&self, _exc_type: PyObject, _exc_value: PyObject, _traceback: PyObject) {}
 }
 
 #[pyfunction]
 #[pyo3(signature = (input, output, base=None, compression="lz4".to_string()))]
+#[allow(clippy::needless_pass_by_value)]
 fn pack(input: String, output: String, base: Option<String>, compression: String) -> PyResult<()> {
     let config = PackConfig {
         input: PathBuf::from(input),
         output: PathBuf::from(output),
         base: base.map(PathBuf::from),
         compression,
-        use_dcam: true,
+        analysis: PackAnalysisFlags { use_dcam: true, ..Default::default() },
         ..Default::default()
     };
 
-    pack_archive(config, None::<fn(u64, u64)>)
-        .map_err(|e| PyIOError::new_err(format!("Packing failed: {}", e)))?;
+    pack_archive(&config, None::<&fn(u64, u64)>)
+        .map_err(|e| PyIOError::new_err(format!("Packing failed: {e}")))?;
     
     Ok(())
 }

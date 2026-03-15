@@ -1,9 +1,9 @@
-/// Integration tests for ArchiveWriter.
+/// Integration tests for `ArchiveWriter`.
 ///
 /// These tests exercise the low-level write → read roundtrip directly via
 /// `ArchiveWriter`, bypassing the higher-level `pack_archive` helper used
-/// by the CLI.  This gives fine-grained coverage of begin_stream /
-/// write_data_block / end_stream / finalize and their interactions.
+/// by the CLI.  This gives fine-grained coverage of `begin_stream` /
+/// `write_data_block` / `end_stream` / finalize and their interactions.
 use hexz_core::algo::compression::lz4::Lz4Compressor;
 use hexz_core::algo::compression::zstd::ZstdCompressor;
 use hexz_core::format::header::CompressionType;
@@ -160,7 +160,7 @@ fn test_duplicate_blocks_deduplicated() {
 
     let file = open(&path);
     assert_eq!(file.size(ArchiveStream::Main), total);
-    let expected: Vec<u8> = block.iter().cloned().cycle().take(4 * BLOCK).collect();
+    let expected: Vec<u8> = block.iter().copied().cycle().take(4 * BLOCK).collect();
     assert_eq!(read_all(&file, ArchiveStream::Main), expected);
 }
 

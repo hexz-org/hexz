@@ -48,6 +48,7 @@
 //! - Strong cryptographic security (128-bit security level)
 
 use anyhow::Result;
+use colored::Colorize;
 use hexz_common::sign;
 use std::path::PathBuf;
 
@@ -94,7 +95,6 @@ pub fn run(output_dir: Option<PathBuf>) -> Result<()> {
     let priv_path = dir.join("private.key");
     let pub_path = dir.join("public.key");
 
-    use colored::*;
     println!("{} Generating Ed25519 keypair", "╭".dimmed());
     sign::generate_keypair(&priv_path, &pub_path)?;
 

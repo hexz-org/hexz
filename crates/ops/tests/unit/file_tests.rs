@@ -41,7 +41,7 @@ fn test_read_at_edge_cases() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Test read_at_into with buffer filling and zero-padding
+/// Test `read_at_into` with buffer filling and zero-padding
 #[test]
 fn test_read_at_into_buffer_handling() -> Result<(), Box<dyn std::error::Error>> {
     let (snap_path, original_data) = create_simple_archive()?;
@@ -182,7 +182,7 @@ fn test_sparse_region_handling() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Test size() method for both streams
+/// Test `size()` method for both streams
 #[test]
 fn test_size_queries() -> Result<(), Box<dyn std::error::Error>> {
     let (snap_path, original_data) = create_simple_archive()?;
@@ -277,7 +277,7 @@ fn test_misaligned_reads() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Test read_at_into_uninit_bytes (FFI-friendly version)
+/// Test `read_at_into_uninit_bytes` (FFI-friendly version)
 #[test]
 fn test_read_at_into_uninit_bytes() -> Result<(), Box<dyn std::error::Error>> {
     let (snap_path, original_data) = create_simple_archive()?;

@@ -79,7 +79,7 @@ use hexz_common::constants::DEFAULT_ZSTD_LEVEL;
 pub fn create_compressor(
     comp_type: CompressionType,
     level: Option<i32>,
-    dictionary: Option<Vec<u8>>,
+    dictionary: Option<&[u8]>,
 ) -> Box<dyn Compressor> {
     match comp_type {
         CompressionType::Lz4 => Box::new(Lz4Compressor::new()),
@@ -96,7 +96,7 @@ pub fn create_compressor(
 pub fn create_compressor_from_str(
     s: &str,
     level: Option<i32>,
-    dictionary: Option<Vec<u8>>,
+    dictionary: Option<&[u8]>,
 ) -> hexz_common::Result<(Box<dyn Compressor>, CompressionType)> {
     match s {
         "zstd" => Ok((
@@ -108,8 +108,7 @@ pub fn create_compressor_from_str(
             CompressionType::Lz4,
         )),
         other => Err(hexz_common::Error::Format(format!(
-            "Unknown compression type '{}'. Supported: lz4, zstd",
-            other
+            "Unknown compression type '{other}'. Supported: lz4, zstd"
         ))),
     }
 }

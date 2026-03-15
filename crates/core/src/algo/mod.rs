@@ -42,7 +42,7 @@
 //! - **BLAKE3**: Fast cryptographic hash for content addressing
 //!
 //! ## Deduplication ([`dedup`])
-//! - **FastCDC**: Content-defined chunking for variable-sized blocks
+//! - **`FastCDC`**: Content-defined chunking for variable-sized blocks
 //! - **DCAM**: Analytical model for optimizing CDC parameters
 //!
 //! # Design Principles

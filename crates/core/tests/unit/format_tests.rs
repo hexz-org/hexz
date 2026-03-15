@@ -105,7 +105,7 @@ fn test_header_serialization_full() {
     assert_eq!(deserialized.encryption.unwrap().salt, [42u8; 16]);
 }
 
-/// Test BlockInfo structure integrity.
+/// Test `BlockInfo` structure integrity.
 #[test]
 fn test_block_info_structure() {
     let block = BlockInfo {
@@ -141,7 +141,7 @@ fn test_block_info_zero_block() {
     assert!(zero_block.logical_len > 0);
 }
 
-/// Test parent block encoding (offset=u64::MAX).
+/// Test parent block encoding (`offset=u64::MAX`).
 #[test]
 fn test_block_info_parent_reference() {
     const BLOCK_OFFSET_PARENT: u64 = u64::MAX;
@@ -157,7 +157,7 @@ fn test_block_info_parent_reference() {
     assert_eq!(parent_block.offset, u64::MAX);
 }
 
-/// Test IndexPage with maximum entries.
+/// Test `IndexPage` with maximum entries.
 #[test]
 fn test_index_page_max_entries() {
     let mut page = IndexPage { blocks: vec![] };
@@ -185,7 +185,7 @@ fn test_index_page_max_entries() {
     );
 }
 
-/// Test PageEntry structure.
+/// Test `PageEntry` structure.
 #[test]
 fn test_page_entry() {
     let entry = PageEntry {
@@ -204,7 +204,7 @@ fn test_page_entry() {
     assert_eq!(deserialized.start_logical, 8388608);
 }
 
-/// Test MasterIndex with multiple pages.
+/// Test `MasterIndex` with multiple pages.
 #[test]
 fn test_master_index_multi_page() {
     let mut master = MasterIndex {
@@ -243,7 +243,7 @@ fn test_master_index_multi_page() {
     assert_eq!(deserialized.auxiliary_pages.len(), 5);
 }
 
-/// Test MasterIndex with empty pages (edge case).
+/// Test `MasterIndex` with empty pages (edge case).
 #[test]
 fn test_master_index_empty() {
     let master = MasterIndex {

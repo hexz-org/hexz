@@ -19,17 +19,14 @@ mod tests {
 
         let handle = thread::spawn(move || {
             for _ in 0..30 {
-                let stream = match listener.accept() {
-                    Ok((s, _)) => s,
-                    Err(_) => break,
-                };
+                let Ok((stream, _)) = listener.accept() else { break };
                 handle_s3_request(stream, &data);
             }
         });
 
         thread::sleep(std::time::Duration::from_millis(20));
 
-        let endpoint = format!("http://127.0.0.1:{}", port);
+        let endpoint = format!("http://127.0.0.1:{port}");
         (endpoint, port, handle)
     }
 
@@ -118,17 +115,18 @@ mod tests {
         }
     }
 
-    /// Helper to create an S3Backend pointing at the mock server.
+    /// Helper to create an `S3Backend` pointing at the mock server.
     fn make_backend(endpoint: &str) -> S3Backend {
-        // Set dummy credentials so rust-s3 doesn't fail on missing env
-        // SAFETY: Tests run serially for S3 tests; no other thread reads these env vars concurrently.
+        // Set dummy credentials so rust-s3 doesn't fail on missing env.
+        // SAFETY: tests run serially; no other thread reads these env vars.
+        #[allow(unsafe_code)]
         unsafe {
             std::env::set_var("AWS_ACCESS_KEY_ID", "testing");
             std::env::set_var("AWS_SECRET_ACCESS_KEY", "testing");
         }
 
         S3Backend::new(
-            "test-bucket".to_string(),
+            "test-bucket",
             "test-key".to_string(),
             "us-east-1".to_string(),
             Some(endpoint.to_string()),
@@ -179,14 +177,15 @@ mod tests {
         let data = vec![0u8; 100];
         let (endpoint, _, _handle) = start_mock_s3(data);
 
-        // SAFETY: Tests run serially for S3 tests; no other thread reads these env vars concurrently.
+        // SAFETY: tests run serially; no other thread reads these env vars.
+        #[allow(unsafe_code)]
         unsafe {
             std::env::set_var("AWS_ACCESS_KEY_ID", "testing");
             std::env::set_var("AWS_SECRET_ACCESS_KEY", "testing");
         }
 
         let result = S3Backend::new(
-            "wrong-bucket".to_string(),
+            "wrong-bucket",
             "wrong-key".to_string(),
             "us-east-1".to_string(),
             Some(endpoint),
@@ -198,7 +197,7 @@ mod tests {
     fn test_s3_backend_missing_content_length() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
-        let endpoint = format!("http://127.0.0.1:{}", port);
+        let endpoint = format!("http://127.0.0.1:{port}");
 
         let _handle = thread::spawn(move || {
             if let Ok((stream, _)) = listener.accept() {
@@ -218,14 +217,15 @@ mod tests {
 
         thread::sleep(std::time::Duration::from_millis(20));
 
-        // SAFETY: Tests run serially for S3 tests; no other thread reads these env vars concurrently.
+        // SAFETY: tests run serially; no other thread reads these env vars.
+        #[allow(unsafe_code)]
         unsafe {
             std::env::set_var("AWS_ACCESS_KEY_ID", "testing");
             std::env::set_var("AWS_SECRET_ACCESS_KEY", "testing");
         }
 
         let result = S3Backend::new(
-            "test-bucket".to_string(),
+            "test-bucket",
             "test-key".to_string(),
             "us-east-1".to_string(),
             Some(endpoint),

@@ -24,7 +24,9 @@ use serde::{Deserialize, Serialize};
 /// constant embedded in this type.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct KeyDerivationParams {
+    /// Unique per-archive random salt to prevent key reuse.
     pub salt: [u8; SALT_SIZE],
+    /// Number of PBKDF2 rounds (hundreds of thousands for brute-force resistance).
     pub iterations: u32,
 }
 
@@ -96,15 +98,15 @@ mod tests {
     fn test_key_derivation_params_equality() {
         let params1 = KeyDerivationParams {
             salt: [42u8; SALT_SIZE],
-            iterations: 100000,
+            iterations: 100_000,
         };
         let params2 = KeyDerivationParams {
             salt: [42u8; SALT_SIZE],
-            iterations: 100000,
+            iterations: 100_000,
         };
         let params3 = KeyDerivationParams {
             salt: [43u8; SALT_SIZE],
-            iterations: 100000,
+            iterations: 100_000,
         };
 
         // Same values should be equal
@@ -118,7 +120,7 @@ mod tests {
     fn test_key_derivation_params_serialization() {
         let params = KeyDerivationParams {
             salt: [123u8; SALT_SIZE],
-            iterations: 200000,
+            iterations: 200_000,
         };
 
         // Serialize to JSON
@@ -138,11 +140,11 @@ mod tests {
     fn test_key_derivation_params_debug() {
         let params = KeyDerivationParams {
             salt: [1u8; SALT_SIZE],
-            iterations: 150000,
+            iterations: 150_000,
         };
 
         // Debug output should contain key information
-        let debug_str = format!("{:?}", params);
+        let debug_str = format!("{params:?}");
         assert!(debug_str.contains("KeyDerivationParams"));
         assert!(debug_str.contains("salt"));
         assert!(debug_str.contains("iterations"));
@@ -186,7 +188,7 @@ mod tests {
     #[test]
     fn test_manual_construction() {
         let custom_salt = [99u8; SALT_SIZE];
-        let custom_iterations = 500000;
+        let custom_iterations = 500_000;
 
         let params = KeyDerivationParams {
             salt: custom_salt,
@@ -208,8 +210,7 @@ mod tests {
             for j in (i + 1)..instances.len() {
                 assert_ne!(
                     instances[i].salt, instances[j].salt,
-                    "Salts at indices {} and {} should be different",
-                    i, j
+                    "Salts at indices {i} and {j} should be different"
                 );
             }
         }

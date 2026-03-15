@@ -8,7 +8,7 @@ use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::write::{create_zero_block, is_zero_chunk, write_block};
+use crate::write::{WriteContext, create_zero_block, is_zero_chunk, write_block};
 use hexz_core::algo::compression::Compressor;
 use hexz_core::algo::encryption::Encryptor;
 use hexz_core::algo::hashing::ContentHasher;
@@ -23,6 +23,19 @@ use crate::parent_index::ParentIndex;
 use hexz_core::algo::dedup::hash_table::StandardHashTable;
 use hexz_core::api::file::Archive;
 
+/// Configuration parameters for constructing an [`ArchiveWriter`].
+struct ArchiveWriterConfig {
+    compressor: Box<dyn Compressor>,
+    encryptor: Option<Box<dyn Encryptor>>,
+    block_size: u32,
+    compression_type: CompressionType,
+    variable_blocks: bool,
+    encryption_params: Option<KeyDerivationParams>,
+    parent_index: Option<ParentIndex>,
+    cdc_params: Option<(u32, u32, u32)>,
+}
+
+/// Writes compressed, deduplicated archive files.
 pub struct ArchiveWriter {
     out: File,
     current_offset: u64,
@@ -58,6 +71,18 @@ pub struct ArchiveWriter {
     cdc_params: Option<(u32, u32, u32)>,
 }
 
+impl std::fmt::Debug for ArchiveWriter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ArchiveWriter")
+            .field("current_offset", &self.current_offset)
+            .field("global_block_idx", &self.global_block_idx)
+            .field("block_size", &self.block_size)
+            .field("compression_type", &self.compression_type)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Builder for configuring and constructing an [`ArchiveWriter`].
 pub struct ArchiveWriterBuilder {
     output: std::path::PathBuf,
     compressor: Box<dyn Compressor>,
@@ -70,7 +95,19 @@ pub struct ArchiveWriterBuilder {
     cdc_params: Option<(u32, u32, u32)>,
 }
 
+impl std::fmt::Debug for ArchiveWriterBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ArchiveWriterBuilder")
+            .field("output", &self.output)
+            .field("compression_type", &self.compression_type)
+            .field("block_size", &self.block_size)
+            .field("variable_blocks", &self.variable_blocks)
+            .finish_non_exhaustive()
+    }
+}
+
 impl ArchiveWriterBuilder {
+    /// Creates a new builder with the given output path, compressor, and compression type.
     pub fn new(
         output: &Path,
         compressor: Box<dyn Compressor>,
@@ -89,21 +126,29 @@ impl ArchiveWriterBuilder {
         }
     }
 
-    pub fn cdc_params(mut self, params: Option<(u32, u32, u32)>) -> Self {
+    /// Sets CDC chunking parameters (f, min, max).
+    #[must_use]
+    pub const fn cdc_params(mut self, params: Option<(u32, u32, u32)>) -> Self {
         self.cdc_params = params;
         self
     }
 
-    pub fn block_size(mut self, size: u32) -> Self {
+    /// Sets the block size in bytes.
+    #[must_use]
+    pub const fn block_size(mut self, size: u32) -> Self {
         self.block_size = size;
         self
     }
 
-    pub fn variable_blocks(mut self, enabled: bool) -> Self {
+    /// Enables or disables variable-size blocks.
+    #[must_use]
+    pub const fn variable_blocks(mut self, enabled: bool) -> Self {
         self.variable_blocks = enabled;
         self
     }
 
+    /// Configures encryption with the given encryptor and key derivation parameters.
+    #[must_use]
     pub fn encryption(
         mut self,
         encryptor: Box<dyn Encryptor>,
@@ -114,37 +159,43 @@ impl ArchiveWriterBuilder {
         self
     }
 
-    pub fn compression_type(mut self, compression_type: CompressionType) -> Self {
+    /// Sets the compression algorithm type.
+    #[must_use]
+    pub const fn compression_type(mut self, compression_type: CompressionType) -> Self {
         self.compression_type = compression_type;
         self
     }
 
+    /// Sets the parent archive for delta deduplication.
+    #[must_use]
     pub fn parent(mut self, parent: Arc<Archive>) -> Self {
         self.parent = Some(parent);
         self
     }
 
+    /// Builds the configured [`ArchiveWriter`].
     pub fn build(self) -> Result<ArchiveWriter> {
         let parent_index = if let Some(p) = &self.parent {
             Some(ParentIndex::new(std::slice::from_ref(p))?)
         } else {
             None
         };
-        ArchiveWriter::new(
-            &self.output,
-            self.compressor,
-            self.encryptor,
-            self.block_size,
-            self.compression_type,
-            self.variable_blocks,
-            self.encryption_params,
+        let config = ArchiveWriterConfig {
+            compressor: self.compressor,
+            encryptor: self.encryptor,
+            block_size: self.block_size,
+            compression_type: self.compression_type,
+            variable_blocks: self.variable_blocks,
+            encryption_params: self.encryption_params,
             parent_index,
-            self.cdc_params,
-        )
+            cdc_params: self.cdc_params,
+        };
+        ArchiveWriter::new(&self.output, config)
     }
 }
 
 impl ArchiveWriter {
+    /// Creates a new [`ArchiveWriterBuilder`] for the given output path.
     pub fn builder(
         output: &Path,
         compressor: Box<dyn Compressor>,
@@ -153,26 +204,17 @@ impl ArchiveWriter {
         ArchiveWriterBuilder::new(output, compressor, compression_type)
     }
 
-    pub fn block_count(&self) -> u64 {
+    /// Returns the total number of blocks written so far.
+    pub const fn block_count(&self) -> u64 {
         self.global_block_idx
     }
 
-    pub fn current_logical_pos(&self) -> u64 {
+    /// Returns the current logical byte position in the active stream.
+    pub const fn current_logical_pos(&self) -> u64 {
         self.current_logical_pos
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn new(
-        output: &Path,
-        compressor: Box<dyn Compressor>,
-        encryptor: Option<Box<dyn Encryptor>>,
-        block_size: u32,
-        compression_type: CompressionType,
-        variable_blocks: bool,
-        encryption_params: Option<KeyDerivationParams>,
-        parent_index: Option<ParentIndex>,
-        cdc_params: Option<(u32, u32, u32)>,
-    ) -> Result<Self> {
+    fn new(output: &Path, config: ArchiveWriterConfig) -> Result<Self> {
         let mut out = File::create(output)?;
         out.write_all(&[0u8; HEADER_SIZE])?;
 
@@ -182,9 +224,9 @@ impl ArchiveWriter {
             master: MasterIndex::default(),
             global_block_idx: 0,
             dedup_map: StandardHashTable::with_capacity(4096),
-            parent_index,
-            compressor,
-            encryptor,
+            parent_index: config.parent_index,
+            compressor: config.compressor,
+            encryptor: config.encryptor,
             hasher: Blake3Hasher,
             hash_buf: [0u8; 32],
             compress_buf: Vec::new(),
@@ -196,16 +238,17 @@ impl ArchiveWriter {
             current_logical_pos: 0,
             is_main: true,
             stream_active: false,
-            block_size,
-            compression_type,
-            variable_blocks,
-            encryption_params,
+            block_size: config.block_size,
+            compression_type: config.compression_type,
+            variable_blocks: config.variable_blocks,
+            encryption_params: config.encryption_params,
             dict_offset: None,
             dict_len: None,
-            cdc_params,
+            cdc_params: config.cdc_params,
         })
     }
 
+    /// Writes a compression dictionary to the archive.
     pub fn write_dictionary(&mut self, dict_data: &[u8]) -> Result<()> {
         self.out.write_all(dict_data)?;
         self.dict_offset = Some(self.current_offset);
@@ -214,6 +257,7 @@ impl ArchiveWriter {
         Ok(())
     }
 
+    /// Begins a new data stream (main or auxiliary) with the expected total size.
     pub fn begin_stream(&mut self, is_main: bool, total_size: u64) {
         self.is_main = is_main;
         self.stream_active = true;
@@ -242,6 +286,7 @@ impl ArchiveWriter {
         }
     }
 
+    /// Compresses and writes a data block, with deduplication.
     pub fn write_data_block(&mut self, data: &[u8]) -> Result<()> {
         let chunk_len = data.len() as u32;
 
@@ -261,18 +306,21 @@ impl ArchiveWriter {
             } else {
                 Some(&mut self.dedup_map)
             };
+            let mut ctx = WriteContext {
+                compressor: self.compressor.as_ref(),
+                encryptor: enc_ref,
+                hasher: &self.hasher,
+                hash_buf: &mut self.hash_buf,
+                compress_buf: &mut self.compress_buf,
+                encrypt_buf: &mut self.encrypt_buf,
+            };
             let info = write_block(
                 &mut self.out,
                 data,
                 self.global_block_idx,
                 &mut self.current_offset,
                 dedup,
-                self.compressor.as_ref(),
-                enc_ref,
-                &self.hasher,
-                &mut self.hash_buf,
-                &mut self.compress_buf,
-                &mut self.encrypt_buf,
+                &mut ctx,
             )?;
             self.page.blocks.push(info);
         }
@@ -287,6 +335,7 @@ impl ArchiveWriter {
         Ok(())
     }
 
+    /// Writes a pre-compressed block with the given hash and logical length.
     pub fn write_precompressed_block(
         &mut self,
         compressed: &[u8],
@@ -306,7 +355,7 @@ impl ArchiveWriter {
             existing_offset
         } else {
             let off = self.current_offset;
-            self.dedup_map.insert(*hash, off);
+            _ = self.dedup_map.insert(*hash, off);
             self.out.write_all(compressed)?;
             self.current_offset += final_len as u64;
             off
@@ -331,6 +380,7 @@ impl ArchiveWriter {
         Ok(())
     }
 
+    /// Writes a parent reference block (dedup against parent archive).
     pub fn write_parent_ref(&mut self, hash: &[u8; 32], logical_len: u32) -> Result<()> {
         self.page.blocks.push(BlockInfo {
             offset: BLOCK_OFFSET_PARENT,
@@ -350,6 +400,7 @@ impl ArchiveWriter {
         Ok(())
     }
 
+    /// Ends the current stream, flushing any pending page.
     pub fn end_stream(&mut self) -> Result<()> {
         if !self.page.blocks.is_empty() {
             self.flush_page()?;
@@ -367,6 +418,7 @@ impl ArchiveWriter {
         Ok(())
     }
 
+    /// Finalizes the archive by writing the index and header.
     pub fn finalize(mut self, parent_paths: Vec<String>, metadata: Option<&[u8]>) -> Result<()> {
         if self.stream_active {
             self.end_stream()?;
@@ -408,7 +460,7 @@ impl ArchiveWriter {
             cdc_params: self.cdc_params,
         };
 
-        self.out.seek(SeekFrom::Start(0))?;
+        _ = self.out.seek(SeekFrom::Start(0))?;
         self.out.write_all(&bincode::serialize(&header)?)?;
         self.out.flush()?;
         self.out.sync_all()?;

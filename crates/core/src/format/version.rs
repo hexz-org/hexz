@@ -31,15 +31,15 @@
 //!
 //! Hexz readers maintain compatibility with archives created by older software:
 //!
-//! - **MIN_SUPPORTED_VERSION**: Oldest format version we can read (currently 1)
-//! - **Upgrade Path**: Archives older than MIN_SUPPORTED_VERSION must be migrated
+//! - **`MIN_SUPPORTED_VERSION`**: Oldest format version we can read (currently 1)
+//! - **Upgrade Path**: Archives older than `MIN_SUPPORTED_VERSION` must be migrated
 //!   using the `hexz-migrate` tool (see Migration section below)
 //!
 //! ## Forward Compatibility (Reading New Archives)
 //!
 //! Hexz readers handle archives created by newer software:
 //!
-//! - **MAX_SUPPORTED_VERSION**: Newest format version we can read (currently 1)
+//! - **`MAX_SUPPORTED_VERSION`**: Newest format version we can read (currently 1)
 //! - **Degraded Mode**: Future versions may enable partial reads with warnings if
 //!   minor features are unrecognized (not yet implemented)
 //! - **Strict Rejection**: Archives with `version > MAX_SUPPORTED_VERSION` are
@@ -366,10 +366,10 @@ impl VersionCompatibility {
     ///     eprintln!("Archive is incompatible");
     /// }
     /// ```
-    pub fn is_compatible(&self) -> bool {
+    pub const fn is_compatible(&self) -> bool {
         match self {
-            VersionCompatibility::Full | VersionCompatibility::Degraded => true,
-            VersionCompatibility::Incompatible => false,
+            Self::Full | Self::Degraded => true,
+            Self::Incompatible => false,
         }
     }
 }
@@ -465,7 +465,7 @@ impl VersionCompatibility {
 ///     Ok(Archive::new(header))
 /// }
 /// ```
-pub fn check_version(version: u32) -> VersionCompatibility {
+pub const fn check_version(version: u32) -> VersionCompatibility {
     if version < MIN_SUPPORTED_VERSION {
         VersionCompatibility::Incompatible
     } else if version > MAX_SUPPORTED_VERSION {
@@ -501,7 +501,7 @@ pub fn check_version(version: u32) -> VersionCompatibility {
 /// "Version 1 is fully supported."
 /// ```
 ///
-/// ## Too Old (version < MIN_SUPPORTED_VERSION)
+/// ## Too Old (version < `MIN_SUPPORTED_VERSION`)
 ///
 /// ```text
 /// "Version 0 is too old (min supported: 1). Please upgrade the archive."
@@ -509,7 +509,7 @@ pub fn check_version(version: u32) -> VersionCompatibility {
 ///
 /// Remediation: Use `hexz-migrate upgrade` to convert the archive.
 ///
-/// ## Too New (version > MAX_SUPPORTED_VERSION)
+/// ## Too New (version > `MAX_SUPPORTED_VERSION`)
 ///
 /// ```text
 /// "Version 2 is too new (max supported: 1). Please upgrade Hexz."
@@ -571,21 +571,18 @@ pub fn check_version(version: u32) -> VersionCompatibility {
 /// ```
 pub fn compatibility_message(version: u32) -> String {
     match check_version(version) {
-        VersionCompatibility::Full => format!("Version {} is fully supported.", version),
+        VersionCompatibility::Full => format!("Version {version} is fully supported."),
         VersionCompatibility::Degraded => format!(
-            "Version {} is newer than supported ({}), features may be missing.",
-            version, MAX_SUPPORTED_VERSION
+            "Version {version} is newer than supported ({MAX_SUPPORTED_VERSION}), features may be missing."
         ),
         VersionCompatibility::Incompatible => {
             if version < MIN_SUPPORTED_VERSION {
                 format!(
-                    "Version {} is too old (min supported: {}). Please upgrade the archive.",
-                    version, MIN_SUPPORTED_VERSION
+                    "Version {version} is too old (min supported: {MIN_SUPPORTED_VERSION}). Please upgrade the archive."
                 )
             } else {
                 format!(
-                    "Version {} is too new (max supported: {}). Please upgrade Hexz.",
-                    version, MAX_SUPPORTED_VERSION
+                    "Version {version} is too new (max supported: {MAX_SUPPORTED_VERSION}). Please upgrade Hexz."
                 )
             }
         }
@@ -595,9 +592,9 @@ pub fn compatibility_message(version: u32) -> String {
 impl fmt::Display for VersionCompatibility {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            VersionCompatibility::Full => write!(f, "full"),
-            VersionCompatibility::Degraded => write!(f, "degraded"),
-            VersionCompatibility::Incompatible => write!(f, "incompatible"),
+            Self::Full => write!(f, "full"),
+            Self::Degraded => write!(f, "degraded"),
+            Self::Incompatible => write!(f, "incompatible"),
         }
     }
 }
@@ -612,23 +609,17 @@ mod tests {
         // MIN_SUPPORTED_VERSION must be <= MAX_SUPPORTED_VERSION
         assert!(
             MIN_SUPPORTED_VERSION <= MAX_SUPPORTED_VERSION,
-            "MIN_SUPPORTED_VERSION ({}) must be <= MAX_SUPPORTED_VERSION ({})",
-            MIN_SUPPORTED_VERSION,
-            MAX_SUPPORTED_VERSION
+            "MIN_SUPPORTED_VERSION ({MIN_SUPPORTED_VERSION}) must be <= MAX_SUPPORTED_VERSION ({MAX_SUPPORTED_VERSION})"
         );
 
         // CURRENT_VERSION must be within supported range
         assert!(
             CURRENT_VERSION >= MIN_SUPPORTED_VERSION,
-            "CURRENT_VERSION ({}) must be >= MIN_SUPPORTED_VERSION ({})",
-            CURRENT_VERSION,
-            MIN_SUPPORTED_VERSION
+            "CURRENT_VERSION ({CURRENT_VERSION}) must be >= MIN_SUPPORTED_VERSION ({MIN_SUPPORTED_VERSION})"
         );
         assert!(
             CURRENT_VERSION <= MAX_SUPPORTED_VERSION,
-            "CURRENT_VERSION ({}) must be <= MAX_SUPPORTED_VERSION ({})",
-            CURRENT_VERSION,
-            MAX_SUPPORTED_VERSION
+            "CURRENT_VERSION ({CURRENT_VERSION}) must be <= MAX_SUPPORTED_VERSION ({MAX_SUPPORTED_VERSION})"
         );
     }
 
@@ -647,8 +638,7 @@ mod tests {
             assert_eq!(
                 compat,
                 VersionCompatibility::Full,
-                "Version {} should be fully compatible",
-                version
+                "Version {version} should be fully compatible"
             );
             assert!(compat.is_compatible());
         }
@@ -707,11 +697,10 @@ mod tests {
     #[test]
     fn test_compatibility_message_for_supported_version() {
         let msg = compatibility_message(CURRENT_VERSION);
-        assert!(msg.contains("fully supported"), "Message: {}", msg);
+        assert!(msg.contains("fully supported"), "Message: {msg}");
         assert!(
             msg.contains(&CURRENT_VERSION.to_string()),
-            "Message: {}",
-            msg
+            "Message: {msg}"
         );
     }
 
@@ -720,13 +709,12 @@ mod tests {
         if MIN_SUPPORTED_VERSION > 0 {
             let old_version = MIN_SUPPORTED_VERSION - 1;
             let msg = compatibility_message(old_version);
-            assert!(msg.contains("too old"), "Message: {}", msg);
+            assert!(msg.contains("too old"), "Message: {msg}");
             assert!(
                 msg.contains(&MIN_SUPPORTED_VERSION.to_string()),
-                "Message: {}",
-                msg
+                "Message: {msg}"
             );
-            assert!(msg.contains("upgrade the archive"), "Message: {}", msg);
+            assert!(msg.contains("upgrade the archive"), "Message: {msg}");
         }
     }
 
@@ -734,13 +722,12 @@ mod tests {
     fn test_compatibility_message_for_too_new_version() {
         let new_version = MAX_SUPPORTED_VERSION + 1;
         let msg = compatibility_message(new_version);
-        assert!(msg.contains("too new"), "Message: {}", msg);
+        assert!(msg.contains("too new"), "Message: {msg}");
         assert!(
             msg.contains(&MAX_SUPPORTED_VERSION.to_string()),
-            "Message: {}",
-            msg
+            "Message: {msg}"
         );
-        assert!(msg.contains("upgrade Hexz"), "Message: {}", msg);
+        assert!(msg.contains("upgrade Hexz"), "Message: {msg}");
     }
 
     #[test]
@@ -762,7 +749,7 @@ mod tests {
     fn test_version_compatibility_enum_properties() {
         // Test Debug trait
         let full = VersionCompatibility::Full;
-        assert!(format!("{:?}", full).contains("Full"));
+        assert!(format!("{full:?}").contains("Full"));
 
         // Test Clone and Copy
         let degraded = VersionCompatibility::Degraded;
@@ -816,9 +803,7 @@ mod tests {
             let msg = compatibility_message(version);
             assert!(
                 msg.contains(&version.to_string()),
-                "Message for version {} should contain the version number: {}",
-                version,
-                msg
+                "Message for version {version} should contain the version number: {msg}"
             );
         }
     }

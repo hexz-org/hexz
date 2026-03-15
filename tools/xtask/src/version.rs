@@ -1,4 +1,6 @@
-use crate::common::*;
+use crate::common::{
+    cargo, check_mark, cmd, find_workspace_root, maturin, BOLD, CYAN, GREEN, RED, RESET, YELLOW,
+};
 use anyhow::{Context, Result, bail};
 use semver::Version;
 use serde::Deserialize;
@@ -347,7 +349,7 @@ pub fn publish_dry_run() -> Result<()> {
     for krate in PUBLISH_ORDER {
         if let Ok(Some(v)) = crates_io_version(krate) {
             if v >= ws_ver {
-                published_at_current.insert(krate);
+                let _ = published_at_current.insert(krate);
             }
         }
     }

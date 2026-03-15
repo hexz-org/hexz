@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 pub struct FileEntry {
     /// Logical path relative to archive root (e.g. "src/main.rs")
     pub path: String,
-    /// Logical offset within the ArchiveStream::Main
+    /// Logical offset within the `ArchiveStream::Main`
     pub offset: u64,
     /// File size in bytes
     pub size: u64,

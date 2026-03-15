@@ -1,4 +1,4 @@
-use crate::common::*;
+use crate::common::{cargo, cmd, find_workspace_root, require_cmd, GREEN, RESET};
 use anyhow::Result;
 
 const CROSS_AARCH64: &str = "aarch64-unknown-linux-gnu";
@@ -8,7 +8,7 @@ const WINDOWS_CLI_FEAT: &str = "compression-zstd,encryption,diagnostics,signing,
 const AARCH64_LINKER: &str = "aarch64-linux-gnu-gcc";
 const WINDOWS_LINKER: &str = "x86_64-w64-mingw32-gcc";
 
-#[derive(clap::Subcommand)]
+#[derive(Clone, Copy, clap::Subcommand)]
 pub enum CrossTarget {
     /// Cross-check for aarch64-unknown-linux-gnu
     Aarch64,

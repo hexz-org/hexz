@@ -11,9 +11,9 @@ use hexz_core::format::magic::HEADER_SIZE;
 use hexz_fuse::fuse::Hexz;
 use hexz_store::StorageBackend;
 use hexz_store::local::MmapBackend;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use colored::*;
+use colored::Colorize;
 
 pub(crate) fn parse_size(s: &str) -> Result<usize> {
     let s = s.trim();
@@ -30,7 +30,7 @@ pub(crate) fn parse_size(s: &str) -> Result<usize> {
         "g" | "gb" => 1024.0 * 1024.0 * 1024.0,
         "t" | "tb" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
         "" => 1.0,
-        _ => return Err(anyhow::anyhow!("Invalid size suffix: {}", suffix)),
+        _ => return Err(anyhow::anyhow!("Invalid size suffix: {suffix}")),
     };
 
     Ok((n * multiplier) as usize)
@@ -38,11 +38,11 @@ pub(crate) fn parse_size(s: &str) -> Result<usize> {
 
 pub(crate) fn open_archive(
     hexz_path: &str,
-    cache_size: Option<String>,
+    cache_size: Option<&str>,
     prefetch: Option<u32>,
 ) -> Result<Arc<Archive>> {
     let abs_hexz_path = std::fs::canonicalize(hexz_path)
-        .context(format!("Failed to resolve archive path: {}", hexz_path))?;
+        .context(format!("Failed to resolve archive path: {hexz_path}"))?;
 
     let (header, password) = {
         let backend = MmapBackend::new(&abs_hexz_path)?;
@@ -69,7 +69,7 @@ pub(crate) fn open_archive(
 
     let compressor: Box<dyn Compressor> = match header.compression {
         CompressionType::Lz4 => Box::new(Lz4Compressor::new()),
-        CompressionType::Zstd => Box::new(ZstdCompressor::new(DEFAULT_ZSTD_LEVEL, dictionary)),
+        CompressionType::Zstd => Box::new(ZstdCompressor::new(DEFAULT_ZSTD_LEVEL, dictionary.as_deref())),
     };
 
     let encryptor = if let (Some(params), Some(pass)) = (header.encryption, password) {
@@ -83,18 +83,24 @@ pub(crate) fn open_archive(
         None
     };
 
-    let cache_capacity = if let Some(ref s) = cache_size {
+    let cache_capacity = if let Some(s) = cache_size {
         Some(parse_size(s)?)
     } else {
         None
     };
 
-    let cache_size_clone = cache_size.clone();
-    let abs_hexz_path_clone = abs_hexz_path.clone();
+    let cache_size_owned: Option<String> = cache_size.map(String::from);
+    let abs_hexz_path_clone = abs_hexz_path;
 
     let parent_loader: hexz_core::api::file::ParentLoader = Box::new(move |parent_path: &str| {
-        let parent_full_path = abs_hexz_path_clone.parent().unwrap().join(parent_path);
-        open_archive(parent_full_path.to_str().unwrap(), cache_size_clone.clone(), prefetch)
+        let parent_full_path = abs_hexz_path_clone
+            .parent()
+            .ok_or_else(|| hexz_common::Error::Io(std::io::Error::other("archive path has no parent directory")))?
+            .join(parent_path);
+        let path_str = parent_full_path
+            .to_str()
+            .ok_or_else(|| hexz_common::Error::Io(std::io::Error::other("parent path is not valid UTF-8")))?;
+        open_archive(path_str, cache_size_owned.as_deref(), prefetch)
             .map_err(|e| hexz_common::Error::Io(std::io::Error::other(e.to_string())))
     });
 
@@ -108,33 +114,36 @@ pub(crate) fn open_archive(
     )?)
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Execute the `hexz mount` command to mount an archive as a FUSE filesystem.
+#[allow(clippy::too_many_arguments, unsafe_code)]
 pub fn run(
-    hexz_path: String,
-    mountpoint: PathBuf,
+    hexz_path: &str,
+    mountpoint: &Path,
     daemon: bool,
-    cache_size: Option<String>,
+    cache_size: Option<&str>,
     mut uid: u32,
     mut gid: u32,
     overlay: Option<PathBuf>,
     editable: bool,
-    metadata_dir: Option<PathBuf>,
+    metadata_dir: Option<&Path>,
 ) -> Result<()> {
     if uid == 0 {
+        // SAFETY: getuid() is always safe to call
         uid = unsafe { libc::getuid() };
     }
     if gid == 0 {
+        // SAFETY: getgid() is always safe to call
         gid = unsafe { libc::getgid() };
     }
 
     let abs_mountpoint = if mountpoint.exists() {
-        std::fs::canonicalize(&mountpoint)
-            .context(format!("Failed to resolve mountpoint: {:?}", mountpoint))?
+        std::fs::canonicalize(mountpoint)
+            .context(format!("Failed to resolve mountpoint: {}", mountpoint.display()))?
     } else {
-        mountpoint.clone()
+        mountpoint.to_path_buf()
     };
 
-    let snap = open_archive(&hexz_path, cache_size, None)?;
+    let snap = open_archive(hexz_path, cache_size, None)?;
 
     // Handle --editable / --overlay
     let overlay = if let Some(o) = overlay {
@@ -145,7 +154,7 @@ pub fn run(
             "hexz_overlay_{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs()
         ));
         std::fs::create_dir_all(&temp_overlay)?;
@@ -161,10 +170,12 @@ pub fn run(
         let log_dir = std::env::var("XDG_RUNTIME_DIR")
             .or_else(|_| std::env::var("TMPDIR"))
             .unwrap_or_else(|_| "/tmp".to_string());
-        let stdout = std::fs::File::create(format!("{}/hexz.log", log_dir))
-            .unwrap_or_else(|_| std::fs::File::create("/dev/null").unwrap());
-        let stderr = std::fs::File::create(format!("{}/hexz.err", log_dir))
-            .unwrap_or_else(|_| std::fs::File::create("/dev/null").unwrap());
+        let stdout = std::fs::File::create(format!("{log_dir}/hexz.log"))
+            .or_else(|_| std::fs::File::create("/dev/null"))
+            .context("Failed to create log file")?;
+        let stderr = std::fs::File::create(format!("{log_dir}/hexz.err"))
+            .or_else(|_| std::fs::File::create("/dev/null"))
+            .context("Failed to create error log file")?;
 
         Daemonize::new()
             .working_directory("/")

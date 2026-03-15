@@ -152,7 +152,7 @@ pub fn create_test_files(count: usize, size: usize) -> std::io::Result<(TempDir,
     let mut paths = Vec::new();
 
     for i in 0..count {
-        let path = dir.path().join(format!("test_{}.dat", i));
+        let path = dir.path().join(format!("test_{i}.dat"));
         let data = create_random_data_with_seed(size, i as u64);
         std::fs::write(&path, &data)?;
         paths.push(path);
@@ -186,6 +186,7 @@ mod tests {
     #[test]
     fn test_create_sparse_data() {
         let data = create_sparse_data(10000, 0.9);
+        #[allow(clippy::naive_bytecount)]
         let zero_count = data.iter().filter(|&&b| b == 0).count();
         // Should be approximately 90% zeros (within 5% tolerance)
         assert!((zero_count as f64 / 10000.0 - 0.9).abs() < 0.05);

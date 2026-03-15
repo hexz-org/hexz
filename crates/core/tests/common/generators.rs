@@ -142,7 +142,7 @@ pub fn create_test_files(count: usize, size: usize) -> std::io::Result<(TempDir,
     let mut paths = Vec::new();
 
     for i in 0..count {
-        let path = dir.path().join(format!("test_{}.dat", i));
+        let path = dir.path().join(format!("test_{i}.dat"));
         let data = create_random_data_with_seed(size, i as u64);
         std::fs::write(&path, &data)?;
         paths.push(path);
