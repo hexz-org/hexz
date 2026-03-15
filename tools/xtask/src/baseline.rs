@@ -14,7 +14,7 @@ pub enum BaselineCmd {
         /// Baseline name
         name: String,
     },
-    /// Archive criterion data to .criterion/<name>/
+    /// Archive criterion data to `.criterion/<name>/`
     Archive {
         /// Baseline name
         name: String,

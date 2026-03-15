@@ -47,7 +47,7 @@
 //!
 //! # Examples
 //!
-//! See [`crate::api::file::File`] for usage examples.
+//! See [`crate::api`] for usage examples.
 
 use serde::{Deserialize, Serialize};
 

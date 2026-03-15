@@ -20,7 +20,7 @@ BOLD   := \033[1m
 RESET  := \033[0m
 
 # ── Phony ────────────────────────────────────────────────────────────────────
-.PHONY: help build rust python develop install clean clippy check fmt test
+.PHONY: help build rust python develop install clean clippy check fmt test docs
 
 help:
 	@printf "\n$(BOLD)Hexz$(RESET) — snapshot storage engine\n\n"
@@ -70,6 +70,14 @@ fmt:
 test:
 	@printf "$(GREEN)Running tests…$(RESET)\n"
 	$(CARGO) test --workspace
+
+docs:
+	@printf "$(GREEN)Building docs…$(RESET)\n"
+	test -d .venv || python3 -m venv .venv
+	.venv/bin/pip install -q -r docs/requirements.txt
+	$(CARGO) doc --workspace --no-deps
+	.venv/bin/mkdocs build -d site
+	cp -r target/doc site/rustdoc
 
 clean:
 	@printf "$(GREEN)Cleaning artifacts…$(RESET)\n"

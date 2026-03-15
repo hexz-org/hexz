@@ -166,7 +166,7 @@
 //! Version checking is performed once per archive open operation:
 //!
 //! - **Overhead**: Negligible (~100ns for integer comparison)
-//! - **Caching**: Version is cached in [`crate::api::file::File`] struct
+//! - **Caching**: Version is cached in the archive reader struct
 //! - **Hot Path**: Not in block read/write paths
 //!
 //! # Examples

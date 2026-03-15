@@ -65,13 +65,6 @@ hexz status
 hexz commit ../data_v2.hxz
 ```
 
-## Documentation
-
-See the `docs/` directory for detailed information on:
-- [Architecture](docs/explanation/architecture.md)
-- [CDC & Deduplication](docs/explanation/cdc.md)
-- [FUSE & NBD Mounting](docs/reference/mount.md)
-
 ## License
 
 Licensed under [Apache 2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT).

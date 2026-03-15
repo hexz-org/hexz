@@ -20,7 +20,7 @@
 //!
 //! # Modules
 //!
-//! - **[`format`]**: On-disk binary structures (header, index, magic, version)
+//! - **[`mod@format`]**: On-disk binary structures (header, index, magic, version)
 //! - **[`algo`]**: Compression, encryption, hashing, deduplication traits + impls
 //! - **[`cache`]**: Sharded LRU cache for decompressed blocks and index pages
 //! - **[`store`]**: [`StorageBackend`](store::StorageBackend) trait (implementations in `hexz-store`)

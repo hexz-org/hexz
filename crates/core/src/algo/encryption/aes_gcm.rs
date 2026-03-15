@@ -600,6 +600,12 @@ impl fmt::Debug for AesGcmEncryptor {
 }
 
 impl AesGcmEncryptor {
+    /// Minimum allowed PBKDF2 iteration count for production security.
+    const MIN_ITERATIONS: u32 = 100_000;
+
+    /// Minimum allowed salt length in bytes.
+    const MIN_SALT_LENGTH: usize = 8;
+
     /// Derives an AES-256-GCM key from a password and initializes a new encryptor.
     ///
     /// This constructor uses PBKDF2-HMAC-SHA256 to derive a 256-bit AES key from the provided
@@ -736,13 +742,6 @@ impl AesGcmEncryptor {
     /// )?;
     /// # Ok::<(), hexz_common::Error>(())
     /// ```
-    /// Minimum allowed PBKDF2 iteration count for production security.
-    const MIN_ITERATIONS: u32 = 100_000;
-
-    /// Minimum allowed salt length in bytes.
-    const MIN_SALT_LENGTH: usize = 8;
-
-    /// Creates a new AES-256-GCM encryptor by deriving a key from the given password using PBKDF2.
     pub fn new(password: &[u8], salt: &[u8], iterations: u32) -> Result<Self> {
         use zeroize::Zeroize;
 
@@ -845,17 +844,6 @@ impl AesGcmEncryptor {
     /// - **Constant Time**: Executes in constant time (no data-dependent branches), though this
     ///   is not critical for nonce generation (nonces are not secret).
     ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use hexz_core::algo::encryption::AesGcmEncryptor;
-    /// # let encryptor = AesGcmEncryptor::new(b"password", b"salt12345678salt", 100_000)?;
-    /// // Internal usage (not directly callable, but conceptually):
-    /// // let nonce = AesGcmEncryptor::generate_nonce(42);
-    /// // Result: [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2A]
-    /// //          └─── Reserved (4 bytes) ──┘ └──────── Block Index 42 (8 bytes) ──────┘
-    /// # Ok::<(), hexz_common::Error>(())
-    /// ```
     fn generate_nonce(block_idx: u64) -> GenericArray<u8, U12> {
         let mut bytes = [0u8; AES_NONCE_LENGTH];
         bytes[4..].copy_from_slice(&block_idx.to_be_bytes());

@@ -11,7 +11,7 @@
 //!
 //! # Available Components
 //!
-//! - [`progress`]: Progress bars and spinners for operation feedback
+//! - `progress`: Progress bars and spinners for operation feedback
 
 /// ANSI color palette utilities.
 pub mod color;
