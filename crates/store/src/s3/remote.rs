@@ -1,4 +1,4 @@
-//! S3 implementation of [`RemoteTransport`](crate::remote::RemoteTransport).
+//! S3 implementation of [`RemoteTransport`].
 
 use crate::remote::{RemoteArchiveInfo, RemoteTransport};
 use crate::runtime::global_handle;
