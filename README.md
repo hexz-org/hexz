@@ -26,9 +26,16 @@ Hexz is a single-file archive format (`.hxz`) designed for storing and distribut
 ## Quick Start
 
 ### Install
+
 ```bash
-make install
+# Pre-built binary (Linux/macOS)
+curl -fsSL https://raw.githubusercontent.com/hexz-org/hexz/main/install.sh | sh
+
+# From crates.io
+cargo install hexz-cli
 ```
+
+See the [tutorial](docs/tutorial.md) for a full walkthrough.
 
 ### Pack an archive
 ```bash
