@@ -32,6 +32,7 @@
             pkgs.ruff
             pkgs.git
             pkgs.bash
+            pkgs.minio-client
           ];
 
           buildInputs = [

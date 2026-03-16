@@ -180,13 +180,18 @@ impl RemoteTransport for S3Remote {
 
         tokio::task::block_in_place(|| {
             self.handle.block_on(async {
-                let (_, code) = self
-                    .bucket
-                    .head_object(&key)
-                    .await
-                    .map_err(|e| Error::Io(IoError::other(format!("S3 head error: {e}"))))?;
-
-                Ok(code == 200)
+                match self.bucket.head_object(&key).await {
+                    Ok((_, code)) => Ok(code == 200),
+                    Err(e) => {
+                        // rust-s3 with fail-on-err turns 404 into an error
+                        let msg = e.to_string();
+                        if msg.contains("404") || msg.contains("Not Found") {
+                            Ok(false)
+                        } else {
+                            Err(Error::Io(IoError::other(format!("S3 head error: {e}"))))
+                        }
+                    }
+                }
             })
         })
     }
