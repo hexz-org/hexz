@@ -2,6 +2,8 @@
 
 #[cfg(feature = "s3")]
 pub mod async_client;
+#[cfg(feature = "s3")]
+pub mod remote;
 
 #[cfg(feature = "s3")]
 pub use async_client::S3Backend;

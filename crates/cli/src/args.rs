@@ -340,6 +340,9 @@ pub enum Commands {
         /// Remote name (defaults to "origin")
         #[arg(default_value = "origin")]
         remote: String,
+
+        /// Specific archive to pull (omit to pull all new archives)
+        archive: Option<String>,
     },
 
     // ------------------------------------------------------------------------

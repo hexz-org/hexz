@@ -11,6 +11,7 @@
 
 pub mod http;
 pub mod local;
+pub mod remote;
 pub mod runtime;
 #[cfg(feature = "s3")]
 pub mod s3;

@@ -177,7 +177,7 @@ fn main() -> anyhow::Result<()> {
         Commands::Push { remote, archive } => hexz_cli::cmd::data::push::run(&remote, archive),
 
         #[cfg(feature = "fuse")]
-        Commands::Pull { remote } => hexz_cli::cmd::data::pull::run(&remote),
+        Commands::Pull { remote, archive } => hexz_cli::cmd::data::pull::run(&remote, archive),
 
         #[cfg(feature = "server")]
         Commands::Serve {
