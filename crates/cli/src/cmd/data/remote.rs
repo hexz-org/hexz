@@ -1,9 +1,9 @@
 //! Manage remote endpoints for push/pull operations.
 
-use anyhow::{Context, Result};
-use colored::Colorize;
 use super::workspace::Workspace;
 use crate::args::RemoteCommand;
+use anyhow::{Context, Result};
+use colored::Colorize;
 
 /// Execute the `hexz remote` command to manage remote endpoints.
 pub fn run(action: RemoteCommand) -> Result<()> {
@@ -14,7 +14,12 @@ pub fn run(action: RemoteCommand) -> Result<()> {
         RemoteCommand::Add { name, url } => {
             let _ = ws.config.remotes.insert(name.clone(), url.clone());
             ws.save()?;
-            println!("  {} Added remote {} {}", "✓".green(), name.magenta(), format!("({url})").bright_black());
+            println!(
+                "  {} Added remote {} {}",
+                "✓".green(),
+                name.magenta(),
+                format!("({url})").bright_black()
+            );
         }
         RemoteCommand::Remove { name } => {
             if ws.config.remotes.remove(&name).is_some() {
@@ -31,7 +36,11 @@ pub fn run(action: RemoteCommand) -> Result<()> {
                 println!("{} Remotes", "╭".dimmed());
                 let count = ws.config.remotes.len();
                 for (i, (name, url)) in ws.config.remotes.iter().enumerate() {
-                    let prefix = if i == count - 1 { "╰".dimmed() } else { "│".dimmed() };
+                    let prefix = if i == count - 1 {
+                        "╰".dimmed()
+                    } else {
+                        "│".dimmed()
+                    };
                     println!("{} {} {}", prefix, name.magenta(), url.bright_black());
                 }
             }

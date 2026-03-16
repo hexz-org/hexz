@@ -13,8 +13,8 @@
 //! ```
 
 use anyhow::Result;
-use std::process::Command;
 use colored::Colorize;
+use std::process::Command;
 
 use crate::ui::color::{Palette, palette};
 

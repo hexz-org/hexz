@@ -1,4 +1,4 @@
-use crate::common::{cargo, cmd, find_workspace_root, require_cmd, GREEN, RESET};
+use crate::common::{GREEN, RESET, cargo, cmd, find_workspace_root, require_cmd};
 use anyhow::Result;
 
 const CROSS_AARCH64: &str = "aarch64-unknown-linux-gnu";

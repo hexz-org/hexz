@@ -43,7 +43,7 @@ fn test_header_serialization_minimal() {
         signature_length: None,
         encryption: None,
         compression: CompressionType::Lz4,
-            cdc_params: None,
+        cdc_params: None,
         features: FeatureFlags {
             has_main: true,
             has_auxiliary: false,
@@ -84,7 +84,7 @@ fn test_header_serialization_full() {
             iterations: 100000,
         }),
         compression: CompressionType::Zstd,
-            cdc_params: None,
+        cdc_params: None,
         features: FeatureFlags {
             has_main: true,
             has_auxiliary: true,
@@ -208,7 +208,7 @@ fn test_page_entry() {
 #[test]
 fn test_master_index_multi_page() {
     let mut master = MasterIndex {
-        main_size: 10737418240,  // 10 GB
+        main_size: 10737418240,     // 10 GB
         auxiliary_size: 4294967296, // 4 GB
         main_pages: vec![],
         auxiliary_pages: vec![],
@@ -336,7 +336,7 @@ fn test_invalid_magic_bytes() {
         signature_length: None,
         encryption: None,
         compression: CompressionType::Lz4,
-            cdc_params: None,
+        cdc_params: None,
         features: FeatureFlags {
             has_main: true,
             has_auxiliary: false,
@@ -377,7 +377,8 @@ fn test_large_block_sizes() {
             cdc_params: None,
             features: FeatureFlags {
                 has_main: true,
-                has_auxiliary: false,                variable_blocks: false,
+                has_auxiliary: false,
+                variable_blocks: false,
             },
         };
 

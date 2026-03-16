@@ -46,7 +46,7 @@
 //! - `index`: Index pages and block metadata
 //! - `version`: Version compatibility checking
 
-pub mod magic;
 pub mod header;
 pub mod index;
+pub mod magic;
 pub mod version;

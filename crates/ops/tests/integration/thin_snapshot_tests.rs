@@ -69,7 +69,11 @@ fn test_zstd_dict_archive_read() {
         output: output_path.clone(),
         compression: "zstd".to_string(),
         password: None,
-        transform: PackTransformFlags { encrypt: false, train_dict: true, ..Default::default() },
+        transform: PackTransformFlags {
+            encrypt: false,
+            train_dict: true,
+            ..Default::default()
+        },
         block_size: 65536,
         ..Default::default()
     };
@@ -95,9 +99,7 @@ fn test_zstd_dict_archive_read() {
     let archive = Archive::new(backend, compressor, None).unwrap();
 
     // Verify data integrity
-    let read_data = archive
-        .read_at(ArchiveStream::Main, 0, data.len())
-        .unwrap();
+    let read_data = archive.read_at(ArchiveStream::Main, 0, data.len()).unwrap();
     assert_bytes_equal(&read_data, &data, "zstd dict round-trip");
 }
 

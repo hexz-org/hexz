@@ -241,7 +241,15 @@ pub fn run(hexz_path: &str, port: u16, bind: &str, daemon: bool, nbd: bool) -> R
         println!("{} Starting Hexz server", "╭".dimmed());
         println!("{} Port      {}", "│".dimmed(), port.to_string().cyan());
         println!("{} Bind      {}", "│".dimmed(), bind.cyan());
-        println!("{} Protocol  {}", "╰".dimmed(), if nbd { "NBD".magenta() } else { "HTTP".magenta() });
+        println!(
+            "{} Protocol  {}",
+            "╰".dimmed(),
+            if nbd {
+                "NBD".magenta()
+            } else {
+                "HTTP".magenta()
+            }
+        );
         println!();
     }
 

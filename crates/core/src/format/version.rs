@@ -698,10 +698,7 @@ mod tests {
     fn test_compatibility_message_for_supported_version() {
         let msg = compatibility_message(CURRENT_VERSION);
         assert!(msg.contains("fully supported"), "Message: {msg}");
-        assert!(
-            msg.contains(&CURRENT_VERSION.to_string()),
-            "Message: {msg}"
-        );
+        assert!(msg.contains(&CURRENT_VERSION.to_string()), "Message: {msg}");
     }
 
     #[test]

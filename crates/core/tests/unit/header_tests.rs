@@ -38,35 +38,50 @@ fn test_read_from_default() {
 
 #[test]
 fn test_read_from_lz4_compression() {
-    let h = Header { compression: CompressionType::Lz4, ..Default::default() };
+    let h = Header {
+        compression: CompressionType::Lz4,
+        ..Default::default()
+    };
     let decoded = roundtrip(&h);
     assert_eq!(decoded.compression, CompressionType::Lz4);
 }
 
 #[test]
 fn test_read_from_zstd_compression() {
-    let h = Header { compression: CompressionType::Zstd, ..Default::default() };
+    let h = Header {
+        compression: CompressionType::Zstd,
+        ..Default::default()
+    };
     let decoded = roundtrip(&h);
     assert_eq!(decoded.compression, CompressionType::Zstd);
 }
 
 #[test]
 fn test_read_from_custom_block_size() {
-    let h = Header { block_size: 131_072, ..Default::default() };
+    let h = Header {
+        block_size: 131_072,
+        ..Default::default()
+    };
     let decoded = roundtrip(&h);
     assert_eq!(decoded.block_size, 131_072);
 }
 
 #[test]
 fn test_read_from_with_parent_path() {
-    let h = Header { parent_paths: vec!["/archives/base.hxz".to_string()], ..Default::default() };
+    let h = Header {
+        parent_paths: vec!["/archives/base.hxz".to_string()],
+        ..Default::default()
+    };
     let decoded = roundtrip(&h);
     assert_eq!(decoded.parent_paths, vec!["/archives/base.hxz"]);
 }
 
 #[test]
 fn test_read_from_with_multiple_parent_paths() {
-    let h = Header { parent_paths: vec!["a.hxz".to_string(), "b.hxz".to_string()], ..Default::default() };
+    let h = Header {
+        parent_paths: vec!["a.hxz".to_string(), "b.hxz".to_string()],
+        ..Default::default()
+    };
     let decoded = roundtrip(&h);
     assert_eq!(decoded.parent_paths.len(), 2);
     assert_eq!(decoded.parent_paths[0], "a.hxz");
@@ -100,7 +115,7 @@ fn test_read_from_with_signature_location() {
 #[test]
 fn test_read_from_feature_flags() {
     let h = Header {
-            cdc_params: None,
+        cdc_params: None,
         features: FeatureFlags {
             has_main: true,
             has_auxiliary: true,
@@ -138,7 +153,10 @@ fn test_read_from_version_preserved() {
 
 #[test]
 fn test_read_from_index_offset_preserved() {
-    let h = Header { index_offset: 4096, ..Default::default() };
+    let h = Header {
+        index_offset: 4096,
+        ..Default::default()
+    };
     let decoded = roundtrip(&h);
     assert_eq!(decoded.index_offset, 4096);
 }
@@ -182,7 +200,7 @@ fn test_serialized_size_fits_in_header() {
         signature_length: Some(64),
         encryption: None,
         compression: CompressionType::Zstd,
-            cdc_params: None,
+        cdc_params: None,
         features: FeatureFlags {
             has_main: true,
             has_auxiliary: true,

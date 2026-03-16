@@ -48,7 +48,7 @@ pub fn run(snap: &Path, json: bool) -> Result<()> {
     };
 
     println!("{} {}", "╭".dimmed(), filename.cyan());
-    
+
     let block_kib = info.block_size / 1024;
     println!(
         "{} format      v{}, {}, {} KiB blocks",
@@ -69,12 +69,11 @@ pub fn run(snap: &Path, json: bool) -> Result<()> {
     if !info.parent_paths.is_empty() {
         let parent_display = std::path::Path::new(&info.parent_paths[0])
             .file_name()
-            .map_or_else(|| info.parent_paths[0].clone(), |f| f.to_string_lossy().to_string());
-        println!(
-            "{} parent      {}",
-            "│".dimmed(),
-            parent_display.yellow(),
-        );
+            .map_or_else(
+                || info.parent_paths[0].clone(),
+                |f| f.to_string_lossy().to_string(),
+            );
+        println!("{} parent      {}", "│".dimmed(), parent_display.yellow());
     }
 
     if let Some(stats) = &info.block_stats {

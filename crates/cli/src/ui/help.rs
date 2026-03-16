@@ -48,9 +48,15 @@ impl Printer {
             let item = (name.clone(), about);
 
             match name.as_str() {
-                "pack" | "extract" | "init" | "checkout" | "commit" | "status" => create_cmds.push(item),
-                "inspect" | "show" | "diff" | "log" | "ls" | "predict" | "convert" => inspect_cmds.push(item),
-                "mount" | "unmount" | "shell" | "serve" | "remote" | "push" | "pull" => network_cmds.push(item),
+                "pack" | "extract" | "init" | "checkout" | "commit" | "status" => {
+                    create_cmds.push(item);
+                }
+                "inspect" | "show" | "diff" | "log" | "ls" | "predict" | "convert" => {
+                    inspect_cmds.push(item);
+                }
+                "mount" | "unmount" | "shell" | "serve" | "remote" | "push" | "pull" => {
+                    network_cmds.push(item);
+                }
                 "keygen" | "sign" | "verify" | "doctor" => infra_cmds.push(item),
                 _ => {}
             }
@@ -146,10 +152,7 @@ impl Printer {
                 .get_short()
                 .map(|s| format!("-{s},"))
                 .unwrap_or_default();
-            let long = arg
-                .get_long()
-                .map(|l| format!("--{l}"))
-                .unwrap_or_default();
+            let long = arg.get_long().map(|l| format!("--{l}")).unwrap_or_default();
 
             // Handle values like <OUTPUT>
             let value = if arg.get_action().takes_values() {
@@ -172,9 +175,7 @@ impl Printer {
             };
 
             let trimmed = flag_str.trim();
-            println!(
-                "  {GREEN}{trimmed:<28}{RESET} {help_text}{required_note}"
-            );
+            println!("  {GREEN}{trimmed:<28}{RESET} {help_text}{required_note}");
         }
 
         // Always show help flag

@@ -157,7 +157,9 @@ pub fn predict(config: &PredictConfig) -> Result<PredictReport> {
         // Dedup tracking for all blocks (including zeros)
         let digest = *blake3::hash(chunk).as_bytes();
         let hash = u64::from_le_bytes(
-            digest[..8].try_into().map_err(|_| Error::Format("hash slice conversion failed".to_string()))?
+            digest[..8]
+                .try_into()
+                .map_err(|_| Error::Format("hash slice conversion failed".to_string()))?,
         );
         if seen_hashes.insert(hash) {
             unique_sampled_bytes += n as u64;

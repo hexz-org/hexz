@@ -4,7 +4,7 @@ mod read;
 
 use fuser::Filesystem;
 use hexz_core::Archive;
-use hexz_vfs::{InodeMap, VfsAttr, DirEntry};
+use hexz_vfs::{DirEntry, InodeMap, VfsAttr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -122,7 +122,10 @@ impl Hexz {
         let Some(base) = &self.write_layer else {
             return Err(std::io::Error::from_raw_os_error(libc::EROFS));
         };
-        let parent_path = self.inodes.get_path(parent_ino).ok_or_else(|| std::io::Error::from_raw_os_error(libc::ENOENT))?;
+        let parent_path = self
+            .inodes
+            .get_path(parent_ino)
+            .ok_or_else(|| std::io::Error::from_raw_os_error(libc::ENOENT))?;
         let whiteout_dir = base.join(parent_path).join(".hexz_whiteout");
         std::fs::create_dir_all(&whiteout_dir)?;
         let whiteout_path = whiteout_dir.join(name);
@@ -134,7 +137,10 @@ impl Hexz {
         let Some(base) = &self.write_layer else {
             return Ok(());
         };
-        let parent_path = self.inodes.get_path(parent_ino).ok_or_else(|| std::io::Error::from_raw_os_error(libc::ENOENT))?;
+        let parent_path = self
+            .inodes
+            .get_path(parent_ino)
+            .ok_or_else(|| std::io::Error::from_raw_os_error(libc::ENOENT))?;
         let whiteout_path = base.join(parent_path).join(".hexz_whiteout").join(name);
         if whiteout_path.exists() {
             std::fs::remove_file(whiteout_path)?;
@@ -222,7 +228,13 @@ impl Hexz {
 }
 
 impl Filesystem for Hexz {
-    fn access(&mut self, _req: &fuser::Request<'_>, _ino: u64, _mask: i32, reply: fuser::ReplyEmpty) {
+    fn access(
+        &mut self,
+        _req: &fuser::Request<'_>,
+        _ino: u64,
+        _mask: i32,
+        reply: fuser::ReplyEmpty,
+    ) {
         reply.ok();
     }
 
@@ -272,7 +284,13 @@ impl Filesystem for Hexz {
         reply.opened(1, 0);
     }
 
-    fn opendir(&mut self, _req: &fuser::Request<'_>, _ino: u64, _flags: i32, reply: fuser::ReplyOpen) {
+    fn opendir(
+        &mut self,
+        _req: &fuser::Request<'_>,
+        _ino: u64,
+        _flags: i32,
+        reply: fuser::ReplyOpen,
+    ) {
         reply.opened(1, 0);
     }
 
@@ -299,8 +317,11 @@ impl Filesystem for Hexz {
                 match std::fs::File::create(&full_path) {
                     Ok(_) => {
                         use std::os::unix::fs::PermissionsExt;
-                        let _ = std::fs::set_permissions(&full_path, std::fs::Permissions::from_mode(mode));
-                        
+                        let _ = std::fs::set_permissions(
+                            &full_path,
+                            std::fs::Permissions::from_mode(mode),
+                        );
+
                         let ino = self.inodes.add_file_at_path(&rel_path, false);
                         let attr = self.getattr_internal(ino);
                         reply.created(&TTL, &attr, 0, 1, 0);
@@ -339,7 +360,10 @@ impl Filesystem for Hexz {
                 match std::fs::File::create(&full_path) {
                     Ok(_) => {
                         use std::os::unix::fs::PermissionsExt;
-                        let _ = std::fs::set_permissions(&full_path, std::fs::Permissions::from_mode(mode));
+                        let _ = std::fs::set_permissions(
+                            &full_path,
+                            std::fs::Permissions::from_mode(mode),
+                        );
                         let ino = self.inodes.add_file_at_path(&rel_path, false);
                         let attr = self.getattr_internal(ino);
                         reply.entry(&TTL, &attr, 0);
@@ -368,13 +392,16 @@ impl Filesystem for Hexz {
             if let Some(parent_path) = self.inodes.get_path(parent) {
                 let rel_path = parent_path.join(name);
                 let full_path = base.join(&rel_path);
-                
+
                 let _ = self.remove_whiteout(parent, name);
 
                 match std::fs::create_dir_all(&full_path) {
                     Ok(()) => {
                         use std::os::unix::fs::PermissionsExt;
-                        let _ = std::fs::set_permissions(&full_path, std::fs::Permissions::from_mode(mode));
+                        let _ = std::fs::set_permissions(
+                            &full_path,
+                            std::fs::Permissions::from_mode(mode),
+                        );
                         let ino = self.inodes.add_file_at_path(&rel_path, true);
                         let attr = self.getattr_internal(ino);
                         reply.entry(&TTL, &attr, 0);
@@ -444,29 +471,43 @@ impl Filesystem for Hexz {
         }
 
         let mut entries = self.inodes.readdir(ino);
-        
+
         // Filter out whiteouts and add files from overlay
         if let (Some(base), Some(parent_path)) = (&self.write_layer, self.inodes.get_path(ino)) {
             let full_parent_path = base.join(&parent_path);
-            
+
             // 1. Add files from overlay that aren't in archive
             if let Ok(dir) = std::fs::read_dir(&full_parent_path) {
                 for entry in dir.flatten() {
                     let name = entry.file_name();
-                    if name == ".hexz_whiteout" { continue; }
+                    if name == ".hexz_whiteout" {
+                        continue;
+                    }
                     let name_str = name.to_string_lossy().to_string();
                     if !entries.iter().any(|e| e.name == name_str) {
                         let rel_path = parent_path.join(&name);
-                        let child_ino = self.inodes.add_file_at_path(&rel_path, entry.path().is_dir());
-                        let kind = if entry.path().is_dir() { fuser::FileType::Directory } else { fuser::FileType::RegularFile };
-                        entries.push(DirEntry { inode: child_ino, kind, name: name_str });
+                        let child_ino = self
+                            .inodes
+                            .add_file_at_path(&rel_path, entry.path().is_dir());
+                        let kind = if entry.path().is_dir() {
+                            fuser::FileType::Directory
+                        } else {
+                            fuser::FileType::RegularFile
+                        };
+                        entries.push(DirEntry {
+                            inode: child_ino,
+                            kind,
+                            name: name_str,
+                        });
                     }
                 }
             }
 
             // 2. Remove entries that are whiteouted
             entries.retain(|e| {
-                if e.name == "." || e.name == ".." { return true; }
+                if e.name == "." || e.name == ".." {
+                    return true;
+                }
                 !self.is_whiteout(ino, std::ffi::OsStr::new(&e.name))
             });
         }
@@ -630,12 +671,12 @@ impl Filesystem for Hexz {
             if let Some(parent_path) = self.inodes.get_path(parent) {
                 let rel_path = parent_path.join(name);
                 let full_path = base.join(&rel_path);
-                
+
                 // If in overlay, remove it
                 if full_path.exists() || full_path.is_symlink() {
                     let _ = std::fs::remove_file(full_path);
                 }
-                
+
                 self.inodes.remove_path(&rel_path);
 
                 // Always create whiteout if it exists in archive
@@ -645,7 +686,7 @@ impl Filesystem for Hexz {
                         return;
                     }
                 }
-                
+
                 reply.ok();
                 return;
             }
@@ -664,7 +705,7 @@ impl Filesystem for Hexz {
             if let Some(parent_path) = self.inodes.get_path(parent) {
                 let rel_path = parent_path.join(name);
                 let full_path = base.join(&rel_path);
-                
+
                 if full_path.exists() {
                     if let Err(e) = std::fs::remove_dir_all(full_path) {
                         reply.error(e.raw_os_error().unwrap_or(libc::EIO));
@@ -799,7 +840,7 @@ impl Filesystem for Hexz {
             if let Some(parent_path) = self.inodes.get_path(parent) {
                 let rel_path = parent_path.join(name);
                 let full_path = base.join(&rel_path);
-                
+
                 if let Some(p) = full_path.parent() {
                     let _ = std::fs::create_dir_all(p);
                 }
@@ -830,7 +871,7 @@ impl Filesystem for Hexz {
                 Ok(link) => {
                     use std::os::unix::ffi::OsStrExt;
                     reply.data(link.as_os_str().as_bytes());
-                },
+                }
                 Err(e) => reply.error(e.raw_os_error().unwrap_or(libc::EIO)),
             }
         } else {

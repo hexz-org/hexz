@@ -8,7 +8,7 @@ use common::*;
 use hexz_core::algo::compression::lz4::Lz4Compressor;
 use hexz_core::algo::compression::zstd::ZstdCompressor;
 use hexz_core::{Archive, ArchiveStream};
-use hexz_ops::pack::{PackConfig, PackAnalysisFlags, PackTransformFlags, pack_archive};
+use hexz_ops::pack::{PackAnalysisFlags, PackConfig, PackTransformFlags, pack_archive};
 use hexz_store::local::FileBackend;
 use std::fs;
 use std::sync::Arc;
@@ -51,9 +51,7 @@ fn test_cdc_pack_lz4() {
     assert_eq!(archive.size(ArchiveStream::Main) as usize, data.len());
 
     // Verify data integrity
-    let read_data = archive
-        .read_at(ArchiveStream::Main, 0, data.len())
-        .unwrap();
+    let read_data = archive.read_at(ArchiveStream::Main, 0, data.len()).unwrap();
     assert_bytes_equal(&read_data, &data, "CDC LZ4 round-trip");
 }
 
@@ -86,9 +84,7 @@ fn test_cdc_pack_zstd() {
     let compressor = Box::new(ZstdCompressor::new(3, None));
     let archive = Archive::new(backend, compressor, None).unwrap();
 
-    let read_data = archive
-        .read_at(ArchiveStream::Main, 0, data.len())
-        .unwrap();
+    let read_data = archive.read_at(ArchiveStream::Main, 0, data.len()).unwrap();
     assert_bytes_equal(&read_data, &data, "CDC Zstd round-trip");
 }
 
@@ -114,7 +110,11 @@ fn test_cdc_encrypted() {
         output: output_path.clone(),
         compression: "lz4".to_string(),
         password: Some(password.to_string()),
-        transform: PackTransformFlags { encrypt: true, train_dict: false, ..Default::default() },
+        transform: PackTransformFlags {
+            encrypt: true,
+            train_dict: false,
+            ..Default::default()
+        },
         block_size: 65536,
         min_chunk: Some(16384),
         avg_chunk: Some(65536),
@@ -172,9 +172,7 @@ fn test_cdc_small_chunks() {
     let compressor = Box::new(Lz4Compressor::new());
     let archive = Archive::new(backend, compressor, None).unwrap();
 
-    let read_data = archive
-        .read_at(ArchiveStream::Main, 0, data.len())
-        .unwrap();
+    let read_data = archive.read_at(ArchiveStream::Main, 0, data.len()).unwrap();
     assert_bytes_equal(&read_data, &data, "CDC small chunks round-trip");
 }
 
@@ -221,9 +219,7 @@ fn test_cdc_deduplication() {
     let compressor = Box::new(Lz4Compressor::new());
     let archive = Archive::new(backend, compressor, None).unwrap();
 
-    let read_data = archive
-        .read_at(ArchiveStream::Main, 0, data.len())
-        .unwrap();
+    let read_data = archive.read_at(ArchiveStream::Main, 0, data.len()).unwrap();
     assert_bytes_equal(&read_data, &data, "CDC dedup round-trip");
 }
 
@@ -265,9 +261,7 @@ fn test_cdc_dual_stream() {
     let disk_read = archive.read_at(ArchiveStream::Main, 0, 1024).unwrap();
     assert!(disk_read.iter().all(|&b| b == 0xDD));
 
-    let mem_read = archive
-        .read_at(ArchiveStream::Auxiliary, 0, 1024)
-        .unwrap();
+    let mem_read = archive.read_at(ArchiveStream::Auxiliary, 0, 1024).unwrap();
     assert!(mem_read.iter().all(|&b| b == 0xCC));
 }
 
@@ -323,7 +317,7 @@ fn test_cdc_dcam_zstd_high_compression() {
     for _ in 0..1024 {
         data.extend_from_slice(&pattern);
     }
-    
+
     // Add 24KB of semi-random data (using a predictable loop for simplicity without extra deps)
     for i in 0..24 * 1024 {
         data.push((i % 251) as u8);
@@ -340,7 +334,10 @@ fn test_cdc_dcam_zstd_high_compression() {
         min_chunk: None, // Let DCAM decide
         avg_chunk: None,
         max_chunk: None,
-        analysis: PackAnalysisFlags { use_dcam: true, ..Default::default() },
+        analysis: PackAnalysisFlags {
+            use_dcam: true,
+            ..Default::default()
+        },
         ..Default::default()
     };
 
@@ -349,12 +346,15 @@ fn test_cdc_dcam_zstd_high_compression() {
     // 3. Verify high compression/deduplication
     let metadata = fs::metadata(&output_path).unwrap();
     let archive_size = metadata.len();
-    
+
     // Original size is ~1048 KB.
     // With 1024x redundancy, the pattern part should dedup to ~1KB compressed.
     // Unique data is 24KB.
     // Expected size should be well under 100KB including metadata.
-    assert!(archive_size < 100 * 1024, "Archive size too large: {archive_size} bytes");
+    assert!(
+        archive_size < 100 * 1024,
+        "Archive size too large: {archive_size} bytes"
+    );
 
     // 4. Verify Integrity
     let backend = Arc::new(FileBackend::new(&output_path).unwrap());

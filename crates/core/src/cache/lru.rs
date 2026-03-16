@@ -350,7 +350,6 @@ impl BuildHasher for FxBuildHasher {
 /// `File::with_options()` based on available memory and workload characteristics.
 pub const DEFAULT_L1_CAPACITY: usize = 1000;
 
-
 /// Default capacity for the Index Page cache in number of entries.
 ///
 /// Index pages are metadata structures (typically 4-16 KiB each) that map logical

@@ -4,7 +4,7 @@
 //! correct output and works with various configurations.
 
 use hexz_core::algo::compression::lz4::Lz4Compressor;
-use hexz_ops::pack::{PackConfig, PackAnalysisFlags, PackTransformFlags};
+use hexz_ops::pack::{PackAnalysisFlags, PackConfig, PackTransformFlags};
 use hexz_ops::parallel_pack::{
     CompressedChunk, ParallelPackConfig, RawChunk, process_chunks_parallel,
 };
@@ -211,7 +211,10 @@ fn test_pack_config_parallel_defaults() {
         config.num_workers, 0,
         "num_workers should default to 0 (auto-detect)"
     );
-    assert!(config.analysis.show_progress, "show_progress should default to true");
+    assert!(
+        config.analysis.show_progress,
+        "show_progress should default to true"
+    );
 }
 
 /// Test `PackConfig` can be constructed with parallel settings.
@@ -221,8 +224,14 @@ fn test_pack_config_with_parallel_settings() {
         input: std::path::PathBuf::from("test.img"),
         output: std::path::PathBuf::from("test.hxz"),
         num_workers: 4,
-        transform: PackTransformFlags { parallel: false, ..Default::default() },
-        analysis: PackAnalysisFlags { show_progress: false, ..Default::default() },
+        transform: PackTransformFlags {
+            parallel: false,
+            ..Default::default()
+        },
+        analysis: PackAnalysisFlags {
+            show_progress: false,
+            ..Default::default()
+        },
         ..Default::default()
     };
 

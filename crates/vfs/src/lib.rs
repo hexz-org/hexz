@@ -271,15 +271,16 @@ impl InodeMap {
             let name = component.to_string_lossy().to_string();
             current_path.push(&name);
 
-            let create_new = if let Some(Node::Directory { children, .. }) = self.nodes.get(&current_ino) {
-                if let Some(&child_ino) = children.get(&name) {
-                    current_ino = child_ino;
-                    continue;
-                }
-                true
-            } else {
-                false
-            };
+            let create_new =
+                if let Some(Node::Directory { children, .. }) = self.nodes.get(&current_ino) {
+                    if let Some(&child_ino) = children.get(&name) {
+                        current_ino = child_ino;
+                        continue;
+                    }
+                    true
+                } else {
+                    false
+                };
 
             if create_new {
                 let new_ino = self.next_inode;
@@ -318,10 +319,7 @@ impl InodeMap {
         _ = self.get_or_create_dir(base);
 
         let walk = walkdir::WalkDir::new(metadata_dir);
-        for entry in walk
-            .into_iter()
-            .filter_map(std::result::Result::ok)
-        {
+        for entry in walk.into_iter().filter_map(std::result::Result::ok) {
             if entry.path() == metadata_dir {
                 continue;
             }
@@ -329,7 +327,8 @@ impl InodeMap {
                 let virtual_path = base.join(rel_path);
                 let is_dir = entry.file_type().is_dir();
                 let ino = self.add_file_at_path(&virtual_path, is_dir);
-                _ = self.passthrough_paths
+                _ = self
+                    .passthrough_paths
                     .insert(ino, entry.path().to_path_buf());
             }
         }
@@ -338,10 +337,7 @@ impl InodeMap {
     /// Populates the virtual filesystem from an overlay directory on the real filesystem.
     pub fn populate_from_overlay(&mut self, base: &Path) {
         let walk = walkdir::WalkDir::new(base);
-        for entry in walk
-            .into_iter()
-            .filter_map(std::result::Result::ok)
-        {
+        for entry in walk.into_iter().filter_map(std::result::Result::ok) {
             if entry.path() == base {
                 continue;
             }
@@ -464,9 +460,7 @@ impl InodeMap {
     /// Returns the archive stream, offset, and size for the given file inode.
     pub fn file_info(&self, ino: u64) -> Option<(ArchiveStream, u64, u64)> {
         match self.nodes.get(&ino) {
-            Some(Node::File { offset, size, .. }) => {
-                Some((ArchiveStream::Main, *offset, *size))
-            }
+            Some(Node::File { offset, size, .. }) => Some((ArchiveStream::Main, *offset, *size)),
             _ => None,
         }
     }
@@ -535,7 +529,9 @@ impl InodeMap {
     /// Returns the size, mode, and mtime of the given file inode.
     pub fn file_metadata(&self, ino: u64) -> Option<(u64, u32, u64)> {
         match self.nodes.get(&ino) {
-            Some(Node::File { size, mode, mtime, .. }) => Some((*size, *mode, *mtime)),
+            Some(Node::File {
+                size, mode, mtime, ..
+            }) => Some((*size, *mode, *mtime)),
             _ => None,
         }
     }

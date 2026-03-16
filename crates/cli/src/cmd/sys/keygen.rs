@@ -98,8 +98,16 @@ pub fn run(output_dir: Option<PathBuf>) -> Result<()> {
     println!("{} Generating Ed25519 keypair", "╭".dimmed());
     sign::generate_keypair(&priv_path, &pub_path)?;
 
-    println!("{} Private   {}", "│".dimmed(), priv_path.display().to_string().cyan());
-    println!("{} Public    {}", "╰".dimmed(), pub_path.display().to_string().cyan());
+    println!(
+        "{} Private   {}",
+        "│".dimmed(),
+        priv_path.display().to_string().cyan()
+    );
+    println!(
+        "{} Public    {}",
+        "╰".dimmed(),
+        pub_path.display().to_string().cyan()
+    );
 
     println!("\n  {} Keys generated successfully.", "✓".green());
     println!("  {} Keep the private key safe!", "→".yellow());

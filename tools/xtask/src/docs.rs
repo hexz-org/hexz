@@ -1,4 +1,6 @@
-use crate::common::{cargo, cmd, copy_dir_recursive, find_workspace_root, mkdocs, require_cmd, GREEN, RESET};
+use crate::common::{
+    GREEN, RESET, cargo, cmd, copy_dir_recursive, find_workspace_root, mkdocs, require_cmd,
+};
 use anyhow::Result;
 
 pub fn run() -> Result<()> {

@@ -1,5 +1,5 @@
 use crate::common::{
-    cargo, cmd, copy_dir_recursive, find_workspace_root, require_cmd, BOLD, CYAN, GREEN, RESET,
+    BOLD, CYAN, GREEN, RESET, cargo, cmd, copy_dir_recursive, find_workspace_root, require_cmd,
 };
 use anyhow::{Result, bail};
 

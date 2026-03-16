@@ -444,9 +444,7 @@ pub async fn serve_nbd(snap: Arc<Archive>, port: u16, bind: &str) -> anyhow::Res
     let listener = TcpListener::bind(addr).await?;
 
     tracing::info!("NBD server listening on {}", addr);
-    println!(
-        "NBD server started on {addr}. Use 'nbd-client localhost {port} /dev/nbd0' to mount."
-    );
+    println!("NBD server started on {addr}. Use 'nbd-client localhost {port} /dev/nbd0' to mount.");
 
     loop {
         // Accept incoming NBD connections
@@ -624,9 +622,7 @@ pub async fn serve_nbd(snap: Arc<Archive>, port: u16, bind: &str) -> anyhow::Res
 #[deprecated(note = "Not implemented. Blocks indefinitely without serving requests.")]
 pub async fn serve_s3_gateway(_snap: Arc<Archive>, port: u16) -> anyhow::Result<()> {
     tracing::info!("Starting S3 Gateway on port {}", port);
-    println!(
-        "S3 Gateway started on port {port} (Not fully implemented)"
-    );
+    println!("S3 Gateway started on port {port} (Not fully implemented)");
     std::future::pending::<()>().await; // Keep alive
     unreachable!();
 }

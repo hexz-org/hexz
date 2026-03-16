@@ -48,18 +48,17 @@ pub fn open_local_with_cache(
     let dictionary = header.load_dictionary(backend.as_ref())?;
     let compressor = create_compressor(header.compression, None, dictionary.as_deref());
 
-    let archive_dir = path.parent().unwrap_or_else(|| std::path::Path::new(".")).to_path_buf();
+    let archive_dir = path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .to_path_buf();
     let loader: ParentLoader = Box::new(move |parent_path: &str| {
         let p = std::path::Path::new(parent_path);
         let full_parent_path = if p.exists() {
             p.to_path_buf()
         } else {
             let rel = archive_dir.join(parent_path);
-            if rel.exists() {
-                rel
-            } else {
-                p.to_path_buf()
-            }
+            if rel.exists() { rel } else { p.to_path_buf() }
         };
         let pb: Arc<dyn StorageBackend> = Arc::new(local::MmapBackend::new(&full_parent_path)?);
         Archive::open(pb, None)

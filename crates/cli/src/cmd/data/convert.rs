@@ -5,12 +5,12 @@
 
 use crate::ui::progress::create_progress_bar;
 use anyhow::{Context, Result, bail};
+use colored::Colorize;
 use hexz_core::algo::compression::create_compressor_from_str;
 use hexz_ops::archive_writer::ArchiveWriter;
 use std::io::Read;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use colored::Colorize;
 
 /// Execute the convert command.
 #[allow(clippy::too_many_arguments)]
@@ -23,9 +23,17 @@ pub fn run(
     silent: bool,
 ) -> Result<()> {
     if !silent {
-        println!("{} Converting {}", "╭".dimmed(), input.display().to_string().cyan());
+        println!(
+            "{} Converting {}",
+            "╭".dimmed(),
+            input.display().to_string().cyan()
+        );
         println!("{} Format     {}", "│".dimmed(), format.bright_black());
-        println!("{} Output     {}", "╰".dimmed(), output.display().to_string().bright_black());
+        println!(
+            "{} Output     {}",
+            "╰".dimmed(),
+            output.display().to_string().bright_black()
+        );
         println!();
     }
     match format.to_lowercase().as_str() {
@@ -159,10 +167,11 @@ fn convert_tar(
             "\n  {} Converted {} files ({}) from tar archive",
             "✓".green(),
             source_files.len(),
-            indicatif::HumanBytes(total_bytes).to_string().bright_black(),
+            indicatif::HumanBytes(total_bytes)
+                .to_string()
+                .bright_black(),
         );
     }
 
     Ok(())
 }
-

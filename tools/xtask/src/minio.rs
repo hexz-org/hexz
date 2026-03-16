@@ -1,4 +1,4 @@
-use crate::common::{cmd, CYAN, GREEN, RESET};
+use crate::common::{CYAN, GREEN, RESET, cmd};
 use anyhow::Result;
 
 const CONTAINER_NAME: &str = "hexz-minio";

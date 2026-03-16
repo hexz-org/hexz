@@ -1,10 +1,10 @@
 //! Checkout an archive into a writable workspace.
 
-use anyhow::Result;
-use std::path::Path;
-use colored::Colorize;
-use super::workspace::Workspace;
 use super::mount;
+use super::workspace::Workspace;
+use anyhow::Result;
+use colored::Colorize;
+use std::path::Path;
 
 /// Initializes a workspace and mounts the base archive.
 #[allow(unsafe_code)]
@@ -15,11 +15,19 @@ pub fn run(archive: &Path, path: &Path) -> Result<()> {
 
     std::fs::create_dir_all(path)?;
 
-    println!("{} Initializing workspace at {}", "╭".dimmed(), path.display().to_string().cyan());
+    println!(
+        "{} Initializing workspace at {}",
+        "╭".dimmed(),
+        path.display().to_string().cyan()
+    );
     let ws = Workspace::init(path, Some(archive.to_path_buf()))?;
     let overlay = ws.overlay_path();
 
-    println!("{} Mounting base archive {}", "╰".dimmed(), archive.display().to_string().bright_black());
+    println!(
+        "{} Mounting base archive {}",
+        "╰".dimmed(),
+        archive.display().to_string().bright_black()
+    );
     mount::run(
         &archive.to_string_lossy(),
         path,

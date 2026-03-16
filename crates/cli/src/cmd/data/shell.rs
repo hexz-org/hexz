@@ -1,10 +1,10 @@
 //! Mount an archive and spawn a subshell.
 
 use anyhow::{Context, Result};
+use colored::Colorize;
 use hexz_fuse::fuse::Hexz;
 use std::path::PathBuf;
 use std::process::Command;
-use colored::Colorize;
 
 use super::mount::open_archive;
 
@@ -59,7 +59,7 @@ pub fn run(
     }
 
     let fs = Hexz::new(snap, uid, gid, overlay.clone(), Some(&metadata_dir))?;
-    
+
     let mut options = vec![
         fuser::MountOption::FSName("hexz".to_string()),
         fuser::MountOption::DefaultPermissions,
@@ -69,9 +69,17 @@ pub fn run(
         options.push(fuser::MountOption::RO);
     }
 
-    println!("  {} Mounting archive at {}", "→".yellow(), mountpoint.display().to_string().cyan());
+    println!(
+        "  {} Mounting archive at {}",
+        "→".yellow(),
+        mountpoint.display().to_string().cyan()
+    );
     if let Some(ref o) = overlay {
-        println!("  {} Using overlay: {}", "→".yellow(), o.display().to_string().bright_black());
+        println!(
+            "  {} Using overlay: {}",
+            "→".yellow(),
+            o.display().to_string().bright_black()
+        );
     }
 
     // Mount in background thread
@@ -86,8 +94,16 @@ pub fn run(
 
     // Spawn shell
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
-    println!("  {} Dropping into shell: {}", "→".yellow(), shell.bright_black());
-    println!("  {} Type {} to unmount and exit.", "→".yellow(), "exit".bold());
+    println!(
+        "  {} Dropping into shell: {}",
+        "→".yellow(),
+        shell.bright_black()
+    );
+    println!(
+        "  {} Type {} to unmount and exit.",
+        "→".yellow(),
+        "exit".bold()
+    );
 
     let status = Command::new(&shell)
         .current_dir(&mountpoint)
@@ -100,13 +116,21 @@ pub fn run(
 
     // Cleanup
     println!("  {} Unmounting...", "→".yellow());
-    
+
     // Attempt to unmount
     #[cfg(target_os = "linux")]
     {
         // Try fusermount3 first, then fusermount
-        if Command::new("fusermount3").arg("-u").arg(&mountpoint).status().is_err() {
-            let _ = Command::new("fusermount").arg("-u").arg(&mountpoint).status();
+        if Command::new("fusermount3")
+            .arg("-u")
+            .arg(&mountpoint)
+            .status()
+            .is_err()
+        {
+            let _ = Command::new("fusermount")
+                .arg("-u")
+                .arg(&mountpoint)
+                .status();
         }
     }
     #[cfg(target_os = "macos")]

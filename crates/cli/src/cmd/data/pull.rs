@@ -4,21 +4,23 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use hexz_core::format::header::Header;
 use hexz_core::format::magic::HEADER_SIZE;
+use hexz_store::StorageBackend;
 use hexz_store::local::MmapBackend;
 use hexz_store::remote::{self, RemoteTransport};
-use hexz_store::StorageBackend;
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use super::workspace::Workspace;
 
 /// Execute the `hexz pull` command to fetch archives from a remote.
-pub fn run(remote_name: &str, archive: Option<String>) -> Result<()> {
+pub fn run(remote_name: &str, archive: Option<&str>) -> Result<()> {
     let ws = Workspace::find(&std::env::current_dir()?)?
         .context("Not in a hexz workspace (no .hexz found)")?;
 
     let url = ws.config.remotes.get(remote_name).with_context(|| {
-        format!("Remote '{remote_name}' not found. Add it with `hexz remote add {remote_name} <url>`")
+        format!(
+            "Remote '{remote_name}' not found. Add it with `hexz remote add {remote_name} <url>`"
+        )
     })?;
 
     // Determine the local directory where archives are stored
@@ -35,12 +37,12 @@ pub fn run(remote_name: &str, archive: Option<String>) -> Result<()> {
         url.bright_black()
     );
 
-    let transport = remote::connect(url)
-        .map_err(|e| anyhow::anyhow!("Failed to connect to remote: {e}"))?;
+    let transport =
+        remote::connect(url).map_err(|e| anyhow::anyhow!("Failed to connect to remote: {e}"))?;
 
     let mut pulled = HashSet::new();
 
-    if let Some(ref name) = archive {
+    if let Some(name) = archive {
         // Pull a specific archive
         pull_archive(name, &local_dir, transport.as_ref(), &mut pulled)?;
     } else {
@@ -101,8 +103,7 @@ fn pull_archive(
             for parent_path in &header.parent_paths {
                 let parent_name = Path::new(parent_path)
                     .file_name()
-                    .map(|f| f.to_string_lossy().to_string())
-                    .unwrap_or_else(|| parent_path.clone());
+                    .map_or_else(|| parent_path.clone(), |f| f.to_string_lossy().to_string());
 
                 let parent_local = local_dir.join(&parent_name);
                 if !parent_local.exists() {
@@ -134,7 +135,6 @@ fn read_header(path: &Path) -> Result<Header> {
     let header_bytes = backend
         .read_exact(0, HEADER_SIZE)
         .map_err(|e| anyhow::anyhow!("Cannot read header: {e}"))?;
-    let header: Header =
-        bincode::deserialize(&header_bytes).context("Invalid archive header")?;
+    let header: Header = bincode::deserialize(&header_bytes).context("Invalid archive header")?;
     Ok(header)
 }

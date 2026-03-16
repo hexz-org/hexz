@@ -1,4 +1,4 @@
-use crate::common::{cargo, cmd, find_workspace_root, GREEN, RESET};
+use crate::common::{GREEN, RESET, cargo, cmd, find_workspace_root};
 use anyhow::Result;
 use walkdir::WalkDir;
 

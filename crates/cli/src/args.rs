@@ -328,7 +328,7 @@ pub enum Commands {
         /// Remote name (defaults to "origin")
         #[arg(default_value = "origin")]
         remote: String,
-        
+
         /// Archive to push (defaults to the workspace's base archive)
         archive: Option<PathBuf>,
     },

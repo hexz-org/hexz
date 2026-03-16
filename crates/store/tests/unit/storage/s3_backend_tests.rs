@@ -19,7 +19,9 @@ mod tests {
 
         let handle = thread::spawn(move || {
             for _ in 0..30 {
-                let Ok((stream, _)) = listener.accept() else { break };
+                let Ok((stream, _)) = listener.accept() else {
+                    break;
+                };
                 handle_s3_request(stream, &data);
             }
         });

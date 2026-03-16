@@ -8,8 +8,8 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
-use colored::Colorize;
 use crate::ui::color::{Palette, palette};
+use colored::Colorize;
 
 struct ArchiveInfo {
     path: PathBuf,
@@ -203,10 +203,22 @@ pub fn run(dir: &Path) -> Result<()> {
 
     for (i, &root) in roots.iter().enumerate() {
         let last = i == roots.len() - 1;
-        print_tree(root, &entries, &children, &external_parent, "│ ".dimmed().to_string().as_str(), last, p);
+        print_tree(
+            root,
+            &entries,
+            &children,
+            &external_parent,
+            "│ ".dimmed().to_string().as_str(),
+            last,
+            p,
+        );
     }
 
-    let archive_count = format!("{} archive{}", entries.len(), if entries.len() == 1 { "" } else { "s" });
+    let archive_count = format!(
+        "{} archive{}",
+        entries.len(),
+        if entries.len() == 1 { "" } else { "s" }
+    );
     println!(
         "{} {}   {} on disk",
         "╰".dimmed(),

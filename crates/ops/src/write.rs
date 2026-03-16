@@ -817,14 +817,7 @@ fn write_block_simple<W: Write>(
         compress_buf: &mut compress_buf,
         encrypt_buf: &mut encrypt_buf,
     };
-    write_block(
-        out,
-        chunk,
-        block_idx,
-        current_offset,
-        dedup_map,
-        &mut ctx,
-    )
+    write_block(out, chunk, block_idx, current_offset, dedup_map, &mut ctx)
 }
 
 /// Checks if a chunk consists entirely of zero bytes.

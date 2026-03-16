@@ -119,9 +119,7 @@ fn test_pack_disk_and_memory() {
     assert!(disk_data.iter().all(|&b| b == 0xAA));
 
     // Verify auxiliary stream data
-    let mem_data = archive
-        .read_at(ArchiveStream::Auxiliary, 0, 1024)
-        .unwrap();
+    let mem_data = archive.read_at(ArchiveStream::Auxiliary, 0, 1024).unwrap();
     assert!(mem_data.iter().all(|&b| b == 0xBB));
 }
 
@@ -164,9 +162,7 @@ fn test_pack_varied_data() {
     for i in 0..16 {
         let expected_pattern = (i * 17) as u8;
         let offset = i * 65536;
-        let data = archive
-            .read_at(ArchiveStream::Main, offset, 1024)
-            .unwrap();
+        let data = archive.read_at(ArchiveStream::Main, offset, 1024).unwrap();
         assert!(
             data.iter().all(|&b| b == expected_pattern),
             "Block {i} has wrong pattern"
@@ -242,15 +238,11 @@ fn test_read_beyond_end() {
     let archive = Archive::new(backend, compressor, None).unwrap();
 
     // Read starting beyond end should return empty
-    let data = archive
-        .read_at(ArchiveStream::Main, 10000, 1000)
-        .unwrap();
+    let data = archive.read_at(ArchiveStream::Main, 10000, 1000).unwrap();
     assert_eq!(data.len(), 0);
 
     // Read overlapping end should return partial data
-    let data = archive
-        .read_at(ArchiveStream::Main, 4000, 1000)
-        .unwrap();
+    let data = archive.read_at(ArchiveStream::Main, 4000, 1000).unwrap();
     assert_eq!(data.len(), 96); // Only 96 bytes available
 }
 
@@ -386,7 +378,11 @@ fn test_pack_with_zstd_dictionary() {
         output: output_path.clone(),
         compression: "zstd".to_string(),
         password: None,
-        transform: PackTransformFlags { encrypt: false, train_dict: true, ..Default::default() },
+        transform: PackTransformFlags {
+            encrypt: false,
+            train_dict: true,
+            ..Default::default()
+        },
         block_size: 65536,
         ..Default::default()
     };
@@ -421,9 +417,7 @@ fn test_pack_with_4kb_blocks() {
     let compressor = Box::new(Lz4Compressor::new());
     let archive = Archive::new(backend, compressor, None).unwrap();
 
-    let data = archive
-        .read_at(ArchiveStream::Main, 0, 256 * 1024)
-        .unwrap();
+    let data = archive.read_at(ArchiveStream::Main, 0, 256 * 1024).unwrap();
     assert_eq!(data.len(), 256 * 1024);
 }
 
@@ -505,9 +499,7 @@ fn test_pack_random_data() {
     let compressor = Box::new(Lz4Compressor::new());
     let archive = Archive::new(backend, compressor, None).unwrap();
 
-    let data = archive
-        .read_at(ArchiveStream::Main, 0, 512 * 1024)
-        .unwrap();
+    let data = archive.read_at(ArchiveStream::Main, 0, 512 * 1024).unwrap();
     assert_bytes_equal(&data, &random_data, "random data round-trip");
 }
 
@@ -567,9 +559,7 @@ fn test_pack_structured_data() {
     let compressor = Box::new(ZstdCompressor::new(3, None));
     let archive = Archive::new(backend, compressor, None).unwrap();
 
-    let data = archive
-        .read_at(ArchiveStream::Main, 100000, 10000)
-        .unwrap();
+    let data = archive.read_at(ArchiveStream::Main, 100000, 10000).unwrap();
     assert_bytes_equal(&data, &structured_data[100000..110000], "structured data");
 }
 
@@ -746,9 +736,7 @@ fn test_pack_equal_disk_and_memory() {
     let archive = Archive::new(backend, compressor, None).unwrap();
 
     let disk_data = archive.read_at(ArchiveStream::Main, 0, 1024).unwrap();
-    let mem_data = archive
-        .read_at(ArchiveStream::Auxiliary, 0, 1024)
-        .unwrap();
+    let mem_data = archive.read_at(ArchiveStream::Auxiliary, 0, 1024).unwrap();
 
     assert!(disk_data.iter().all(|&b| b == 0xEE));
     assert!(mem_data.iter().all(|&b| b == 0xFF));
@@ -808,9 +796,7 @@ fn test_pack_file_not_multiple_of_block_size() {
     let archive = Archive::new(backend, compressor, None).unwrap();
 
     assert_eq!(archive.size(ArchiveStream::Main), 100000);
-    let data = archive
-        .read_at(ArchiveStream::Main, 0, 100000)
-        .unwrap();
+    let data = archive.read_at(ArchiveStream::Main, 0, 100000).unwrap();
     assert_eq!(data.len(), 100000);
 }
 
@@ -873,9 +859,7 @@ fn test_pack_verify_all_patterns() {
     for i in 0..8 {
         let expected_pattern = (i * 31) as u8;
         let offset = i * 65536;
-        let data = archive
-            .read_at(ArchiveStream::Main, offset, 65536)
-            .unwrap();
+        let data = archive.read_at(ArchiveStream::Main, offset, 65536).unwrap();
         verify_pattern(&data, expected_pattern);
     }
 }
@@ -913,9 +897,7 @@ fn test_read_at_into_uninit_matches_read_at() {
                 .unwrap();
             continue;
         }
-        let expected = archive
-            .read_at(ArchiveStream::Main, offset, len)
-            .unwrap();
+        let expected = archive.read_at(ArchiveStream::Main, offset, len).unwrap();
         let mut uninit_buf = vec![MaybeUninit::uninit(); len];
         archive
             .read_at_into_uninit(ArchiveStream::Main, offset, &mut uninit_buf)
@@ -1038,9 +1020,7 @@ fn test_parallel_read_consistency() {
         (100, 256 * 1024),
     ];
     for (offset, len) in cases {
-        let expected = archive
-            .read_at(ArchiveStream::Main, offset, len)
-            .unwrap();
+        let expected = archive.read_at(ArchiveStream::Main, offset, len).unwrap();
         let mut buf = vec![0u8; len];
         archive
             .read_at_into_uninit_bytes(ArchiveStream::Main, offset, &mut buf)

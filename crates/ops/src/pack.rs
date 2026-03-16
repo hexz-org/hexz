@@ -284,19 +284,19 @@ use hexz_common::crypto::KeyDerivationParams;
 use hexz_common::{Error, Result};
 use hexz_core::api::file::Archive;
 use hexz_core::format::header::Header;
+use ignore::WalkBuilder;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use walkdir::WalkDir;
-use ignore::WalkBuilder;
 
-use crate::parallel_pack::{CompressedChunk, RawChunk};
 use crate::archive_writer::ArchiveWriter;
+use crate::parallel_pack::{CompressedChunk, RawChunk};
 use hexz_core::algo::compression::{create_compressor_from_str, zstd::ZstdCompressor};
 use hexz_core::algo::dedup::cdc::{StreamChunker, analyze_stream};
 use hexz_core::algo::dedup::dcam::{DedupeParams, optimize_params};
-use hexz_core::algo::encryption::{aes_gcm::AesGcmEncryptor, Encryptor};
+use hexz_core::algo::encryption::{Encryptor, aes_gcm::AesGcmEncryptor};
 use hexz_core::api::manifest::{ArchiveManifest, FileEntry};
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
@@ -396,11 +396,11 @@ impl Default for PackConfig {
             min_chunk: None,
             avg_chunk: None,
             max_chunk: None,
-            num_workers: 0,      // Auto-detect CPU cores
+            num_workers: 0, // Auto-detect CPU cores
             transform: PackTransformFlags {
                 encrypt: false,
                 train_dict: false,
-                parallel: true,      // Enable by default for performance
+                parallel: true, // Enable by default for performance
             },
             analysis: PackAnalysisFlags {
                 show_progress: true, // Show progress by default
@@ -523,7 +523,12 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
             if let Ok(header) = Header::read_from(&mut reader) {
                 if let Some((f, m, z)) = header.cdc_params {
                     let avg = 1u32 << f;
-                    tracing::debug!("Inheriting CDC params from base archive: f={} m={} z={}", f, m, z);
+                    tracing::debug!(
+                        "Inheriting CDC params from base archive: f={} m={} z={}",
+                        f,
+                        m,
+                        z
+                    );
                     return Ok(from_sizes(m, avg, z));
                 }
             }
@@ -541,7 +546,12 @@ pub fn resolve_cdc_params(path: &Path, config: &PackConfig) -> Result<DedupePara
             (CDC_DEFAULT_MIN, CDC_DEFAULT_AVG, CDC_DEFAULT_MAX)
         } else {
             let stats = analyze_stream(file, &baseline)?;
-            let optimized = optimize_params(file_size, stats.unique_bytes, &baseline, config.analysis.dcam_optimal);
+            let optimized = optimize_params(
+                file_size,
+                stats.unique_bytes,
+                &baseline,
+                config.analysis.dcam_optimal,
+            );
             let p = &optimized.params;
             let avg = (2u32).pow(p.f);
             tracing::debug!(
@@ -777,7 +787,12 @@ where
                 .into_iter()
                 .filter_map(std::result::Result::ok)
                 .find(|e| e.file_type().is_file())
-                .ok_or_else(|| Error::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "No files found for dictionary training")))?
+                .ok_or_else(|| {
+                    Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "No files found for dictionary training",
+                    ))
+                })?
                 .path()
                 .to_path_buf()
         } else {
@@ -846,11 +861,12 @@ where
         )?)
     } else {
         let total_size = input_path.metadata()?.len();
-        let progress_bar = if config.analysis.show_progress && progress_callback.is_none() && total_size > 0 {
-            Some(crate::progress::PackProgress::new(total_size, "Packing"))
-        } else {
-            None
-        };
+        let progress_bar =
+            if config.analysis.show_progress && progress_callback.is_none() && total_size > 0 {
+                Some(crate::progress::PackProgress::new(total_size, "Packing"))
+            } else {
+                None
+            };
 
         let cb = |pos: u64, total: u64| {
             if let Some(ref pb) = progress_bar {
@@ -928,10 +944,14 @@ where
         if path.components().any(|c| c.as_os_str() == ".hexz") {
             continue;
         }
-        let rel_path = path.strip_prefix(root)
+        let rel_path = path
+            .strip_prefix(root)
             .map_err(|e| Error::Format(e.to_string()))?
-            .to_string_lossy().into_owned();
-        let metadata = entry.metadata().map_err(|e| Error::Io(std::io::Error::other(e.to_string())))?;
+            .to_string_lossy()
+            .into_owned();
+        let metadata = entry
+            .metadata()
+            .map_err(|e| Error::Io(std::io::Error::other(e.to_string())))?;
 
         // A file named "memory" at the directory root goes to the Auxiliary stream
         if rel_path == "memory" {
@@ -945,11 +965,15 @@ where
     let aux_size: u64 = aux_entries.iter().map(|(_, _, m)| m.len()).sum();
     let total_size = main_size + aux_size;
 
-    let progress_bar = if config.analysis.show_progress && progress_callback.is_none() && total_size > 0 {
-        Some(crate::progress::PackProgress::new(total_size, "Packing Directory"))
-    } else {
-        None
-    };
+    let progress_bar =
+        if config.analysis.show_progress && progress_callback.is_none() && total_size > 0 {
+            Some(crate::progress::PackProgress::new(
+                total_size,
+                "Packing Directory",
+            ))
+        } else {
+            None
+        };
 
     // Pack main stream
     let mut files = Vec::new();
@@ -964,8 +988,21 @@ where
             path: rel_path.clone(),
             offset: current_logical_offset,
             size,
-            mode: { #[cfg(unix)] { metadata.mode() } #[cfg(not(unix))] { 0o644 } },
-            mtime: metadata.modified()?.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+            mode: {
+                #[cfg(unix)]
+                {
+                    metadata.mode()
+                }
+                #[cfg(not(unix))]
+                {
+                    0o644
+                }
+            },
+            mtime: metadata
+                .modified()?
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
         };
 
         let cur_offset = current_logical_offset;
@@ -999,8 +1036,21 @@ where
                 path: rel_path.clone(),
                 offset: 0,
                 size,
-                mode: { #[cfg(unix)] { metadata.mode() } #[cfg(not(unix))] { 0o644 } },
-                mtime: metadata.modified()?.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                mode: {
+                    #[cfg(unix)]
+                    {
+                        metadata.mode()
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        0o644
+                    }
+                },
+                mtime: metadata
+                    .modified()?
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
             };
 
             let cb = |pos: u64, _total: u64| {
@@ -1071,12 +1121,12 @@ pub fn extract_archive(
     output_path: &Path,
     password: Option<String>,
 ) -> Result<()> {
-    use hexz_core::algo::encryption::aes_gcm::AesGcmEncryptor;
-    use hexz_core::algo::compression::create_compressor;
     use hexz_core::ArchiveStream;
-    use hexz_store::local::MmapBackend;
-    use hexz_core::format::header::Header;
+    use hexz_core::algo::compression::create_compressor;
+    use hexz_core::algo::encryption::aes_gcm::AesGcmEncryptor;
     use hexz_core::api::file::ParentLoader;
+    use hexz_core::format::header::Header;
+    use hexz_store::local::MmapBackend;
 
     let backend = Arc::new(MmapBackend::new(input_path)?);
     let header = Header::read_from_backend(backend.as_ref())?;
@@ -1092,10 +1142,13 @@ pub fn extract_archive(
     let compressor = create_compressor(header.compression, None, dictionary.as_deref());
 
     // Provide a parent loader that resolves relative to the input archive
-    let archive_dir = input_path.parent().unwrap_or_else(|| Path::new(".")).to_path_buf();
+    let archive_dir = input_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
     let loader: ParentLoader = Box::new(move |parent_path: &str| {
         let p = Path::new(parent_path);
-        
+
         // Try resolving in this order:
         // 1. As provided (if absolute or relative to CWD)
         // 2. Relative to the archive being extracted
@@ -1110,25 +1163,20 @@ pub fn extract_archive(
                 p.to_path_buf()
             }
         };
-        
-        let pb: Arc<dyn hexz_core::store::StorageBackend> = Arc::new(MmapBackend::new(&full_parent_path)?);
+
+        let pb: Arc<dyn hexz_core::store::StorageBackend> =
+            Arc::new(MmapBackend::new(&full_parent_path)?);
         Archive::open(pb, None)
     });
 
-    let archive = Archive::with_cache_and_loader(
-        backend,
-        compressor,
-        encryptor,
-        None,
-        None,
-        Some(&loader),
-    )?;
+    let archive =
+        Archive::with_cache_and_loader(backend, compressor, encryptor, None, None, Some(&loader))?;
 
     // Check for manifest in metadata
     if let Some(metadata) = &archive.metadata {
         if let Ok(manifest) = serde_json::from_slice::<ArchiveManifest>(metadata) {
             std::fs::create_dir_all(output_path)?;
-            
+
             for file in manifest.files {
                 let out_path = output_path.join(&file.path);
                 if let Some(parent) = out_path.parent() {
@@ -1142,7 +1190,10 @@ pub fn extract_archive(
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt;
-                    std::fs::set_permissions(&out_path, std::fs::Permissions::from_mode(file.mode))?;
+                    std::fs::set_permissions(
+                        &out_path,
+                        std::fs::Permissions::from_mode(file.mode),
+                    )?;
                 }
             }
             return Ok(());
@@ -1152,7 +1203,7 @@ pub fn extract_archive(
     // Fallback: extract Main stream to a single file
     let mut out_file = File::create(output_path)?;
     let size = archive.size(ArchiveStream::Main);
-    
+
     // Extract in chunks to avoid huge memory usage
     let chunk_size = 1024 * 1024; // 1MB
     let mut pos = 0u64;
@@ -1574,7 +1625,10 @@ mod tests {
             output: PathBuf::from("output.hxz"),
             compression: "zstd".to_string(),
             password: Some("secret".to_string()),
-            transform: PackTransformFlags { encrypt: true, ..Default::default() },
+            transform: PackTransformFlags {
+                encrypt: true,
+                ..Default::default()
+            },
             ..Default::default()
         };
 

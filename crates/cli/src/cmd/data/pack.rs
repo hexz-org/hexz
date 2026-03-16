@@ -2,10 +2,10 @@
 
 use crate::ui::progress::create_progress_bar;
 use anyhow::Result;
-use hexz_ops::pack::{PackConfig, PackAnalysisFlags, PackTransformFlags, pack_archive};
+use colored::Colorize;
+use hexz_ops::pack::{PackAnalysisFlags, PackConfig, PackTransformFlags, pack_archive};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use colored::Colorize;
 
 /// Execute the pack command to create a Hexz archive archive.
 #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
@@ -51,10 +51,22 @@ pub fn run(
 
     // Setup UI
     if !silent {
-        println!("{} Packing {}", "╭".dimmed(), output.display().to_string().cyan());
-        println!("{} Input   {}", "│".dimmed(), input_path.display().to_string().bright_black());
+        println!(
+            "{} Packing {}",
+            "╭".dimmed(),
+            output.display().to_string().cyan()
+        );
+        println!(
+            "{} Input   {}",
+            "│".dimmed(),
+            input_path.display().to_string().bright_black()
+        );
         if let Some(ref b) = base {
-            println!("{} Base    {}", "│".dimmed(), b.display().to_string().bright_black());
+            println!(
+                "{} Base    {}",
+                "│".dimmed(),
+                b.display().to_string().bright_black()
+            );
         }
         println!("{}", "╰".dimmed());
     }

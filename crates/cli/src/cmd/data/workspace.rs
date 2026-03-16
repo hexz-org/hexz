@@ -40,7 +40,10 @@ impl Workspace {
         let id = format!("{:x}", s.finish());
 
         let home = std::env::var("HOME").context("HOME not set")?;
-        let hexz_root = PathBuf::from(home).join(".hexz").join("workspaces").join(&id);
+        let hexz_root = PathBuf::from(home)
+            .join(".hexz")
+            .join("workspaces")
+            .join(&id);
 
         std::fs::create_dir_all(&hexz_root)?;
 
@@ -103,16 +106,19 @@ impl Workspace {
             current.hash(&mut s);
             let id = format!("{:x}", s.finish());
             let home = std::env::var("HOME").context("HOME not set")?;
-            let hexz_root = PathBuf::from(home).join(".hexz").join("workspaces").join(id);
+            let hexz_root = PathBuf::from(home)
+                .join(".hexz")
+                .join("workspaces")
+                .join(id);
             let config_path = hexz_root.join("config.json");
 
             if config_path.exists() {
-                 let f = std::fs::File::open(config_path)?;
-                 let config: WorkspaceConfig = serde_json::from_reader(f)?;
-                 return Ok(Some(Self {
-                     root: current,
-                     config,
-                 }));
+                let f = std::fs::File::open(config_path)?;
+                let config: WorkspaceConfig = serde_json::from_reader(f)?;
+                return Ok(Some(Self {
+                    root: current,
+                    config,
+                }));
             }
 
             if let Some(parent) = current.parent() {
@@ -139,6 +145,9 @@ impl Workspace {
         self.root.hash(&mut s);
         let id = format!("{:x}", s.finish());
         let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
-        PathBuf::from(home).join(".hexz").join("workspaces").join(id)
+        PathBuf::from(home)
+            .join(".hexz")
+            .join("workspaces")
+            .join(id)
     }
 }

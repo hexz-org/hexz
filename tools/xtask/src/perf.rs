@@ -1,4 +1,4 @@
-use crate::common::{cargo, cmd, find_workspace_root, require_cmd, BOLD, CYAN, GREEN, RESET};
+use crate::common::{BOLD, CYAN, GREEN, RESET, cargo, cmd, find_workspace_root, require_cmd};
 use anyhow::{Result, anyhow};
 
 #[derive(Clone, Copy, clap::Subcommand)]
@@ -49,7 +49,9 @@ fn rust(size_mb: u32) -> Result<()> {
         .args([
             "record",
             "--",
-            root.join("target/release/hexz").to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
+            root.join("target/release/hexz")
+                .to_str()
+                .ok_or_else(|| anyhow!("non-UTF-8 path"))?,
             "data",
             "pack",
             "--input",

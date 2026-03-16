@@ -1,15 +1,15 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, unused_results))]
 //! Python bindings for hexz archive operations.
 
-use pyo3::prelude::*;
-use pyo3::types::PyBytes;
-use pyo3::exceptions::{PyIOError, PyValueError};
 use hexz_core::api::file::{Archive as CoreArchive, ArchiveStream};
 use hexz_core::api::manifest::{ArchiveManifest, FileEntry};
+use hexz_ops::pack::{PackAnalysisFlags, PackConfig, pack_archive};
 use hexz_store::local::MmapBackend;
-use hexz_ops::pack::{pack_archive, PackConfig, PackAnalysisFlags};
-use std::sync::Arc;
+use pyo3::exceptions::{PyIOError, PyValueError};
+use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 #[pyclass]
 struct Archive {
@@ -23,8 +23,10 @@ impl Archive {
     #[pyo3(signature = (path, cache_size=None))]
     #[allow(clippy::needless_pass_by_value)]
     fn new(path: String, cache_size: Option<String>) -> PyResult<Self> {
-        let backend = Arc::new(MmapBackend::new(path.as_ref())
-            .map_err(|e| PyIOError::new_err(format!("Failed to open archive: {e}")))?);
+        let backend = Arc::new(
+            MmapBackend::new(path.as_ref())
+                .map_err(|e| PyIOError::new_err(format!("Failed to open archive: {e}")))?,
+        );
 
         let cache_capacity = if let Some(s) = cache_size {
             parse_size(&s).map_err(PyValueError::new_err)?
@@ -35,33 +37,41 @@ impl Archive {
         let inner = CoreArchive::open_with_cache(
             backend,
             None, // Auto-detect encryptor (needs password if encrypted)
-            if cache_capacity > 0 { Some(cache_capacity) } else { None },
+            if cache_capacity > 0 {
+                Some(cache_capacity)
+            } else {
+                None
+            },
             None, // Default prefetch
-        ).map_err(|e| PyIOError::new_err(format!("Failed to initialize archive: {e}")))?;
+        )
+        .map_err(|e| PyIOError::new_err(format!("Failed to initialize archive: {e}")))?;
 
-        let manifest = inner.metadata.as_ref().and_then(|m| {
-            serde_json::from_slice::<ArchiveManifest>(m).ok()
-        });
+        let manifest = inner
+            .metadata
+            .as_ref()
+            .and_then(|m| serde_json::from_slice::<ArchiveManifest>(m).ok());
 
-        Ok(Self {
-            inner,
-            manifest,
-        })
+        Ok(Self { inner, manifest })
     }
 
     fn namelist(&self) -> Vec<String> {
-        self.manifest.as_ref()
+        self.manifest
+            .as_ref()
             .map(|m| m.files.iter().map(|f| f.path.clone()).collect())
             .unwrap_or_default()
     }
 
     #[allow(clippy::needless_pass_by_value)]
     fn read(&self, py: Python<'_>, name: String) -> PyResult<PyObject> {
-        let entry = self.manifest.as_ref()
+        let entry = self
+            .manifest
+            .as_ref()
             .and_then(|m| m.find_file(&name))
             .ok_or_else(|| PyValueError::new_err(format!("File not found: {name}")))?;
 
-        let data = self.inner.read_at(ArchiveStream::Main, entry.offset, entry.size as usize)
+        let data = self
+            .inner
+            .read_at(ArchiveStream::Main, entry.offset, entry.size as usize)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
         Ok(PyBytes::new(py, &data).into())
@@ -69,7 +79,9 @@ impl Archive {
 
     #[allow(clippy::needless_pass_by_value)]
     fn open(&self, name: String) -> PyResult<File> {
-        let entry = self.manifest.as_ref()
+        let entry = self
+            .manifest
+            .as_ref()
             .and_then(|m| m.find_file(&name))
             .ok_or_else(|| PyValueError::new_err(format!("File not found: {name}")))?;
 
@@ -111,9 +123,11 @@ impl File {
             return Ok(PyBytes::new(py, &[]).into());
         }
 
-        let data = self.archive.read_at(ArchiveStream::Main, self.entry.offset + self.pos, to_read)
+        let data = self
+            .archive
+            .read_at(ArchiveStream::Main, self.entry.offset + self.pos, to_read)
             .map_err(|e| PyIOError::new_err(e.to_string()))?;
-        
+
         self.pos += to_read as u64;
         Ok(PyBytes::new(py, &data).into())
     }
@@ -121,8 +135,8 @@ impl File {
     #[pyo3(signature = (offset, whence=0))]
     fn seek(&mut self, offset: i64, whence: i32) -> PyResult<u64> {
         let new_pos = match whence {
-            0 => offset, // SEEK_SET
-            1 => self.pos as i64 + offset, // SEEK_CUR
+            0 => offset,                          // SEEK_SET
+            1 => self.pos as i64 + offset,        // SEEK_CUR
             2 => self.entry.size as i64 + offset, // SEEK_END
             _ => return Err(PyValueError::new_err("invalid whence")),
         };
@@ -158,13 +172,16 @@ fn pack(input: String, output: String, base: Option<String>, compression: String
         output: PathBuf::from(output),
         base: base.map(PathBuf::from),
         compression,
-        analysis: PackAnalysisFlags { use_dcam: true, ..Default::default() },
+        analysis: PackAnalysisFlags {
+            use_dcam: true,
+            ..Default::default()
+        },
         ..Default::default()
     };
 
     pack_archive(&config, None::<&fn(u64, u64)>)
         .map_err(|e| PyIOError::new_err(format!("Packing failed: {e}")))?;
-    
+
     Ok(())
 }
 

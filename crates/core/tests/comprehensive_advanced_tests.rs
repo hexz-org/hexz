@@ -1,4 +1,12 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, unused_results, clippy::unreadable_literal, clippy::significant_drop_tightening, clippy::needless_pass_by_value, clippy::float_cmp)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    unused_results,
+    clippy::unreadable_literal,
+    clippy::significant_drop_tightening,
+    clippy::needless_pass_by_value,
+    clippy::float_cmp
+)]
 //! Comprehensive Advanced Testing
 //!
 //! Real, working advanced tests for the Hexz codebase covering:
@@ -481,10 +489,7 @@ mod performance_regression_tests {
         let elapsed = start.elapsed();
 
         // Blake3 should hash 100MB in under 1 second
-        assert!(
-            elapsed.as_secs() < 1,
-            "Hashing took too long: {elapsed:?}"
-        );
+        assert!(elapsed.as_secs() < 1, "Hashing took too long: {elapsed:?}");
     }
 
     /// Test multiple operations don't degrade over time
@@ -503,8 +508,16 @@ mod performance_regression_tests {
         }
 
         // First and last operations should have similar performance
-        let first_avg: u128 = times[0..10].iter().map(std::time::Duration::as_micros).sum::<u128>() / 10;
-        let last_avg: u128 = times[90..100].iter().map(std::time::Duration::as_micros).sum::<u128>() / 10;
+        let first_avg: u128 = times[0..10]
+            .iter()
+            .map(std::time::Duration::as_micros)
+            .sum::<u128>()
+            / 10;
+        let last_avg: u128 = times[90..100]
+            .iter()
+            .map(std::time::Duration::as_micros)
+            .sum::<u128>()
+            / 10;
 
         // Last operations should not be more than 2x slower
         assert!(

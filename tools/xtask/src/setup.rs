@@ -1,4 +1,4 @@
-use crate::common::{cargo, check_mark, cmd, find_workspace_root, BOLD, CYAN, GREEN, RED, RESET};
+use crate::common::{BOLD, CYAN, GREEN, RED, RESET, cargo, check_mark, cmd, find_workspace_root};
 use anyhow::{Result, anyhow, bail};
 
 #[derive(Clone, Copy, clap::Subcommand)]

@@ -115,8 +115,16 @@ use std::path::Path;
 /// ```
 pub fn run(key_path: &Path, image_path: &Path) -> Result<()> {
     println!("{} Signing archive", "╭".dimmed());
-    println!("{} Image     {}", "│".dimmed(), image_path.display().to_string().cyan());
-    println!("{} Key       {}", "╰".dimmed(), key_path.display().to_string().bright_black());
+    println!(
+        "{} Image     {}",
+        "│".dimmed(),
+        image_path.display().to_string().cyan()
+    );
+    println!(
+        "{} Key       {}",
+        "╰".dimmed(),
+        key_path.display().to_string().bright_black()
+    );
 
     sign_archive(image_path, key_path)?;
     println!("\n  {} Signature written successfully.", "✓".green());

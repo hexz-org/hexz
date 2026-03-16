@@ -57,14 +57,13 @@ impl S3Remote {
     /// Connect to an S3 remote given an `s3://bucket/prefix` URL.
     ///
     /// Uses `AWS_REGION` (default `us-east-1`), `AWS_ENDPOINT` (optional, for
-    /// MinIO etc.), and standard `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
+    /// `MinIO` etc.), and standard `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
     /// credentials.
     pub fn connect(url: &str) -> Result<Self> {
         let handle = global_handle().map_err(Error::Io)?;
         let (bucket_name, prefix) = parse_s3_url(url)?;
 
-        let region_name =
-            std::env::var("AWS_REGION").unwrap_or_else(|_| "us-east-1".to_string());
+        let region_name = std::env::var("AWS_REGION").unwrap_or_else(|_| "us-east-1".to_string());
 
         let region = if let Ok(endpoint) = std::env::var("AWS_ENDPOINT") {
             Region::Custom {
@@ -72,9 +71,12 @@ impl S3Remote {
                 endpoint,
             }
         } else {
-            region_name
-                .parse::<Region>()
-                .map_err(|e| Error::Io(IoError::new(ErrorKind::InvalidInput, format!("Invalid region: {e}"))))?
+            region_name.parse::<Region>().map_err(|e| {
+                Error::Io(IoError::new(
+                    ErrorKind::InvalidInput,
+                    format!("Invalid region: {e}"),
+                ))
+            })?
         };
 
         let credentials = Credentials::default().map_err(|e| {
@@ -115,7 +117,11 @@ impl RemoteTransport for S3Remote {
                 for list in &results {
                     for obj in &list.contents {
                         let name = obj.key.strip_prefix(&self.prefix).unwrap_or(&obj.key);
-                        if name.ends_with(".hxz") && !name.contains('/') {
+                        if std::path::Path::new(name)
+                            .extension()
+                            .is_some_and(|ext| ext.eq_ignore_ascii_case("hxz"))
+                            && !name.contains('/')
+                        {
                             archives.push(RemoteArchiveInfo {
                                 name: name.to_string(),
                                 size: obj.size,
@@ -156,11 +162,10 @@ impl RemoteTransport for S3Remote {
 
         tokio::task::block_in_place(|| {
             self.handle.block_on(async {
-                let response = self
-                    .bucket
-                    .get_object(&key)
-                    .await
-                    .map_err(|e| Error::Io(IoError::other(format!("S3 download error: {e}"))))?;
+                let response =
+                    self.bucket.get_object(&key).await.map_err(|e| {
+                        Error::Io(IoError::other(format!("S3 download error: {e}")))
+                    })?;
 
                 let code = response.status_code();
                 if code != 200 {

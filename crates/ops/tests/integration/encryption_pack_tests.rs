@@ -35,7 +35,11 @@ fn create_encrypted_archive(
         output: output_path.clone(),
         compression: compression.to_string(),
         password: Some(password.to_string()),
-        transform: PackTransformFlags { encrypt: true, train_dict: false, ..Default::default() },
+        transform: PackTransformFlags {
+            encrypt: true,
+            train_dict: false,
+            ..Default::default()
+        },
         block_size: 65536,
         ..Default::default()
     };
@@ -152,7 +156,11 @@ fn test_encrypted_varied_data() {
         output: output_path.clone(),
         compression: "lz4".to_string(),
         password: Some(password.to_string()),
-        transform: PackTransformFlags { encrypt: true, train_dict: false, ..Default::default() },
+        transform: PackTransformFlags {
+            encrypt: true,
+            train_dict: false,
+            ..Default::default()
+        },
         block_size: 65536,
         ..Default::default()
     };
@@ -191,7 +199,11 @@ fn test_encrypted_dual_stream() {
         output: output_path.clone(),
         compression: "lz4".to_string(),
         password: Some(password.to_string()),
-        transform: PackTransformFlags { encrypt: true, train_dict: false, ..Default::default() },
+        transform: PackTransformFlags {
+            encrypt: true,
+            train_dict: false,
+            ..Default::default()
+        },
         block_size: 65536,
         ..Default::default()
     };
@@ -206,9 +218,7 @@ fn test_encrypted_dual_stream() {
     let disk_read = archive.read_at(ArchiveStream::Main, 0, 1024).unwrap();
     assert!(disk_read.iter().all(|&b| b == 0xDD));
 
-    let mem_read = archive
-        .read_at(ArchiveStream::Auxiliary, 0, 1024)
-        .unwrap();
+    let mem_read = archive.read_at(ArchiveStream::Auxiliary, 0, 1024).unwrap();
     assert!(mem_read.iter().all(|&b| b == 0xCC));
 }
 
@@ -226,7 +236,11 @@ fn test_encrypted_pack_no_password_fails() {
         output: output_path,
         compression: "lz4".to_string(),
         password: None, // Missing password
-        transform: PackTransformFlags { encrypt: true, train_dict: false, ..Default::default() },
+        transform: PackTransformFlags {
+            encrypt: true,
+            train_dict: false,
+            ..Default::default()
+        },
         block_size: 65536,
         ..Default::default()
     };
@@ -273,8 +287,6 @@ fn test_encrypted_random_data() {
     let snap_path = create_encrypted_archive(&temp_dir, &data, password, "lz4");
     let archive = open_encrypted_archive(&snap_path, password);
 
-    let read_data = archive
-        .read_at(ArchiveStream::Main, 0, data.len())
-        .unwrap();
+    let read_data = archive.read_at(ArchiveStream::Main, 0, data.len()).unwrap();
     assert_bytes_equal(&read_data, &data, "encrypted random data round-trip");
 }

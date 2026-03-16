@@ -39,8 +39,10 @@ struct WorkspacePackage {
 }
 
 pub fn find_workspace_root() -> Result<PathBuf> {
-    let start = std::env::var("CARGO_MANIFEST_DIR")
-        .map_or_else(|_| std::env::current_dir().context("cannot determine current directory"), |v| Ok(PathBuf::from(v)))?;
+    let start = std::env::var("CARGO_MANIFEST_DIR").map_or_else(
+        |_| std::env::current_dir().context("cannot determine current directory"),
+        |v| Ok(PathBuf::from(v)),
+    )?;
 
     let mut dir = start.as_path();
     loop {

@@ -1,4 +1,12 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, unused_results, clippy::unreadable_literal, clippy::significant_drop_tightening, clippy::needless_pass_by_value, clippy::float_cmp)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    unused_results,
+    clippy::unreadable_literal,
+    clippy::significant_drop_tightening,
+    clippy::needless_pass_by_value,
+    clippy::float_cmp
+)]
 //! Integration tests for the HTTP server.
 //!
 //! These tests spin up a real HTTP server on a random port and use `reqwest`

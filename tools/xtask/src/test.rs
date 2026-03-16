@@ -1,4 +1,4 @@
-use crate::common::{cargo, cmd, find_workspace_root, CYAN, GREEN, RESET};
+use crate::common::{CYAN, GREEN, RESET, cargo, cmd, find_workspace_root};
 use anyhow::{Result, anyhow};
 use std::collections::BTreeSet;
 
@@ -78,7 +78,9 @@ fn commands() -> Result<()> {
             "pack",
             file_hxz.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
             "--input",
-            test_file.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
+            test_file
+                .to_str()
+                .ok_or_else(|| anyhow!("non-UTF-8 path"))?,
         ])
         .run()?;
 
@@ -97,7 +99,10 @@ fn commands() -> Result<()> {
     // [3] Show/Inspect
     println!("{CYAN}[3] Show archive{RESET}");
     cmd(bin_str)
-        .args(["show", dir_hxz.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?])
+        .args([
+            "show",
+            dir_hxz.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
+        ])
         .run()?;
 
     // [4] Extract
@@ -107,12 +112,17 @@ fn commands() -> Result<()> {
         .args([
             "extract",
             dir_hxz.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
-            extracted_dir.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
+            extracted_dir
+                .to_str()
+                .ok_or_else(|| anyhow!("non-UTF-8 path"))?,
         ])
         .run()?;
-    
+
     assert!(extracted_dir.join("a.txt").exists());
-    assert_eq!(std::fs::read_to_string(extracted_dir.join("a.txt"))?, "File A");
+    assert_eq!(
+        std::fs::read_to_string(extracted_dir.join("a.txt"))?,
+        "File A"
+    );
 
     // [5] Thin delta
     println!("{CYAN}[5] Create thin delta{RESET}");
@@ -121,7 +131,9 @@ fn commands() -> Result<()> {
     cmd(bin_str)
         .args([
             "pack",
-            delta_hxz.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
+            delta_hxz
+                .to_str()
+                .ok_or_else(|| anyhow!("non-UTF-8 path"))?,
             "--input",
             test_dir.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
             "--base",
@@ -131,7 +143,12 @@ fn commands() -> Result<()> {
 
     // [6] Log
     println!("{CYAN}[6] Log lineage{RESET}");
-    cmd(bin_str).args(["log", tmp_path.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?]).run()?;
+    cmd(bin_str)
+        .args([
+            "log",
+            tmp_path.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
+        ])
+        .run()?;
 
     // [7] Diff
     println!("{CYAN}[7] Diff archives{RESET}");
@@ -139,7 +156,9 @@ fn commands() -> Result<()> {
         .args([
             "diff",
             dir_hxz.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
-            delta_hxz.to_str().ok_or_else(|| anyhow!("non-UTF-8 path"))?,
+            delta_hxz
+                .to_str()
+                .ok_or_else(|| anyhow!("non-UTF-8 path"))?,
         ])
         .run()?;
 

@@ -140,7 +140,15 @@ fn main() -> anyhow::Result<()> {
             uid,
             gid,
         } => hexz_cli::cmd::data::mount::run(
-            &snap, &mountpoint, daemon, cache_size.as_deref(), uid, gid, overlay, editable, None,
+            &snap,
+            &mountpoint,
+            daemon,
+            cache_size.as_deref(),
+            uid,
+            gid,
+            overlay,
+            editable,
+            None,
         ),
 
         #[cfg(feature = "fuse")]
@@ -177,7 +185,7 @@ fn main() -> anyhow::Result<()> {
         Commands::Push { remote, archive } => hexz_cli::cmd::data::push::run(&remote, archive),
 
         #[cfg(feature = "fuse")]
-        Commands::Pull { remote, archive } => hexz_cli::cmd::data::pull::run(&remote, archive),
+        Commands::Pull { remote, archive } => hexz_cli::cmd::data::pull::run(&remote, archive.as_deref()),
 
         #[cfg(feature = "server")]
         Commands::Serve {

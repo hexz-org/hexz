@@ -125,9 +125,7 @@ impl StorageBackend for HttpBackend {
             reqwest::header::RANGE,
             format!("bytes={offset}-{end}")
                 .parse()
-                .map_err(|e: reqwest::header::InvalidHeaderValue| {
-                    Error::Io(IoError::other(e))
-                })?,
+                .map_err(|e: reqwest::header::InvalidHeaderValue| Error::Io(IoError::other(e)))?,
         );
 
         tokio::task::block_in_place(|| {

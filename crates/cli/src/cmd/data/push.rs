@@ -4,9 +4,9 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use hexz_core::format::header::Header;
 use hexz_core::format::magic::HEADER_SIZE;
+use hexz_store::StorageBackend;
 use hexz_store::local::MmapBackend;
 use hexz_store::remote::{self, RemoteTransport};
-use hexz_store::StorageBackend;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -18,7 +18,9 @@ pub fn run(remote_name: &str, archive: Option<PathBuf>) -> Result<()> {
         .context("Not in a hexz workspace (no .hexz found)")?;
 
     let url = ws.config.remotes.get(remote_name).with_context(|| {
-        format!("Remote '{remote_name}' not found. Add it with `hexz remote add {remote_name} <url>`")
+        format!(
+            "Remote '{remote_name}' not found. Add it with `hexz remote add {remote_name} <url>`"
+        )
     })?;
 
     let target = if let Some(a) = archive {
@@ -40,8 +42,8 @@ pub fn run(remote_name: &str, archive: Option<PathBuf>) -> Result<()> {
         url.bright_black()
     );
 
-    let transport = remote::connect(url)
-        .map_err(|e| anyhow::anyhow!("Failed to connect to remote: {e}"))?;
+    let transport =
+        remote::connect(url).map_err(|e| anyhow::anyhow!("Failed to connect to remote: {e}"))?;
 
     let mut pushed = HashSet::new();
     push_archive(&target, transport.as_ref(), &mut pushed)?;
@@ -112,8 +114,7 @@ fn read_header(path: &Path) -> Result<Header> {
     let header_bytes = backend
         .read_exact(0, HEADER_SIZE)
         .map_err(|e| anyhow::anyhow!("Cannot read header: {e}"))?;
-    let header: Header = bincode::deserialize(&header_bytes)
-        .context("Invalid archive header")?;
+    let header: Header = bincode::deserialize(&header_bytes).context("Invalid archive header")?;
     Ok(header)
 }
 

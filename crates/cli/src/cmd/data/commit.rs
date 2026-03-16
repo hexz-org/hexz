@@ -1,21 +1,17 @@
 //! Commit changes from a writable mount to a new thin archive.
 
 use anyhow::{Context, Result};
-use std::path::PathBuf;
-use std::process::Command;
 use colored::Colorize;
 use indicatif::HumanBytes;
+use std::path::PathBuf;
+use std::process::Command;
 
-use hexz_ops::pack::{PackConfig, PackAnalysisFlags, pack_archive};
+use hexz_ops::pack::{PackAnalysisFlags, PackConfig, pack_archive};
 
 use super::workspace::Workspace;
 
 /// Execute the commit command to save workspace changes as a new thin archive.
-pub fn run(
-    mut output: PathBuf,
-    mountpoint: Option<PathBuf>,
-    base: Option<PathBuf>,
-) -> Result<()> {
+pub fn run(mut output: PathBuf, mountpoint: Option<PathBuf>, base: Option<PathBuf>) -> Result<()> {
     let current_dir = std::env::current_dir()?;
     let ws = Workspace::find(&current_dir)?;
 
@@ -55,9 +51,17 @@ pub fn run(
         }
     };
 
-    println!("{} Committing to {}", "╭".dimmed(), output.display().to_string().cyan());
+    println!(
+        "{} Committing to {}",
+        "╭".dimmed(),
+        output.display().to_string().cyan()
+    );
     if let Some(ref b) = base {
-        println!("{} Base:         {}", "╰".dimmed(), b.display().to_string().bright_black());
+        println!(
+            "{} Base:         {}",
+            "╰".dimmed(),
+            b.display().to_string().bright_black()
+        );
     } else {
         println!("{} Base:         {}", "╰".dimmed(), "(none)".bright_black());
     }
@@ -80,7 +84,11 @@ pub fn run(
     let file_size = std::fs::metadata(&output).map_or(0, |m| m.len());
     let size_str = HumanBytes(file_size).to_string();
 
-    println!("\n  {} Commit complete {}", "✓".green(), format!("({size_str} delta)").bright_black());
+    println!(
+        "\n  {} Commit complete {}",
+        "✓".green(),
+        format!("({size_str} delta)").bright_black()
+    );
     Ok(())
 }
 fn infer_base_archive(mountpoint: &std::path::Path) -> Option<PathBuf> {

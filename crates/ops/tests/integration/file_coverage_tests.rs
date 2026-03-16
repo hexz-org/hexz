@@ -180,9 +180,7 @@ fn test_zero_block_sparse_handling() {
     let archive = Archive::new(backend, compressor, None).unwrap();
 
     // Read all blocks — should be all zeros
-    let read_data = archive
-        .read_at(ArchiveStream::Main, 0, 256 * 1024)
-        .unwrap();
+    let read_data = archive.read_at(ArchiveStream::Main, 0, 256 * 1024).unwrap();
     assert_eq!(read_data.len(), 256 * 1024);
     assert!(
         read_data.iter().all(|&b| b == 0),
@@ -224,9 +222,7 @@ fn test_mixed_zero_nonzero_blocks() {
     let block0 = archive.read_at(ArchiveStream::Main, 0, 65536).unwrap();
     assert!(block0.iter().all(|&b| b == 0xAA));
 
-    let block1 = archive
-        .read_at(ArchiveStream::Main, 65536, 65536)
-        .unwrap();
+    let block1 = archive.read_at(ArchiveStream::Main, 65536, 65536).unwrap();
     assert!(
         block1.iter().all(|&b| b == 0x00),
         "Sparse block should be zero"
@@ -360,9 +356,7 @@ fn test_cross_boundary_reads() {
     assert!(mid_read[32768..].iter().all(|&b| b == 0x12));
 
     // Read spanning all 4 blocks
-    let full = archive
-        .read_at(ArchiveStream::Main, 0, 4 * 65536)
-        .unwrap();
+    let full = archive.read_at(ArchiveStream::Main, 0, 4 * 65536).unwrap();
     assert_eq!(full.len(), 4 * 65536);
     for i in 0u8..4 {
         let start = i as usize * 65536;
@@ -396,7 +390,11 @@ fn test_encrypted_read_with_crc_check() {
         output: snap_path.clone(),
         compression: "lz4".to_string(),
         password: Some(password.to_string()),
-        transform: PackTransformFlags { encrypt: true, train_dict: false, ..Default::default() },
+        transform: PackTransformFlags {
+            encrypt: true,
+            train_dict: false,
+            ..Default::default()
+        },
         block_size: 65536,
         ..Default::default()
     };
@@ -417,9 +415,7 @@ fn test_encrypted_read_with_crc_check() {
     let archive = Archive::new(backend, compressor, encryptor).unwrap();
 
     // Read and verify data round-trips correctly through decrypt+decompress+CRC path
-    let read_data = archive
-        .read_at(ArchiveStream::Main, 0, 128 * 1024)
-        .unwrap();
+    let read_data = archive.read_at(ArchiveStream::Main, 0, 128 * 1024).unwrap();
     assert_eq!(read_data.len(), 128 * 1024);
     assert_eq!(&read_data[..], &original_data[..]);
 }
@@ -442,7 +438,11 @@ fn test_encrypted_corruption_detected() {
         output: snap_path.clone(),
         compression: "lz4".to_string(),
         password: Some(password.to_string()),
-        transform: PackTransformFlags { encrypt: true, train_dict: false, ..Default::default() },
+        transform: PackTransformFlags {
+            encrypt: true,
+            train_dict: false,
+            ..Default::default()
+        },
         block_size: 65536,
         ..Default::default()
     };

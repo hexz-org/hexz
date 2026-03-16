@@ -274,7 +274,9 @@ impl Archive {
         let master = MasterIndex::read_from_backend(backend.as_ref(), header.index_offset)?;
 
         // Load metadata if present
-        let metadata = if let (Some(offset), Some(length)) = (header.metadata_offset, header.metadata_length) {
+        let metadata = if let (Some(offset), Some(length)) =
+            (header.metadata_offset, header.metadata_length)
+        {
             Some(backend.read_exact(offset, length as usize)?.to_vec())
         } else {
             None
@@ -296,11 +298,13 @@ impl Archive {
         }
 
         // Initialize caches
-        let cache_l1 = Arc::new(BlockCache::with_capacity(cache_capacity_bytes.unwrap_or(
-            crate::cache::lru::DEFAULT_L1_CAPACITY,
-        )));
+        let cache_l1 = Arc::new(BlockCache::with_capacity(
+            cache_capacity_bytes.unwrap_or(crate::cache::lru::DEFAULT_L1_CAPACITY),
+        ));
         let page_cache = Arc::new(ShardedPageCache::default());
-        let buffer_pool = Arc::new(BufferPool::new(crate::cache::buffer_pool::DEFAULT_POOL_SIZE));
+        let buffer_pool = Arc::new(BufferPool::new(
+            crate::cache::buffer_pool::DEFAULT_POOL_SIZE,
+        ));
 
         // Initialize prefetcher if window size > 0
         let prefetcher = prefetch_window_size
@@ -376,7 +380,10 @@ impl Archive {
 
     /// Lazily builds and returns the hash index for this archive.
     fn get_hash_index(&self) -> Result<Arc<HashIndex>> {
-        let mut index_guard = self.hash_index.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut index_guard = self
+            .hash_index
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(index) = &*index_guard {
             return Ok(index.clone());
         }
@@ -539,7 +546,8 @@ impl Archive {
         // SAFETY: &mut [u8] and &mut [MaybeUninit<u8>] have identical layout (both
         // are slices of single-byte types). Initialized u8 values are valid MaybeUninit<u8>.
         // The borrow is derived from `buffer` so no aliasing occurs.
-        let uninit = unsafe { &mut *(std::ptr::from_mut::<[u8]>(buffer) as *mut [MaybeUninit<u8>]) };
+        let uninit =
+            unsafe { &mut *(std::ptr::from_mut::<[u8]>(buffer) as *mut [MaybeUninit<u8>]) };
         self.read_at_into_uninit(stream, offset, uninit)
     }
 
@@ -597,9 +605,11 @@ impl Archive {
                     else if block.offset == BLOCK_OFFSET_PARENT {
                         let mut found = false;
                         for parent in &self.parents {
-                            if let Some((p_stream, p_idx, p_info)) = parent.get_block_by_hash(&block.hash)? {
+                            if let Some((p_stream, p_idx, p_info)) =
+                                parent.get_block_by_hash(&block.hash)?
+                            {
                                 let data = parent.read_block(p_stream, p_idx, &p_info)?;
-                                
+
                                 // Copy the requested range from the parent block
                                 let src = &data[offset_in_block..offset_in_block + to_copy];
                                 // SAFETY: distinct ranges
@@ -607,7 +617,7 @@ impl Archive {
                                     let dst_ptr = target.as_mut_ptr().add(buf_offset).cast::<u8>();
                                     ptr::copy_nonoverlapping(src.as_ptr(), dst_ptr, to_copy);
                                 }
-                                
+
                                 found = true;
                                 break;
                             }
@@ -619,13 +629,7 @@ impl Archive {
                     // CASE 3: Data block (local)
                     else {
                         let global_idx = page_entry.start_block + i as u64;
-                        work_items.push((
-                            global_idx,
-                            *block,
-                            buf_offset,
-                            offset_in_block,
-                            to_copy,
-                        ));
+                        work_items.push((global_idx, *block, buf_offset, offset_in_block, to_copy));
                     }
 
                     current_pos += to_copy as u64;
@@ -650,24 +654,28 @@ impl Archive {
         let target_ptr = target.as_mut_ptr() as usize;
         let results: Vec<Result<()>> = work_items
             .par_iter()
-            .map(|&(block_idx, ref info, buf_offset, offset_in_block, to_copy)| {
-                // Fetch and decompress
-                let fetch_result = self.fetch_raw_block(stream, block_idx, info)?;
-                let data = match fetch_result {
-                    FetchResult::Decompressed(d) => d,
-                    FetchResult::Compressed(raw) => self.decompress_and_verify(&raw, block_idx, info)?,
-                };
+            .map(
+                |&(block_idx, ref info, buf_offset, offset_in_block, to_copy)| {
+                    // Fetch and decompress
+                    let fetch_result = self.fetch_raw_block(stream, block_idx, info)?;
+                    let data = match fetch_result {
+                        FetchResult::Decompressed(d) => d,
+                        FetchResult::Compressed(raw) => {
+                            self.decompress_and_verify(&raw, block_idx, info)?
+                        }
+                    };
 
-                // Copy to target
-                let src = &data[offset_in_block..offset_in_block + to_copy];
-                // SAFETY: We are writing to a distinct, non-overlapping range of the target buffer
-                // for each work item. buf_offset and to_copy ensure no bounds are exceeded.
-                unsafe {
-                    let dst_ptr = (target_ptr + buf_offset) as *mut u8;
-                    ptr::copy_nonoverlapping(src.as_ptr(), dst_ptr, to_copy);
-                }
-                Ok(())
-            })
+                    // Copy to target
+                    let src = &data[offset_in_block..offset_in_block + to_copy];
+                    // SAFETY: We are writing to a distinct, non-overlapping range of the target buffer
+                    // for each work item. buf_offset and to_copy ensure no bounds are exceeded.
+                    unsafe {
+                        let dst_ptr = (target_ptr + buf_offset) as *mut u8;
+                        ptr::copy_nonoverlapping(src.as_ptr(), dst_ptr, to_copy);
+                    }
+                    Ok(())
+                },
+            )
             .collect();
 
         // Propagate the first error encountered, if any
@@ -688,7 +696,9 @@ impl Archive {
             let fetch_result = self.fetch_raw_block(stream, block_idx, info)?;
             let data = match fetch_result {
                 FetchResult::Decompressed(d) => d,
-                FetchResult::Compressed(raw) => self.decompress_and_verify(&raw, block_idx, info)?,
+                FetchResult::Compressed(raw) => {
+                    self.decompress_and_verify(&raw, block_idx, info)?
+                }
             };
 
             let src = &data[offset_in_block..offset_in_block + to_copy];
@@ -1017,7 +1027,8 @@ impl Archive {
             }
             return Ok(FetchResult::Decompressed(Bytes::from(vec![
                 0u8;
-                info.logical_len as usize
+                info.logical_len
+                    as usize
             ])));
         }
 
@@ -1028,12 +1039,7 @@ impl Archive {
 
     /// Decompresses and optionally decrypts a block.
     /// Validates the block checksum after decompression/decryption.
-    fn decompress_and_verify(
-        &self,
-        raw: &[u8],
-        block_idx: u64,
-        info: &BlockInfo,
-    ) -> Result<Bytes> {
+    fn decompress_and_verify(&self, raw: &[u8], block_idx: u64, info: &BlockInfo) -> Result<Bytes> {
         // Verify checksum of final data (compressed + encrypted)
         let actual_checksum = crc32_hash(raw);
         if actual_checksum != info.checksum {

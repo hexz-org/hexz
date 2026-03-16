@@ -123,9 +123,7 @@ impl StorageBackend for S3Backend {
 
                 let code = response_data.status_code();
                 if code != 200 && code != 206 {
-                    return Err(Error::Io(IoError::other(format!(
-                        "S3 error code: {code}"
-                    ))));
+                    return Err(Error::Io(IoError::other(format!("S3 error code: {code}"))));
                 }
 
                 let data = response_data.bytes().clone();

@@ -20,7 +20,9 @@ fn start_mock_server(data: Vec<u8>) -> (String, thread::JoinHandle<()>) {
     let handle = thread::spawn(move || {
         // Handle up to 20 requests then exit
         for _ in 0..20 {
-            let Ok((stream, _)) = listener.accept() else { break };
+            let Ok((stream, _)) = listener.accept() else {
+                break;
+            };
             handle_request(stream, &data);
         }
     });

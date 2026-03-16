@@ -1,5 +1,5 @@
 use crate::common::{
-    cargo, check_mark, cmd, find_workspace_root, maturin, BOLD, CYAN, GREEN, RED, RESET, YELLOW,
+    BOLD, CYAN, GREEN, RED, RESET, YELLOW, cargo, check_mark, cmd, find_workspace_root, maturin,
 };
 use anyhow::{Context, Result, bail};
 use semver::Version;

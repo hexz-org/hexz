@@ -2,7 +2,8 @@
 
 /// Enhanced byte comparison with better error messages
 pub fn assert_bytes_equal(actual: &[u8], expected: &[u8], context: &str) {
-    assert!(actual.len() == expected.len(), 
+    assert!(
+        actual.len() == expected.len(),
         "{}: Length mismatch: actual={}, expected={}",
         context,
         actual.len(),

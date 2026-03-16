@@ -1,6 +1,7 @@
 //! Mount Hexz archives as FUSE filesystems.
 
 use anyhow::{Context, Result};
+use colored::Colorize;
 use daemonize::Daemonize;
 use hexz_common::constants::DEFAULT_ZSTD_LEVEL;
 use hexz_core::Archive;
@@ -13,7 +14,6 @@ use hexz_store::StorageBackend;
 use hexz_store::local::MmapBackend;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use colored::Colorize;
 
 pub(crate) fn parse_size(s: &str) -> Result<usize> {
     let s = s.trim();
@@ -69,7 +69,10 @@ pub(crate) fn open_archive(
 
     let compressor: Box<dyn Compressor> = match header.compression {
         CompressionType::Lz4 => Box::new(Lz4Compressor::new()),
-        CompressionType::Zstd => Box::new(ZstdCompressor::new(DEFAULT_ZSTD_LEVEL, dictionary.as_deref())),
+        CompressionType::Zstd => Box::new(ZstdCompressor::new(
+            DEFAULT_ZSTD_LEVEL,
+            dictionary.as_deref(),
+        )),
     };
 
     let encryptor = if let (Some(params), Some(pass)) = (header.encryption, password) {
@@ -95,11 +98,15 @@ pub(crate) fn open_archive(
     let parent_loader: hexz_core::api::file::ParentLoader = Box::new(move |parent_path: &str| {
         let parent_full_path = abs_hexz_path_clone
             .parent()
-            .ok_or_else(|| hexz_common::Error::Io(std::io::Error::other("archive path has no parent directory")))?
+            .ok_or_else(|| {
+                hexz_common::Error::Io(std::io::Error::other(
+                    "archive path has no parent directory",
+                ))
+            })?
             .join(parent_path);
-        let path_str = parent_full_path
-            .to_str()
-            .ok_or_else(|| hexz_common::Error::Io(std::io::Error::other("parent path is not valid UTF-8")))?;
+        let path_str = parent_full_path.to_str().ok_or_else(|| {
+            hexz_common::Error::Io(std::io::Error::other("parent path is not valid UTF-8"))
+        })?;
         open_archive(path_str, cache_size_owned.as_deref(), prefetch)
             .map_err(|e| hexz_common::Error::Io(std::io::Error::other(e.to_string())))
     });
@@ -137,8 +144,10 @@ pub fn run(
     }
 
     let abs_mountpoint = if mountpoint.exists() {
-        std::fs::canonicalize(mountpoint)
-            .context(format!("Failed to resolve mountpoint: {}", mountpoint.display()))?
+        std::fs::canonicalize(mountpoint).context(format!(
+            "Failed to resolve mountpoint: {}",
+            mountpoint.display()
+        ))?
     } else {
         mountpoint.to_path_buf()
     };
@@ -159,7 +168,11 @@ pub fn run(
         ));
         std::fs::create_dir_all(&temp_overlay)?;
         if !daemon {
-            println!("  {} Editable mode enabled. Overlay: {}", "→".yellow(), temp_overlay.display().to_string().bright_black());
+            println!(
+                "  {} Editable mode enabled. Overlay: {}",
+                "→".yellow(),
+                temp_overlay.display().to_string().bright_black()
+            );
         }
         Some(temp_overlay)
     } else {
@@ -196,7 +209,11 @@ pub fn run(
     let fs = Hexz::new(snap, uid, gid, overlay, metadata_dir)?;
 
     if daemon {
-        eprintln!("  {} Mounting at {} (daemonized)", "✓".green(), abs_mountpoint.display().to_string().cyan());
+        eprintln!(
+            "  {} Mounting at {} (daemonized)",
+            "✓".green(),
+            abs_mountpoint.display().to_string().cyan()
+        );
     }
 
     fuser::mount2(fs, abs_mountpoint, &options)?;
